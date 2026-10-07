@@ -2160,6 +2160,7 @@ dependencies = [
 name = "kelvo-store"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "ciborium",
  "kelvo-proto",
  "kelvo-schema",

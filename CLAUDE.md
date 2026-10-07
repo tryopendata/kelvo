@@ -92,6 +92,8 @@ If a fix doesn't resolve the issue after 2 attempts without running a new diagno
 ```bash
 bun run dev                # Full app (tauri dev: Vite on :1420 + Rust)
 bun run dev:fast           # Browser only, mock transport
+bun run seed               # Quit Kelvo first: replaces the dev build's history with 30 synthetic days (old DB kept beside it)
+bun run seed:prod          # Same for the release build's history (com.tryopendata.kelvo)
 bun run typecheck          # tsc
 bun run lint               # Biome lint (includes boundary rules)
 bun run format             # Biome format + import/class sorting + safe fixes

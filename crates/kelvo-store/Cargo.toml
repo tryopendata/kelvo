@@ -28,6 +28,8 @@ rustix.workspace = true
 kelvo-proto.workspace = true
 # The read-performance test in tests/fill.rs reads its thresholds from perf-budget.json.
 serde_json.workspace = true
+# examples/seed.rs (`bun run seed`) is a binary and reports errors with anyhow.
+anyhow.workspace = true
 # The write-failure test makes COMMIT fail with a commit hook.
 rusqlite = { workspace = true, features = ["hooks"] }
 

@@ -10,6 +10,8 @@
     "dev:fast": "vite",
     "build": "bun run typecheck && vite build",
     "build:local": "scripts/build-local.sh",
+    "seed": "cargo run --release -p kelvo-store --example seed --",
+    "seed:prod": "cargo run --release -p kelvo-store --example seed -- --prod",
     "preview": "vite preview",
     "tauri": "tauri",
     "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.node.json",
