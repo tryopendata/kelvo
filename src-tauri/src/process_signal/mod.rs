@@ -127,6 +127,16 @@ impl SignalRefusal {
     }
 }
 
+/// [`SignalRefusal::of`] for rows of one batch, taking `(pid, start_time_us, name)`: this
+/// process's pid and Kelvo's own processes are read once, here.
+pub fn refusals() -> impl Fn(i32, i64, &str) -> Option<SignalRefusal> {
+    let me = SystemProcessOs.self_pid();
+    let own = kelvo_engine::process_control::own_processes();
+    move |pid, start_time_us, name| {
+        SignalRefusal::of(pid, name, me, own.contains(pid, start_time_us))
+    }
+}
+
 fn map_os(e: OsError) -> ProcessSignalError {
     match e {
         OsError::NoSuchProcess => ProcessSignalError::NotFound,

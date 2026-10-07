@@ -182,6 +182,15 @@ impl AppState {
         self.hosts.get(host)
     }
 
+    /// [`Self::host`] for a command only this Mac can answer: `remote_host` for any other.
+    pub fn local_host(&self, host: HostId) -> Result<Arc<HostEntry>, CommandError> {
+        let entry = self.host(host)?;
+        if !entry.record().is_local {
+            return Err(CommandError::RemoteHost { host });
+        }
+        Ok(entry)
+    }
+
     /// Pauses or resumes sampling on one host. Pause writes a `paused` gap.
     pub fn set_paused(&self, host: HostId, paused: bool) -> Result<(), CommandError> {
         self.host(host)?.set_paused(paused);

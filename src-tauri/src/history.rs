@@ -196,20 +196,7 @@ impl History {
         to_ms: i64,
         recent: impl FnOnce() -> kelvo_engine::RecentNet,
     ) -> Result<NetworkByApp, CommandError> {
-        if to_ms < from_ms {
-            return Err(CommandError::InvalidArgument {
-                message: format!("the range ends ({to_ms}) before it starts ({from_ms})"),
-            });
-        }
-        if to_ms - from_ms > MAX_NET_SPAN_MS {
-            return Err(CommandError::InvalidArgument {
-                message: format!(
-                    "the range is {} days long; history keeps at most {} days",
-                    (to_ms - from_ms) / Retention::DAY_MS,
-                    MAX_NET_SPAN_MS / Retention::DAY_MS
-                ),
-            });
-        }
+        validate_range(from_ms, to_ms, MAX_NET_SPAN_MS)?;
         let mut recent = Some(recent);
         let mut complete_to_ms = None;
         let mut take = || {
@@ -285,20 +272,7 @@ impl History {
         now_ms: i64,
         recent: impl Fn() -> Vec<BucketRow>,
     ) -> Result<RangeStats, CommandError> {
-        if to_ms < from_ms {
-            return Err(CommandError::InvalidArgument {
-                message: format!("the range ends ({to_ms}) before it starts ({from_ms})"),
-            });
-        }
-        if to_ms - from_ms > MAX_NET_SPAN_MS {
-            return Err(CommandError::InvalidArgument {
-                message: format!(
-                    "the range is {} days long; history keeps at most {} days",
-                    (to_ms - from_ms) / Retention::DAY_MS,
-                    MAX_NET_SPAN_MS / Retention::DAY_MS
-                ),
-            });
-        }
+        validate_range(from_ms, to_ms, MAX_NET_SPAN_MS)?;
         let catalog = kelvo_schema::Catalog::builtin();
         let defs = metrics
             .iter()
@@ -312,22 +286,15 @@ impl History {
                 }),
             })
             .collect::<Result<Vec<_>, _>>()?;
-        let finest = Tier::S10.bucket_ms().unwrap_or(10_000);
-        let query = HistoryQuery {
+        // One point per bucket of the finest tier: no merging.
+        let query = per_bucket_query(
             host,
-            selectors: defs
-                .iter()
-                .map(|d| kelvo_schema::SeriesSelector {
-                    metric: d.id.clone(),
-                    labels: Labels::new(),
-                })
-                .collect(),
+            defs.iter().map(|d| d.id.clone()),
             from_ms,
             to_ms,
-            tier: TierChoice::Auto,
-            // One point per bucket of the finest tier: no merging.
-            max_points: u32::try_from((to_ms - from_ms) / finest + 2).unwrap_or(u32::MAX),
-        };
+            TierChoice::Auto,
+            Tier::S10.bucket_ms().unwrap_or(10_000),
+        );
         let read = self.history_through_now(&query, recent)?;
         Ok(range_stats(&read, &defs, from_ms, to_ms, now_ms))
     }
@@ -378,22 +345,14 @@ impl History {
             return Ok(out);
         }
         let query = |tier: Tier, from_ms: i64, to_ms: i64| {
-            let width = tier.bucket_ms().unwrap_or(60_000);
-            HistoryQuery {
+            per_bucket_query(
                 host,
-                selectors: [CHARGE, CHARGING]
-                    .into_iter()
-                    .map(|m| kelvo_schema::SeriesSelector {
-                        metric: MetricId::from_static(m),
-                        labels: Labels::new(),
-                    })
-                    .collect(),
+                [CHARGE, CHARGING].map(MetricId::from_static),
                 from_ms,
                 to_ms,
-                tier: TierChoice::Fixed(tier),
-                // One point per bucket: no merging.
-                max_points: u32::try_from((to_ms - from_ms) / width + 2).unwrap_or(u32::MAX),
-            }
+                TierChoice::Fixed(tier),
+                tier.bucket_ms().unwrap_or(60_000),
+            )
         };
         let minutes = self.history_through_now(&query(Tier::M1, from_ms, to_ms), &recent)?;
         let mut last_t = vec![i64::MIN; out.len()];
@@ -584,6 +543,52 @@ fn tier_choice(tier: TierRequest) -> TierChoice {
         TierRequest::Auto => TierChoice::Auto,
         TierRequest::S10 => TierChoice::Fixed(Tier::S10),
         TierRequest::M1 => TierChoice::Fixed(Tier::M1),
+    }
+}
+
+/// `invalid_argument` unless `[from_ms, to_ms)` runs forwards and spans at most `max_ms`
+/// (whole days).
+fn validate_range(from_ms: i64, to_ms: i64, max_ms: i64) -> Result<(), CommandError> {
+    if to_ms < from_ms {
+        return Err(CommandError::InvalidArgument {
+            message: format!("the range ends ({to_ms}) before it starts ({from_ms})"),
+        });
+    }
+    if to_ms - from_ms > max_ms {
+        return Err(CommandError::InvalidArgument {
+            message: format!(
+                "the range is {} days long; history keeps at most {} days",
+                (to_ms - from_ms) / Retention::DAY_MS,
+                max_ms / Retention::DAY_MS
+            ),
+        });
+    }
+    Ok(())
+}
+
+/// A read of the unlabelled `metrics` with room for one point per `bucket_ms` bucket of
+/// `[from_ms, to_ms)`, so none are merged.
+fn per_bucket_query(
+    host: kelvo_schema::HostId,
+    metrics: impl IntoIterator<Item = MetricId>,
+    from_ms: i64,
+    to_ms: i64,
+    tier: TierChoice,
+    bucket_ms: i64,
+) -> HistoryQuery {
+    HistoryQuery {
+        host,
+        selectors: metrics
+            .into_iter()
+            .map(|metric| kelvo_schema::SeriesSelector {
+                metric,
+                labels: Labels::new(),
+            })
+            .collect(),
+        from_ms,
+        to_ms,
+        tier,
+        max_points: u32::try_from((to_ms - from_ms) / bucket_ms + 2).unwrap_or(u32::MAX),
     }
 }
 

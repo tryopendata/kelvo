@@ -19,22 +19,27 @@ use crate::ipc::{
     SettingsSnapshot, SubscriptionInfo, UpdateStatus, UsageByApp, UsageKey, WindowAppearance,
 };
 use crate::live::{DEFAULT_BACKFILL_MS, LiveFeed, LiveRequest, LiveSink};
-use crate::process_signal::{
-    Micros, ProcessSignalError, SignalKind, SignalRefusal, SystemProcessOs,
-};
+use crate::process_signal::{Micros, ProcessSignalError, SignalKind, SystemProcessOs};
 use crate::settings::SettingsPatch;
 use crate::state::AppState;
+
+/// Runs `f` on a blocking thread; `internal` when the task fails.
+async fn spawn_blocking<T: Send + 'static>(
+    f: impl FnOnce() -> T + Send + 'static,
+) -> Result<T, CommandError> {
+    tauri::async_runtime::spawn_blocking(f)
+        .await
+        .map_err(|e| CommandError::Internal {
+            message: format!("command task failed: {e}"),
+        })
+}
 
 /// Runs `f` on a blocking thread with the app state.
 async fn blocking<T: Send + 'static>(
     app: AppHandle,
     f: impl FnOnce(&AppState) -> Result<T, CommandError> + Send + 'static,
 ) -> Result<T, CommandError> {
-    tauri::async_runtime::spawn_blocking(move || f(&app.state::<AppState>()))
-        .await
-        .map_err(|e| CommandError::Internal {
-            message: format!("command task failed: {e}"),
-        })?
+    spawn_blocking(move || f(&app.state::<AppState>())).await?
 }
 
 /// Every host, the local one first.
@@ -215,10 +220,7 @@ pub async fn query_network_by_app(
     to_ms: Millis,
 ) -> Result<NetworkByApp, CommandError> {
     blocking(app, move |state| {
-        let entry = state.host(host)?;
-        if !entry.record().is_local {
-            return Err(CommandError::RemoteHost { host });
-        }
+        let entry = state.local_host(host)?;
         state.history.network_by_app(host, from_ms.0, to_ms.0, || {
             entry.recent_net(from_ms.0, to_ms.0)
         })
@@ -249,11 +251,8 @@ pub async fn query_usage_by_app(
         });
     }
     blocking(app, move |state| {
-        let entry = state.host(host)?;
+        let entry = state.local_host(host)?;
         let record = entry.record();
-        if !record.is_local {
-            return Err(CommandError::RemoteHost { host });
-        }
         let usage = entry.usage_by_app(
             from_ms.0,
             to_ms.0,
@@ -278,13 +277,11 @@ pub async fn query_usage_by_app(
                 .ok()
         });
         let cores = record.info.cpu_topology.iter().map(|c| c.cores.len()).sum();
-        let me = kelvo_engine::process_control::ProcessOs::self_pid(&SystemProcessOs);
-        let own = kelvo_engine::process_control::own_processes();
         Ok(crate::usage::usage_by_app(
             usage,
             stats.as_ref(),
             cores,
-            |pid, start, name| SignalRefusal::of(pid, name, me, own.contains(pid, start)),
+            crate::process_signal::refusals(),
         ))
     })
     .await
@@ -327,10 +324,7 @@ pub fn get_network_addresses(
     state: State<'_, AppState>,
     host: HostId,
 ) -> Result<NetworkAddresses, CommandError> {
-    let entry = state.host(host)?;
-    if !entry.record().is_local {
-        return Err(CommandError::RemoteHost { host });
-    }
+    let entry = state.local_host(host)?;
     Ok(crate::addresses::network_addresses(
         entry.primary_iface().as_deref(),
     ))
@@ -341,11 +335,8 @@ pub fn get_network_addresses(
 #[tauri::command]
 #[specta::specta]
 pub async fn get_public_ip() -> Result<String, CommandError> {
-    tauri::async_runtime::spawn_blocking(crate::addresses::public_ip)
-        .await
-        .map_err(|e| CommandError::Internal {
-            message: format!("command task failed: {e}"),
-        })?
+    spawn_blocking(crate::addresses::public_ip)
+        .await?
         .map(|ip| ip.to_string())
         .map_err(|message| CommandError::PublicIp { message })
 }

@@ -41,7 +41,6 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
-use kelvo_engine::process_control::{self, OwnProcesses, ProcessOs, SystemProcessOs};
 use kelvo_engine::{
     BackfillSegment, BusMsg, EngineStatus, FrameLayout, LiveFrame, LiveHub, ProcessSample,
     ProcessView as EngineView, Recv, Subscriber,
@@ -209,9 +208,12 @@ fn pick_holds(pick: &Pick, holds: &[u32]) -> Vec<u32> {
     }
 }
 
-/// One row for the webview. `me` is this process and `own` Kelvo's own processes, both
-/// read once per batch.
-fn live_process(r: &ProcessSample, me: i32, own: &OwnProcesses) -> LiveProcess {
+/// One row for the webview. `refusal` is [`crate::process_signal::refusals`], read once
+/// per batch.
+fn live_process(
+    r: &ProcessSample,
+    refusal: &impl Fn(i32, i64, &str) -> Option<SignalRefusal>,
+) -> LiveProcess {
     LiveProcess {
         pid: r.pid,
         start_time_us: r.start_time_us,
@@ -229,7 +231,7 @@ fn live_process(r: &ProcessSample, me: i32, own: &OwnProcesses) -> LiveProcess {
         gpu_pct: r.gpu_pct,
         ports: r.ports.as_deref().map(<[u16]>::to_vec),
         user: r.user.to_string(),
-        refusal: SignalRefusal::of(r.pid, &r.name, me, own.contains(r.pid, r.start_time_us)),
+        refusal: refusal(r.pid, r.start_time_us, &r.name),
     }
 }
 
@@ -685,9 +687,8 @@ impl Stream {
                     return Ok(());
                 }
             }
-            let me = SystemProcessOs.self_pid();
-            let own = process_control::own_processes();
-            kelvo_engine::select_processes(rows, view, |r| live_process(r, me, &own))
+            let refusal = crate::process_signal::refusals();
+            kelvo_engine::select_processes(rows, view, |r| live_process(r, &refusal))
         };
         self.last_procs_ts = Some(ts_ms);
         self.send(LiveMsg::Processes {
