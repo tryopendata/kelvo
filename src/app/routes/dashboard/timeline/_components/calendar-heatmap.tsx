@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { useThemeVersion, withAlpha } from "~/components/charts/theme";
 import { cn } from "~/lib/utils";
 import {
   cellAlpha,
@@ -14,7 +15,6 @@ import {
   isFutureCell,
   isPendingCell,
 } from "../_lib/heatmap";
-import { useThemeVersion, withAlpha } from "./lane-plot";
 
 /**
  * 11 px cells 2 px apart with 2 px corners, and a 72 px label

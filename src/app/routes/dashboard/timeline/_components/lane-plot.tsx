@@ -1,6 +1,7 @@
-import { memo, useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef } from "react";
 import uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
+import { cssVar, useThemeVersion, withAlpha } from "~/components/charts/theme";
 import type { PlotSeries } from "../_lib/lane-model";
 
 export interface LanePlotProps {
@@ -13,31 +14,6 @@ export interface LanePlotProps {
   toMs: number;
   height: number;
   ariaLabel: string;
-}
-
-function cssVar(el: Element, name: string): string {
-  return getComputedStyle(el).getPropertyValue(name).trim();
-}
-
-export function withAlpha(color: string, alpha: number): string {
-  const hex = /^#([0-9a-f]{6})$/i.exec(color)?.[1];
-  if (!hex) return color;
-  const n = Number.parseInt(hex, 16);
-  return `rgba(${n >> 16}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
-}
-
-/** Re-render when `.dark` toggles on <html>: canvas colors are resolved once. */
-export function useThemeVersion(): number {
-  const [version, setVersion] = useState(0);
-  useEffect(() => {
-    const observer = new MutationObserver(() => setVersion((v) => v + 1));
-    observer.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ["class"],
-    });
-    return () => observer.disconnect();
-  }, []);
-  return version;
 }
 
 const AREA_ALPHA = { area: 0.38, faint: 0.14, line: 0 } as const;

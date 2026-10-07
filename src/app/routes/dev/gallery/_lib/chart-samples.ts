@@ -1,4 +1,3 @@
-import type { HistoryChartProps } from "~/components/charts/history-chart";
 import type { BatteryHistoryBarsProps } from "~/widgets/battery-history-bars";
 import type { CoreHeatmapProps } from "~/widgets/core-heatmap";
 import { windowTicks } from "~/widgets/lib/chart-labels";
@@ -240,26 +239,4 @@ export const BATTERY_HOURS: BatteryHistoryBarsProps = {
       label: "Optimized charging: held at 80%",
     },
   ],
-};
-
-// History: one hour of 1-minute buckets with the same sleep gap.
-export const HISTORY: HistoryChartProps = {
-  points: hourCpu.map((avg, i) => ({
-    t: SLEEP_WINDOW.fromMs + i * 60_000,
-    avg,
-    min: Math.max(0, avg - 6 - (i % 5)),
-    max: Math.min(100, avg + 9 + (i % 7) * 2),
-  })),
-  gaps: [
-    {
-      fromMs: SLEEP_WINDOW.gapFromMs,
-      toMs: SLEEP_WINDOW.gapToMs,
-      label: "Asleep 11:02–11:31 · not interpolated",
-    },
-  ],
-  range: { fromMs: SLEEP_WINDOW.fromMs, toMs: SLEEP_WINDOW.toMs },
-  domain: [0, 100],
-  accent: "cpu",
-  height: 72,
-  ariaLabel: "CPU, last hour, 1 minute average",
 };

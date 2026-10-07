@@ -1,4 +1,3 @@
-import { HistoryChart } from "~/components/charts/history-chart";
 import { BatteryHistoryBars } from "~/widgets/battery-history-bars";
 import { Card } from "~/widgets/card";
 import { ChartAnnotation } from "~/widgets/chart-annotation";
@@ -13,7 +12,6 @@ import {
   CORE_HEATMAP,
   CPU_TOTAL,
   CPU_WITH_GAP,
-  HISTORY,
   NETWORK_BARS,
   POPOVER_CPU,
   POPOVER_GPU,
@@ -115,10 +113,6 @@ export function WidgetsChartsSection() {
                 rangeToMs={SLEEP_WINDOW.toMs}
               />
             </div>
-            <div className="h-3" />
-          </ChartCard>
-          <ChartCard id="gc-hist" title="HistoryChart (uPlot)" accent="cpu">
-            <HistoryChart {...HISTORY} />
             <div className="h-3" />
           </ChartCard>
           <GalleryItem name="GapBand · standalone" usedIn="Gap states">
