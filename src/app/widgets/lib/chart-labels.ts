@@ -21,3 +21,35 @@ export function windowTicks(windowMs: number, count: number): string[] {
     agoLabel((windowMs * (count - 1 - i)) / (count - 1))
   );
 }
+
+/** Gridlines of a fixed 0 to 100% chart, a quarter apart. */
+export const PERCENT_GRID: readonly number[] = [25, 50, 75, 100];
+
+/** Y tick labels of a fixed 0 to 100% chart, top down, without the unit. */
+export const PERCENT_Y_TICKS: readonly { value: number; label: string }[] = [
+  100, 75, 50, 25,
+].map((v) => ({ value: v, label: String(v) }));
+
+/**
+ * Gridlines at half and full height of an autoscaled ceiling. With
+ * `topLabel`, also the y ticks: the ceiling with its unit ("4W") and the
+ * half as a bare number.
+ */
+export function ceilingAxis(
+  ceiling: number,
+  topLabel?: string
+): {
+  gridlines: number[];
+  yTicks?: { value: number; label: string }[];
+} {
+  const half = ceiling / 2;
+  const gridlines = [half, ceiling];
+  if (topLabel === undefined) return { gridlines };
+  return {
+    gridlines,
+    yTicks: [
+      { value: ceiling, label: topLabel },
+      { value: half, label: String(half) },
+    ],
+  };
+}

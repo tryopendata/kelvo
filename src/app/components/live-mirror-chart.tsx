@@ -13,6 +13,7 @@ import type { Accent } from "~/widgets/lib/accent";
 import { windowTicks } from "~/widgets/lib/chart-labels";
 import { FIELD_LABEL } from "~/widgets/lib/classes";
 import { MirrorBars } from "~/widgets/mirror-bars";
+import { WindowTicks } from "~/widgets/window-ticks";
 
 /** Bars across the chart: one per interval up to this, then wider buckets. */
 const MAX_BARS = 120;
@@ -181,19 +182,7 @@ export function LiveMirrorChart({
           />
         )}
       </div>
-      <div
-        aria-hidden
-        className="data-mono flex justify-between pl-24 text-[10px] text-fg-faint"
-      >
-        {ticks.map((t, i) => (
-          <span
-            key={t}
-            className={i === ticks.length - 1 ? "text-muted-foreground" : ""}
-          >
-            {t}
-          </span>
-        ))}
-      </div>
+      <WindowTicks ticks={ticks} className="pl-24" />
     </div>
   );
 }

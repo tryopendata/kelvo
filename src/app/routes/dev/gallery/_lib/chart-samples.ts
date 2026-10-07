@@ -1,6 +1,10 @@
 import type { BatteryHistoryBarsProps } from "~/widgets/battery-history-bars";
 import type { CoreHeatmapProps } from "~/widgets/core-heatmap";
-import { windowTicks } from "~/widgets/lib/chart-labels";
+import {
+  PERCENT_GRID,
+  PERCENT_Y_TICKS,
+  windowTicks,
+} from "~/widgets/lib/chart-labels";
 import type { MirrorBarsProps } from "~/widgets/mirror-bars";
 import type { PowerStackProps } from "~/widgets/power-stack";
 import type { StreamAreaProps } from "~/widgets/stream-area";
@@ -95,13 +99,8 @@ export const CPU_TOTAL: StreamAreaProps = {
   accent: "cpu",
   height: 220,
   ariaLabel: "CPU user and system, last 60 seconds",
-  gridlines: [25, 50, 75, 100],
-  yTicks: [
-    { value: 100, label: "100" },
-    { value: 75, label: "75" },
-    { value: 50, label: "50" },
-    { value: 25, label: "25" },
-  ],
+  gridlines: PERCENT_GRID,
+  yTicks: PERCENT_Y_TICKS,
   xTicks: windowTicks(60_000, 5),
 };
 

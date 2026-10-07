@@ -9,7 +9,7 @@ import { useHeld } from "~/hooks/use-ring";
 import { useUnits } from "~/hooks/use-units";
 import { useWindowSeries } from "~/hooks/use-window-series";
 import { Card } from "~/widgets/card";
-import { windowTicks } from "~/widgets/lib/chart-labels";
+import { ceilingAxis, windowTicks } from "~/widgets/lib/chart-labels";
 import { StatStrip } from "~/widgets/stat-strip";
 import { StreamArea } from "~/widgets/stream-area";
 
@@ -64,7 +64,7 @@ export function SwapCard({ windowMs }: { windowMs: number }) {
           height={HEIGHT}
           ariaLabel={`Swap used, ${span}, now ${fmt(v[KEY])}. Drag to select a range.`}
           ceilingLabel={fmt(ceiling)}
-          gridlines={[ceiling / 2, ceiling]}
+          {...ceilingAxis(ceiling)}
           xTicks={windowTicks(windowMs, 3)}
           highlight={brush.highlight}
           overlay={brush.overlay}
