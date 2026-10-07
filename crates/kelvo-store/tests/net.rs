@@ -130,7 +130,7 @@ fn span(from_ms: i64, to_ms: i64, tier: Option<Tier>) -> NetSpan {
 }
 
 fn setup(name: &str) -> (TempDir, Store, Writer, HostId) {
-    let dir = TempDir::new(name);
+    let dir = temp_dir(name);
     let store = open(&dir, "h.sqlite");
     let w = store.writer();
     let h = host(1);
@@ -531,7 +531,7 @@ fn net_counts(db: &rusqlite::Connection, host_id: i64) -> [i64; 3] {
 
 #[test]
 fn clear_host_and_discard_from_include_the_network_tables() {
-    let dir = TempDir::new("net-clear");
+    let dir = temp_dir("net-clear");
     let store = open(&dir, "h.sqlite");
     let w = store.writer();
     let (a, b) = (host(1), host(2));

@@ -672,7 +672,7 @@ struct WalVolume {
 fn store_run(name: &str, minutes: u64, commit_s: u64) -> (Harness, u64, WalVolume) {
     let (collectors, _) = measured_collectors();
     let mut h = Harness::new(name, collectors, &settings_all_on());
-    let path = h.dir.0.join("history.sqlite");
+    let path = h.dir.path().join("history.sqlite");
     let size = |p: &std::path::Path| std::fs::metadata(p).map_or(0, |m| m.len());
     let writer = h.store.as_ref().unwrap().writer();
     writer.flush().unwrap();
@@ -735,7 +735,7 @@ fn store_write_volume_per_hour_at_one_second() {
     let minutes = num(&b, "store.minutes") as u64;
     let commit_s = kelvo_store::DEFAULT_COMMIT_INTERVAL.as_secs();
     let (h, growth, wal) = store_run("store-volume", minutes, commit_s);
-    let path = h.dir.0.join("history.sqlite");
+    let path = h.dir.path().join("history.sqlite");
     print_wal(&format!("{minutes} min run"), commit_s, &wal);
     let db =
         rusqlite::Connection::open_with_flags(&path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)

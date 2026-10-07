@@ -140,7 +140,7 @@ fn cpu_points(res: &HistoryResult) -> &[kelvo_store::Point] {
 
 #[test]
 fn seven_days_read_minutes_and_thirty_days_read_quarters_with_every_gap() {
-    let dir = TempDir::new("long-ranges");
+    let dir = temp_dir("long-ranges");
     let (store, h) = thirty_days(&dir);
     let mut r = store.reader().unwrap();
 
@@ -220,7 +220,7 @@ fn utc(days_from_t0: i64, hour: i64) -> i64 {
 
 #[test]
 fn heatmap_hours_follow_dst_in_both_directions() {
-    let dir = TempDir::new("heatmap-dst");
+    let dir = temp_dir("heatmap-dst");
     let store = open(&dir, "h.sqlite");
     let w = store.writer();
     let h = host(1);
@@ -287,7 +287,7 @@ fn heatmap_hours_follow_dst_in_both_directions() {
 
 #[test]
 fn heatmap_mixes_quarters_and_minutes_by_width() {
-    let dir = TempDir::new("heatmap-mix");
+    let dir = temp_dir("heatmap-mix");
     let store = open(&dir, "h.sqlite");
     let w = store.writer();
     let h = host(1);
@@ -447,7 +447,7 @@ fn assert_round_trip(r: &mut Reader, h: HostId, from: i64, to: i64) {
 
 #[test]
 fn csv_export_round_trips_minutes_quarters_and_gaps() {
-    let dir = TempDir::new("export-round-trip");
+    let dir = temp_dir("export-round-trip");
     let (store, h) = thirty_days(&dir);
     let mut r = store.reader().unwrap();
     // Two days of minutes, with a night's sleep.
@@ -507,7 +507,7 @@ fn csv_export_round_trips_minutes_quarters_and_gaps() {
 
 #[test]
 fn a_module_gap_names_its_module() {
-    let dir = TempDir::new("export-module-gap");
+    let dir = temp_dir("export-module-gap");
     let store = open(&dir, "h.sqlite");
     let w = store.writer();
     let h = host(1);
@@ -554,7 +554,7 @@ impl std::io::Write for CommitsMidExport<'_> {
 
 #[test]
 fn an_export_reads_one_snapshot() {
-    let dir = TempDir::new("export-snapshot");
+    let dir = temp_dir("export-snapshot");
     let store = open(&dir, "h.sqlite");
     let w = store.writer();
     let h = host(1);
@@ -605,7 +605,7 @@ impl std::io::Write for FailingOut {
 
 #[test]
 fn a_failed_export_leaves_no_transaction_open() {
-    let dir = TempDir::new("export-fails-snapshot");
+    let dir = temp_dir("export-fails-snapshot");
     let store = open(&dir, "h.sqlite");
     let w = store.writer();
     let h = host(1);
@@ -632,7 +632,7 @@ fn a_failed_export_leaves_no_transaction_open() {
 
 #[test]
 fn a_bucket_without_a_selected_value_is_not_a_row() {
-    let dir = TempDir::new("export-empty-slot");
+    let dir = temp_dir("export-empty-slot");
     let store = open(&dir, "h.sqlite");
     let w = store.writer();
     let h = host(1);

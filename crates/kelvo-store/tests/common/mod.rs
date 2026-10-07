@@ -2,7 +2,6 @@
 
 #![allow(dead_code, clippy::unwrap_used)]
 
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -16,34 +15,19 @@ pub const MIN: i64 = 60_000;
 pub const HOUR: i64 = 60 * MIN;
 pub const DAY: i64 = 24 * HOUR;
 
+pub use tempfile::TempDir;
+
 /// A fresh, empty directory under the system temp dir, removed on drop.
-pub struct TempDir(pub PathBuf);
-
-impl TempDir {
-    pub fn new(name: &str) -> Self {
-        let dir = std::env::temp_dir().join(format!(
-            "kelvo-store-it-{name}-{}-{}",
-            std::process::id(),
-            Uuid::new_v4().simple()
-        ));
-        std::fs::create_dir_all(&dir).unwrap();
-        Self(dir)
-    }
-
-    pub fn file(&self, name: &str) -> PathBuf {
-        self.0.join(name)
-    }
-}
-
-impl Drop for TempDir {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.0);
-    }
+pub fn temp_dir(name: &str) -> TempDir {
+    tempfile::Builder::new()
+        .prefix(&format!("kelvo-store-it-{name}-"))
+        .tempdir()
+        .unwrap()
 }
 
 /// A store whose writer only commits on flush, so tests decide when rows land.
 pub fn open(dir: &TempDir, name: &str) -> Store {
-    let mut cfg = StoreConfig::new(dir.file(name));
+    let mut cfg = StoreConfig::new(dir.path().join(name));
     cfg.commit_interval = Duration::from_secs(3600);
     Store::open(cfg).unwrap()
 }

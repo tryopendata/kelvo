@@ -255,14 +255,11 @@ fn wall_ms() -> i64 {
         .unwrap_or(0)
 }
 
-/// A fresh, empty directory under the system temp dir for one test.
+/// A fresh, empty directory under the system temp dir for one test, removed on drop.
 #[cfg(test)]
-pub(crate) fn test_dir(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!(
-        "kelvo-store-{name}-{}-{}",
-        std::process::id(),
-        Uuid::new_v4().simple()
-    ));
-    std::fs::create_dir_all(&dir).unwrap();
-    dir
+pub(crate) fn test_dir(name: &str) -> tempfile::TempDir {
+    tempfile::Builder::new()
+        .prefix(&format!("kelvo-store-{name}-"))
+        .tempdir()
+        .unwrap()
 }

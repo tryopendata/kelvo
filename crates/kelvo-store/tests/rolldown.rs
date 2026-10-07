@@ -76,7 +76,7 @@ fn same(a: &[f32], b: &[f32]) -> bool {
 
 #[test]
 fn minutes_past_the_window_fold_into_15_minute_rows() {
-    let dir = TempDir::new("m15-fold");
+    let dir = temp_dir("m15-fold");
     let store = open(&dir, "h.sqlite");
     let w = store.writer();
     let h = host(1);
@@ -218,7 +218,7 @@ fn minutes_past_the_window_fold_into_15_minute_rows() {
 /// change the 7d chart's resolution from one refresh to the next.
 #[test]
 fn a_range_starting_less_than_a_quarter_before_the_roll_cut_reads_minutes() {
-    let dir = TempDir::new("m15-auto-slack");
+    let dir = temp_dir("m15-auto-slack");
     let store = open(&dir, "h.sqlite");
     let w = store.writer();
     let h = host(1);
@@ -253,7 +253,7 @@ fn a_range_starting_less_than_a_quarter_before_the_roll_cut_reads_minutes() {
 /// by the time it covers.
 #[test]
 fn a_slot_mixing_quarters_and_minutes_weighs_them_by_width() {
-    let dir = TempDir::new("m15-mix");
+    let dir = temp_dir("m15-mix");
     let store = open(&dir, "h.sqlite");
     let w = store.writer();
     let h = host(1);
@@ -281,7 +281,7 @@ fn a_slot_mixing_quarters_and_minutes_weighs_them_by_width() {
 
 #[test]
 fn process_minutes_roll_into_15_minute_top_5() {
-    let dir = TempDir::new("m15-procs");
+    let dir = temp_dir("m15-procs");
     let store = open(&dir, "h.sqlite");
     let w = store.writer();
     let h = host(1);
@@ -324,7 +324,7 @@ fn process_minutes_roll_into_15_minute_top_5() {
 
 #[test]
 fn the_15_minute_history_ends_with_retention() {
-    let dir = TempDir::new("m15-retention");
+    let dir = temp_dir("m15-retention");
     let store = open(&dir, "h.sqlite");
     let w = store.writer();
     let h = host(1);

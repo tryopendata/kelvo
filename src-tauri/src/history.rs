@@ -782,14 +782,11 @@ mod tests {
 
     const NOW: i64 = 1_800_000_000_000;
 
-    fn temp_dir(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!(
-            "kelvo-shell-{name}-{}-{}",
-            std::process::id(),
-            uuid::Uuid::new_v4().simple()
-        ));
-        std::fs::create_dir_all(&dir).unwrap();
-        dir
+    fn temp_dir(name: &str) -> tempfile::TempDir {
+        tempfile::Builder::new()
+            .prefix(&format!("kelvo-shell-{name}-"))
+            .tempdir()
+            .unwrap()
     }
 
     fn local_record() -> HostRecord {
@@ -817,8 +814,9 @@ mod tests {
     /// recovers it.
     #[test]
     fn a_store_that_cannot_take_the_host_goes_unavailable_and_reset_recovers_it() {
-        let dir = temp_dir("register-fails");
-        drop(History::open(&dir));
+        let tmp = temp_dir("register-fails");
+        let dir = tmp.path();
+        drop(History::open(dir));
         // The file opens fine but refuses every new host.
         let conn = kelvo_store::rusqlite::Connection::open(dir.join(DB_FILE)).unwrap();
         conn.execute_batch(
@@ -828,7 +826,7 @@ mod tests {
         .unwrap();
         drop(conn);
 
-        let history = History::open(&dir);
+        let history = History::open(dir);
         assert!(history.is_available(), "it opened");
         assert!(
             history.register_host(&local_record()).is_none(),
@@ -859,9 +857,10 @@ mod tests {
 
     #[test]
     fn a_store_held_by_another_process_is_locked_and_reset_refuses() {
-        let dir = temp_dir("locked");
+        let tmp = temp_dir("locked");
+        let dir = tmp.path();
         let other = Store::open(StoreConfig::new(dir.join(DB_FILE))).unwrap();
-        let history = History::open(&dir);
+        let history = History::open(dir);
         assert_eq!(
             history.unavailable_reason(),
             Some(HistoryUnavailableReason::Locked)
@@ -884,9 +883,10 @@ mod tests {
     /// `history_unavailable` (and the Settings banner).
     #[test]
     fn reset_returns_health_only_when_history_is_back() {
-        let dir = temp_dir("reset-health");
+        let tmp = temp_dir("reset-health");
+        let dir = tmp.path();
         let other = Store::open(StoreConfig::new(dir.join(DB_FILE))).unwrap();
-        let history = History::open(&dir);
+        let history = History::open(dir);
         let mut attached = 0;
         let err = history
             .reset_and_attach(NOW, |_| attached += 1)
@@ -935,8 +935,9 @@ mod tests {
 
     #[test]
     fn a_heatmap_request_reads_one_value_per_local_hour() {
-        let dir = temp_dir("heatmap");
-        let history = History::open(&dir);
+        let tmp = temp_dir("heatmap");
+        let dir = tmp.path();
+        let history = History::open(dir);
         let w = history.register_host(&local_record()).unwrap();
         let series: std::sync::Arc<[SeriesKey]> =
             vec![SeriesKey::parse("cpu.total").unwrap()].into();
@@ -1031,8 +1032,9 @@ mod tests {
     /// "System and other" that add up to the interface totals.
     #[test]
     fn network_by_app_merges_the_ring_over_the_store_and_adds_up() {
-        let dir = temp_dir("net-by-app");
-        let history = History::open(&dir);
+        let tmp = temp_dir("net-by-app");
+        let dir = tmp.path();
+        let history = History::open(dir);
         let host = local_record().id;
         let w = history.register_host(&local_record()).unwrap();
         // NOW is on the 10 s grid. Two committed buckets; the second is also in the ring,
@@ -1280,8 +1282,9 @@ mod tests {
                 },
             })
             .collect::<Vec<_>>();
-        let dir = temp_dir("series-stats");
-        let history = History::open(&dir);
+        let tmp = temp_dir("series-stats");
+        let dir = tmp.path();
+        let history = History::open(dir);
         let w = history.register_host(&local_record()).unwrap();
         for row in rows {
             w.write_bucket(row).unwrap();
@@ -1331,8 +1334,9 @@ mod tests {
     #[test]
     fn series_stats_count_measured_time_through_now() {
         const S: i64 = 1_000;
-        let dir = temp_dir("network-totals");
-        let history = History::open(&dir);
+        let tmp = temp_dir("network-totals");
+        let dir = tmp.path();
+        let history = History::open(dir);
         let w = history.register_host(&local_record()).unwrap();
         // Buckets 12 and 13 have no reading; 25.. are only in the engine.
         for row in net_buckets((0..25).filter(|b| !(12..14).contains(b))) {
@@ -1417,8 +1421,9 @@ mod tests {
     #[test]
     fn battery_hours_follow_local_hours_in_a_half_hour_zone_through_now() {
         const MIN: i64 = 60_000;
-        let dir = temp_dir("battery-hours");
-        let history = History::open(&dir);
+        let tmp = temp_dir("battery-hours");
+        let dir = tmp.path();
+        let history = History::open(dir);
         let w = history.register_host(&local_record()).unwrap();
         // Charge is the minute's index; the battery charged in minute 25 and minute 105.
         let charging = |m: i64| if m == 25 || m == 105 { 1.0 } else { 0.0 };
@@ -1466,8 +1471,9 @@ mod tests {
     #[test]
     fn battery_hours_past_the_minutes_kept_read_quarter_hours() {
         const MIN: i64 = 60_000;
-        let dir = temp_dir("battery-hours-quarters");
-        let history = History::open(&dir);
+        let tmp = temp_dir("battery-hours-quarters");
+        let dir = tmp.path();
+        let history = History::open(dir);
         let w = history.register_host(&local_record()).unwrap();
         // The hour before last is only in `tier_15m` (rolled down): charge 10..40 by
         // quarter, charging in the second. The last hour has its minutes.
