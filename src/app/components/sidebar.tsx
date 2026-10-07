@@ -6,6 +6,7 @@ import {
   useLayoutEffect,
   useRef,
 } from "react";
+import { KelvoMark } from "~/components/kelvo-mark";
 import { cn } from "~/lib/utils";
 
 /** Icon paths (24 x 24, 1.5 px stroke). */
@@ -202,8 +203,18 @@ export function Sidebar({
         data-sidebar-pill
         className="pointer-events-none absolute inset-x-2.5 top-0 h-[30px] rounded-control bg-selected opacity-0 shadow-[inset_0_0_0_1px_var(--color-border)] transition-transform duration-(--motion-fast) ease-out"
       />
-      {/* Room for the traffic lights over the overlay title bar; dragging it moves the window. */}
+      {/* Room for the traffic lights over the overlay title bar, then the app's
+          name; dragging either moves the window. */}
       <div aria-hidden data-tauri-drag-region className="h-[30px] shrink-0" />
+      <div
+        data-tauri-drag-region
+        className="mb-2 flex shrink-0 items-center gap-2.5 border-border-subtle border-b px-2 pt-0.5 pb-3"
+      >
+        <KelvoMark className="pointer-events-none size-5" />
+        <span className="pointer-events-none font-[620] text-[18px] leading-none tracking-[-0.02em]">
+          Kelvo
+        </span>
+      </div>
       {groups.map((g, gi) => (
         <ul
           key={g.id}

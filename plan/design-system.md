@@ -315,7 +315,7 @@ Components under `src/app/widgets/` are render-only. They take plain props and c
 | `Sidebar`, `SidebarItem` | Dashboard navigation with live values | no | `{ groups: { items: { route; label; icon; value?: string }[] }[]; active }` |
 | `MachineHeader` | Illustration plus spec grid | no | `{ hostInfo: HostInfo; uptimeMs; lastWakeMs }` |
 | `PopoverHeader`, `PopoverFooter` | App title, interval pill, pause, settings; CTA row and self-CPU readout | no | `{ hostName; uptimeMs; intervalMs; paused; onPause; onSettings }`, `{ selfCpuPct; onOpenDashboard; onActivity }` |
-| `KelvoMark` | The brand mark (4 x 4 heat grid in the CPU accent, `brand/kelvo-icon.svg`): popover header, onboarding title | no | `{ className }` |
+| `KelvoMark` | The brand mark (4 x 4 heat grid in the CPU accent, `brand/kelvo-icon.svg`): popover header, onboarding title, top of the dashboard sidebar | no | `{ className }` |
 | `TrayPreview` | Simulated menu bar showing a tray style | no | `{ style: TrayStyle; values: TrayValues; theme }` |
 | `TrayStyleOption` | Selectable card with TrayPreview | no | `{ style; title; description; recommended?: boolean; selected; onSelect }` |
 | `ModuleToggleList` | Module rows with swatch, description, switch | no | `{ modules: { id; label; description; enabled; available }[]; onToggle }` |
