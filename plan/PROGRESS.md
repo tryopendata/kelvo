@@ -74,6 +74,50 @@ Status values: Not started, In progress, Blocked (say on what), Done (with the v
 
 ## Log
 
+### 2026-10-07 (refactor pass)
+
+A DRY and library pass over Rust and TS with no intended behavior change, except as listed below.
+
+Rust:
+- `kelvo-store`'s writer is a `writer/` module. The three M15 roll-downs share one `roll_into` over a `Fold` trait, and interning has one `intern_id`. `clear_host`, `discard_from` and `trim_to_cap` walk one `HISTORY_TABLES` registry. A `sqlite_master` test fails when a host table is neither registered nor excluded.
+- `range_stats` and `fill_battery_hours` moved from the shell into the store. `floor_to`, `ceil_to` and `Tier::bucket_end` live in schema.
+- `engine.rs`, `nstat.rs`, `ioreport.rs` and `tray/model.rs` are split along their existing seams.
+- macOS IOKit and libdispatch FFI is declared once in collect, behind safe wrappers, and the engine and shell read through it. The shell's sysctl reads go through collect via the engine.
+- Poisoned locks are recovered by `kelvo_schema::lock`. That is schema's one non-data module, documented in `rules/rust.md`.
+- `tempfile` replaces the hand-rolled test temp dirs.
+- The engine's `ProcessView`, `ProcessSort` and `UsageKey` cross IPC directly (D-100), and the generated bindings are byte-identical.
+
+TS:
+- Shared helpers: `clamp01`, `ratio`, `percentOf`, `core/time-grid`, `core/format/clock` (hand-built tables, not Intl), `formatRpm`, marketing GB, `matchProcessQuery`, `countNoun`, `probeHistory`, `useNextBoundary`, `useRangeQuery`, `useOpenEdge` and `useElementSize`.
+- `SortHeader` and `ColumnDef` for the tables, with ProcessTable's columns as data. TanStack Table was evaluated and not adopted: ProcessTable is the only multi-column sort, and its freeze, null-last ordering and growOnly sizing would stay custom while the row model rebuilds about 800 rows a tick.
+- `MeterTrack` for the six bar meters.
+- Card `ariaLabel`/`asChild` and `LinkCard`; SectionCard options with a compact header; `SettingsPanel`.
+- Chart pieces: `WindowTicks`, percent and ceiling axes, `PLOT_INSET`, a shared tooltip shell and canvas theme helpers. The gallery-only HistoryChart was removed.
+- Radix `RadioGroup` for the tray-style picker and `AlertDialog` behind one `ConfirmDialog`.
+- `useWindowSeries` runs through `useRingBuckets`. `RowRing` was retired for a column scan.
+- The mock transport shares its command preamble and emitters.
+
+Visible changes:
+- Missing values show "—" everywhere.
+- Popover memory "used" follows the GB/GiB setting.
+- Fans read "RPM", and counts are grouped in en-US.
+- Bar meters have rounded ends, and a null share or charge shows an empty track. The popover battery bar previously drew full.
+- Confirm dialogs don't close on an outside click, and pressing their backdrop no longer clears a chart selection.
+- The tray-style radios take arrow keys.
+
+Not done:
+- Tier 5 of the plan: `fan.mode` codes, "Other apps" remainders, partial-coverage slack, `selfCpuAverage` and timeline merge rules still decided in TS. Each needs a decision first.
+- `d3-time` ticks, a `LiveAreaCard`, and deriving `Transport` from the bindings, which would drop its JSDoc and named types.
+
+Verified:
+- `make check` (872 Vitest tests; cargo workspace; perf_gates 7/7 on a quiet machine) and `make bindings-check` (no diff).
+- `bun run test:e2e`: 225 passed. The 5 failures (`shell-screens` scroll-to-top, and onboarding step 1 to 2 in chromium and webkit) also fail on 49c5e61.
+- Screenshots of each touched page at 900 and 1440 px against 49c5e61, in light and dark. Card headers match pixel for pixel; the bar-meter ends are the only intended visual difference.
+- Two code reviews, with findings fixed.
+- `live_power_state` and the `dump` example on this Mac.
+
+Not checked in the running app. Under parallel builds, `perf_gates` processes allocations per tick goes over budget on unchanged code; rerun alone before suspecting a regression.
+
 ### 2026-10-07 (range aggregates)
 
 The CPU, GPU, Memory and Disk pages work like the Network page (D-099): each chart is brushable, a totals strip shows average and peak (or peak used, or bytes) over the chart window or the selection, and a "<noun> by app" table ranks apps over the same range, expands to processes, searches and quits, with "Other apps" and "System and other" rows where figures add up. The engine's energy ring became a usage ring charged pro rata with covered time; `query_usage_by_app` and `query_series_stats` replace `query_energy_by_app` and `query_network_totals`, and Network's totals and Power's energy table use the shared components. GPU per process is sampled once per 10 s bucket outside Performance mode; IOKit ceilings rose to the measured 19.5 (tray-only) and 30.5 (window) calls per tick, and `make perf` measured 0.320% and 0.346% tray-only against 0.368% for main in the same sitting. Verified: engine and shell tests (pro-rata charging, sleep, memory peaks of many helpers, GPU coverage, remainders and clamping, zero-row filter, series stats through now), Vitest route tests per page (window list, brush, Esc, a click on another card clearing), Playwright brushing on each page, screenshots of each page plain and brushed plus the gallery. The 30 s comparison run in `make perf` reports "ticked 2 of 3 times" on main too; `shell-screens` scroll-to-top and the onboarding step 1 to 2 e2e tests fail on main as well. Not checked in the running app.
