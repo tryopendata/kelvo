@@ -355,13 +355,16 @@ impl Collector for FakeGpu {
         let s = self.0.lock().unwrap();
         s.probe.clone().unwrap_or(Probe::Supported(Vec::new()))
     }
-    fn sample(&mut self, _tick: &Tick, out: &mut SampleBuf) -> Result<(), CollectError> {
+    fn sample(&mut self, tick: &Tick, out: &mut SampleBuf) -> Result<(), CollectError> {
         let mut s = self.0.lock().unwrap();
         s.samples += 1;
+        let prev = s.last_ns.replace(tick.continuous_ns);
         if !std::mem::replace(&mut s.open, true) {
             return Ok(());
         }
-        out.set_process_gpu_measured();
+        // Shares of the wall time since the previous pass, as the real collector's.
+        let span_ns = prev.map_or(0, |p| tick.continuous_ns.saturating_sub(p));
+        out.set_process_gpu_measured(span_ns / 1_000_000);
         out.push_process_gpu(ProcessGpu {
             pid: 102,
             pct: 12.5,
@@ -376,6 +379,7 @@ impl Collector for FakeGpu {
         let mut s = self.0.lock().unwrap();
         s.releases += 1;
         s.open = false;
+        s.last_ns = None;
     }
 }
 

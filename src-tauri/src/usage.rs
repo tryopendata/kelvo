@@ -102,10 +102,13 @@ pub fn usage_by_app(
     }
 }
 
-/// Where the remainder's host series are read: the covered part of the usage range.
-pub fn remainder_range(e: &kelvo_engine::UsageByApp) -> Option<(i64, i64)> {
+/// Where the remainder's host series are read: the covered part of the usage range,
+/// `(from, to, cut)`. `cut` is the newest process sample, where the apps' sums stop, so
+/// the host series are cut there too rather than at now.
+pub fn remainder_range(e: &kelvo_engine::UsageByApp) -> Option<(i64, i64, i64)> {
     let from = e.since_ms?.max(e.from_ms);
-    (e.covered_ms > 0 && from < e.to_ms).then_some((from, e.to_ms))
+    let cut = e.latest_ms?;
+    (e.covered_ms > 0 && from < e.to_ms).then_some((from, e.to_ms, cut))
 }
 
 /// The host's series less the apps' totals, clamped at 0. Averages are compared with
@@ -322,10 +325,12 @@ mod tests {
             from_ms: 0,
             to_ms: 60_000,
             since_ms: Some(25_000),
-            covered_ms: 35_000,
+            latest_ms: Some(57_000),
+            covered_ms: 32_000,
             ..kelvo_engine::UsageByApp::default()
         };
-        assert_eq!(remainder_range(&e), Some((25_000, 60_000)));
+        // Cut where the apps' sums stop, not at now.
+        assert_eq!(remainder_range(&e), Some((25_000, 60_000, 57_000)));
         let never = kelvo_engine::UsageByApp { covered_ms: 0, ..e };
         assert_eq!(remainder_range(&never), None);
     }

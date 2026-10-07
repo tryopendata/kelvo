@@ -1205,9 +1205,8 @@ fn process_network_capability_follows_the_collectors_probe() {
     assert!(after.revision > before.revision);
 }
 
-/// GPU time works like network rates and independently of them: sampled on the process
-/// ticks only while a view asks, joined by pid (0 for a process without GPU time), no
-/// value on the baseline, released when the interest ends.
+/// Outside Performance mode the GPU collector is held with nothing asking, and GPU time
+/// joins the process samples for per-app GPU over a range (D-099).
 #[test]
 fn gpu_shares_join_every_process_sample_outside_performance_mode() {
     let (procs, ph) = fake(
@@ -1245,6 +1244,52 @@ fn gpu_shares_join_every_process_sample_outside_performance_mode() {
     assert!(gpu_of.iter().skip(1).all(|b| b.iter().all(Option::is_some)));
 }
 
+/// With 1 s process rows (the Processes page) GPU still joins at most once per 10 s usage
+/// bucket, and each GPU batch says the wall time its shares are of (D-099).
+#[test]
+fn gpu_joins_fast_process_rows_once_per_usage_bucket() {
+    let (procs, ph) = fake(
+        "processes",
+        Cadence::Adaptive {
+            idle_ms: 10_000,
+            interest: Interest::Processes,
+        },
+        &[Module::Cpu],
+        &["self.cpu"],
+    );
+    ph.0.lock().unwrap().processes = 3;
+    let (gpu, gh) = fake_gpu();
+    let mut h = Harness::new("gpu-paced", vec![procs, gpu], &settings_all_on());
+    h.visible();
+    h.ctl.set_network_history(false);
+    h.ctl.set_process_interest(Some(1_000));
+    h.ticks(60);
+    let spans: Vec<Option<i64>> = h
+        .drain()
+        .into_iter()
+        .filter_map(|m| match m {
+            BusMsg::Processes(b) => Some(b.gpu_span_ms),
+            _ => None,
+        })
+        .collect();
+    let (samples, releases) = {
+        let g = gh.lock().unwrap();
+        (g.samples, g.releases)
+    };
+    assert!(ph.samples() >= 50, "1 s rows: {}", ph.samples());
+    assert!((5..=7).contains(&samples), "about once per 10 s: {samples}");
+    assert_eq!(releases, 0, "held between samples");
+    let measured: Vec<i64> = spans.into_iter().flatten().collect();
+    assert!(!measured.is_empty());
+    assert!(
+        measured.iter().all(|&ms| (9_000..=11_000).contains(&ms)),
+        "each GPU batch covers its own ~10 s: {measured:?}"
+    );
+}
+
+/// In Performance mode GPU time works like network rates and independently of them:
+/// sampled on the process ticks only while a view asks, joined by pid (0 for a process
+/// without GPU time), no value on the baseline, released when the interest ends.
 #[test]
 fn in_performance_mode_gpu_shares_join_process_rows_only_while_a_view_asks() {
     let (procs, ph) = fake(

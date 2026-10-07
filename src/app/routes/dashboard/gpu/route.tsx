@@ -1,4 +1,5 @@
 import { formatPercent } from "@core/format";
+import type { ProcessView } from "@core/process-interest";
 import { PageHeader } from "~/components/page-header";
 import {
   UsageAppsCard,
@@ -7,11 +8,27 @@ import {
 import { WindowControl } from "~/components/window-control";
 import { useChartWindow } from "~/hooks/use-chart-window";
 import { useHostRecord } from "~/hooks/use-host-record";
-import { useProcessGpu } from "~/hooks/use-process-interest";
+import {
+  useProcessGpu,
+  useProcessInterest,
+} from "~/hooks/use-process-interest";
 import { BrushProvider } from "~/stores/brush-store";
 import { FrequencyCard } from "./_components/frequency-card";
 import { PowerCard } from "./_components/power-card";
 import { UsageCard } from "./_components/usage-card";
+
+/**
+ * GPU time on the idle cadence's process samples, no rows: in Performance
+ * mode GPU per process is measured only while a view asks, so the table has
+ * figures for the time this page is open (D-085, D-099). Outside it the
+ * engine measures GPU anyway and this adds nothing.
+ */
+const GPU_VIEW: ProcessView = {
+  limit: 0,
+  sort: ["gpu"],
+  period_ms: 10_000,
+  gpu: true,
+};
 
 const TABLE: UsageTableConfig = {
   by: "gpu",
@@ -45,6 +62,7 @@ const TABLE: UsageTableConfig = {
 export default function GpuRoute() {
   const info = useHostRecord()?.info;
   const perProcess = useProcessGpu();
+  useProcessInterest(perProcess ? GPU_VIEW : null);
   const windowMs = useChartWindow()?.windowMs ?? null;
   return (
     <BrushProvider>

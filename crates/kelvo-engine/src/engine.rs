@@ -282,6 +282,8 @@ pub struct Engine {
     /// When GPU time next joins a process sample with no GPU view open (D-099),
     /// `continuous_ns`: once per usage bucket, not on every 1 s process tick.
     gpu_always_next_ns: u64,
+    /// The wall time this tick's GPU shares are of, for the process batch (D-099).
+    proc_gpu_span_ms: Option<i64>,
     ticks: u64,
     store_errors: RateLimit,
     detect: Detectors,
@@ -366,6 +368,7 @@ impl Engine {
             last_proc_bucket: None,
             proc_every: Every::new(0),
             gpu_always_next_ns: 0,
+            proc_gpu_span_ms: None,
             ticks: 0,
             store_errors: RateLimit::default(),
             detect,

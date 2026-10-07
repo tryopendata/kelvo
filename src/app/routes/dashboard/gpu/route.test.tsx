@@ -40,8 +40,15 @@ describe("GPU page over a range (D-085, D-099)", () => {
         /Avg · 5 min[\d.]+%Peak · 5 min\d+%/
       )
     );
-    // The table reads the engine's ring: no view asks for live GPU rows.
-    expect(calls(transport.calls, "set_process_interest")).toEqual([]);
+    // The table reads the engine's ring. The page asks only for GPU time on
+    // the idle process samples, no rows, so Performance mode measures it.
+    expect(calls(transport.calls, "set_process_interest")).toEqual([
+      [
+        true,
+        { limit: 0, sort: ["gpu"], period_ms: 10_000, gpu: true },
+        expect.any(Number),
+      ],
+    ]);
   });
 
   it("a brushed range scopes the table", async () => {

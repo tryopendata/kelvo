@@ -68,6 +68,9 @@ impl LiveFrame {
 pub struct ProcessBatch {
     pub ts_ms: i64,
     pub rows: Vec<ProcessSample>,
+    /// The wall time the rows' `gpu_pct` shares are of, ms, when GPU was measured: since
+    /// the GPU collector's previous pass, which can span several process samples (D-099).
+    pub gpu_span_ms: Option<i64>,
 }
 
 /// Engine state the UI shows, published on every change.

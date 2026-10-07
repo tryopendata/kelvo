@@ -109,11 +109,12 @@ struct Use {
 }
 
 impl Use {
-    fn of(r: &ProcessSample) -> Self {
+    /// A row's amounts. Its GPU share is of `gpu_secs`, the GPU sample's own span.
+    fn of(r: &ProcessSample, gpu_secs: f64) -> Self {
         let secs = f64::from(r.interval_s.max(0.0));
         Self {
             cpu_s: f64::from(r.cpu_pct) / 100.0 * secs,
-            gpu_s: f64::from(r.gpu_pct.unwrap_or(0.0)) / 100.0 * secs,
+            gpu_s: f64::from(r.gpu_pct.unwrap_or(0.0)) / 100.0 * gpu_secs,
             read_b: f64::from(r.disk_read_bps) * secs,
             write_b: f64::from(r.disk_write_bps) * secs,
             energy_j: f64::from(r.energy_j),
@@ -126,6 +127,14 @@ impl Use {
         self.read_b += o.read_b;
         self.write_b += o.write_b;
         self.energy_j += o.energy_j;
+    }
+
+    /// Scaled by `f`, but GPU by `g`: GPU is charged over its own span.
+    fn split(&self, f: f64, g: f64) -> Self {
+        Self {
+            gpu_s: self.gpu_s * g,
+            ..self.scaled(f)
+        }
     }
 
     fn scaled(&self, f: f64) -> Self {
@@ -307,6 +316,8 @@ pub struct UsageByApp {
     /// Buckets ending at or before this are final: the next sample's interval starts
     /// at the newest one, so it charges only later time. `None` before any batch.
     pub complete_to_ms: Option<i64>,
+    /// The newest batch: no process time after it is counted yet.
+    pub latest_ms: Option<i64>,
     /// Time inside the range a process sample covered, ms. Averages divide by this; 0
     /// means nothing was measured, not zero use.
     pub covered_ms: i64,
@@ -350,8 +361,21 @@ struct AppBatch {
 }
 
 impl UsageRing {
-    /// Adds one process batch taken at `ts_ms`.
+    /// Adds one process batch taken at `ts_ms`, its GPU shares over the batch's span.
+    #[cfg(test)]
     pub fn push(&mut self, ts_ms: i64, rows: &[ProcessSample]) {
+        self.push_with_gpu_span(ts_ms, rows, None);
+    }
+
+    /// Adds one process batch taken at `ts_ms`. `gpu_span_ms` is the wall time the rows'
+    /// GPU shares are of (the GPU collector's own interval, which can cover several
+    /// process samples, D-099); `None` takes the batch's span.
+    pub fn push_with_gpu_span(
+        &mut self,
+        ts_ms: i64,
+        rows: &[ProcessSample],
+        gpu_span_ms: Option<i64>,
+    ) {
         if rows.is_empty() || self.latest_ms.is_some_and(|l| ts_ms < l) {
             // A baseline batch (after a wake) has no rows. An older batch only arrives
             // after the clock stepped back; the engine drops what it overlaps first, so
@@ -365,15 +389,22 @@ impl UsageRing {
             .unwrap_or(0)
             .min(USAGE_KEEP_MS);
         let start = ts_ms - span_ms;
+        let gpu = rows.iter().any(|r| r.gpu_pct.is_some());
+        let gpu_span = if gpu {
+            gpu_span_ms.unwrap_or(span_ms).clamp(0, USAGE_KEEP_MS)
+        } else {
+            0
+        };
+        let gpu_start = ts_ms - gpu_span;
         self.prune(ts_ms - USAGE_KEEP_MS);
         self.extend_to(
-            bucket_of(start.max(ts_ms - USAGE_KEEP_MS)),
+            bucket_of(start.min(gpu_start).max(ts_ms - USAGE_KEEP_MS)),
             bucket_of(ts_ms),
         );
         let front = self.buckets.front().map_or(ts_ms, |b| b.start);
         self.since_ms.get_or_insert(start.max(front));
         self.latest_ms = Some(ts_ms);
-        let gpu = rows.iter().any(|r| r.gpu_pct.is_some());
+        let gpu_secs = gpu_span as f64 / 1_000.0;
 
         // Sum the batch per app and pick the processes kept, before touching buckets.
         let mut total = Use::default();
@@ -387,7 +418,7 @@ impl UsageRing {
         let rate = |u: &Use| u.scaled(if secs > 0.0 { 1.0 / secs } else { 0.0 });
         let last = bucket_of((ts_ms - 1).max(start));
         for r in rows {
-            let used = Use::of(r);
+            let used = Use::of(r, gpu_secs);
             total.add(&used);
             let app_name = r.app.clone().unwrap_or_else(|| Arc::clone(&r.name));
             let app = self.app_id(app_name, last);
@@ -430,50 +461,56 @@ impl UsageRing {
         );
 
         // Charge each bucket its share of the batch's interval.
-        if span_ms > 0 {
-            self.charge(start, ts_ms, gpu, &total, &kept_apps, &kept);
+        if span_ms > 0 || gpu_span > 0 {
+            self.charge(start, gpu_start, ts_ms, &total, &kept_apps, &kept);
         }
         self.scratch_apps = apps;
         self.scratch_kept = kept;
         self.scratch_kept_apps = kept_apps;
     }
 
-    /// Adds a batch over `[start, ts_ms)` to the buckets it overlaps, each in proportion
-    /// to the time it covers.
+    /// Adds a batch over `[start, ts_ms)`, and its GPU over `[gpu_start, ts_ms)`, to the
+    /// buckets they overlap, each in proportion to the time it covers.
     fn charge(
         &mut self,
         start: i64,
+        gpu_start: i64,
         ts_ms: i64,
-        gpu: bool,
         total: &Use,
         apps: &[(u32, AppBatch)],
         kept: &[(u32, Use, u64)],
     ) {
-        let span_ms = ts_ms - start;
+        let overlap = |b: i64, from: i64| {
+            let lo = b.max(from);
+            let hi = (b + USAGE_BUCKET_MS).min(ts_ms);
+            (hi - lo).max(0) as f64
+        };
+        let part = |ms: f64, span: i64| if span > 0 { ms / span as f64 } else { 0.0 };
         for b in self.buckets.iter_mut() {
-            let lo = b.start.max(start);
-            let hi = (b.start + USAGE_BUCKET_MS).min(ts_ms);
-            if hi <= lo {
+            let ms = overlap(b.start, start);
+            let gpu_ms = overlap(b.start, gpu_start);
+            if ms <= 0.0 && gpu_ms <= 0.0 {
                 continue;
             }
-            let ms = (hi - lo) as f64;
-            let f = ms / span_ms as f64;
+            let (f, g) = (part(ms, ts_ms - start), part(gpu_ms, ts_ms - gpu_start));
             b.covered_ms += ms as f32;
-            if gpu {
-                b.gpu_covered_ms += ms as f32;
-            }
-            b.total.add(&total.scaled(f));
+            b.gpu_covered_ms += gpu_ms as f32;
+            b.total.add(&total.split(f, g));
             for (id, a) in apps {
                 let s = slot(&mut b.apps, *id);
-                s.used.add(&a.used.scaled(f));
-                s.mem_byte_s += (a.mem_bytes as f64 * ms / 1_000.0) as f32;
-                s.present_ms += ms as f32;
-                s.mem_peak_kib = s.mem_peak_kib.max(kib(a.mem_bytes));
+                s.used.add(&a.used.split(f, g));
+                if ms > 0.0 {
+                    s.mem_byte_s += (a.mem_bytes as f64 * ms / 1_000.0) as f32;
+                    s.present_ms += ms as f32;
+                    s.mem_peak_kib = s.mem_peak_kib.max(kib(a.mem_bytes));
+                }
             }
             for (id, used, mem) in kept {
                 let s = slot(&mut b.procs, *id);
-                s.used.add(&used.scaled(f));
-                s.mem_peak_kib = s.mem_peak_kib.max(kib(*mem));
+                s.used.add(&used.split(f, g));
+                if ms > 0.0 {
+                    s.mem_peak_kib = s.mem_peak_kib.max(kib(*mem));
+                }
             }
         }
     }
@@ -767,6 +804,7 @@ impl UsageRing {
             to_ms: to,
             since_ms: self.since_ms,
             complete_to_ms: latest.map(|l| floor_to(l, USAGE_BUCKET_MS)),
+            latest_ms: latest,
             covered_ms: covered_ms.round() as i64,
             gpu_covered_ms: gpu_covered_ms.round() as i64,
             total: UsageTotal {
@@ -1013,6 +1051,29 @@ mod tests {
         );
         let none = ring.by_app(T0 + 10_000, T0 + 30_000, UsageKey::Cpu, 5);
         assert_eq!(none.apps[0].gpu_avg_pct, None, "never measured, not 0%");
+    }
+
+    #[test]
+    fn gpu_joining_every_tenth_batch_is_charged_over_its_own_span() {
+        // 1 s process rows; GPU joins every tenth with a share of the 10 s since the
+        // previous GPU pass (D-099).
+        let mut ring = UsageRing::default();
+        for i in 1..=60 {
+            let mut p = busy(1, "Game", 10.0, 1.0);
+            let span = (i % 10 == 0).then(|| {
+                p.gpu_pct = Some(40.0);
+                10_000
+            });
+            ring.push_with_gpu_span(T0 + i * 1_000, &[p], span);
+        }
+        let r = ring.by_app(T0, T0 + 60_000, UsageKey::Gpu, 5);
+        assert_eq!(r.covered_ms, 60_000);
+        assert_eq!(r.gpu_covered_ms, 60_000, "GPU covered the whole minute");
+        assert_eq!(r.apps[0].gpu_avg_pct.map(|v| v.round()), Some(40.0));
+        // One bucket alone: its own GPU, not a tenth of it.
+        let one = ring.by_app(T0 + 20_000, T0 + 30_000, UsageKey::Gpu, 5);
+        assert_eq!(one.gpu_covered_ms, 10_000);
+        assert_eq!(one.apps[0].gpu_avg_pct.map(|v| v.round()), Some(40.0));
     }
 
     #[test]

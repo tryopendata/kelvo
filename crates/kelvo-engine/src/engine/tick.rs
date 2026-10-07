@@ -266,6 +266,10 @@ impl Engine {
             self.primary_iface = primary.clone();
             self.publish_status();
         }
+        self.proc_gpu_span_ms = self
+            .buf
+            .process_gpu_span_ms()
+            .map(|ms| i64::try_from(ms).unwrap_or(i64::MAX));
         if self.buf.processes().is_empty() {
             Vec::new()
         } else {
@@ -556,6 +560,7 @@ impl Engine {
             .publish(BusMsg::Processes(Arc::new(ProcessBatch {
                 ts_ms: ts,
                 rows: procs,
+                gpu_span_ms: self.proc_gpu_span_ms,
             })));
     }
 }

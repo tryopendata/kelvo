@@ -267,11 +267,12 @@ pub async fn query_usage_by_app(
         ]
         .map(str::to_owned);
         // The remainder is best effort: without a readable series there is none.
-        let stats = crate::usage::remainder_range(&usage).and_then(|(from, to)| {
+        let stats = crate::usage::remainder_range(&usage).and_then(|(from, to, cut)| {
             let recent_start = recent_from(from);
+            let now_ms = kelvo_engine::wall_ms().min(cut);
             state
                 .history
-                .series_stats(host, &metrics, from, to, kelvo_engine::wall_ms(), || {
+                .series_stats(host, &metrics, from, to, now_ms, || {
                     entry.recent_rows(host, recent_start, to)
                 })
                 .ok()

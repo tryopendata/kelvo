@@ -14,6 +14,45 @@ async function subscribe(
 }
 
 describe("mock transport", () => {
+  it("in Performance mode GPU per process is measured only while a view asks", async () => {
+    const t = createMockTransport({ now: () => NOW });
+    const gpuMs = async () => {
+      const r = await t.queryUsageByApp(
+        MOCK_HOST_ID,
+        NOW - 60_000,
+        NOW,
+        "gpu",
+        200
+      );
+      return r.status === "ok" ? r.data.gpu_covered_ms : null;
+    };
+    expect(await gpuMs()).toBeGreaterThan(0);
+    await t.updateSettings({ sampling: { performance_mode: true } });
+    expect(await gpuMs()).toBe(0);
+    await t.setProcessInterest(
+      MOCK_HOST_ID,
+      true,
+      { limit: 0, sort: ["gpu"], period_ms: 10_000, gpu: true },
+      null
+    );
+    expect(await gpuMs()).toBeGreaterThan(0);
+  });
+
+  it("series stats refuse labelled and unknown metrics, as Rust does", async () => {
+    const t = createMockTransport({ now: () => NOW });
+    const ask = (m: string) =>
+      t.querySeriesStats(MOCK_HOST_ID, [m], NOW - 60_000, NOW);
+    expect((await ask("cpu.total")).status).toBe("ok");
+    expect(await ask("cpu.load")).toMatchObject({
+      status: "error",
+      error: { kind: "invalid_argument" },
+    });
+    expect(await ask("cpu.typo")).toMatchObject({
+      status: "error",
+      error: { kind: "invalid_argument" },
+    });
+  });
+
   it("sends caps, status, layout, then backfill (D-049)", async () => {
     const { msgs, sub } = await subscribe();
     expect(msgs.map((m) => m.kind)).toEqual([
