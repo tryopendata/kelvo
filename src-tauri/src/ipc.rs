@@ -14,6 +14,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::process_signal::SignalRefusal;
 
+/// Engine types the webview takes as they are: process views (`set_process_interest`)
+/// and the usage sort key (`query_usage_by_app`). They stay in the engine, which a
+/// headless agent shares (D-100).
+pub use kelvo_engine::{ProcessSort, ProcessView, UsageKey};
+
 /// A millisecond epoch timestamp passed as a plain JS `number` (D-039).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(transparent)]
@@ -212,56 +217,6 @@ pub struct LiveProcess {
     /// rule `process_signal` checks, with Kelvo's own processes from the self-CPU
     /// collector's list (D-092).
     pub refusal: Option<SignalRefusal>,
-}
-
-/// How a window wants process rows (`set_process_interest`).
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
-pub struct ProcessView {
-    /// Rows per sort key: the batch is the union of the top `limit` processes by each
-    /// key in `sort`. `null` sends every readable process (the Processes table).
-    pub limit: Option<u16>,
-    /// The keys the window ranks by. Empty means CPU.
-    pub sort: Vec<ProcessSort>,
-    /// At most one batch per this many ms (`null`: every sample, each base tick). The
-    /// collector itself slows down to the shortest period any visible window asks for.
-    pub period_ms: Option<u32>,
-    /// The window shows per-process network rates. While a visible window does, the host
-    /// samples NetworkStatistics on the process ticks; otherwise it holds nothing open
-    /// and rows carry `null` rates (D-081).
-    #[serde(default)]
-    pub network: bool,
-    /// The window shows per-process GPU time. While a visible window does, the host reads
-    /// the GPU's IORegistry clients on the process ticks; otherwise rows carry `null`.
-    #[serde(default)]
-    pub gpu: bool,
-    /// The window shows the TCP ports processes listen on. While a visible window does,
-    /// the host reads each process's sockets on the process ticks (each process at most
-    /// every 5 s); otherwise rows carry `null`.
-    #[serde(default)]
-    pub ports: bool,
-}
-
-/// A descending sort key for [`ProcessView`].
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
-#[serde(rename_all = "snake_case")]
-pub enum ProcessSort {
-    Cpu,
-    Memory,
-    Threads,
-    Wakeups,
-    Energy,
-    DiskRead,
-    DiskWrite,
-    /// Read plus write.
-    DiskTotal,
-    /// Network receive rate. Rows without a rate rank last.
-    NetRx,
-    /// Network send rate.
-    NetTx,
-    /// Receive plus send.
-    NetTotal,
-    /// Share of the GPU. Rows without a value rank last.
-    Gpu,
 }
 
 /// What `subscribe_live` did before returning.
@@ -572,22 +527,6 @@ pub struct NetworkByApp {
     /// or history from before per-app bytes counted only the reported interfaces.
     /// `system_*` is then 0 and the parts exceed the total.
     pub clamped: bool,
-}
-
-/// What `query_usage_by_app` sorts apps by (D-099).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
-#[serde(rename_all = "snake_case")]
-pub enum UsageKey {
-    /// Average CPU.
-    Cpu,
-    /// Average GPU.
-    Gpu,
-    /// Peak footprint.
-    Memory,
-    /// Bytes read plus written.
-    Disk,
-    /// Joules.
-    Energy,
 }
 
 /// One process's use over a `query_usage_by_app` range: an expanded app row. Kept only

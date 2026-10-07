@@ -1,31 +1,42 @@
 //! Process view shaping: which rows of a [`ProcessBatch`](crate::ProcessBatch) a consumer
 //! asked for (how many, ranked by what, how often). Lives next to the [`LiveHub`]
 //! (crate::LiveHub) so the app's live channels and a headless agent (v4) cut the process
-//! table the same way; the app shell maps [`ProcessView`] from its IPC type and the
-//! selected rows to its own.
+//! table the same way. The app shell takes [`ProcessView`] over IPC as it is
+//! (`set_process_interest`, D-100) and maps the selected rows to its own.
 
 use kelvo_collect::ProcessSample;
+use serde::{Deserialize, Serialize};
 
-/// How a consumer wants process rows.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+/// How a window wants process rows (`set_process_interest`).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 pub struct ProcessView {
     /// Rows per sort key: the batch is the union of the top `limit` processes by each
-    /// key in `sort`. `None` is every readable process.
+    /// key in `sort`. `null` sends every readable process (the Processes table).
     pub limit: Option<u16>,
-    /// The keys to rank by. Empty means CPU.
+    /// The keys the window ranks by. Empty means CPU.
     pub sort: Vec<ProcessSort>,
-    /// At most one batch per this many ms (`None`: every sample).
+    /// At most one batch per this many ms (`null`: every sample, each base tick). The
+    /// collector itself slows down to the shortest period any visible window asks for.
     pub period_ms: Option<u32>,
-    /// The consumer shows per-process network rates (D-081).
+    /// The window shows per-process network rates. While a visible window does, the host
+    /// samples NetworkStatistics on the process ticks; otherwise it holds nothing open
+    /// and rows carry `null` rates (D-081).
+    #[serde(default)]
     pub network: bool,
-    /// The consumer shows per-process GPU time.
+    /// The window shows per-process GPU time. While a visible window does, the host reads
+    /// the GPU's IORegistry clients on the process ticks; otherwise rows carry `null`.
+    #[serde(default)]
     pub gpu: bool,
-    /// The consumer shows the ports processes listen on.
+    /// The window shows the TCP ports processes listen on. While a visible window does,
+    /// the host reads each process's sockets on the process ticks (each process at most
+    /// every 5 s); otherwise rows carry `null`.
+    #[serde(default)]
     pub ports: bool,
 }
 
 /// A descending sort key for [`ProcessView`].
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
 pub enum ProcessSort {
     Cpu,
     Memory,
@@ -36,11 +47,13 @@ pub enum ProcessSort {
     DiskWrite,
     /// Read plus write.
     DiskTotal,
+    /// Network receive rate. Rows without a rate rank last.
     NetRx,
+    /// Network send rate.
     NetTx,
     /// Receive plus send.
     NetTotal,
-    /// Share of the GPU.
+    /// Share of the GPU. Rows without a value rank last.
     Gpu,
 }
 

@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU32, Ordering};
 use std::sync::mpsc;
 use std::time::Duration;
 
-use kelvo_engine::{Bus, FrameLayout, LiveFrame, ProcessBatch};
+use kelvo_engine::{Bus, FrameLayout, LiveFrame, ProcessBatch, ProcessSort};
 use kelvo_schema::{Labels, MetricId, SeriesKey};
 use uuid::Uuid;
 

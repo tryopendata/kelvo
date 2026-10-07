@@ -256,7 +256,7 @@ pub async fn query_usage_by_app(
         let usage = entry.usage_by_app(
             from_ms.0,
             to_ms.0,
-            crate::usage::engine_key(by),
+            by,
             usize::try_from(limit).unwrap_or(usize::MAX),
         );
         let metrics = [
