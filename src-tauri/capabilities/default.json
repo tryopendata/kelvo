@@ -1,0 +1,19 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Capability for the popover, dashboard and onboarding windows",
+  "windows": ["popover", "dashboard", "onboarding"],
+  "permissions": [
+    "core:default",
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [
+        {
+          "url": "https://github.com/tryopendata/kelvo/issues/new?labels=sensors&title=*"
+        }
+      ]
+    },
+    "core:window:allow-start-dragging",
+    "core:window:allow-close"
+  ]
+}

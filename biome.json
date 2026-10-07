@@ -1,0 +1,157 @@
+{
+  "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true
+  },
+  "files": {
+    "includes": [
+      "**",
+      "!**/src/core/generated",
+      "!**/dist",
+      "!**/target",
+      "!**/src-tauri/gen",
+      "!**/public",
+      "!**/plan",
+      "!**/coverage",
+      "!**/playwright-report",
+      "!**/test-results"
+    ]
+  },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 80
+  },
+  "css": {
+    "parser": { "tailwindDirectives": true }
+  },
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "double",
+      "semicolons": "always",
+      "trailingCommas": "es5"
+    }
+  },
+  "assist": {
+    "enabled": true,
+    "actions": { "source": { "organizeImports": "on" } }
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "preset": "recommended",
+      "a11y": "error",
+      "correctness": {
+        "useExhaustiveDependencies": "error",
+        "useHookAtTopLevel": "error",
+        "noUnusedVariables": {
+          "level": "error",
+          "options": { "ignoreRestSiblings": true }
+        },
+        "noUnusedImports": "error"
+      },
+      "nursery": {
+        "useSortedClasses": {
+          "level": "error",
+          "fix": "safe",
+          "options": { "functions": ["cn", "cva", "clsx"] }
+        }
+      }
+    }
+  },
+  "overrides": [
+    {
+      "includes": ["src/core/**", "!src/core/generated/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "paths": {
+                  "react": "src/core/ has no React imports.",
+                  "react-dom": "src/core/ has no React imports.",
+                  "react-dom/client": "src/core/ has no React imports.",
+                  "react/jsx-runtime": "src/core/ has no React imports.",
+                  "@tanstack/react-query": "Define query keys and fetchers in core; the hooks live in src/app/.",
+                  "zustand/react": "Use zustand/vanilla in core; bind to React in src/app/."
+                },
+                "patterns": [
+                  {
+                    "group": ["~/**"],
+                    "message": "src/core/ must not import the app layer (~/)."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["src/app/**", "!src/app/widgets/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["@tauri-apps/**"],
+                    "message": "Go through @core/transport so the mock transport can stand in."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": [
+        "src/app/widgets/**",
+        "!src/app/widgets/**/*.test.ts",
+        "!src/app/widgets/**/*.test.tsx"
+      ],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "paths": {
+                  "@core/transport": "Widgets are render-only: take data as props; subscribe in the route or a hook.",
+                  "react-router": "Widgets take hrefs/callbacks as props.",
+                  "@tanstack/react-query": "Widgets take data as props; query in the route or a hook.",
+                  "zustand": "Widgets take state as props."
+                },
+                "patterns": [
+                  {
+                    "group": ["@core/transport/**"],
+                    "message": "Widgets are render-only: take data as props; subscribe in the route or a hook."
+                  },
+                  {
+                    "group": ["@tauri-apps/**"],
+                    "message": "Widgets never call Tauri. Take a callback prop."
+                  },
+                  {
+                    "group": ["zustand/**", "~/stores/**", "**/stores/**"],
+                    "message": "Widgets take state as props."
+                  },
+                  {
+                    "group": ["~/routes/**"],
+                    "message": "Widgets must not depend on a route."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

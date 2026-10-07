@@ -1,0 +1,75 @@
+/*
+ * Motion tokens (design-system.md "Motion", opendata DESIGN.md §10). Split by
+ * cost, not speed: per-tick tweens run every second a window is visible;
+ * everything else runs once per interaction and costs nothing at idle.
+ * Performance mode (D-088: the setting, or macOS Low Power Mode) turns all of
+ * it off, like Reduce Motion.
+ *
+ *   --motion-tick       150ms  per-tick tweens: chart scroll, bar scaleX, ring
+ *                              dashoffset, core-tile alpha
+ *   --motion-count      450ms  a headline number counting to its next value
+ *                              (`NumberTicker`, read from JS)
+ *   --motion-fast       150ms  hover/press feedback, toggles, segmented thumb,
+ *                              menus, the sidebar indicator
+ *   --motion-entry      300ms  card hover glow, dialogs
+ *   --motion-enter      280ms  one-shot entrance (lift) when a surface appears
+ *   --motion-stagger     30ms  delay step between entering items, index capped
+ *   --motion-crossfade  150ms  keyed state swap, threshold colour change
+ *   --ease-out          decelerating, no overshoot (also drives the `ease-out` utility)
+ *   --ease-tick         gentler decelerate for per-tick tweens; expo-out does
+ *                       90% of the move in the first third, which reads as a jump
+ *
+ * Durations are 0ms unless the reader allows motion and Performance mode is
+ * off, so a transition written outside the media block still ends up instant.
+ * Transitions themselves also live inside `prefers-reduced-motion:
+ * no-preference`; there is no JS branch.
+ */
+
+@theme static {
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-tick: cubic-bezier(0.33, 1, 0.68, 1);
+  /* Stock `transition-*` utilities (used by the shadcn primitives) follow the
+     tokens too, so they go instant under reduced motion. */
+  --default-transition-duration: var(--motion-fast);
+  --default-transition-timing-function: var(--ease-out);
+}
+
+:root {
+  --motion-tick: 0ms;
+  --motion-count: 0ms;
+  --motion-fast: 0ms;
+  --motion-entry: 0ms;
+  --motion-enter: 0ms;
+  --motion-stagger: 0ms;
+  --motion-crossfade: 0ms;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  :root {
+    --motion-tick: 150ms;
+    --motion-count: 450ms;
+    --motion-fast: 150ms;
+    --motion-entry: 300ms;
+    --motion-enter: 280ms;
+    --motion-stagger: 30ms;
+    --motion-crossfade: 150ms;
+  }
+}
+
+/* Performance mode: Rust sets `data-performance` on the window root (D-088).
+   Every token goes to 0, whatever the reader's motion preference. Sonner
+   animates toasts with its own durations, so they stop here too. */
+:root[data-performance] {
+  --motion-tick: 0ms;
+  --motion-count: 0ms;
+  --motion-fast: 0ms;
+  --motion-entry: 0ms;
+  --motion-enter: 0ms;
+  --motion-stagger: 0ms;
+  --motion-crossfade: 0ms;
+}
+
+:root[data-performance] [data-sonner-toast] {
+  transition: none;
+  animation: none;
+}

@@ -1,0 +1,9 @@
+# `clippy::unwrap_used` is denied in non-test code (see [lints] in each
+# Cargo.toml and .claude/rules/rust.md). Tests may unwrap freely.
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-panic-in-tests = true
+
+# The engine runs on a utility-QoS queue at 1 Hz; flag large stack copies
+# early rather than in a profile.
+too-large-for-stack = 4096

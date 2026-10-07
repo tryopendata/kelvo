@@ -1,0 +1,174 @@
+{
+  "_doc": "Performance thresholds checked by automated gates. Raising a threshold needs a decision entry in plan/decisions.md (D-060). frontend: tests/e2e/perf-gate.spec.ts, Chromium main-thread time (CDP Performance.getMetrics: ScriptDuration + LayoutDuration + RecalcStyleDuration) per second of wall time, mock transport at 1 Hz; set from measurement plus headroom.",
+  "frontend": {
+    "warmupMs": 5000,
+    "sampleMs": 20000,
+    "longTaskMs": 50,
+    "popover": {
+      "mainThreadMsPerSec": 40
+    },
+    "overview": {
+      "mainThreadMsPerSec": 50
+    },
+    "cpu1h": {
+      "mainThreadMsPerSec": 35
+    },
+    "gpu1h": {
+      "mainThreadMsPerSec": 35
+    },
+    "power1h": {
+      "mainThreadMsPerSec": 35
+    },
+    "dashboardOpen": {
+      "_doc": "First open of the dashboard on the wide-layout mock (170 series, 3,600 rows): no long task over longTaskMs while backfill_earlier chunks fill the ring, and the CPU 1 h chart spans the hour within fillWithinMs (D-066).",
+      "longTaskMs": 50,
+      "fillWithinMs": 10000
+    },
+    "hiddenResume": {
+      "_doc": "Dashboard shown again after half an hour hidden, wide-layout mock: the channel resumes with the 1,800 missed rows in backfill chunks of at most 600 (review #5, D-072). No long task over longTaskMs from the resume on, and the CPU 1 h line has no hole.",
+      "longTaskMs": 50
+    }
+  },
+  "engine": {
+    "_doc": "Engine gates (D-062), crates/kelvo-engine/tests/perf_gates.rs, real macOS collectors on the fake ticker, at 1 s with a window open and 2 s tray-only (D-094). allocsPerTick: Rust heap allocations per tick in steady state (after warmupTicks), engine core and per collector (_default for any collector not named); CF/IOKit mallocs are not seen. callsPerTick: OS calls per tick by API family (kelvo_collect::calls), libproc per listed process. store: rows, payload bytes and bytes appended to the WAL per hour in tray-only mode at the default commit interval, extrapolated from a run of `minutes` (WAL: D-070). perf: release engine CPU from `make perf` (scripts/perf.sh, getrusage, percent of one core), tray-only with the 1 s setting (the engine ticks at the background's 2 s since D-094; the baseline below is from the 1 s tick until re-measured), runs one at a time; baseline is the highest of the D-067 measurements, and a run more than regressionPct over it fails twice in a row. regressionPct is 30, not the coalition's 10, because identical engine code measures 0.15 to 0.38 across sittings and up to 1.5x within one (D-075). Measured on the dev M3 Max on 2026-10-05; each ceiling is the measurement plus headroom, see D-062 and D-067 for the numbers. windowGpu (D-085): the per-process GPU walk makes three IOKit calls per GPU user client (two property reads and the registry id) plus the iterator validity check, so its iokit ceiling follows how many processes hold the GPU (measured 277 per tick in all with about 90 clients); the other modes' iokit ceilings leave no room for it. Network history (D-089), on by default: the per-process network collector queries NetworkStatistics on every process sample, so trayOnly allows 0.25 (one query per 10 s plus a description query while an owner is unknown; measured 0.10) and window and windowGpu 1.2 like windowNetwork; trayOnlyHistoryOff is tray-only with the setting off and keeps D-082's zero. store rows and WAL bytes include the proc_net_10s and proc_net_1m rows (measured 1,188 rows/h and 4.8 MB/h of WAL, from 774 and 4.0). Background (D-094): tray-only ticks at 2 s with processes every 30 s and temperatures every 10 s, so its counts per tick are per 2 s; it replaced trayOnlyPerformance, which measured the same. Its ceilings sit between its measurement on 2026-10-07 and the same run without the background's slow cadences (5 s temperatures, 10 s processes): smc 15 (12.93 and 16.80), hid 12 (9.20 and 15.33), libprocPerProcess 0.3 (0.15 and 0.43), nstat 0.15 (0.07 and 0.20), so losing either cadence fails. allocsPerTick battery and disk_capacity for the tray-only modes are 1, from 0.5: the same allocations per sample, but a 2 s tick sees twice the samples of a 5 s or 60 s collector (measured 0.60 and 0.80).",
+    "warmupTicks": 130,
+    "ticks": 120,
+    "allocsPerTick": {
+      "_detectorsDoc": "Event detectors and alert rules alone (kelvo_engine::detect), every tick a 1,000-row process batch and a process held above the sustained and alert thresholds, all rules on: steady state allocates nothing (D-083). Also inside the engine-core numbers above.",
+      "detectors": 0,
+      "trayOnly": {
+        "engine": 10,
+        "collectors": {
+          "_default": 0,
+          "battery": 1,
+          "disk_capacity": 1,
+          "processes": 1,
+          "self_cpu": 0.1
+        }
+      },
+      "trayOnlyHistoryOff": {
+        "engine": 10,
+        "collectors": {
+          "_default": 0,
+          "battery": 1,
+          "disk_capacity": 1,
+          "processes": 1,
+          "self_cpu": 0.1
+        }
+      },
+      "window": {
+        "engine": 12,
+        "collectors": {
+          "_default": 0,
+          "battery": 0.5,
+          "disk_capacity": 0.5,
+          "processes": 1,
+          "self_cpu": 0.1
+        }
+      },
+      "windowNetwork": {
+        "engine": 12,
+        "collectors": {
+          "_default": 0,
+          "battery": 0.5,
+          "disk_capacity": 0.5,
+          "processes": 1,
+          "self_cpu": 0.1
+        }
+      },
+      "windowGpu": {
+        "engine": 12,
+        "collectors": {
+          "_default": 0,
+          "battery": 0.5,
+          "disk_capacity": 0.5,
+          "processes": 1,
+          "self_cpu": 0.1
+        }
+      }
+    },
+    "callsPerTick": {
+      "trayOnly": {
+        "iokit": 6,
+        "smc": 15,
+        "ioreport": 0.2,
+        "hid": 12,
+        "libprocPerProcess": 0.3,
+        "kernel": 9,
+        "nstat": 0.15
+      },
+      "trayOnlyHistoryOff": {
+        "iokit": 6,
+        "smc": 15,
+        "ioreport": 0.2,
+        "hid": 12,
+        "libprocPerProcess": 0.3,
+        "kernel": 9,
+        "nstat": 0
+      },
+      "window": {
+        "iokit": 6,
+        "smc": 16,
+        "ioreport": 1,
+        "hid": 15,
+        "libprocPerProcess": 3.5,
+        "kernel": 9,
+        "nstat": 1.2
+      },
+      "windowNetwork": {
+        "iokit": 6,
+        "smc": 16,
+        "ioreport": 1,
+        "hid": 15,
+        "libprocPerProcess": 3.5,
+        "kernel": 9,
+        "nstat": 1.2
+      },
+      "windowGpu": {
+        "iokit": 350,
+        "smc": 16,
+        "ioreport": 1,
+        "hid": 15,
+        "libprocPerProcess": 3.5,
+        "kernel": 9,
+        "nstat": 1.2
+      }
+    },
+    "store": {
+      "minutes": 10,
+      "rowsPerHour": 1400,
+      "payloadBytesPerHour": 1200000,
+      "walBytesPerHour": 6000000
+    },
+    "perf": {
+      "baseline": {
+        "trayOnlyCpuPct": 0.38
+      },
+      "regressionPct": 30
+    }
+  },
+  "coalition": {
+    "_doc": "Whole-app CPU (D-067), scripts/bench-coalition.sh: the packaged app plus every WebKit helper macOS holds it responsible for, proc_pid_rusage CPU time, percent of one core. target is the product budget from plan/architecture.md and is fixed: changing it is a user decision, not a ratchet. baseline is the last measurement on the dev M3 Max (D-073); a run more than regressionPct over it fails (twice in a row), and every run prints its distance to target. The target covers the backgrounded app only: menu bar items, no popover, no dashboard or onboarding window (D-088). Visible scenarios (popover, overview, processes) have no product target; visible.baseline holds the highest of five or more clean runs per scenario (empty until measured), and a run more than visible.regressionPct over it is reported, failing only once visible.blocking is true (promotion is its own decision). performanceMode is checked by scripts/bench-perf-mode.sh (make bench-perf-mode), never by this script: the median off-minus-on saving over `pairs` parallel pairs must reach minSavingPp per case, in percentage points of one core.",
+    "target": {
+      "trayOnlyCpuPct": 0.5
+    },
+    "baseline": {
+      "trayOnlyCpuPct": 1.01
+    },
+    "regressionPct": 10,
+    "visible": {
+      "baseline": {},
+      "regressionPct": 30,
+      "blocking": false
+    },
+    "performanceMode": {
+      "pairs": 6,
+      "minSavingPp": {}
+    }
+  },
+  "store": {
+    "_doc": "History reads on a 30-day synthetic fill of 150 series, release build (crates/kelvo-store/tests/fill.rs `thirty_day_reads_meet_the_budget`; `make test-read-perf`, and CI through `make test-fill`). timeline30dMs: the Timeline's six 30d lane queries plus the 30-day heatmap, on new connections (v1.1 acceptance: first render under 500 ms). export30dMs: a 30-day CSV export of every series to a file (v1.1 acceptance: under 3 s).",
+    "timeline30dMs": 500,
+    "export30dMs": 3000
+  }
+}

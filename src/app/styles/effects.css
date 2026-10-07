@@ -1,0 +1,6 @@
+/* Monospace data display with tabular number alignment. Every live figure
+   uses it so widths hold steady as values change each second. */
+.data-mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}

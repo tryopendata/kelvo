@@ -1,0 +1,76 @@
+# Install once per clone: `uvx pre-commit install --install-hooks -t pre-commit -t commit-msg`
+# (or `pre-commit install ...` if pre-commit is on PATH).
+
+# Without this, every hook with no `stages:` also runs at the commit-msg stage,
+# so each commit ran the secret scans twice and printed the whole hook list
+# twice. Only conventional-pre-commit opts into commit-msg.
+default_stages: [pre-commit]
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: ^src/core/generated/
+      - id: end-of-file-fixer
+        exclude: ^src/core/generated/
+      - id: check-yaml
+      - id: check-toml
+      - id: check-json
+        # tsconfig files are JSONC (comments allowed).
+        exclude: ^tsconfig.*\.json$
+      - id: check-added-large-files
+        # Anything past 2 MB is an accident.
+        args: [--maxkb=2048]
+      - id: check-merge-conflict
+      - id: detect-private-key
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.24.3
+    hooks:
+      - id: gitleaks
+
+  - repo: https://github.com/compilerla/conventional-pre-commit
+    rev: v4.0.0
+    hooks:
+      - id: conventional-pre-commit
+        stages: [commit-msg]
+        # --verbose makes a failure print the allowed type list.
+        args: [--verbose, feat, fix, docs, style, refactor, test, chore, ci, perf, build, revert]
+
+  # Frontend hooks (Biome, TypeScript). Biome formats, sorts imports and
+  # Tailwind classes, and lints (including the boundary rules) in one pass;
+  # biome.json's files.includes already skips src/core/generated/.
+  - repo: local
+    hooks:
+      - id: frontend-biome
+        name: frontend biome
+        entry: bunx biome check --write --no-errors-on-unmatched --files-ignore-unknown=true
+        language: system
+        files: \.(ts|tsx|js|mjs|json|jsonc|css)$
+        pass_filenames: true
+        require_serial: true
+      - id: frontend-typecheck
+        name: frontend typecheck
+        entry: bun run typecheck
+        language: system
+        files: ^((src|tests)/.*\.(ts|tsx)|tsconfig.*\.json|package\.json|bun\.lock|[a-z.]+\.config\.ts)$
+        pass_filenames: false
+
+  # Rust hooks, run against the root workspace. clippy is a whole-workspace
+  # build, so it only fires when Rust or a manifest is staged. The dist/ stub is
+  # what tauri::generate_context! needs to compile on a clean checkout.
+  - repo: local
+    hooks:
+      - id: cargo-fmt
+        name: cargo fmt
+        entry: cargo fmt --all
+        language: system
+        files: \.rs$
+        pass_filenames: false
+      - id: cargo-clippy
+        name: cargo clippy
+        entry: bash -c 'mkdir -p dist && cargo clippy --workspace --all-targets -- -D warnings'
+        language: system
+        files: (\.rs|Cargo\.toml|Cargo\.lock|clippy\.toml)$
+        pass_filenames: false

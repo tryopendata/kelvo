@@ -1,0 +1,30 @@
+html,
+body {
+  @apply bg-background text-foreground;
+  font-feature-settings: "cv01", "ss03";
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/*
+ * The popover panel draws over a native material (D-056): the page is clear
+ * and `.surface-vibrant` on the route root supplies the tint, which turns
+ * opaque under Reduce Transparency.
+ */
+html[data-native][data-window="popover"],
+html[data-native][data-window="popover"] body {
+  background-color: transparent;
+}
+
+/* Root weight. Weights in use are 400, 510 and 590 only. */
+html {
+  font-family: var(--font-sans);
+  font-weight: 510;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+}

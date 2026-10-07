@@ -1,0 +1,48 @@
+[package]
+name = "kelvo-engine"
+description = "Sampler loop, rollups, detectors and the bus"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[features]
+# Sandboxed (Mac App Store) edition: forwarded to kelvo-collect, which drops the
+# private-API collectors, compiles out the responsible-PID lookup and makes process
+# signals unavailable (D-065).
+appstore = ["kelvo-collect/appstore"]
+
+[dependencies]
+kelvo-collect.workspace = true
+kelvo-schema.workspace = true
+kelvo-store.workspace = true
+# The bus is a tokio broadcast channel (architecture.md, Engine). Only the sync
+# primitives are used; the engine thread itself is a plain std thread.
+tokio = { workspace = true, features = ["sync"] }
+# Already in the graph through Tauri. One channel carries ticks, power events, device
+# hints and commands into the engine thread.
+crossbeam-channel = "0.5.17"
+thiserror.workspace = true
+tracing.workspace = true
+libc = "0.2.190"
+# Host ids are random v4 UUIDs (identity.rs).
+uuid = { workspace = true, features = ["v4"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+core-foundation = "0.10.1"
+core-foundation-sys = "0.8.7"
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSProcessInfo"] }
+
+[dev-dependencies]
+anyhow.workspace = true
+# Per-tick OS call counts for the perf gates (tests/perf_gates.rs, D-062). A
+# dev-dependency feature, so normal builds never count.
+kelvo-collect = { workspace = true, features = ["call-counters"] }
+# Commits and WAL frames for the store write-volume gate, same arrangement.
+kelvo-store = { workspace = true, features = ["write-stats"] }
+# Reads row counts and payload sizes for the store write-volume gate.
+rusqlite.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

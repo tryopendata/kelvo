@@ -1,0 +1,75 @@
+# cargo-deny (https://embarkstudios.github.io/cargo-deny/): advisories, licenses,
+# duplicate and banned crates, and where crates come from. CI runs `cargo deny check`
+# in the `deny` job; locally, `make deny` runs it when cargo-deny is installed.
+
+[graph]
+# The app ships on Apple Silicon and Intel macOS; the portable crates also build on Linux
+# (the v4 agent). Windows-only crates in Tauri's tree are left out.
+targets = [
+  "aarch64-apple-darwin",
+  "x86_64-apple-darwin",
+  "x86_64-unknown-linux-gnu",
+]
+# The appstore, bench, call-counters and write-stats features pull in nothing extra
+# today; checking with all of them on keeps it that way.
+all-features = true
+
+[advisories]
+# Vulnerabilities always fail. Unmaintained and unsound advisories fail only for crates we
+# depend on directly: a transitive one (for example glib in Tauri's Linux GTK stack) is
+# reported but is the upstream crate's to replace.
+unmaintained = "workspace"
+unsound = "workspace"
+yanked = "deny"
+ignore = []
+
+[licenses]
+# Kelvo is Apache-2.0. Everything allowed here is permissive or file-level copyleft,
+# so it is compatible with Apache-2.0 and with distributing the binary. MPL-2.0
+# (cssparser and friends, via Tauri's wry) obliges us to publish changes to MPL files
+# only, and we vendor none.
+allow = [
+  "0BSD",
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "CC0-1.0",
+  "ISC",
+  "MIT",
+  "MIT-0",
+  "MPL-2.0",
+  "Unicode-3.0",
+  "Unlicense",
+  "Zlib",
+]
+confidence-threshold = 0.9
+
+[licenses.private]
+# Our own crates are `publish = false`; their license is the workspace's Apache-2.0.
+ignore = true
+
+[bans]
+# Tauri's tree carries several majors of base64, syn, toml, hashbrown and friends; none
+# is ours to fix, so duplicates in general only warn. The crates below are ones we pick
+# directly and that are big or stateful enough that a second copy would be a real cost
+# or a bug: two bundled SQLite builds, two Tokio runtimes, two serde trait universes.
+multiple-versions = "warn"
+wildcards = "deny"
+# Workspace path dependencies have no version; they are private crates.
+allow-wildcard-paths = true
+highlight = "all"
+deny = [
+  { crate = "libsqlite3-sys", deny-multiple-versions = true },
+  { crate = "rusqlite", deny-multiple-versions = true },
+  { crate = "serde", deny-multiple-versions = true },
+  { crate = "tauri", deny-multiple-versions = true },
+  { crate = "tokio", deny-multiple-versions = true },
+]
+
+[sources]
+# crates.io only. A git dependency needs an explicit entry here.
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

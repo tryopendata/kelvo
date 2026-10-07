@@ -1,0 +1,8 @@
+# Stable rustfmt options only, so `cargo fmt --check` behaves the same on
+# every toolchain CI and contributors use. No opendata equivalent (it has no
+# Rust); the choices follow rustfmt defaults with a wider line.
+edition = "2024"
+max_width = 100
+use_field_init_shorthand = true
+use_try_shorthand = true
+newline_style = "Unix"

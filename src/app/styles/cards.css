@@ -1,0 +1,61 @@
+/*
+ * Card shell with the corner glow (design-system.md "Card anatomy"). Ported
+ * from opendata's `.ask-accent`.
+ *
+ *   --a  module accent, set per card: style={{ "--a": "var(--color-cpu)" }}
+ *   --g  glow tint: 9% default, 6% on chart and popover cards, 22% on hover
+ *   --o  glow origin corner. Adjacent cards light different corners
+ *        (0% 0%, 100% 0%, 0% 100%, 100% 100%); CardGrid assigns them by index
+ *
+ * `color-mix(... transparent)` over the card token works in both themes and in
+ * a `.surface-vibrant` scope, where --color-card is the translucent card tint.
+ */
+
+/* Registered so the tint can transition on hover. */
+@property --g {
+  syntax: "<percentage>";
+  inherits: true;
+  initial-value: 9%;
+}
+
+@layer components {
+  .vt-card {
+    --a: var(--color-cpu);
+    --g: 9%;
+    --o: 0% 0%;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-card);
+    background:
+      radial-gradient(
+        ellipse 80% 100% at var(--o),
+        color-mix(in srgb, var(--a) var(--g), transparent) 0%,
+        transparent 60%
+      ),
+      var(--color-card);
+  }
+
+  /* A chart is already doing the talking; the glow stays under its ink. */
+  .vt-card--chart {
+    --g: 6%;
+  }
+
+  /* Hover only on cards that open something. Non-interactive cards stay put. */
+  .vt-card:is(a, button):hover,
+  .vt-card:is(a, button):focus-visible {
+    --g: 22%;
+    border-color: var(--color-border-strong);
+  }
+
+  /* Pressed: the glow drops back part way, so the click registers. */
+  .vt-card:is(a, button):active {
+    --g: 14%;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .vt-card:is(a, button) {
+      transition:
+        --g var(--motion-entry) var(--ease-out),
+        border-color var(--motion-entry) var(--ease-out);
+    }
+  }
+}

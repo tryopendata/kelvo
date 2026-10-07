@@ -1,0 +1,4 @@
+/* The field has its own clear button; drop WebKit's native one. */
+.input::-webkit-search-cancel-button {
+  appearance: none;
+}

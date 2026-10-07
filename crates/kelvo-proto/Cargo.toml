@@ -1,0 +1,17 @@
+[package]
+name = "kelvo-proto"
+description = "Framing, CBOR codec, handshake and message types for the Kelvo sync protocol"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+kelvo-schema.workspace = true
+serde.workspace = true
+ciborium.workspace = true
+uuid = { workspace = true, features = ["serde"] }
+thiserror.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,230 @@
+/* Dark mode custom variant. Rust (or the dev page) toggles `.dark` on <html>. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/*
+ * Names follow opendata's
+ * shadcn set where the role matches, so shadcn primitives work unchanged.
+ * `static` emits every token, so plain CSS (cards.css) can read them with var().
+ */
+@theme static {
+  --font-sans:
+    "Inter Variable", "Inter", ui-sans-serif, system-ui, sans-serif,
+    "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+  --font-mono:
+    "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, "SF Mono", Menlo,
+    Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+
+  /* Shadcn/ui color tokens - Light mode (zinc-based, cyan accent) */
+  --color-background: #fafafa;
+  --color-foreground: #09090b;
+  --color-card: #ffffff;
+  --color-card-foreground: #09090b;
+  --color-popover: #ffffff;
+  --color-popover-foreground: #09090b;
+  --color-primary: #06b6d4;
+  --color-primary-foreground: #09090b;
+  --color-secondary: #f4f4f5;
+  --color-secondary-foreground: #3f3f46;
+  --color-muted: #f4f4f5;
+  /* Not zinc-500 (#71717a): that is 4.4:1 on --color-deep and 3.8:1 on
+     --color-raised. #63636b holds 4.5:1 on every light surface (D-052). */
+  --color-muted-foreground: #63636b;
+  --color-accent: #f4f4f5;
+  --color-accent-foreground: #3f3f46;
+  --color-destructive: oklch(57.7% 0.245 27.33);
+  --color-destructive-foreground: #fafafa;
+  --color-border: #d4d4d8;
+  --color-input: #d4d4d8;
+  --color-ring: #06b6d4;
+  --radius: 0.375rem;
+
+  /* Kelvo surfaces and text - Light mode */
+  --color-deep: #f4f4f5;
+  --color-well: #f4f4f5;
+  --color-raised: #e4e4e7;
+  --color-fg-subtle: #3f3f46;
+  --color-fg-faint: #a1a1aa;
+  --color-border-subtle: #e4e4e7;
+  --color-border-strong: #a1a1aa;
+  --color-grid: rgba(9, 9, 11, 0.06);
+  --color-axis: rgba(9, 9, 11, 0.16);
+  --color-track: rgba(9, 9, 11, 0.07);
+  --color-btn: rgba(9, 9, 11, 0.02);
+  --color-selected: rgba(9, 9, 11, 0.05);
+  --color-scrollbar: rgba(9, 9, 11, 0.22);
+  --color-link: #0891b2;
+
+  /* Vibrant surfaces (popover, desktop widgets) - Light mode */
+  --color-vibrant: rgba(246, 246, 248, 0.68);
+  --color-card-vibrant: rgba(255, 255, 255, 0.72);
+  --color-widget: rgba(246, 246, 248, 0.6);
+  --color-widget-editing: rgba(255, 255, 255, 0.8);
+
+  /* Module accents. The fill is the same in both themes; `-ink` is for lines,
+     text and thin marks, darker in light mode so it clears 3:1 on white. */
+  --color-cpu: #06b6d4;
+  --color-cpu-ink: #0891b2;
+  --color-cpu-2: #67e8f9;
+  --color-cpu-2-ink: #0e7490;
+  --color-gpu: #f472b6;
+  --color-gpu-ink: #db2777;
+  --color-mem: #a78bfa;
+  --color-mem-ink: #7c3aed;
+  --color-power: #fbbf24;
+  --color-power-ink: #d97706;
+  --color-temp: #f59e0b;
+  --color-temp-ink: #b45309;
+  --color-net: #34d399;
+  --color-net-ink: #059669;
+  --color-disk: #60a5fa;
+  --color-disk-ink: #2563eb;
+  --color-battery: #a3e635;
+  --color-battery-ink: #4d7c0f;
+
+  /* Status */
+  --color-live: #10b981;
+  --color-warning: #f59e0b;
+
+  /* Radius scale */
+  --radius-panel: 22px;
+  --radius-card: 12px;
+  --radius-tile: 8px;
+  --radius-control: 6px;
+  --radius-chip: 4px;
+  --radius-mark: 2px;
+  --radius-hair: 1px;
+}
+
+/* Accent ramp steps for series sharing one card:
+   color-mix(in srgb, var(--a) var(--ramp-2), transparent) */
+:root {
+  --ramp-1: 100%;
+  --ramp-2: 60%;
+  --ramp-3: 35%;
+  --ramp-4: 20%;
+}
+
+/* Dark mode overrides - zinc-based precision palette */
+.dark {
+  --color-background: #09090b;
+  --color-foreground: #f7f8f8;
+  --color-card: #111113;
+  --color-card-foreground: #f7f8f8;
+  --color-popover: #191a1b;
+  --color-popover-foreground: #f7f8f8;
+  --color-primary: #06b6d4;
+  --color-primary-foreground: #09090b;
+  --color-secondary: #27272a;
+  --color-secondary-foreground: #a1a1aa;
+  --color-muted: #27272a;
+  --color-muted-foreground: #8a8f98;
+  --color-accent: #27272a;
+  --color-accent-foreground: #a1a1aa;
+  --color-destructive: oklch(57.7% 0.245 27.33);
+  --color-destructive-foreground: #f7f8f8;
+  --color-border: rgba(255, 255, 255, 0.08);
+  --color-input: rgba(255, 255, 255, 0.08);
+  --color-ring: #06b6d4;
+
+  --color-deep: #08090a;
+  --color-well: #0e0e10;
+  --color-raised: #27272a;
+  --color-fg-subtle: #d0d6e0;
+  --color-fg-faint: #62666d;
+  --color-border-subtle: rgba(255, 255, 255, 0.05);
+  --color-border-strong: rgba(255, 255, 255, 0.12);
+  --color-grid: rgba(255, 255, 255, 0.06);
+  --color-axis: rgba(255, 255, 255, 0.14);
+  --color-track: rgba(255, 255, 255, 0.07);
+  --color-btn: rgba(255, 255, 255, 0.03);
+  --color-selected: rgba(255, 255, 255, 0.05);
+  --color-scrollbar: rgba(255, 255, 255, 0.22);
+  --color-link: #67e8f9;
+
+  --color-vibrant: rgba(22, 22, 25, 0.62);
+  --color-card-vibrant: color-mix(in srgb, #111113 72%, transparent);
+  --color-widget: rgba(18, 18, 20, 0.5);
+  --color-widget-editing: rgba(36, 36, 40, 0.62);
+
+  /* On a dark card every fill clears 3:1, so ink is the fill. */
+  --color-cpu-ink: var(--color-cpu);
+  --color-cpu-2-ink: var(--color-cpu-2);
+  --color-gpu-ink: var(--color-gpu);
+  --color-mem-ink: var(--color-mem);
+  --color-power-ink: var(--color-power);
+  --color-temp-ink: var(--color-temp);
+  --color-net-ink: var(--color-net);
+  --color-disk-ink: var(--color-disk);
+  --color-battery-ink: var(--color-battery);
+}
+
+/*
+ * Vibrant scope: popover panel and desktop widgets, translucent over a native
+ * material. Cards inside it sit on the vibrant card tint, and borders and
+ * tracks switch to the translucent set.
+ */
+.surface-vibrant {
+  --color-card: var(--color-card-vibrant);
+  --color-border: rgba(9, 9, 11, 0.1);
+  --color-border-strong: rgba(9, 9, 11, 0.14);
+  --color-track: rgba(9, 9, 11, 0.07);
+  background-color: var(--color-vibrant);
+}
+
+.dark .surface-vibrant,
+.dark.surface-vibrant {
+  --color-border: rgba(255, 255, 255, 0.08);
+  --color-border-strong: rgba(255, 255, 255, 0.12);
+  --color-track: rgba(255, 255, 255, 0.08);
+}
+
+/*
+ * Reduce Transparency: Rust sets `data-reduce-transparency` on the window root
+ * (the source of truth, since it also drops the native material). The media
+ * query covers the browser dev server.
+ */
+:root[data-reduce-transparency] {
+  --color-vibrant: #f6f6f8;
+  --color-card-vibrant: #ffffff;
+  --color-widget: #f6f6f8;
+  --color-widget-editing: #ffffff;
+}
+
+:root.dark[data-reduce-transparency] {
+  --color-vibrant: #161619;
+  --color-card-vibrant: #111113;
+  --color-widget: #121214;
+  --color-widget-editing: #242428;
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  :root {
+    --color-vibrant: #f6f6f8;
+    --color-card-vibrant: #ffffff;
+    --color-widget: #f6f6f8;
+    --color-widget-editing: #ffffff;
+  }
+
+  :root.dark {
+    --color-vibrant: #161619;
+    --color-card-vibrant: #111113;
+    --color-widget: #121214;
+    --color-widget-editing: #242428;
+  }
+}
+
+/*
+ * Increase Contrast: borders step up to the strong border and faint text to
+ * muted. Listed on every scope that sets these tokens so each resolves its own
+ * strong value.
+ */
+@media (prefers-contrast: more) {
+  :root,
+  .dark,
+  .surface-vibrant,
+  .dark .surface-vibrant,
+  .dark.surface-vibrant {
+    --color-border: var(--color-border-strong);
+    --color-fg-faint: var(--color-muted-foreground);
+  }
+}

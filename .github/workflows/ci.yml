@@ -1,0 +1,263 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+# Cancel superseded runs. Each run re-tests everything, so a cancelled run
+# never leaves a gap the next one doesn't cover.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# Hosted runners are free for public repositories. Runner choice: D-032.
+jobs:
+  # ---------------------------------------------------------------------------
+  # macOS: everything, on both supported majors (D-028).
+  #   macos-26  GA arm64 image.
+  #   xcode-27  GitHub's preview image; its base OS is macOS 27 since
+  #             2026-09-16. There is no `macos-27` label yet. Preview capacity
+  #             queues and its software can be unstable, so a failure there
+  #             does not fail the run; it is still visible on the run page.
+  # ---------------------------------------------------------------------------
+  macos:
+    name: macos (${{ matrix.runner }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    continue-on-error: ${{ matrix.preview }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-26
+            preview: false
+          - runner: xcode-27
+            preview: true
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: "1.4.2"
+
+      # Runs AFTER setup-bun so real node outranks ~/.bun/bin in PATH. A
+      # `node -> bun` shim would make vitest's `#!/usr/bin/env node` resolve to
+      # Bun's runtime.
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+
+      - name: Install Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt,clippy
+          rustup default stable
+
+      - name: Cache bun dependencies
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ matrix.runner }}-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            bun-${{ matrix.runner }}-
+
+      - name: Cache cargo
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-${{ matrix.runner }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            cargo-${{ matrix.runner }}-
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      # tauri::generate_context! embeds frontendDist, which must exist at
+      # compile time even for clippy and tests. `bun tauri build` fills it.
+      - name: Stub frontend dist
+        run: mkdir -p dist
+
+      - name: cargo fmt
+        run: cargo fmt --all --check
+
+      - name: cargo clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      # The sandboxed App Store edition (D-065): the `appstore` feature drops the
+      # private-API collectors at registration, compiles out the responsible-PID lookup
+      # and turns process signals off. Check it still builds and lints; it is not run or
+      # signed until v3.2.
+      - name: cargo check + clippy (appstore edition)
+        run: make appstore-check
+
+      # The engine perf gates run in the next step, where their output is shown.
+      - name: cargo test
+        run: >-
+          cargo test --workspace --
+          --skip tray_only_ticks_stay_within_allocation_and_call_budgets
+          --skip window_open_ticks_stay_within_allocation_and_call_budgets
+          --skip store_write_volume_per_hour_at_one_second
+
+      # Engine perf gates (D-062, D-067): allocations, OS calls, store volume, and
+      # samples per collector. Hosted runners are VMs, where the hardware collectors
+      # cannot be checked; the test says so and this step turns that into a notice,
+      # so a skipped coverage check is visible on the run page rather than a silent pass.
+      - name: Engine perf gates
+        shell: bash
+        run: |
+          cargo test -p kelvo-engine --test perf_gates -- --nocapture 2>&1 | tee perf-gates.log
+          grep '\[perf\] skipped: no hardware' perf-gates.log | sort -u | sed 's/^/::notice title=perf_gates::/' || true
+
+      # Regenerate the tauri-specta bindings and fail if they differ from the
+      # commit (including new, untracked files).
+      - name: Bindings drift
+        run: |
+          make bindings
+          if [ -n "$(git status --porcelain -- src/core/generated)" ]; then
+            git status --porcelain -- src/core/generated
+            git diff -- src/core/generated
+            echo "::error::src/core/generated is stale. Run 'make bindings' and commit the result."
+            exit 1
+          fi
+
+      # Biome check (format, imports, Tailwind class order, lint incl. the
+      # boundary rules), typecheck, Vitest.
+      - name: bun run check
+        run: bun run check
+
+      - name: Install Playwright browsers
+        run: bunx playwright install chromium webkit
+
+      - name: Playwright
+        run: bunx playwright test --pass-with-no-tests
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: playwright-report-${{ matrix.runner }}
+          path: playwright-report/
+          retention-days: 7
+
+      - name: Tauri debug build
+        run: bun tauri build --debug
+
+      # Kelvo has no runtime dependencies to install (D-058): fail if the app links
+      # anything outside /System/Library/ and /usr/lib/.
+      - name: Runtime dependency check
+        run: make check-deps
+
+      # Engine CPU (D-062, D-067): the release engine for 120 s tray-only at 1 s
+      # against perf-budget.json's baseline, printing its share of the whole-app
+      # target. Hosted runners are VMs without most sensors and with noisy neighbours,
+      # so this step is advisory: a failure shows on the run page but does not fail the
+      # job. `make perf` blocks locally, and the allocation, call-count and store-volume
+      # gates above fail the job.
+      - name: Engine CPU (advisory)
+        continue-on-error: true
+        shell: bash
+        run: |
+          make perf 2>&1 | tee perf.log
+          grep 'whole-app target' perf.log | sed 's/^perf: /::notice title=Engine CPU::/' || true
+
+  # ---------------------------------------------------------------------------
+  # Dependency audit: cargo-deny (deny.toml) and bun audit. Licenses, bans and
+  # sources only change with our lockfiles, so they block. Advisories also change
+  # when RustSec or npm publish one, which would fail unrelated PRs, so that
+  # check is shown but does not fail the run (cargo-deny's documented pattern).
+  # ---------------------------------------------------------------------------
+  deny:
+    name: deny (${{ matrix.checks }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    continue-on-error: ${{ matrix.checks == 'advisories' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        checks:
+          - advisories
+          - bans licenses sources
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+
+      # The action's image ships Rust 1.85; edition 2024 manifests and the v4
+      # lockfile parse there, but `stable` keeps it in step with the other jobs.
+      - name: cargo deny
+        uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1 (cargo-deny 0.20.2)
+        with:
+          rust-version: stable
+          command: check ${{ matrix.checks }}
+
+  audit-frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Same reasoning as the advisories check above.
+    continue-on-error: true
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: "1.4.2"
+
+      # Checks bun.lock against the npm advisory database.
+      - name: bun audit
+        run: bun audit
+
+  # ---------------------------------------------------------------------------
+  # The portable crates must build and pass on Linux (v4 agent). Native on
+  # ubuntu rather than cross-compiled from macOS: bundled SQLite runs a C build
+  # script that would need a cross compiler. src-tauri is not built here.
+  # ---------------------------------------------------------------------------
+  linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+
+      - name: Install Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+
+      - name: Cache cargo
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-linux-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            cargo-linux-
+
+      - name: cargo check
+        run: >
+          cargo check --all-targets
+          -p kelvo-schema -p kelvo-proto -p kelvo-collect -p kelvo-store -p kelvo-engine
+
+      - name: cargo test
+        run: >
+          cargo test
+          -p kelvo-schema -p kelvo-proto -p kelvo-collect -p kelvo-store -p kelvo-engine
+
+      # 30 days of synthetic history through the real store writer, pruned, then
+      # measured: fails if 150 series exceed 150 MB, and logs the 250-series size.
+      # Ignored in plain `cargo test` because it writes ~1 GB; see `make test-fill`.
+      - name: Store fill test
+        run: cargo test --release -p kelvo-store --test fill -- --ignored --nocapture

@@ -1,0 +1,38 @@
+[package]
+name = "kelvo-collect"
+description = "Collector trait and the per-OS metric collectors"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[features]
+# Sandboxed (Mac App Store) build: `allowed_entitlements()` returns only
+# `Entitlement::None`, so collectors on private APIs are dropped (architecture.md,
+# Platform and entitlement gating); the responsible-PID lookup is compiled out and
+# process signals are unavailable (D-065). Selected from the app as `kelvo/appstore`.
+appstore = []
+# Per-thread counts of OS calls by API family (`calls`), for the per-tick call ceilings
+# in the engine perf gates (D-062). Tests only.
+call-counters = []
+
+[dependencies]
+kelvo-schema.workspace = true
+thiserror.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# libc, core-foundation and objc2-foundation match what Tauri already pulls in.
+# mach2 replaces libc's deprecated Mach bindings (mach_host_self, timebase).
+libc = "0.2.190"
+core-foundation = "0.10.1"
+core-foundation-sys = "0.8.7"
+mach2 = "0.7.0"
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSProcessInfo"] }
+# NetworkStatistics takes Objective-C blocks for its callbacks (per-process network,
+# D-081); the version Tauri already pulls in.
+block2 = "0.6.2"
+# Quit and Force Quit ask a regular app to quit through NSRunningApplication (D-029).
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "libc", "NSRunningApplication"] }
+
+[lints]
+workspace = true

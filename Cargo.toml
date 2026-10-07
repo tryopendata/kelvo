@@ -1,0 +1,50 @@
+[workspace]
+members = ["crates/*", "src-tauri"]
+resolver = "3"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+publish = false
+
+[workspace.dependencies]
+# Workspace crates. Edges between them follow the direction table in
+# plan/architecture.md; adding one not listed there is a design change.
+kelvo-schema = { path = "crates/kelvo-schema" }
+kelvo-proto = { path = "crates/kelvo-proto" }
+kelvo-collect = { path = "crates/kelvo-collect" }
+kelvo-store = { path = "crates/kelvo-store" }
+kelvo-engine = { path = "crates/kelvo-engine" }
+
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0"
+ciborium = "0.2.2"
+rusqlite = { version = "0.40.2", features = ["bundled"] }
+tokio = "1.53.2"
+uuid = "1.27.0"
+smallvec = "1.16.2"
+compact_str = "0.10.0"
+thiserror = "2.0.21"
+tracing = "0.1.44"
+anyhow = "1.0.104"
+rustix = { version = "1.1.5", features = ["fs"] }
+
+# tauri-specta 2.x is still a release candidate (D-031). Exact pins: an RC
+# bump can change the API or the generated output.
+specta = "=2.0.0-rc.25"
+specta-typescript = "=0.0.12"
+specta-serde = "=0.0.12"
+tauri-specta = { version = "=2.0.0-rc.25", features = ["typescript"] }
+
+[workspace.lints.clippy]
+# Denied in non-test code; clippy.toml allows it in tests.
+unwrap_used = "deny"
+
+# Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 3
+panic = "abort"
+strip = true

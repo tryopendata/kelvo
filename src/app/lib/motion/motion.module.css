@@ -1,0 +1,90 @@
+/*
+ * One-shot motion primitives (motion.md "Choreography"), ported from opendata's
+ * `/ask` system (shared/styles/tool-cards.css) and its marketing lift roles,
+ * scaled down for a dense monitor.
+ *
+ * Every animation runs once, on mount: a CSS animation doesn't restart because
+ * React re-rendered, so 1 Hz updates never replay it. `opacity: 0` lives only
+ * in the keyframes, with `backwards` fill, never in a base rule: an element
+ * whose animation doesn't run (reduced motion) is simply visible.
+ *
+ *   --i            stagger index, set inline by `enter()`
+ *   --stagger-cap  last index that still adds delay (8; a surface may lower it)
+ *   --rise         lift distance (3px; a surface may lower it)
+ */
+
+@keyframes lift {
+  from {
+    opacity: 0;
+    transform: translateY(var(--rise, 3px));
+  }
+}
+
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+}
+
+/* Layered so a Tailwind utility on the same element still wins. */
+@layer components {
+  /*
+   * Page choreography: on the element that hosts a route (`<Outlet />`), each
+   * child of the route's root (the header, then each row of cards) lifts in
+   * reading order. A route change mounts a fresh root, so every navigation
+   * replays it. A child marked `data-stagger` (CardGrid) does not move itself;
+   * its own children continue the count from its position with `--j`.
+   */
+  .page > * > * {
+    --i: 0;
+  }
+  .page > * > :nth-child(2) {
+    --i: 1;
+  }
+  .page > * > :nth-child(3) {
+    --i: 2;
+  }
+  .page > * > :nth-child(4) {
+    --i: 3;
+  }
+  .page > * > :nth-child(5) {
+    --i: 4;
+  }
+  .page > * > :nth-child(6) {
+    --i: 5;
+  }
+  .page > * > :nth-child(7) {
+    --i: 6;
+  }
+  .page > * > :nth-child(n + 8) {
+    --i: 7;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .page > * > :not([data-stagger]),
+    .page [data-stagger] > * {
+      animation: lift var(--motion-enter) var(--ease-out) backwards;
+      animation-delay: calc(
+        min(var(--i, 0) + var(--j, 0), var(--stagger-cap, 8)) *
+        var(--motion-stagger)
+      );
+    }
+
+    .lift,
+    .fade {
+      animation: lift var(--motion-enter) var(--ease-out) backwards;
+      animation-delay: calc(
+        min(var(--i, 0), var(--stagger-cap, 8)) *
+        var(--motion-stagger)
+      );
+    }
+
+    .fade {
+      animation-name: fade;
+    }
+
+    .swap {
+      animation: fade var(--motion-crossfade) var(--ease-out) backwards;
+    }
+  }
+}

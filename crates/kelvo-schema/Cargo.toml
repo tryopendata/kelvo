@@ -1,0 +1,26 @@
+[package]
+name = "kelvo-schema"
+description = "Metric catalog, series keys, host identity, capabilities and the typed Snapshot view"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde.workspace = true
+uuid = { workspace = true, features = ["serde"] }
+smallvec.workspace = true
+compact_str.workspace = true
+thiserror.workspace = true
+specta = { workspace = true, features = ["derive", "uuid"] }
+
+[dev-dependencies]
+serde_json.workspace = true
+ciborium.workspace = true
+# Exports every IPC-facing type the way tauri-specta does, so a type the app
+# shell cannot export fails here instead of at `make bindings`.
+specta-typescript.workspace = true
+specta-serde.workspace = true
+
+[lints]
+workspace = true

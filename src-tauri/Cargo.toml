@@ -1,0 +1,81 @@
+[package]
+name = "kelvo"
+description = "Kelvo app shell: windows, tray, commands and settings ownership"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+# The `_lib` suffix may seem redundant but it is necessary
+# to make the lib name unique and wouldn't conflict with the bin name.
+# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "kelvo_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[features]
+# Sandboxed (Mac App Store) edition (plan/v3-native-distribution.md, v3.2). Forwarded
+# through kelvo-engine to kelvo-collect; `make appstore-check` and CI check it compiles.
+appstore = ["kelvo-engine/appstore"]
+# Coalition benchmark builds only (scripts/bench-coalition.sh, D-067): reads
+# KELVO_BENCH_SCENARIO at launch to open the popover or a dashboard route and skip
+# onboarding. Never in a shipped build.
+bench = []
+
+[build-dependencies]
+tauri-build = { version = "2.7.1", features = [] }
+
+[dependencies]
+kelvo-schema.workspace = true
+kelvo-store.workspace = true
+kelvo-engine.workspace = true
+# `specta` implements specta::Type for `tauri::ipc::Channel`, so `subscribe_live` exports.
+tauri = { version = "2.12.1", features = ["specta", "tray-icon"] }
+tauri-plugin-opener = "2.7.0"
+# The CSV export's save dialog, called from Rust (`export_csv`).
+tauri-plugin-dialog = "2.8.1"
+# A second launch focuses the running instance instead of opening the same history.
+tauri-plugin-single-instance = "2.5.2"
+# The settings file. Only Rust writes it: no window is granted the plugin's permissions.
+tauri-plugin-store = "2.5.0"
+# Remembers the dashboard's size and position (popover and onboarding are denylisted).
+tauri-plugin-window-state = "2.5.0"
+# Alert notifications (v1.2), posted from Rust only (notify.rs).
+tauri-plugin-notification = "2.5.1"
+# Tray rendering: shapes, and text in the bundled JetBrains Mono (D-023).
+tiny-skia = { version = "0.12.0", default-features = false, features = ["std", "simd"] }
+ab_glyph = "0.2.32"
+serde.workspace = true
+serde_json.workspace = true
+specta = { workspace = true, features = ["derive"] }
+specta-typescript.workspace = true
+tauri-specta = { workspace = true, features = ["derive"] }
+tokio = { workspace = true, features = ["sync", "macros", "time", "rt"] }
+uuid = { workspace = true, features = ["v4"] }
+thiserror.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber = { version = "0.3.23", features = ["env-filter", "fmt"] }
+tracing-appender = "0.2.5"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+libc = "0.2.190"
+core-foundation = "0.10.1"
+block2 = "0.6.2"
+objc2 = "0.6.4"
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "block2", "NSGeometry", "NSNotification", "NSObject", "NSOperation", "NSString"] }
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "block2", "objc2-core-foundation", "NSAccessibility", "NSAccessibilityProtocols", "NSBitmapImageRep", "NSButton", "NSControl", "NSEvent", "NSGraphics", "NSImage", "NSImageRep", "NSPanel", "NSResponder", "NSRunningApplication", "NSScreen", "NSStatusBar", "NSStatusBarButton", "NSStatusItem", "NSView", "NSWindow", "NSWorkspace"] }
+# The popover panel (D-033) and its material (D-034). Exact pins: what the spike verified.
+tauri-nspanel = "=2.1.0"
+window-vibrancy = "=0.8.1"
+smappservice-rs = "0.1.3"
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+# Live-channel tests run on a current-thread runtime with paused time (deterministic).
+tokio = { workspace = true, features = ["rt", "macros", "time", "test-util"] }
+# Dumps rendered tray images for visual review (`tray::render` ignored test).
+# Already in the lock through tray-icon.
+png = "0.17.16"
