@@ -1,5 +1,9 @@
 import type { ProcessesAt } from "@core/generated/bindings";
 import type { CSSProperties } from "react";
+import {
+  ChartTooltipShell,
+  SeriesSwatch,
+} from "~/components/charts/chart-tooltip";
 import { InitialChip } from "~/widgets/initial-chip";
 import type { Accent } from "~/widgets/lib/accent";
 import { FIELD_LABEL } from "~/widgets/lib/classes";
@@ -42,11 +46,7 @@ export function CrosshairTooltip({
     .sort((a, b) => (b.cpu_pct ?? -1) - (a.cpu_pct ?? -1))
     .slice(0, TOP);
   return (
-    <div
-      role="tooltip"
-      className="pointer-events-none absolute z-10 flex w-[276px] flex-col gap-2 rounded-tile border border-border-strong bg-card/92 p-3 backdrop-blur-md"
-      style={style}
-    >
+    <ChartTooltipShell className="w-[276px]" style={style}>
       <div className="flex items-baseline justify-between">
         <span className="data-mono text-[12px]">{title}</span>
         <span className={FIELD_LABEL}>{resolution}</span>
@@ -59,11 +59,7 @@ export function CrosshairTooltip({
         <div className="flex flex-col gap-[5px]">
           {rows.map((r) => (
             <div key={r.label} className="flex items-center gap-2 text-[12px]">
-              <span
-                aria-hidden
-                className="size-2 rounded-mark"
-                style={{ background: `var(--color-${r.accent})` }}
-              />
+              <SeriesSwatch color={`var(--color-${r.accent})`} />
               <span className="flex-1 font-normal text-fg-subtle">
                 {r.label}
               </span>
@@ -107,6 +103,6 @@ export function CrosshairTooltip({
           )}
         </>
       )}
-    </div>
+    </ChartTooltipShell>
   );
 }
