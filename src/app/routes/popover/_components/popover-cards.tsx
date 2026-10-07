@@ -38,6 +38,7 @@ import {
 import { useSettings } from "~/stores/settings-store";
 import { CoreTiles } from "~/widgets/core-tiles";
 import { InlineBar } from "~/widgets/inline-bar";
+import { MeterTrack } from "~/widgets/meter-track";
 import { MirrorBars } from "~/widgets/mirror-bars";
 import { ModuleCard } from "~/widgets/module-card";
 import { StackBar } from "~/widgets/stack-bar";
@@ -370,15 +371,11 @@ export function LiveBatteryCard() {
       notice={notice}
     >
       {/* The charge is the headline figure; the bar repeats it visually. */}
-      <span
-        aria-hidden
-        className="block h-1.5 overflow-hidden rounded-full bg-track"
-      >
-        <span
-          className="block h-full origin-left rounded-full bg-battery"
-          style={{ transform: `scaleX(${ratio(b.charge, 100)})` }}
-        />
-      </span>
+      <MeterTrack
+        fraction={ratio(b.charge, 100)}
+        fill="var(--color-battery)"
+        height="h-1.5"
+      />
       <StatGrid
         items={[
           { label: "Remaining", value: remaining },

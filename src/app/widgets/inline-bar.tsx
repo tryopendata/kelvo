@@ -1,4 +1,3 @@
-import { clamp01 } from "@core/chart-math";
 import { cn } from "~/lib/utils";
 import {
   type Accent,
@@ -7,6 +6,7 @@ import {
   rampBackground,
 } from "./lib/accent";
 import { FIELD_LABEL } from "./lib/classes";
+import { MeterTrack } from "./meter-track";
 
 export interface InlineBarProps {
   label: string;
@@ -40,20 +40,12 @@ function Track({
   height: "h-1" | "h-1.5";
 }) {
   return (
-    <span
-      data-missing={fraction === null || undefined}
-      className={cn("block overflow-hidden rounded-full bg-track", height)}
-    >
-      {fraction !== null && (
-        <span
-          className="block h-full origin-left rounded-full transition-transform duration-(--motion-tick) ease-tick"
-          style={{
-            background: rampBackground(step),
-            transform: `scaleX(${clamp01(fraction)})`,
-          }}
-        />
-      )}
-    </span>
+    <MeterTrack
+      fraction={fraction}
+      fill={rampBackground(step)}
+      height={height}
+      transition
+    />
   );
 }
 

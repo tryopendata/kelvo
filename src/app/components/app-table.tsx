@@ -5,6 +5,7 @@ import { TableCell, TableHead, TableRow } from "~/components/ui/table";
 import { cn } from "~/lib/utils";
 import { Card } from "~/widgets/card";
 import type { Accent } from "~/widgets/lib/accent";
+import { MeterTrack } from "~/widgets/meter-track";
 
 /**
  * Parts of the per-app tables: the Network Apps card and the Power
@@ -179,15 +180,11 @@ export function ShareCell({
   return (
     <TableCell className={cn(APP_CELL, "text-right")}>
       <span className="inline-flex items-center gap-2">
-        <span className="inline-block h-1 w-10 overflow-hidden rounded-full bg-track">
-          <span
-            className={cn(
-              "block h-full",
-              muted ? "bg-fg-faint" : "bg-[var(--a)]"
-            )}
-            style={{ width: `${Math.min(100, Math.max(0, share ?? 0))}%` }}
-          />
-        </span>
+        <MeterTrack
+          fraction={share === null ? null : share / 100}
+          fill={muted ? "var(--color-fg-faint)" : "var(--a)"}
+          className="inline-block w-10"
+        />
         <span className="data-mono inline-block w-11 text-right">
           {formatPercent(share, { decimals: 1 })}
         </span>

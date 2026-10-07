@@ -1,9 +1,9 @@
-import { clamp01 } from "@core/chart-math";
 import {
   formatTemperature,
   type TemperatureUnits,
   temperatureParts,
 } from "@core/format";
+import { MeterTrack } from "~/widgets/meter-track";
 
 export interface ZoneRow {
   /** Sensor key, also the row key ("PMU tdie4"). */
@@ -37,9 +37,8 @@ export interface ZoneTableProps {
 const LO = 20;
 const HI = 110;
 
-function barFraction(c: number | null): number {
-  if (c == null || !Number.isFinite(c)) return 0;
-  return clamp01((c - LO) / (HI - LO));
+function barFraction(c: number | null): number | null {
+  return c == null ? null : (c - LO) / (HI - LO);
 }
 
 function range(
@@ -115,12 +114,11 @@ export function ZoneTable({ rows, extras, units, rangeLabel }: ZoneTableProps) {
                   {r.key}
                 </td>
                 <td className="px-2.5 py-[3px]">
-                  <span className="block h-1 overflow-hidden rounded-full bg-track">
-                    <span
-                      className="block h-full origin-left rounded-full bg-temp transition-transform duration-(--motion-tick) ease-tick"
-                      style={{ transform: `scaleX(${barFraction(r.now)})` }}
-                    />
-                  </span>
+                  <MeterTrack
+                    fraction={barFraction(r.now)}
+                    fill="var(--color-temp)"
+                    transition
+                  />
                 </td>
                 <td className="data-mono py-[3px] text-right text-foreground">
                   {formatTemperature(r.now, { units })}

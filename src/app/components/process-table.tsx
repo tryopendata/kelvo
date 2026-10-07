@@ -1,4 +1,4 @@
-import { clamp01 } from "@core/chart-math";
+import { ratio } from "@core/chart-math";
 import {
   type ByteUnits,
   fixed,
@@ -13,6 +13,7 @@ import { type ReactNode, useMemo, useRef, useState } from "react";
 import { ContextMenu, ContextMenuTrigger } from "~/components/ui/context-menu";
 import { cn } from "~/lib/utils";
 import { InitialChip } from "~/widgets/initial-chip";
+import { MeterTrack } from "~/widgets/meter-track";
 
 export type ProcessColumn =
   | "name"
@@ -264,15 +265,13 @@ function Cell({
         </span>
       );
     case "cpu": {
-      const frac = p.cpu_pct == null ? 0 : clamp01(p.cpu_pct / cpuBarMaxPct);
       return (
         <span className="inline-flex items-center gap-2">
-          <span className="inline-block h-1 w-12 overflow-hidden rounded-full bg-track">
-            <span
-              className="block h-full origin-left bg-cpu"
-              style={{ transform: `scaleX(${frac})` }}
-            />
-          </span>
+          <MeterTrack
+            fraction={ratio(p.cpu_pct, cpuBarMaxPct)}
+            fill="var(--color-cpu)"
+            className="inline-block w-12"
+          />
           <span className="data-mono inline-block w-10 text-right text-foreground">
             {num(p.cpu_pct, 1)}
           </span>
@@ -335,15 +334,13 @@ function Cell({
       );
     case "gpu": {
       // Percent of the whole GPU (D-085), so the bar is out of 100.
-      const frac = p.gpu_pct == null ? 0 : clamp01(p.gpu_pct / 100);
       return (
         <span className="inline-flex items-center gap-2">
-          <span className="inline-block h-1 w-12 overflow-hidden rounded-full bg-track">
-            <span
-              className="block h-full origin-left bg-gpu"
-              style={{ transform: `scaleX(${frac})` }}
-            />
-          </span>
+          <MeterTrack
+            fraction={ratio(p.gpu_pct, 100)}
+            fill="var(--color-gpu)"
+            className="inline-block w-12"
+          />
           <span className="data-mono inline-block w-10 text-right text-foreground">
             {num(p.gpu_pct, 1)}
           </span>
