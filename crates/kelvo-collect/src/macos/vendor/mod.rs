@@ -19,6 +19,10 @@
 //! - No `unwrap`/`panic!`: every failure is an `Option` or a typed error, because a
 //!   sampler tick must never take the process down.
 //! - Every `unsafe` block carries a `SAFETY:` comment.
+//! - [`iokit::IoObject`]'s handle and the matching, iterator, property and release
+//!   declarations are visible to the first-party `macos/iokit.rs`, which adds child
+//!   walks and single-property reads to the same type rather than keeping a second
+//!   IOKit wrapper.
 //!
 //! The collectors that turn these readings into series live one level up
 //! (`macos/ioreport.rs`, `macos/smc.rs`, `macos/sensors.rs`, `macos/hid.rs`).

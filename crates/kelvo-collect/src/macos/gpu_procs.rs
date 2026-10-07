@@ -45,7 +45,7 @@ use core_foundation_sys::number::{
 use core_foundation_sys::string::{CFStringGetCString, CFStringGetTypeID, kCFStringEncodingUTF8};
 use kelvo_schema::{Entitlement, Module, UnsupportedReason};
 
-use super::iokit::{IoObject, Key};
+use super::iokit::{IoObject, Key, matching_services};
 use crate::{
     Cadence, CollectError, Collector, CollectorId, Interest, Probe, ProcessGpu, SampleBuf, Tick,
 };
@@ -359,7 +359,7 @@ impl Collector for GpuPerProcess {
     fn probe(&mut self) -> Probe {
         // Supported when an accelerator has at least one client that names its creator
         // (Kelvo's own web view is one). Nothing is kept: sampling starts on demand.
-        let found = IoObject::services(ACCELERATOR).iter().any(|acc| {
+        let found = matching_services(ACCELERATOR).iter().any(|acc| {
             acc.children().is_some_and(|mut cs| {
                 cs.any(|c| {
                     c.property(&self.creator)
@@ -380,7 +380,7 @@ impl Collector for GpuPerProcess {
     fn sample(&mut self, tick: &Tick, out: &mut SampleBuf) -> Result<(), CollectError> {
         out.reserve_process_gpu(PID_ROOM);
         if self.accelerators.is_empty() {
-            self.accelerators = IoObject::services(ACCELERATOR);
+            self.accelerators = matching_services(ACCELERATOR);
             self.ledger.reset();
             self.last_ns = None;
             if self.accelerators.is_empty() {

@@ -1,6 +1,8 @@
-//! Minimal safe wrappers over the public IOKit registry API, shared by the disk and
-//! battery collectors. Only documented IOKit calls live here; private-API collectors
-//! keep their own FFI.
+//! First-party IOKit registry helpers for the disk, battery and GPU-process collectors:
+//! child walks, registry ids and single properties on [`IoObject`], and typed reads of
+//! CF values. The registry handle itself ([`IoObject`], [`matching_services`]) is the
+//! vendored one (`vendor/iokit.rs`), so the IOKit FFI is declared once. Only documented
+//! IOKit calls live here; private-API collectors keep their own FFI.
 
 use std::ffi::{CStr, c_char};
 
@@ -9,36 +11,17 @@ use core_foundation::boolean::CFBoolean;
 use core_foundation::dictionary::CFDictionary;
 use core_foundation::number::CFNumber;
 use core_foundation::string::CFString;
-use core_foundation_sys::base::{CFAllocatorRef, CFTypeRef, kCFAllocatorDefault};
-use core_foundation_sys::dictionary::{CFDictionaryRef, CFMutableDictionaryRef};
-use core_foundation_sys::string::CFStringRef;
+use core_foundation_sys::base::kCFAllocatorDefault;
+
+use super::vendor::iokit::{IOIteratorNext, IORegistryEntryCreateCFProperty};
+pub(crate) use super::vendor::iokit::{IoObject, matching_services};
 
 type IoObjectT = u32;
 type KernReturn = i32;
 
 #[link(name = "IOKit", kind = "framework")]
 unsafe extern "C" {
-    fn IOServiceMatching(name: *const c_char) -> CFMutableDictionaryRef;
-    fn IOServiceGetMatchingServices(
-        main_port: u32,
-        matching: CFDictionaryRef,
-        existing: *mut IoObjectT,
-    ) -> KernReturn;
-    fn IOIteratorNext(iterator: IoObjectT) -> IoObjectT;
     fn IOIteratorIsValid(iterator: IoObjectT) -> u32;
-    fn IOObjectRelease(object: IoObjectT) -> KernReturn;
-    fn IORegistryEntryCreateCFProperty(
-        entry: IoObjectT,
-        key: CFStringRef,
-        allocator: CFAllocatorRef,
-        options: u32,
-    ) -> CFTypeRef;
-    fn IORegistryEntryCreateCFProperties(
-        entry: IoObjectT,
-        properties: *mut CFMutableDictionaryRef,
-        allocator: CFAllocatorRef,
-        options: u32,
-    ) -> KernReturn;
     fn IORegistryEntryGetChildEntry(
         entry: IoObjectT,
         plane: *const c_char,
@@ -52,8 +35,6 @@ unsafe extern "C" {
     fn IORegistryEntryGetRegistryEntryID(entry: IoObjectT, id: *mut u64) -> KernReturn;
 }
 
-/// `kIOMainPortDefault`.
-const MAIN_PORT_DEFAULT: u32 = 0;
 const SERVICE_PLANE: &CStr = c"IOService";
 
 /// An immutable CFString kept by a collector for per-tick lookups. `CFString` is not
@@ -78,49 +59,7 @@ impl std::ops::Deref for Key {
     }
 }
 
-/// An owned IOKit object reference, released on drop.
-pub(crate) struct IoObject(IoObjectT);
-
-impl Drop for IoObject {
-    fn drop(&mut self) {
-        // SAFETY: we own one reference to a non-zero object.
-        unsafe {
-            IOObjectRelease(self.0);
-        }
-    }
-}
-
 impl IoObject {
-    /// Every registered service of `class`.
-    pub(crate) fn services(class: &CStr) -> Vec<IoObject> {
-        let mut out = Vec::new();
-        // SAFETY: `class` is NUL-terminated. The returned dictionary is consumed by
-        // IOServiceGetMatchingServices below, so we do not release it.
-        let matching = unsafe { IOServiceMatching(class.as_ptr()) };
-        if matching.is_null() {
-            return out;
-        }
-        let mut iter: IoObjectT = 0;
-        crate::calls::count(crate::calls::Api::IoKit);
-        // SAFETY: `matching` is a valid dictionary (consumed); `iter` is an out-pointer.
-        let kr = unsafe {
-            IOServiceGetMatchingServices(MAIN_PORT_DEFAULT, matching as CFDictionaryRef, &mut iter)
-        };
-        if kr != 0 || iter == 0 {
-            return out;
-        }
-        let iter = IoObject(iter);
-        loop {
-            // SAFETY: `iter` is a valid iterator we own; each returned object is owned.
-            let obj = unsafe { IOIteratorNext(iter.0) };
-            if obj == 0 {
-                break;
-            }
-            out.push(IoObject(obj));
-        }
-        out
-    }
-
     /// The first child in the IOService plane.
     pub(crate) fn first_child(&self) -> Option<IoObject> {
         let mut child: IoObjectT = 0;
@@ -172,21 +111,6 @@ impl IoObject {
         };
         // SAFETY: non-null result owned by us (Create rule).
         (!r.is_null()).then(|| unsafe { CFType::wrap_under_create_rule(r) })
-    }
-
-    /// All registry properties as one dictionary.
-    pub(crate) fn properties(&self) -> Option<CFDictionary<CFString, CFType>> {
-        let mut dict: CFMutableDictionaryRef = std::ptr::null_mut();
-        crate::calls::count(crate::calls::Api::IoKit);
-        // SAFETY: `self.0` is valid; `dict` is an out-pointer that receives an owned
-        // dictionary on success.
-        let kr =
-            unsafe { IORegistryEntryCreateCFProperties(self.0, &mut dict, kCFAllocatorDefault, 0) };
-        if kr != 0 || dict.is_null() {
-            return None;
-        }
-        // SAFETY: owned (Create rule) dictionary with CFString keys.
-        Some(unsafe { CFDictionary::wrap_under_create_rule(dict as CFDictionaryRef) })
     }
 }
 
@@ -253,7 +177,7 @@ pub(crate) fn dict_of(v: &CFType) -> Option<CFDictionary<CFString, CFType>> {
 /// is what the host id's machine binding needs (D-071). Not yet checked in a sandboxed
 /// (`appstore`) build; `None` there just skips the binding.
 pub fn platform_uuid() -> Option<String> {
-    let service = IoObject::services(c"IOPlatformExpertDevice")
+    let service = matching_services(c"IOPlatformExpertDevice")
         .into_iter()
         .next()?;
     as_string(&service.property(&CFString::from_static_string("IOPlatformUUID"))?)

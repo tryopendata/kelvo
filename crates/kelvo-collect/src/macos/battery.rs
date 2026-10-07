@@ -27,7 +27,7 @@ use core_foundation_sys::base::CFTypeRef;
 use core_foundation_sys::dictionary::CFDictionaryRef;
 use kelvo_schema::{Entitlement, MetricId, Module, SeriesKey};
 
-use super::iokit::{self, IoObject};
+use super::iokit::{self, IoObject, matching_services};
 use crate::{Cadence, CollectError, Collector, CollectorId, Every, Probe, SampleBuf, Tick};
 
 /// Health, cycles and capacities change over days: read at most every 60 s.
@@ -234,7 +234,7 @@ impl Collector for Battery {
     }
 
     fn probe(&mut self) -> Probe {
-        self.service = IoObject::services(c"AppleSmartBattery").into_iter().next();
+        self.service = matching_services(c"AppleSmartBattery").into_iter().next();
         if internal_power_source().is_none() && self.service.is_none() {
             return Probe::NotPresent;
         }
