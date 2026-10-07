@@ -41,7 +41,7 @@ export function PopoverHeader({
         scrolled ? "border-border" : "border-transparent"
       )}
     >
-      <KelvoMark className="size-6" />
+      <KelvoMark className="size-7" />
       <div className="flex min-w-0 flex-1 flex-col gap-px">
         <h1 className="m-0 font-[590] text-[13px] tracking-[-0.01em]">Kelvo</h1>
         <span className="truncate font-normal text-[11px] text-muted-foreground">

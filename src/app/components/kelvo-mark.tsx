@@ -10,7 +10,8 @@ const CELLS = [
 
 /**
  * The Kelvo mark: a 4 x 4 slice of the history heatmap in the CPU accent.
- * Same geometry as `brand/kelvo-icon.svg`. In dark mode the faint cells lift
+ * Same geometry as `brand/kelvo-icon.svg`, with the viewBox cropped to the
+ * cells so the grid's edge lines up with the text beside it. In dark mode the faint cells lift
  * 20% toward solid, as in `brand/kelvo-icon-dark.svg`, or they vanish on dark
  * surfaces. Decorative wherever the name sits next to it, so it is hidden from
  * assistive tech.
@@ -18,7 +19,7 @@ const CELLS = [
 export function KelvoMark({ className }: { className?: string }) {
   return (
     <svg
-      viewBox="0 0 32 32"
+      viewBox="1 1 30 30"
       aria-hidden
       className={cn(
         "shrink-0 fill-cpu [--lift:0] dark:[--lift:0.2]",
