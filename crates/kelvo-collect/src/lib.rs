@@ -350,8 +350,8 @@ pub struct SampleBuf {
     primary_iface: Option<PrimaryIface>,
     gpu: Vec<ProcessGpu>,
     /// The per-process GPU collector measured this tick (not a baseline), so a process
-    /// absent from `gpu` used no GPU time.
-    gpu_measured: bool,
+    /// absent from `gpu` used no GPU time: the wall time its shares are of, ms.
+    gpu_span_ms: Option<u64>,
 }
 
 impl SampleBuf {
@@ -442,14 +442,22 @@ impl SampleBuf {
         self.net.get(i)
     }
 
-    /// Marks this tick's per-process GPU time as measured: every process not pushed with
-    /// [`SampleBuf::push_process_gpu`] used none. Not called on a baseline sample.
-    pub fn set_process_gpu_measured(&mut self) {
-        self.gpu_measured = true;
+    /// Marks this tick's per-process GPU time as measured over the last `span_ms` of wall
+    /// time: every process not pushed with [`SampleBuf::push_process_gpu`] used none. Not
+    /// called on a baseline sample.
+    pub fn set_process_gpu_measured(&mut self, span_ms: u64) {
+        self.gpu_span_ms = Some(span_ms);
     }
 
     pub fn process_gpu_measured(&self) -> bool {
-        self.gpu_measured
+        self.gpu_span_ms.is_some()
+    }
+
+    /// The wall time this tick's GPU shares are of, ms (D-099): since the collector's
+    /// previous pass, which is longer than the process interval when GPU joins only some
+    /// process samples. `None` when GPU was not measured.
+    pub fn process_gpu_span_ms(&self) -> Option<u64> {
+        self.gpu_span_ms
     }
 
     /// Makes room for `n` GPU rows; see [`SampleBuf::reserve_process_net`].
@@ -513,7 +521,7 @@ impl SampleBuf {
         self.iface_net = None;
         self.primary_iface = None;
         self.gpu.clear();
-        self.gpu_measured = false;
+        self.gpu_span_ms = None;
     }
 
     /// The value pushed for `key` this tick, if any. Linear; meant for tests and tools.

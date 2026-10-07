@@ -1,5 +1,6 @@
 import type { AppUsage, UsageByApp } from "@core/generated/bindings";
 import {
+  gpuShortfall,
   remainderRows,
   usageCoverage,
   usageFinal,
@@ -121,5 +122,24 @@ describe("usage rows (D-099)", () => {
     expect(usageFinal(answer())).toBe(true);
     expect(usageFinal(answer({ complete_to_ms: T + 50_000 }))).toBe(false);
     expect(usageFinal(undefined)).toBe(false);
+  });
+});
+
+describe("gpuShortfall", () => {
+  it("is null when GPU covered the sampled time, within slack", () => {
+    expect(gpuShortfall(answer({ gpu_covered_ms: 60_000 }))).toBeNull();
+    expect(gpuShortfall(answer({ gpu_covered_ms: 50_000 }))).toBeNull();
+    expect(gpuShortfall(answer({ covered_ms: 0 }))).toBeNull();
+  });
+
+  it("names the measured part when GPU fell short", () => {
+    expect(gpuShortfall(answer({ gpu_covered_ms: 49_000 }))).toEqual({
+      gpuMs: 49_000,
+      coveredMs: 60_000,
+    });
+    expect(gpuShortfall(answer({ gpu_covered_ms: 0 }))).toEqual({
+      gpuMs: 0,
+      coveredMs: 60_000,
+    });
   });
 });

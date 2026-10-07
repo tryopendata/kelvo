@@ -26,10 +26,13 @@
 //! are scaled down together when they add up to more than 100%, so a window never shows
 //! an impossible GPU; the numbers are approximate under such jobs.
 //!
-//! Lifecycle: sampled only while a visible view asks for GPU time
-//! (`Cadence::OnDemand(Interest::GpuProcesses)`), on the process ticks. The first
-//! sample is a baseline. [`Collector::release`] forgets the accelerator and the
-//! counters, so the next view starts over from a baseline.
+//! Lifecycle: on demand (`Cadence::OnDemand(Interest::GpuProcesses)`), on the process
+//! ticks. Outside Performance mode the engine holds it with nothing asking and joins it
+//! to a process sample about once per 10 s usage bucket, for per-app GPU over a range;
+//! in Performance mode it runs only while a visible view asks (D-085, D-099). Shares are
+//! of the wall time since the previous pass, which the sample reports. The first sample
+//! is a baseline. [`Collector::release`] forgets the accelerator and the counters, so the
+//! next acquire starts over from a baseline.
 
 use std::collections::HashMap;
 use std::ffi::c_char;
@@ -403,12 +406,11 @@ impl Collector for GpuPerProcess {
         let (true, Some(prev)) = (measured, prev) else {
             return Ok(());
         };
-        out.set_process_gpu_measured();
-        shares(
-            &self.ledger.per_pid,
-            tick.continuous_ns.saturating_sub(prev),
-            |pid, pct| out.push_process_gpu(ProcessGpu { pid, pct }),
-        );
+        let wall_ns = tick.continuous_ns.saturating_sub(prev);
+        out.set_process_gpu_measured(wall_ns / 1_000_000);
+        shares(&self.ledger.per_pid, wall_ns, |pid, pct| {
+            out.push_process_gpu(ProcessGpu { pid, pct })
+        });
         Ok(())
     }
 

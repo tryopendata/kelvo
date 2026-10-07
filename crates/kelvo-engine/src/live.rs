@@ -120,7 +120,8 @@ impl LiveHub {
             }
         }
         if let BusMsg::Processes(batch) = &msg {
-            self.usage().push(batch.ts_ms, &batch.rows);
+            self.usage()
+                .push_with_gpu_span(batch.ts_ms, &batch.rows, batch.gpu_span_ms);
         }
         self.bus.publish(msg);
     }

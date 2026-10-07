@@ -86,6 +86,7 @@ import {
   HISTORY_TIERS,
   HOLD_FACTOR,
   METRIC_KINDS,
+  METRIC_MODULES,
   PERFORMANCE_VISIBLE_MS,
   RING_SPAN_MS,
 } from "@core/generated/bindings";
@@ -1266,8 +1267,16 @@ export function createMockTransport(
       const latestMs = rows[rows.length - 1]?.ts ?? startMs;
       // The engine keeps an hour; the mock's ring is its whole run.
       const sinceMs = Math.max(ringStartMs, latestMs - 3_600_000);
-      const gpu = caps.process_gpu === true;
+      // GPU per process is measured always, except in Performance mode, where
+      // only a view asking for it measures it (D-099). The mock has no record
+      // of past interest: a view asking now stands for the whole range.
+      const sampling = settings.settings.sampling;
+      const performance = !!sampling.performance_mode || lowPowerMode;
+      const gpu =
+        caps.process_gpu === true &&
+        (!performance || interest?.view.gpu === true);
       const from = Math.max(fromMs, sinceMs);
+      // Cut at the newest process sample, where the apps' sums stop.
       const stats =
         from < toMs
           ? mockSeriesStats(
@@ -1275,7 +1284,7 @@ export function createMockTransport(
               ["cpu.total", "gpu.util", "disk.read_total", "disk.write_total"],
               from,
               toMs,
-              now(),
+              Math.min(now(), latestMs),
               historyPage
             )
           : null;
@@ -1310,6 +1319,21 @@ export function createMockTransport(
           kind: "invalid_argument",
           message: "the range is longer than history keeps",
         });
+      }
+      // As Rust: series stats take unlabelled catalog metrics only.
+      for (const m of metrics) {
+        if (!(m in METRIC_MODULES)) {
+          return err({
+            kind: "invalid_argument",
+            message: `${m} is not in the catalog`,
+          });
+        }
+        if (gen.keys.some((k) => k.metric === m && k.labels.length > 0)) {
+          return err({
+            kind: "invalid_argument",
+            message: `${m} has labels; series stats take unlabelled metrics`,
+          });
+        }
       }
       return ok(
         mockSeriesStats(host, metrics, fromMs, toMs, now(), historyPage)

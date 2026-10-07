@@ -294,9 +294,8 @@ function GpuShortfallNote({ data }: { data: UsageByApp }) {
     <AppsNote>
       GPU time was measured for{" "}
       <span className="data-mono">{formatSpan(short.gpuMs)}</span> of the{" "}
-      <span className="data-mono">{formatSpan(short.coveredMs)}</span> sampled
-      (Performance mode measures it only while a GPU view is open). Averages are
-      over the measured time.
+      <span className="data-mono">{formatSpan(short.coveredMs)}</span> sampled.
+      Averages are over the measured time.
     </AppsNote>
   );
 }

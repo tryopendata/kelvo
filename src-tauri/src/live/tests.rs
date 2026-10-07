@@ -102,8 +102,11 @@ impl FakeFeed {
     }
 
     fn processes(&self, ts_ms: i64, rows: Vec<ProcessSample>) {
-        self.hub
-            .publish(BusMsg::Processes(Arc::new(ProcessBatch { ts_ms, rows })));
+        self.hub.publish(BusMsg::Processes(Arc::new(ProcessBatch {
+            ts_ms,
+            rows,
+            gpu_span_ms: None,
+        })));
     }
 }
 
