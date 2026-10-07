@@ -1,4 +1,4 @@
-import type { TimeRange } from "@core/brush";
+import { type TimeRange, windowRange } from "@core/brush";
 import {
   formatBytes,
   formatClockSeconds,
@@ -9,7 +9,6 @@ import {
 import type { NetworkByApp } from "@core/generated/bindings";
 import { networkByAppFailure } from "@core/history-state";
 import { CommandFailure } from "@core/transport";
-import { XIcon } from "lucide-react";
 import { type ReactNode, useMemo, useState } from "react";
 import {
   APP_CELL,
@@ -19,6 +18,7 @@ import {
   ShareCell,
   SortHead,
 } from "~/components/app-table";
+import { SelectionChip } from "~/components/selection-chip";
 import {
   Table,
   TableBody,
@@ -27,14 +27,14 @@ import {
   TableHeader,
   TableRow,
 } from "~/components/ui/table";
+import { useOpenEdge } from "~/hooks/use-range-scope";
 import { useUnits } from "~/hooks/use-units";
 import { cn } from "~/lib/utils";
-import { useBrushRange, useBrushStore } from "~/stores/brush-store";
+import { useBrushRange } from "~/stores/brush-store";
 import {
   useCompleteEdge,
   useLatestBucket,
   useNetworkByApp,
-  useOpenEdge,
 } from "../_hooks/use-network-by-app";
 import {
   type AppRow,
@@ -48,32 +48,7 @@ import {
   remainderRows,
   sortApps,
   unrecorded,
-  windowRange,
 } from "../_lib/apps";
-
-/**
- * "14:02:10 to 14:03:40 ×" (a chip with a dismiss icon in place of "Clear"
- * text, D-093).
- */
-function SelectionChip({ range }: { range: TimeRange }) {
-  const store = useBrushStore();
-  return (
-    <span className="inline-flex h-6 items-center gap-1.5 rounded-full border border-border bg-btn pl-2.5 text-[11px] text-foreground">
-      <span className="data-mono">{formatClockSeconds(range.fromMs)}</span>
-      <span className="text-muted-foreground">to</span>
-      <span className="data-mono">{formatClockSeconds(range.toMs)}</span>
-      <button
-        type="button"
-        onClick={() => store.getState().clear()}
-        aria-label="Clear selection"
-        title="Clear selection (Esc)"
-        className="grid h-5.5 place-items-center rounded-r-full border-border-subtle border-l pr-2 pl-1.5 text-fg-subtle outline-none hover:bg-selected hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-      >
-        <XIcon aria-hidden className="size-3" />
-      </button>
-    </span>
-  );
-}
 
 /**
  * Bytes per app over the selection, or over the chart window (D-091) when

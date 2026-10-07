@@ -754,9 +754,9 @@ pub struct UsageOther {
     /// `disk.read_total` bytes less the apps'.
     pub read_bytes: Option<f64>,
     pub write_bytes: Option<f64>,
-    /// The apps exceeded the host total somewhere (the two are sampled differently), and
-    /// a remainder was clamped to 0.
-    pub clamped: bool,
+    /// The keys whose remainder was clamped to 0: the apps exceeded the host total
+    /// there (the two are sampled differently).
+    pub clamped: Vec<UsageKey>,
 }
 
 /// `query_usage_by_app`: which apps used CPU, GPU, memory, disk and energy over a range,
@@ -774,6 +774,10 @@ pub struct UsageByApp {
     /// here.
     #[specta(type = Option<JsSafeInt>)]
     pub since_ms: Option<i64>,
+    /// Buckets ending at or before this no longer change; a range reaching past it is
+    /// still being measured. `null` before the first process sample.
+    #[specta(type = Option<JsSafeInt>)]
+    pub complete_to_ms: Option<i64>,
     /// Time inside the range a process sample covered, ms. Averages divide by it; 0 means
     /// not measured, not zero use.
     #[specta(type = JsSafeInt)]

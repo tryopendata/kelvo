@@ -326,10 +326,10 @@ export function mockUsageByApp({
 
   const stat = (m: string) =>
     stats?.metrics.find((s) => s.metric === m && s.measured_ms > 0) ?? null;
-  let clamped = false;
-  const less = (host: number, apps: number, slack: number) => {
+  const clamped: UsageKey[] = [];
+  const less = (key: UsageKey, host: number, apps: number, slack: number) => {
     const d = host - apps;
-    if (d < -slack) clamped = true;
+    if (d < -slack && !clamped.includes(key)) clamped.push(key);
     return Math.max(0, d);
   };
   const measured = coveredMs > 0;
@@ -340,15 +340,16 @@ export function mockUsageByApp({
   const other = {
     cpu_avg_pct:
       measured && cores > 0 && cpuHost !== null
-        ? less(cpuHost * cores, total.cpu_avg_pct, 1)
+        ? less("cpu", cpuHost * cores, total.cpu_avg_pct, 1)
         : null,
     gpu_avg_pct:
       gpuHost !== null && total.gpu_avg_pct !== null
-        ? less(gpuHost, total.gpu_avg_pct, 1)
+        ? less("gpu", gpuHost, total.gpu_avg_pct, 1)
         : null,
     read_bytes:
       measured && read
         ? less(
+            "disk",
             read.integral ?? 0,
             total.read_bytes,
             0.01 * (read.integral ?? 0)
@@ -357,19 +358,20 @@ export function mockUsageByApp({
     write_bytes:
       measured && write
         ? less(
+            "disk",
             write.integral ?? 0,
             total.write_bytes,
             0.01 * (write.integral ?? 0)
           )
         : null,
-    clamped: false,
+    clamped,
   };
-  other.clamped = clamped;
 
   return {
     from_ms: from,
     to_ms: to,
     since_ms: sinceMs,
+    complete_to_ms: floorTo(latestMs),
     covered_ms: coveredMs,
     gpu_covered_ms: gpuCoveredMs,
     total,

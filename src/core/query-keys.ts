@@ -10,6 +10,7 @@ import type {
   Module,
   Settings,
   Tier,
+  UsageKey,
 } from "@core/generated/bindings";
 
 /**
@@ -58,6 +59,39 @@ export const historyKeys = {
    */
   energyByApp: (hostId: HostId, fromMs: number, toMs: number) =>
     [...historyKeys.host(hostId), "energy-by-app", fromMs, toMs] as const,
+  /**
+   * Per-app use over `[fromMs, toMs)`, the top `limit` by `by` (D-099). Not
+   * stored history either; cleared with it like energy.
+   */
+  usageByApp: (
+    hostId: HostId,
+    by: UsageKey,
+    limit: number,
+    fromMs: number,
+    toMs: number
+  ) =>
+    [
+      ...historyKeys.host(hostId),
+      "usage-by-app",
+      by,
+      limit,
+      fromMs,
+      toMs,
+    ] as const,
+  /** Average, peak and integral of unlabelled series over `[fromMs, toMs)`. */
+  seriesStats: (
+    hostId: HostId,
+    metrics: readonly string[],
+    fromMs: number,
+    toMs: number
+  ) =>
+    [
+      ...historyKeys.host(hostId),
+      "series-stats",
+      metrics.join(","),
+      fromMs,
+      toMs,
+    ] as const,
   /**
    * The 30-day heatmap: `hourStartMs` is the start of the current local
    * hour, so the key moves each hour (the newest cell closes) and at local

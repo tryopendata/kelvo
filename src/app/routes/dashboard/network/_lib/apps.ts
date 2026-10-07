@@ -1,7 +1,5 @@
-import type { TimeRange } from "@core/brush";
-import { formatSpan } from "@core/format";
+import { scopeWords, type TimeRange } from "@core/brush";
 import type { NetworkByApp } from "@core/generated/bindings";
-import { windowWords } from "@core/live-window";
 
 /** One row of the Apps table: a named app or one of the remainder rows. */
 export interface AppRow {
@@ -28,10 +26,7 @@ export function appsTitle(
   selection: TimeRange | null,
   windowMs: number
 ): string {
-  if (selection) {
-    return `Apps, selected ${formatSpan(selection.toMs - selection.fromMs)}`;
-  }
-  return `Apps, last ${windowWords(windowMs)}`;
+  return `Apps, ${scopeWords(selection, windowMs)}`;
 }
 
 /**

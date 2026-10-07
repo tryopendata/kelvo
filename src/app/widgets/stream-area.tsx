@@ -1,7 +1,7 @@
 import { splitGaps } from "@core/chart-math";
 import { scaleLinear } from "d3-scale";
 import { area, line } from "d3-shape";
-import { useId } from "react";
+import { type ReactNode, useId } from "react";
 import { cn } from "~/lib/utils";
 import { GapBands, type GapSpan } from "./gap-band";
 import { type Accent, accentVars, rampColor } from "./lib/accent";
@@ -45,7 +45,16 @@ export interface StreamAreaProps {
    * the parts outside the window are clipped.
    */
   gaps?: readonly GapSpan[];
+  /**
+   * A selected span as fractions of the plot width; the plot outside it is
+   * veiled. Null or absent: nothing is selected.
+   */
+  highlight?: { left: number; width: number } | null;
+  /** Drawn over the plot area, sized to it (a brush layer). */
+  overlay?: ReactNode;
 }
+
+const pct = (f: number) => `${(f * 100).toFixed(3)}%`;
 
 interface Pt {
   x: number;
@@ -71,6 +80,8 @@ export function StreamArea({
   yTicks,
   xTicks,
   gaps,
+  highlight,
+  overlay,
 }: StreamAreaProps) {
   const uid = useId();
   const n = Math.max(2, ...series.map((s) => s.values.length));
@@ -193,6 +204,21 @@ export function StreamArea({
             rangeToMs={tEndMs}
           />
         )}
+        {highlight && (
+          <>
+            <div
+              aria-hidden
+              data-testid="stream-veil"
+              className="pointer-events-none absolute inset-y-0 left-0 bg-card/60"
+              style={{ width: pct(highlight.left) }}
+            />
+            <div
+              aria-hidden
+              className="pointer-events-none absolute inset-y-0 right-0 bg-card/60"
+              style={{ left: pct(highlight.left + highlight.width) }}
+            />
+          </>
+        )}
         {drawn.flatMap(({ s, edges, stroke }) =>
           edges.map((p) => (
             <span
@@ -234,6 +260,7 @@ export function StreamArea({
             {windowLabel}
           </span>
         )}
+        {overlay}
       </div>
       {xTicks && xTicks.length > 0 && (
         <div aria-hidden className="flex justify-between">

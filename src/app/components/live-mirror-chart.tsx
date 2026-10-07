@@ -1,12 +1,12 @@
-import { brushBucketMs, floorTo, rangeSlots } from "@core/brush";
+import { brushBucketMs, rangeSlots } from "@core/brush";
 import { gridIntervalMs } from "@core/live-state";
 import { windowWords } from "@core/live-window";
 import { useRef } from "react";
 import { BrushOverlay } from "~/components/brush-overlay";
 import { MirrorHover } from "~/components/mirror-hover";
+import { useChartBrush } from "~/hooks/use-chart-brush";
 import { useNiceCeiling } from "~/hooks/use-nice-ceiling";
 import { useRingBuckets } from "~/hooks/use-ring";
-import { useBrush } from "~/stores/brush-store";
 import { useHost } from "~/stores/host-store";
 import { GapBands, type GapSpan } from "~/widgets/gap-band";
 import type { Accent } from "~/widgets/lib/accent";
@@ -87,13 +87,7 @@ export function LiveMirrorChart({
     ? brushBucketMs(plain.bucketMs, intervalMs)
     : plain.bucketMs;
   const count = Math.max(1, Math.round(windowMs / bucketMs));
-  // The newest elapsed 10 s edge: the brush selects no time after it. Moves
-  // every 10 s, not per tick.
-  const elapsedEdge = useHost((s) =>
-    brush && s.lastTsMs !== null ? floorTo(s.lastTsMs) : null
-  );
-  // Draft or committed; changes on a drag and a selection, not per pointer move.
-  const selected = useBrush((s) => (brush ? (s.draft ?? s.range) : null));
+  const { selected, elapsedEdge } = useChartBrush(brush);
   const { values, endMs } = useRingBuckets([upKey, downKey], bucketMs, count);
   const pick = (key: string) =>
     Array.from({ length: count }, (_, i) => values[key]?.[i] ?? null);

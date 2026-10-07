@@ -10,7 +10,6 @@ import {
   remainderRows,
   sortApps,
   unrecorded,
-  windowRange,
 } from "./apps";
 
 const T = 1_700_000_000_000;
@@ -235,9 +234,5 @@ describe("coverage", () => {
         })
       )
     ).toBe(T + 40_000);
-  });
-
-  it("the whole window is the complete buckets before the complete edge", () => {
-    expect(windowRange(T, 300_000)).toEqual({ fromMs: T - 300_000, toMs: T });
   });
 });

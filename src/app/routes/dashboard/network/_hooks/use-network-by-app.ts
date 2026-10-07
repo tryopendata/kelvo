@@ -1,20 +1,10 @@
-import { BRUSH_STEP_MS, floorTo, type TimeRange } from "@core/brush";
+import { BRUSH_STEP_MS, type TimeRange } from "@core/brush";
 import type { NetworkByApp } from "@core/generated/bindings";
 import { historyKeys } from "@core/query-keys";
 import { unwrap } from "@core/transport";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useTransport } from "~/lib/transport-context";
-import { useHost, useHostId } from "~/stores/host-store";
-
-/**
- * Start of the 10 s bucket the newest sample is in, or null before the
- * first sample. Changes once every 10 s, so a component reading it
- * re-renders at that cadence, not at 1 Hz. The engine may still hold the
- * bucket before it open (see `useCompleteEdge`).
- */
-export function useOpenEdge(): number | null {
-  return useHost((s) => (s.lastTsMs === null ? null : floorTo(s.lastTsMs)));
-}
+import { useHostId } from "~/stores/host-store";
 
 /**
  * An answer is final once every bucket in it is complete: both the per-app

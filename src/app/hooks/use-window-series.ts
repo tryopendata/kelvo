@@ -1,3 +1,4 @@
+import { brushBucketMs } from "@core/brush";
 import { gridIntervalMs, seriesWindow } from "@core/live-state";
 import {
   bucketAverages,
@@ -29,10 +30,15 @@ export interface WindowSeries {
  * longer change are computed once, when the newest bucket moves; each tick
  * recomputes the open one and those a later sample can still fill back into
  * within its hold (`liveBucketCount`). Re-renders once per tick.
+ *
+ * With `brush` (D-089) the points are a width that divides 10 s or is a
+ * multiple of it (3 s at 1h becomes 5 s), so a selection snapped to 10 s
+ * buckets lines up with them.
  */
 export function useWindowSeries(
   keys: readonly string[],
-  windowMs: number
+  windowMs: number,
+  { brush = false }: { brush?: boolean } = {}
 ): WindowSeries {
   const store = useHostStore();
   useHost((s) => s.rowsVersion);
@@ -40,8 +46,9 @@ export function useWindowSeries(
   const epoch = useHost((s) => s.rowsEpoch);
   const state = store.getState();
   const interval = gridIntervalMs(state.status);
-  const factor = Math.ceil(windowMs / interval / MAX_CHART_POINTS);
-  const bucketMs = factor * interval;
+  const plainMs = Math.ceil(windowMs / interval / MAX_CHART_POINTS) * interval;
+  const bucketMs = brush ? brushBucketMs(plainMs, interval) : plainMs;
+  const factor = bucketMs / interval;
   const count = Math.ceil(windowMs / bucketMs);
   const last =
     factor > 1 && state.lastTsMs !== null

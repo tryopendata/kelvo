@@ -296,6 +296,9 @@ pub struct UsageByApp {
     /// When the ring started counting, `None` before any batch. A range starting earlier
     /// was only measured from here.
     pub since_ms: Option<i64>,
+    /// Buckets ending at or before this are final: the next sample's interval starts
+    /// at the newest one, so it charges only later time. `None` before any batch.
+    pub complete_to_ms: Option<i64>,
     /// Time inside the range a process sample covered, ms. Averages divide by this; 0
     /// means nothing was measured, not zero use.
     pub covered_ms: i64,
@@ -755,6 +758,7 @@ impl UsageRing {
             from_ms: from,
             to_ms: to,
             since_ms: self.since_ms,
+            complete_to_ms: latest.map(|l| l - l.rem_euclid(USAGE_BUCKET_MS)),
             covered_ms: covered_ms.round() as i64,
             gpu_covered_ms: gpu_covered_ms.round() as i64,
             total: UsageTotal {
@@ -892,6 +896,8 @@ mod tests {
         // Six 10 s intervals, each covering the bucket before its batch.
         assert_eq!(r.covered_ms, 60_000);
         assert_eq!(r.since_ms, Some(T0));
+        // The next batch charges only time after the newest one.
+        assert_eq!(r.complete_to_ms, Some(T0 + 60_000));
         assert!((chrome.avg_w - 3.0).abs() < 1e-6);
     }
 

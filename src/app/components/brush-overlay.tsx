@@ -30,6 +30,9 @@ const CLICK_SLOP_PX = 3;
  */
 export const BRUSH_SCOPE_ATTR = "data-brush-scope";
 
+/** Spread on each element that reads the selection: `<Card {...brushScopeProps}>`. */
+export const brushScopeProps = { [BRUSH_SCOPE_ATTR]: "" } as const;
+
 /** Presses on these act on their own, so they never clear the selection. */
 const INTERACTIVE = [
   "button, a, input, select, textarea, label, summary, [contenteditable=true]",
@@ -82,6 +85,8 @@ export interface BrushOverlayProps {
    * selected or focused. Defaults to the chart's end.
    */
   selectableToMs?: number;
+  /** Distance from the positioned parent's left edge to the plot, px. */
+  inset?: number;
 }
 
 const pct = (f: number) => `${(f * 100).toFixed(3)}%`;
@@ -107,6 +112,7 @@ export function BrushOverlay({
   spanMs,
   height,
   selectableToMs,
+  inset = 96,
 }: BrushOverlayProps) {
   const store = useBrushStore();
   const view = useBrush((s) => s.draft ?? s.range);
@@ -278,8 +284,8 @@ export function BrushOverlay({
       aria-valuenow={(at - first) / BRUSH_STEP_MS}
       aria-valuetext={valueText}
       data-testid="brush"
-      className="group absolute top-0 right-0 left-24 cursor-crosshair touch-none select-none rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      style={{ height }}
+      className="group absolute top-0 right-0 cursor-crosshair touch-none select-none rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      style={{ height, left: inset }}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}

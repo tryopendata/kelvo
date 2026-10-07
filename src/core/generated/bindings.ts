@@ -1821,6 +1821,11 @@ export type UsageByApp = {
 	 */
 	since_ms: number | null,
 	/**
+	 *  Buckets ending at or before this no longer change; a range reaching past it is
+	 *  still being measured. `null` before the first process sample.
+	 */
+	complete_to_ms: number | null,
+	/**
 	 *  Time inside the range a process sample covered, ms. Averages divide by it; 0 means
 	 *  not measured, not zero use.
 	 */
@@ -1861,10 +1866,10 @@ export type UsageOther = {
 	read_bytes: number | null,
 	write_bytes: number | null,
 	/**
-	 *  The apps exceeded the host total somewhere (the two are sampled differently), and
-	 *  a remainder was clamped to 0.
+	 *  The keys whose remainder was clamped to 0: the apps exceeded the host total
+	 *  there (the two are sampled differently).
 	 */
-	clamped: boolean,
+	clamped: UsageKey[],
 };
 
 /**  Every process's use over the range, before any floor: what shares are of. */

@@ -106,7 +106,7 @@ describe("mockUsageByApp", () => {
     });
     expect(r.other.cpu_avg_pct).toBeCloseTo(200 - 50 - 60 - 35 / 3);
     expect(r.other.write_bytes).toBe(0);
-    expect(r.other.clamped).toBe(true);
+    expect(r.other.clamped).toEqual(["disk"]);
     expect(r.other.gpu_avg_pct).toBeNull();
   });
 

@@ -6,8 +6,10 @@ import {
   extendRange,
   rangeFractions,
   rangeSlots,
+  scopeWords,
   snapRange,
   timeAt,
+  windowRange,
 } from "./brush";
 
 const T = 1_700_000_000_000; // a 10 s edge
@@ -137,5 +139,18 @@ describe("chart geometry", () => {
       from: 0,
       to: 0,
     });
+  });
+});
+
+describe("window and scope (D-099)", () => {
+  it("the whole window is the buckets before the edge", () => {
+    expect(windowRange(T, 300_000)).toEqual({ fromMs: T - 300_000, toMs: T });
+  });
+
+  it("words the window or the selection for a title", () => {
+    expect(scopeWords(null, 900_000)).toBe("last 15 minutes");
+    expect(scopeWords({ fromMs: T, toMs: T + 90_000 }, 900_000)).toBe(
+      "selected 90 s"
+    );
   });
 });

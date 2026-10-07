@@ -8,7 +8,7 @@ use kelvo_engine::{UsageApp, UsageProc};
 use crate::history::{MetricStats, RangeStats};
 use crate::ipc::{
     AppEnergy, AppUsage, EnergyByApp, MetricStat, ProcessEnergy, ProcessUsage, SeriesStats,
-    UsageByApp, UsageOther, UsageTotal,
+    UsageByApp, UsageKey, UsageOther, UsageTotal,
 };
 use crate::process_signal::SignalRefusal;
 
@@ -140,6 +140,7 @@ pub fn usage_by_app(
         from_ms: e.from_ms,
         to_ms: e.to_ms,
         since_ms: e.since_ms,
+        complete_to_ms: e.complete_to_ms,
         covered_ms: e.covered_ms,
         gpu_covered_ms: e.gpu_covered_ms,
         total: UsageTotal {
@@ -170,12 +171,12 @@ fn other(e: &kelvo_engine::UsageByApp, stats: Option<&RangeStats>, cores: usize)
             .iter()
             .find(|s| s.metric == m && s.measured_ms > 0)
     };
-    let mut clamped = false;
+    let mut clamped: Vec<UsageKey> = Vec::new();
     // A remainder below `-slack` means the two disagreed beyond rounding.
-    let mut less = |host: f64, apps: f64, slack: f64| {
+    let mut less = |key: UsageKey, host: f64, apps: f64, slack: f64| {
         let d = host - apps;
-        if d < -slack {
-            clamped = true;
+        if d < -slack && !clamped.contains(&key) {
+            clamped.push(key);
         }
         d.max(0.0)
     };
@@ -183,17 +184,27 @@ fn other(e: &kelvo_engine::UsageByApp, stats: Option<&RangeStats>, cores: usize)
     let cpu = stat(CPU_TOTAL)
         .and_then(|s| s.avg)
         .filter(|_| measured && cores > 0)
-        .map(|host| less(host * cores as f64, e.total.cpu_avg_pct, 1.0));
+        .map(|host| less(UsageKey::Cpu, host * cores as f64, e.total.cpu_avg_pct, 1.0));
     let gpu = stat(GPU_UTIL)
         .and_then(|s| s.avg)
         .zip(e.total.gpu_avg_pct)
-        .map(|(host, apps)| less(host, apps, 1.0));
-    let read = stat(DISK_READ)
-        .filter(|_| measured)
-        .map(|s| less(s.integral, e.total.read_b, 0.01 * s.integral));
-    let write = stat(DISK_WRITE)
-        .filter(|_| measured)
-        .map(|s| less(s.integral, e.total.write_b, 0.01 * s.integral));
+        .map(|(host, apps)| less(UsageKey::Gpu, host, apps, 1.0));
+    let read = stat(DISK_READ).filter(|_| measured).map(|s| {
+        less(
+            UsageKey::Disk,
+            s.integral,
+            e.total.read_b,
+            0.01 * s.integral,
+        )
+    });
+    let write = stat(DISK_WRITE).filter(|_| measured).map(|s| {
+        less(
+            UsageKey::Disk,
+            s.integral,
+            e.total.write_b,
+            0.01 * s.integral,
+        )
+    });
     UsageOther {
         cpu_avg_pct: cpu,
         gpu_avg_pct: gpu,
@@ -343,7 +354,8 @@ mod tests {
         assert_eq!(o.gpu_avg_pct, Some(10.0));
         assert_eq!(o.read_bytes, Some(5_000.0));
         assert_eq!(o.write_bytes, Some(0.0));
-        assert!(o.clamped);
+        // Only the key whose remainder was cut says so.
+        assert_eq!(o.clamped, [UsageKey::Disk]);
 
         // Nothing covered, or no host series: no remainder rather than a wrong one.
         let none = other(

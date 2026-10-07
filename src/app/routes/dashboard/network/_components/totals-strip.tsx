@@ -1,9 +1,9 @@
+import { windowRange } from "@core/brush";
 import { formatBytes, formatSpan, MISSING } from "@core/format";
+import { useOpenEdge } from "~/hooks/use-range-scope";
 import { useBrushRange } from "~/stores/brush-store";
 import { StatStrip } from "~/widgets/stat-strip";
-import { useOpenEdge } from "../_hooks/use-network-by-app";
 import { useNetworkTotals } from "../_hooks/use-network-totals";
-import { windowRange } from "../_lib/apps";
 import { totalsMeasured } from "../_lib/network";
 
 /**

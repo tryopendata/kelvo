@@ -5,7 +5,9 @@
  * Ranges are half-open, `[fromMs, toMs)`, in wall-clock milliseconds.
  */
 
+import { formatSpan } from "@core/format";
 import { NET_BUCKET_MS } from "@core/generated/bindings";
+import { windowWords } from "@core/live-window";
 
 /** Width of the buckets a selection snaps to: the per-app network bucket. */
 export const BRUSH_STEP_MS: number = NET_BUCKET_MS;
@@ -129,3 +131,18 @@ export function rangeSlots(
 export const sameRange = (a: TimeRange | null, b: TimeRange | null) =>
   a === b ||
   (a !== null && b !== null && a.fromMs === b.fromMs && a.toMs === b.toMs);
+
+/** The whole chart window as 10 s buckets ending at `edgeMs`. */
+export function windowRange(edgeMs: number, windowMs: number): TimeRange {
+  return { fromMs: edgeMs - windowMs, toMs: edgeMs };
+}
+
+/** "last 15 minutes" or "selected 90 s", for a title. */
+export function scopeWords(
+  selection: TimeRange | null,
+  windowMs: number
+): string {
+  return selection
+    ? `selected ${formatSpan(selection.toMs - selection.fromMs)}`
+    : `last ${windowWords(windowMs)}`;
+}
