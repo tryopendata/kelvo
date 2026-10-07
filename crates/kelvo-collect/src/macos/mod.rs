@@ -17,6 +17,7 @@ pub mod memory;
 pub mod network;
 pub mod nstat;
 pub mod ports;
+pub mod power_sources;
 pub(crate) mod process_control;
 pub mod processes;
 pub mod self_cpu;

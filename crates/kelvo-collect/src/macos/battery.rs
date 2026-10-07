@@ -18,62 +18,19 @@
 //!   no longer publishes it on the dev machine, so the series is simply not probed there;
 //!   SMC `TB0T` is the other source (sensors collector).
 
-use core_foundation::array::CFArray;
-use core_foundation::base::{CFType, TCFType};
-use core_foundation::dictionary::CFDictionary;
 use core_foundation::string::CFString;
-use core_foundation_sys::array::CFArrayRef;
-use core_foundation_sys::base::CFTypeRef;
-use core_foundation_sys::dictionary::CFDictionaryRef;
 use kelvo_schema::{Entitlement, MetricId, Module, SeriesKey};
 
 use super::iokit::{self, IoObject, matching_services};
+use super::power_sources::{Description, Snapshot};
 use crate::{Cadence, CollectError, Collector, CollectorId, Every, Probe, SampleBuf, Tick};
 
 /// Health, cycles and capacities change over days: read at most every 60 s.
 const SLOW_MS: u32 = 60_000;
 
-#[link(name = "IOKit", kind = "framework")]
-unsafe extern "C" {
-    fn IOPSCopyPowerSourcesInfo() -> CFTypeRef;
-    fn IOPSCopyPowerSourcesList(blob: CFTypeRef) -> CFArrayRef;
-    fn IOPSGetPowerSourceDescription(blob: CFTypeRef, ps: CFTypeRef) -> CFDictionaryRef;
-}
-
 /// The internal battery's IOPowerSources description, if there is one.
-fn internal_power_source() -> Option<CFDictionary<CFString, CFType>> {
-    crate::calls::count(crate::calls::Api::IoKit);
-    // SAFETY: Copy rule; we own the blob (or get null).
-    let blob = unsafe { IOPSCopyPowerSourcesInfo() };
-    if blob.is_null() {
-        return None;
-    }
-    // SAFETY: non-null owned CF object.
-    let blob = unsafe { CFType::wrap_under_create_rule(blob) };
-    // SAFETY: `blob` is the power-sources blob; Copy rule for the list.
-    let list = unsafe { IOPSCopyPowerSourcesList(blob.as_CFTypeRef()) };
-    if list.is_null() {
-        return None;
-    }
-    // SAFETY: non-null owned CFArray.
-    let list: CFArray<CFType> = unsafe { CFArray::wrap_under_create_rule(list) };
-    let k_type = CFString::from_static_string("Type");
-    for ps in list.iter() {
-        // SAFETY: `ps` comes from the list for this blob; Get rule, so we retain it
-        // with wrap_under_get_rule before `blob` is released.
-        let desc = unsafe { IOPSGetPowerSourceDescription(blob.as_CFTypeRef(), ps.as_CFTypeRef()) };
-        if desc.is_null() {
-            continue;
-        }
-        // SAFETY: non-null borrowed dictionary with string keys.
-        let desc: CFDictionary<CFString, CFType> =
-            unsafe { CFDictionary::wrap_under_get_rule(desc) };
-        let ty = iokit::get(&desc, &k_type).and_then(|v| iokit::as_string(&v));
-        if ty.as_deref() == Some("InternalBattery") {
-            return Some(desc);
-        }
-    }
-    None
+fn internal_power_source() -> Option<Description> {
+    Snapshot::counted()?.internal_battery()
 }
 
 /// Numbers read from one sample, before they become series values.
