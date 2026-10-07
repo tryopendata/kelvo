@@ -566,8 +566,9 @@ pub struct NetworkByApp {
     pub system_rx_bytes: u64,
     #[specta(type = JsSafeInt)]
     pub system_tx_bytes: u64,
-    /// The apps moved more than the interface did: tunnelled traffic (a userspace VPN)
-    /// counted twice. `system_*` is then 0 and the parts exceed the total.
+    /// The apps moved more than the interface did: late bytes landing in a later bucket,
+    /// or history from before per-app bytes counted only the reported interfaces.
+    /// `system_*` is then 0 and the parts exceed the total.
     pub clamped: bool,
 }
 

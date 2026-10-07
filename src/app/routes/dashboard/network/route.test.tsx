@@ -294,11 +294,13 @@ describe("Network page Apps card (D-089)", () => {
     expect(
       await screen.findByText(/^App totals here exceed the interface/)
     ).toHaveTextContent(
-      "App totals here exceed the interface (tunnelled traffic, or bytes counted when their app was identified), so System and other reads 0."
+      "App totals here exceed the interface (bytes counted when their app was identified), so System and other reads 0 and shares are of the table's total."
     );
     const table = await appsTable();
     expect(names(table).slice(0, 2)).toEqual(["TTailscale", "GGoogle Chrome"]);
-    expect(within(table).getByText("98.4%")).toBeVisible();
+    // Of the table's 247.4 MB, not the interface's 128 MB: the column adds to 100%.
+    expect(within(table).getByText("50.9%")).toBeVisible();
+    expect(within(table).getByText("49.1%")).toBeVisible();
   });
 
   it("a failed read says why instead of an empty table", async () => {

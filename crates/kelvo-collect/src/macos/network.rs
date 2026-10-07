@@ -248,6 +248,18 @@ fn if_name(index: u16) -> Option<String> {
     s.to_str().ok().map(str::to_owned)
 }
 
+/// Whether the interface with this index is a kind the collector reports, so its bytes
+/// are in the interface totals. Per-app network bytes count only flows on these
+/// interfaces (D-089), or apps would exceed the totals they split. Reads the interface
+/// name and SystemConfiguration's interface list: callers cache the answer per index.
+pub(crate) fn is_reported_interface(index: u32) -> bool {
+    let Some(name) = u16::try_from(index).ok().and_then(if_name) else {
+        return false;
+    };
+    let types = sc_interface_types();
+    classify(&name, types.get(&name).map(String::as_str)).reported()
+}
+
 #[link(name = "SystemConfiguration", kind = "framework")]
 unsafe extern "C" {
     fn SCNetworkInterfaceCopyAll() -> CFArrayRef;

@@ -87,12 +87,43 @@ describe("Apps rows", () => {
     expect(appRows(answer(), null).every((r) => r.nowBps === null)).toBe(true);
   });
 
-  it("no share when the interface moved nothing", () => {
+  it("no share when nothing moved", () => {
     const rows = appRows(
-      answer({ iface_rx_bytes: 0, iface_tx_bytes: 0 }),
+      answer({
+        apps: [{ name: "curl", rx_bytes: 0, tx_bytes: 0 }],
+        iface_rx_bytes: 0,
+        iface_tx_bytes: 0,
+        overhead_rx_bytes: 0,
+        overhead_tx_bytes: 0,
+        system_rx_bytes: 0,
+        system_tx_bytes: 0,
+      }),
       null
     );
     expect(rows[0]?.share).toBeNull();
+  });
+
+  // Regression: apps 30x the interface showed node at 1556.4%.
+  it("shares add up to 100% even when the apps exceed the interface", () => {
+    const a = answer({
+      apps: [
+        { name: "node", rx_bytes: 1.8e6, tx_bytes: 195e6 },
+        { name: "chrome-headless-shell", rx_bytes: 149e6, tx_bytes: 1.4e6 },
+        { name: "Ghostty", rx_bytes: 27.1e6, tx_bytes: 0.3e6 },
+      ],
+      iface_rx_bytes: 9e6,
+      iface_tx_bytes: 3.7e6,
+      overhead_rx_bytes: 0,
+      overhead_tx_bytes: 0,
+      system_rx_bytes: 0,
+      system_tx_bytes: 0,
+      clamped: true,
+    });
+    const shares = [...appRows(a, null), ...remainderRows(a)].map(
+      (r) => r.share ?? 0
+    );
+    expect(Math.max(...shares)).toBeLessThanOrEqual(100);
+    expect(shares.reduce((n, s) => n + s, 0)).toBeCloseTo(100);
   });
 
   it("remainder: other apps only when non-zero, then overhead, then System and other", () => {

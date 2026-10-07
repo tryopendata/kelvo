@@ -18,7 +18,7 @@ pub const HEADER_BYTES_PER_PACKET: u64 = 66;
 /// How far the apps may exceed the interface total before the range is flagged as
 /// [`NetAttribution::clamped`]. Unprivileged interface byte counters are 1 KiB-granular
 /// (D-089) and buckets are split pro rata, so a quiet range can read a few KiB under
-/// its apps without any double count. A userspace VPN's double count is far larger.
+/// its apps without any double count.
 pub const CLAMP_SLACK_BYTES: u64 = 8 * 1024;
 
 /// One direction of a range: the interface total and how it splits.
@@ -33,8 +33,10 @@ pub struct DirectionSplit {
     /// Interface minus apps minus overhead, never below 0: root daemons and anything else
     /// NetworkStatistics does not show the user.
     pub system_bytes: u64,
-    /// The apps exceed the interface total by more than [`CLAMP_SLACK_BYTES`]: tunnelled
-    /// traffic counted both inside the tunnel and by the app.
+    /// The apps exceed the interface total by more than [`CLAMP_SLACK_BYTES`]: late bytes
+    /// added to a later bucket than the interface counted them in, or history written
+    /// before per-app bytes counted only the reported interfaces (tunnels, bridges and
+    /// loopback were counted by the app but not the interface).
     pub clamped: bool,
 }
 

@@ -149,8 +149,9 @@ export function AppsCard({ windowMs }: { windowMs: number }) {
         )}
         {data.clamped && (
           <AppsNote>
-            App totals here exceed the interface (tunnelled traffic, or bytes
-            counted when their app was identified), so System and other reads 0.
+            App totals here exceed the interface (bytes counted when their app
+            was identified), so System and other reads 0 and shares are of the
+            table's total.
           </AppsNote>
         )}
         <AppsTable

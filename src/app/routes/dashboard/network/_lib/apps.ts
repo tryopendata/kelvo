@@ -11,7 +11,7 @@ export interface AppRow {
   rxBytes: number;
   txBytes: number;
   totalBytes: number;
-  /** Percent of the interface bytes; null when the interface moved nothing. */
+  /** Percent of the table's bytes; null when nothing moved. */
   share: number | null;
   /** Bytes/s over the latest closed 10 s bucket; null when unknown or not an app. */
   nowBps: number | null;
@@ -48,15 +48,31 @@ export function nowRates(
   );
 }
 
-const shareOf = (bytes: number, iface: number) =>
-  iface > 0 ? (bytes / iface) * 100 : null;
+/**
+ * What the shares are of: every row's bytes, so the column adds up to 100%.
+ * That is the interface total, except when Rust reports the apps over it
+ * (`clamped`), where dividing by the interface would put rows past 100%.
+ */
+function tableBytes(data: NetworkByApp): number {
+  const remainder =
+    data.other_apps_rx_bytes +
+    data.other_apps_tx_bytes +
+    data.overhead_rx_bytes +
+    data.overhead_tx_bytes +
+    data.system_rx_bytes +
+    data.system_tx_bytes;
+  return data.apps.reduce((n, a) => n + a.rx_bytes + a.tx_bytes, remainder);
+}
+
+const shareOf = (bytes: number, whole: number) =>
+  whole > 0 ? (bytes / whole) * 100 : null;
 
 /** The named apps as rows, with their "now" rate from `now`. */
 export function appRows(
   data: NetworkByApp,
   now: Map<string, number> | null
 ): AppRow[] {
-  const iface = data.iface_rx_bytes + data.iface_tx_bytes;
+  const whole = tableBytes(data);
   return data.apps.map((a) => {
     const total = a.rx_bytes + a.tx_bytes;
     return {
@@ -66,7 +82,7 @@ export function appRows(
       rxBytes: a.rx_bytes,
       txBytes: a.tx_bytes,
       totalBytes: total,
-      share: shareOf(total, iface),
+      share: shareOf(total, whole),
       nowBps: now === null ? null : (now.get(a.name) ?? 0),
     };
   });
@@ -78,7 +94,7 @@ export function appRows(
  * (always shown, so the table adds up to the interface).
  */
 export function remainderRows(data: NetworkByApp): AppRow[] {
-  const iface = data.iface_rx_bytes + data.iface_tx_bytes;
+  const whole = tableBytes(data);
   const row = (
     kind: AppRow["kind"],
     name: string,
@@ -91,7 +107,7 @@ export function remainderRows(data: NetworkByApp): AppRow[] {
     rxBytes: rx,
     txBytes: tx,
     totalBytes: rx + tx,
-    share: shareOf(rx + tx, iface),
+    share: shareOf(rx + tx, whole),
     nowBps: null,
   });
   const out: AppRow[] = [];

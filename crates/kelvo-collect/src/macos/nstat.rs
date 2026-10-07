@@ -12,8 +12,8 @@
 //! needs no entitlement and sees only flows owned by the current user. Root and system
 //! daemons (mDNSResponder, softwareupdated, VPN tunnels) are not attributed; seeing them
 //! needs `com.apple.private.network.statistics`, which an ad-hoc signed app cannot hold.
-//! Key names (`processID`, `rxBytes`, `txBytes`, `ifLoopback`, `uniqueProcessID`,
-//! `processName`) were read from the exported constants on that release only;
+//! Key names (`processID`, `rxBytes`, `txBytes`, `ifLoopback`, `interface`,
+//! `uniqueProcessID`, `processName`) were read from the exported constants on that release only;
 //! [`parse_counts`] is covered by fixture dictionaries, the live read by ignored tests.
 //!
 //! Lifecycle: the manager exists only while a visible view asks for network rates
@@ -41,7 +41,16 @@
 //! report nothing, so rows stay "not measured", and the engine thread does not wait on
 //! a stuck framework every process tick.
 //! A flow that closed in between gets one last counts callback before its removed block,
-//! so its final bytes are folded into the pid it belonged to. Loopback flows are skipped.
+//! so its final bytes are folded into the pid it belonged to.
+//!
+//! Only flows on an interface the network collector reports (Wi-Fi, Ethernet, cellular:
+//! [`network::is_reported_interface`]) are counted, so the per-app bytes split the same
+//! traffic as the interface totals (D-089). Loopback, VPN tunnels, bridges and AWDL are
+//! skipped, judged by the flow's `interface` index: the interface-type flags describe the
+//! underlying link, so a Tailscale flow on `utun4` reports `ifWiFi` (measured on macOS 27),
+//! and one end of a 127.0.0.1 connection was seen without `ifLoopback`. Counting those
+//! made apps exceed the interface, and the Apps table's shares pass 100%. A flow with no
+//! interface index (about 0.05% of bytes on the dev Mac) is skipped too.
 //!
 //! Each entry carries bytes as well as rates, and the app identity the bytes belong to
 //! (D-089), for network history. The identity is resolved in the callback that first
@@ -71,7 +80,7 @@ use core_foundation_sys::string::{
 };
 use kelvo_schema::{Entitlement, Module, UnsupportedReason};
 
-use super::libproc;
+use super::{libproc, network};
 use crate::calls::{self, Api as Calls};
 use crate::{
     Cadence, CollectError, Collector, CollectorId, Every, Interest, Interval, Probe, ProcessNet,
@@ -110,7 +119,8 @@ pub(crate) struct Counts {
     /// Cumulative bytes received over the flow's life.
     pub rx: u64,
     pub tx: u64,
-    pub loopback: bool,
+    /// The flow is on an interface whose bytes are in the interface totals.
+    pub counted: bool,
 }
 
 /// An owner whose app identity is not known yet: the callback that learned it resolves
@@ -153,7 +163,8 @@ struct Flow {
     identified: bool,
     /// Latest cumulative `(rx, tx)`.
     bytes: Option<(u64, u64)>,
-    loopback: bool,
+    /// As [`Counts::counted`], from the latest counts.
+    counted: bool,
     /// The `(rx, tx)` already accounted for, `None` before the first settle that saw it.
     base: Option<(u64, u64)>,
     /// Added after the baseline: the flow began after a settle that accounted for
@@ -173,7 +184,7 @@ impl Flow {
             ident: None,
             identified: false,
             bytes: None,
-            loopback: false,
+            counted: false,
             base: None,
             fresh,
             late: (0, 0),
@@ -181,7 +192,7 @@ impl Flow {
     }
 
     /// The pid and the bytes not yet accounted for, with the identity, marking them
-    /// accounted. `None` before the first counts and for loopback flows. A flow whose
+    /// accounted. `None` before the first counts and for flows not counted. A flow whose
     /// owner is still unknown keeps its bytes unaccounted until a description names it.
     fn take(&mut self) -> Option<(i32, Settled)> {
         let (rx, tx) = self.bytes?;
@@ -193,7 +204,7 @@ impl Flow {
             .unwrap_or(if self.fresh { (0, 0) } else { (rx, tx) });
         self.base = Some((rx, tx));
         let (late_rx, late_tx) = std::mem::take(&mut self.late);
-        (!self.loopback).then(|| {
+        self.counted.then(|| {
             (
                 self.pid,
                 Settled {
@@ -401,7 +412,7 @@ impl Ledger {
         // Before the new bytes: what moved since the last counts is still this owner's.
         f.own(c.pid, c.upid, baselined);
         f.bytes = Some((c.rx, c.tx));
-        f.loopback = c.loopback;
+        f.counted = c.counted;
         self.needs_identity(src)
     }
 
@@ -557,6 +568,8 @@ pub(crate) struct Keys {
     pub rx: Key,
     pub tx: Key,
     pub loopback: Key,
+    /// `kNStatSrcKeyInterface` ("interface"): the flow's interface index.
+    pub interface: Key,
     /// `kNStatSrcKeyUPID` ("uniqueProcessID") and `kNStatSrcKeyProcessName`
     /// ("processName"), in counts and description dictionaries alike on macOS 27. Only
     /// identity needs them, so a release without them keeps the rates: identities are
@@ -631,6 +644,7 @@ fn load() -> Option<Api> {
                 rx: key(h, c"kNStatSrcKeyRxBytes")?,
                 tx: key(h, c"kNStatSrcKeyTxBytes")?,
                 loopback: key(h, c"kNStatSrcKeyInterfaceTypeLoopback")?,
+                interface: key(h, c"kNStatSrcKeyInterface")?,
                 upid: key(h, c"kNStatSrcKeyUPID"),
                 name: key(h, c"kNStatSrcKeyProcessName"),
             },
@@ -747,13 +761,18 @@ pub(crate) unsafe fn recorded_identity(dict: CFDictionaryRef, keys: &Keys) -> Op
 }
 
 /// Reads a counts dictionary. `None` when the pid or a byte counter is missing or not a
-/// number; a missing loopback flag means not loopback (the framework includes the
-/// interface-type flags that are true).
+/// number. The flow is counted when it is not flagged loopback (the framework includes
+/// the interface-type flags that are true) and `reported` accepts its interface index; a
+/// missing or zero index is not counted.
 ///
 /// # Safety
 ///
 /// `dict` is null or a valid CFDictionary for the duration of the call.
-pub(crate) unsafe fn parse_counts(dict: CFDictionaryRef, keys: &Keys) -> Option<Counts> {
+pub(crate) unsafe fn parse_counts(
+    dict: CFDictionaryRef,
+    keys: &Keys,
+    reported: impl FnOnce(u32) -> bool,
+) -> Option<Counts> {
     if dict.is_null() {
         return None;
     }
@@ -763,12 +782,15 @@ pub(crate) unsafe fn parse_counts(dict: CFDictionaryRef, keys: &Keys) -> Option<
         let rx = u64::try_from(int(dict, keys.rx)?).ok()?;
         let tx = u64::try_from(int(dict, keys.tx)?).ok()?;
         let loopback = boolean(dict, keys.loopback).unwrap_or(false);
+        let iface = int(dict, keys.interface)
+            .and_then(|i| u32::try_from(i).ok())
+            .filter(|&i| i > 0);
         Some(Counts {
             pid,
             upid: upid(dict, keys),
             rx,
             tx,
-            loopback,
+            counted: !loopback && iface.is_some_and(reported),
         })
     }
 }
@@ -811,6 +833,26 @@ unsafe fn identify(
         // SAFETY: per the caller.
         .or_else(|| unsafe { recorded_identity(dict, keys) });
     relock(ledger).identify(src, owner, name.as_deref(), Instant::now());
+}
+
+/// Which interface indexes are reported ([`network::is_reported_interface`]), looked up
+/// once per index per manager: counts callbacks arrive for every flow every sample, and
+/// the lookup copies SystemConfiguration's interface list. A manager lives only while a
+/// view shows network rates, so an index the system reuses for a new interface is looked
+/// up again by the next one.
+struct Reported(HashMap<u32, bool>);
+
+impl Reported {
+    fn with_room() -> Self {
+        Self(HashMap::with_capacity(64))
+    }
+
+    fn get(&mut self, index: u32) -> bool {
+        *self
+            .0
+            .entry(index)
+            .or_insert_with(|| network::is_reported_interface(index))
+    }
 }
 
 /// Completions of the query block, counted. A wait takes the count when its query is
@@ -894,6 +936,7 @@ impl Session {
             let done = Arc::clone(&done);
             RcBlock::new(move || done.complete())
         };
+        let reported = Arc::new(Mutex::new(Reported::with_room()));
         let on_added = {
             let ledger = Arc::clone(&ledger);
             let keys = api.keys;
@@ -902,10 +945,12 @@ impl Session {
                 relock(&ledger).added(id);
                 let counts = {
                     let ledger = Arc::clone(&ledger);
+                    let reported = Arc::clone(&reported);
                     RcBlock::new(move |dict: *const c_void| {
                         let dict: CFDictionaryRef = dict.cast();
+                        let is_reported = |i| relock(&reported).get(i);
                         // SAFETY: the framework passes a CFDictionary valid for the call.
-                        let Some(c) = (unsafe { parse_counts(dict, &keys) }) else {
+                        let Some(c) = (unsafe { parse_counts(dict, &keys, is_reported) }) else {
                             return;
                         };
                         let need = relock(&ledger).counts(id, c);
@@ -1209,7 +1254,7 @@ mod tests {
             upid: 0,
             rx,
             tx,
-            loopback: false,
+            counted: true,
         }
     }
 
@@ -1387,14 +1432,14 @@ mod tests {
     }
 
     #[test]
-    fn a_loopback_flow_named_late_charges_nothing() {
+    fn an_uncounted_flow_named_late_charges_nothing() {
         let mut l = Ledger::default();
         settle(&mut l);
         l.added(1);
         l.counts(
             1,
             Counts {
-                loopback: true,
+                counted: false,
                 ..c(0, 5_000, 5_000)
             },
         );
@@ -1403,7 +1448,7 @@ mod tests {
         l.counts(
             1,
             Counts {
-                loopback: true,
+                counted: false,
                 ..c(0, 6_000, 6_000)
             },
         );
@@ -1683,14 +1728,14 @@ mod tests {
     }
 
     #[test]
-    fn loopback_flows_are_excluded() {
+    fn uncounted_flows_charge_nothing() {
         let mut l = Ledger::default();
         settle(&mut l);
         l.added(1);
         l.counts(
             1,
             Counts {
-                loopback: true,
+                counted: false,
                 ..c(4, 1 << 30, 1 << 30)
             },
         );
@@ -1713,7 +1758,7 @@ mod tests {
     /// A counts dictionary the way NetworkStatistics shaped it on macOS 27 (D-081): SInt64
     /// numbers, interface-type flags only when true, plus keys the parser ignores.
     struct Fixture {
-        names: [CFString; 6],
+        names: [CFString; 7],
     }
 
     impl Fixture {
@@ -1726,6 +1771,7 @@ mod tests {
                     "ifLoopback",
                     "uniqueProcessID",
                     "processName",
+                    "interface",
                 ]
                 .map(CFString::new),
             }
@@ -1740,6 +1786,7 @@ mod tests {
                 loopback: k(3),
                 upid: Some(k(4)),
                 name: Some(k(5)),
+                interface: k(6),
             }
         }
 
@@ -1758,9 +1805,12 @@ mod tests {
 
         fn parse(&self, pairs: &[(&str, CFType)]) -> Option<Counts> {
             // SAFETY: a valid dictionary alive for the call; keys alive with `self`.
-            self.with(pairs, |d, k| unsafe { parse_counts(d, k) })
+            self.with(pairs, |d, k| unsafe { parse_counts(d, k, |i| i == EN0) })
         }
     }
+
+    /// The interface index the fixtures' `reported` accepts, as en0 is on the dev Mac.
+    const EN0: u32 = 14;
 
     fn n(v: i64) -> CFType {
         CFNumber::from(v).as_CFType()
@@ -1778,6 +1828,7 @@ mod tests {
             ("txBytes", n(520)),
             ("rxWiFiBytes", n(24_527_869)),
             ("ifWiFi", CFBoolean::true_value().as_CFType()),
+            ("interface", n(i64::from(EN0))),
         ];
         assert_eq!(
             f.parse(&base),
@@ -1790,12 +1841,44 @@ mod tests {
         let recorded = f.with(&base, |d, k| unsafe { recorded_identity(d, k) });
         assert_eq!(recorded.as_deref(), Some("curl"));
 
-        let mut lo = base.to_vec();
-        lo.push(("ifLoopback", CFBoolean::true_value().as_CFType()));
-        assert!(f.parse(&lo).unwrap().loopback);
         let mut not_lo = base.to_vec();
         not_lo.push(("ifLoopback", CFBoolean::false_value().as_CFType()));
-        assert!(!f.parse(&not_lo).unwrap().loopback);
+        assert!(f.parse(&not_lo).unwrap().counted);
+    }
+
+    /// Regression: apps summed to 30x the interface on the Network page, shares past
+    /// 1,500%, because flows that never touch a reported interface were counted. The
+    /// dictionaries are the ones macOS 27 sent for a transfer to this Mac's own
+    /// Tailscale address and over 127.0.0.1.
+    #[test]
+    fn counts_only_flows_on_a_reported_interface() {
+        let f = Fixture::new();
+        let flow = |extra: &[(&str, CFType)]| {
+            let mut pairs = vec![
+                ("processID", n(1912)),
+                ("rxBytes", n(20_971_520)),
+                ("txBytes", n(0)),
+            ];
+            pairs.extend_from_slice(extra);
+            f.parse(&pairs).unwrap().counted
+        };
+        let yes = || CFBoolean::true_value().as_CFType();
+        assert!(flow(&[("ifWiFi", yes()), ("interface", n(i64::from(EN0)))]));
+        // A tunnel reports the type of the link under it: utun4 says Wi-Fi.
+        assert!(!flow(&[("ifWiFi", yes()), ("interface", n(23))]));
+        assert!(!flow(&[("ifLoopback", yes()), ("interface", n(1))]));
+        // Flagged loopback on a reported index still is not counted.
+        assert!(!flow(&[
+            ("ifLoopback", yes()),
+            ("interface", n(i64::from(EN0)))
+        ]));
+        // No index, or 0: nothing says the bytes are in the interface totals.
+        assert!(!flow(&[("ifWiFi", yes())]));
+        assert!(!flow(&[("ifWiFi", yes()), ("interface", n(0))]));
+        assert!(!flow(&[
+            ("ifWiFi", yes()),
+            ("interface", CFString::new("en0").as_CFType())
+        ]));
     }
 
     #[test]
@@ -1818,7 +1901,10 @@ mod tests {
         ];
         assert_eq!(f.parse(&huge_pid), None);
         // SAFETY: null is allowed.
-        assert_eq!(unsafe { parse_counts(std::ptr::null(), &f.keys()) }, None);
+        assert_eq!(
+            unsafe { parse_counts(std::ptr::null(), &f.keys(), |_| true) },
+            None
+        );
     }
 
     /// Reads the live framework while the machine moves traffic, and prints the top
@@ -1935,6 +2021,91 @@ mod tests {
             .sum();
         println!("curl rx {curl} bytes");
         assert!(curl > 0, "no bytes charged to curl");
+        c.release();
+    }
+
+    /// Regression for apps exceeding the interface: moves 20 MB to this process over
+    /// 127.0.0.1, ::1 and every IPv4 address on an interface the network collector does
+    /// not report (a Tailscale `utun`, a VM bridge), and requires none of it charged to
+    /// this process. Before the interface check, the tunnel's 20 MB was charged in both
+    /// directions and one run in four charged a loopback receiver.
+    #[test]
+    #[ignore = "reads the live NetworkStatistics framework; run by hand with --ignored --nocapture"]
+    fn live_traffic_off_the_reported_interfaces_is_not_charged() {
+        use std::io::{Read, Write};
+        use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, TcpListener, TcpStream};
+
+        let mut addrs = vec![
+            IpAddr::V4(Ipv4Addr::LOCALHOST),
+            IpAddr::V6(Ipv6Addr::LOCALHOST),
+        ];
+        // SAFETY: the list is freed below, once.
+        let list = unsafe { libc::if_nameindex() };
+        assert!(!list.is_null());
+        let mut cur = list;
+        // SAFETY: `if_nameindex` returns an array ended by a zero index and null name.
+        while unsafe { (*cur).if_index } != 0 {
+            // SAFETY: as above; `cur` is before the end entry.
+            let (index, name) = unsafe { ((*cur).if_index, CStr::from_ptr((*cur).if_name)) };
+            let name = name.to_string_lossy();
+            if !network::is_reported_interface(index) && !name.starts_with("lo") {
+                let found = super::super::ifaddrs::interface_addresses(&name);
+                addrs.extend(found.ipv4.into_iter().map(IpAddr::V4));
+            }
+            // SAFETY: not past the end entry.
+            cur = unsafe { cur.add(1) };
+        }
+        // SAFETY: from `if_nameindex` above.
+        unsafe { libc::if_freenameindex(list) };
+
+        let me = i32::try_from(std::process::id()).unwrap();
+        let mut c = NetPerProcess::new();
+        assert!(matches!(c.probe(), Probe::Supported(_)), "API unavailable");
+        let tick = |n| Tick {
+            n,
+            wall_ms: 0,
+            continuous_ns: super::super::sysctl::continuous_ns(),
+            interval_ms: 1_000,
+        };
+        let mut buf = SampleBuf::new();
+        c.sample(&tick(0), &mut buf).unwrap();
+        let chunk = [7u8; 64 * 1024];
+        for (i, addr) in addrs.iter().enumerate() {
+            let Ok(listener) = TcpListener::bind((*addr, 0)) else {
+                println!("{addr}: cannot listen, skipped");
+                continue;
+            };
+            let to = listener.local_addr().unwrap();
+            let Ok(mut s) = TcpStream::connect(to) else {
+                println!("{addr}: cannot connect, skipped");
+                continue;
+            };
+            let server = std::thread::spawn(move || {
+                let (mut conn, _) = listener.accept().unwrap();
+                let mut b = [0u8; 64 * 1024];
+                while matches!(conn.read(&mut b), Ok(n) if n > 0) {}
+            });
+            for _ in 0..320 {
+                s.write_all(&chunk).unwrap();
+            }
+            drop(s);
+            server.join().unwrap();
+            // Final counts arrive on the framework's queue a moment after the close.
+            std::thread::sleep(Duration::from_secs(3));
+            buf.clear();
+            c.sample(&tick(i as u64 + 1), &mut buf).unwrap();
+            let charged: u64 = buf
+                .process_net()
+                .iter()
+                .filter(|n| n.pid == me)
+                .map(|n| n.rx_bytes + n.tx_bytes + n.late_rx_bytes + n.late_tx_bytes)
+                .sum();
+            println!("{addr}: 20 MB moved, {charged} bytes charged");
+            assert_eq!(
+                charged, 0,
+                "traffic over {addr} was charged to this process"
+            );
+        }
         c.release();
     }
 
