@@ -45,16 +45,19 @@ for (const theme of THEMES) {
     expect(errors).toEqual([]);
   });
 
-  test(`GPU page process table (${theme})`, async ({ page }, info) => {
+  test(`GPU page apps table (${theme})`, async ({ page }, info) => {
     const errors = trackConsoleErrors(page);
     await page.setViewportSize({ width: 1280, height: 1100 });
     await page.goto(
       `/?window=dashboard&route=/dashboard/gpu&theme=${theme}&ticks=0`
     );
-    const table = page.getByRole("table", { name: "GPU by process" });
-    await expect(table.getByRole("row").nth(1)).toContainText("WindowServer");
+    const table = page.getByRole("table", { name: "GPU by app" });
+    // WindowServer is another user's: it is in System and other (D-099).
     await expect(
-      table.getByRole("columnheader", { name: /% GPU/ })
+      table.getByText("System and other", { exact: true })
+    ).toBeVisible();
+    await expect(
+      table.getByRole("columnheader", { name: /Avg GPU/ })
     ).toHaveAttribute("aria-sort", "descending");
     await expect(page.getByText(/long GPU compute job/)).toBeVisible();
     await page.screenshot({
@@ -107,7 +110,7 @@ test("without per-process GPU the chart stays and no GPU columns show", async ({
   await expect(
     page.getByRole("heading", { name: "GPU", exact: true })
   ).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Processes" })).toHaveCount(0);
+  await expect(page.getByRole("table", { name: "GPU by app" })).toHaveCount(0);
 
   await page.getByRole("link", { name: "Processes", exact: true }).click();
   await expect(page.getByRole("radio", { name: "Network" })).toBeVisible();

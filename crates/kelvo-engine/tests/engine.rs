@@ -1209,7 +1209,44 @@ fn process_network_capability_follows_the_collectors_probe() {
 /// ticks only while a view asks, joined by pid (0 for a process without GPU time), no
 /// value on the baseline, released when the interest ends.
 #[test]
-fn gpu_shares_join_process_rows_while_a_view_asks_for_them() {
+fn gpu_shares_join_every_process_sample_outside_performance_mode() {
+    let (procs, ph) = fake(
+        "processes",
+        Cadence::Adaptive {
+            idle_ms: 10_000,
+            interest: Interest::Processes,
+        },
+        &[Module::Cpu],
+        &["self.cpu"],
+    );
+    ph.0.lock().unwrap().processes = 3;
+    let (gpu, gh) = fake_gpu();
+    let mut h = Harness::new("gpu-always", vec![procs, gpu], &settings_all_on());
+    h.ctl.set_network_history(false);
+    // Tray-only, no view asks for rows or GPU: the processes collector runs at its
+    // background idle period, and GPU time joins each of its samples for per-app GPU
+    // over a range (D-099).
+    h.ticks(120);
+    let gpu_of: Vec<Vec<Option<f32>>> = h
+        .drain()
+        .into_iter()
+        .filter_map(|m| match m {
+            BusMsg::Processes(b) => Some(b.rows.iter().map(|p| p.gpu_pct).collect()),
+            _ => None,
+        })
+        .collect();
+    let (samples, releases) = {
+        let g = gh.lock().unwrap();
+        (g.samples, g.releases)
+    };
+    assert_eq!(samples, ph.samples(), "on every process sample");
+    assert!(samples >= 3);
+    assert_eq!(releases, 0, "held between samples");
+    assert!(gpu_of.iter().skip(1).all(|b| b.iter().all(Option::is_some)));
+}
+
+#[test]
+fn in_performance_mode_gpu_shares_join_process_rows_only_while_a_view_asks() {
     let (procs, ph) = fake(
         "processes",
         Cadence::Adaptive {
@@ -1222,7 +1259,10 @@ fn gpu_shares_join_process_rows_while_a_view_asks_for_them() {
     ph.0.lock().unwrap().processes = 3;
     let (net, nh) = fake_net();
     let (gpu, gh) = fake_gpu();
-    let mut h = Harness::new("gpu-procs", vec![procs, net, gpu], &settings_all_on());
+    // Performance mode gives up per-app GPU over a range: GPU is on demand (D-085, D-099).
+    let mut s = settings_all_on();
+    s.sampling.performance_mode = true;
+    let mut h = Harness::new("gpu-procs", vec![procs, net, gpu], &s);
     h.visible();
     h.ctl.set_network_history(false);
     assert!(h.ctl.capabilities().process_gpu);

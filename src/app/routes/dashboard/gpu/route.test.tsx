@@ -1,81 +1,71 @@
-import type { ProcessView } from "@core/generated/bindings";
-import { BACKGROUND_PROCESSES, PROCESSES } from "@core/mock/fixtures";
+import { createMockTransport } from "@core/mock-transport";
 import { act, screen, within } from "@testing-library/react";
 import { renderWithProviders } from "@tests/test-utils";
 import GpuRoute from "./route";
 
-const views = (calls: { command: string; args: unknown[] }[]) =>
-  calls
-    .filter((c) => c.command === "set_process_interest")
-    .map((c) => c.args[2] as ProcessView | null);
+const T = 1_700_000_000_000; // a 10 s edge
+const NOW = T + 5000;
+const S = 1000;
 
-describe("GPU page processes (D-085)", () => {
-  it("lists your processes by GPU share and asks for the top 12 every sample", async () => {
-    const { transport } = renderWithProviders(<GpuRoute />);
-    const table = await screen.findByRole("table", { name: "GPU by process" });
-    expect(views(transport.calls).at(-1)).toEqual({
-      limit: 12,
-      sort: ["gpu"],
-      period_ms: null,
-      gpu: true,
-    });
-    const rows = within(table).getAllByRole("row").slice(1);
-    // Processes without GPU time are left out; the rest rank by share.
+const calls = (c: { command: string; args: unknown[] }[], command: string) =>
+  c.filter((x) => x.command === command).map((x) => x.args.slice(1));
+
+function render(scenarios?: string[]) {
+  const transport = createMockTransport({
+    now: () => NOW,
+    autoTick: false,
+    chartWindow: "5m",
+    ...(scenarios ? { scenarios: scenarios as never } : {}),
+  });
+  return renderWithProviders(<GpuRoute />, { transport, backfillMs: 600_000 });
+}
+
+describe("GPU page over a range (D-085, D-099)", () => {
+  it("lists apps by average share of the GPU over the window, with the rest of utilization", async () => {
+    const { transport } = render();
+    const table = await screen.findByRole("table", { name: "GPU by app" });
     expect(
-      rows.map((r) => within(r).getAllByRole("cell")[0]?.textContent)
-    ).toEqual([
-      "WWindowServer",
-      "FFigma",
-      "SSafari",
-      "XXcode",
-      "ccom.docker.backend",
-      "SSafari Web Content",
-      "KKelvo",
-      "DDock",
+      screen.getByRole("heading", { name: "GPU by app, last 5 minutes" })
+    ).toBeVisible();
+    expect(
+      within(table).getByRole("columnheader", { name: /Avg GPU/ })
+    ).toHaveAttribute("aria-sort", "descending");
+    expect(within(table).getByText("System and other")).toBeVisible();
+    expect(within(table).getByText(/long GPU compute job/)).toBeVisible();
+    expect(calls(transport.calls, "query_usage_by_app")).toEqual([
+      [T - 300 * S, T, "gpu", 200],
     ]);
-    expect(rows[0]?.textContent).toContain("14.2");
-    expect(screen.getByText(/long GPU compute job/)).toBeVisible();
+    await vi.waitFor(() =>
+      expect(screen.getByTestId("gpu-range-totals")).toHaveTextContent(
+        /Avg · 5 min[\d.]+%Peak · 5 min\d+%/
+      )
+    );
+    // The table reads the engine's ring: no view asks for live GPU rows.
+    expect(calls(transport.calls, "set_process_interest")).toEqual([]);
   });
 
-  it("grows the table with its rows and never shrinks it at 1 Hz", async () => {
-    const { transport } = renderWithProviders(<GpuRoute />);
-    await screen.findByRole("table", { name: "GPU by process" });
-    // The table's box: body, header row, 4 px.
-    const box = () => screen.getByTestId("process-table-scroll").style.height;
-    const batch = (n: number) =>
-      [...PROCESSES, ...BACKGROUND_PROCESSES]
-        .slice(0, n)
-        .map((p) => ({ ...p, gpu_pct: 1 }));
-    const quiet = PROCESSES.map((p) => ({ ...p, gpu_pct: 0 }));
-    await vi.waitFor(() => expect(box()).toBe(`${9 * 29 + 4}px`));
-    // An empty batch keeps the table and its height, with a message row.
-    act(() => transport.push({ kind: "processes", ts_ms: 1, rows: quiet }));
-    expect(screen.getByText(/None of your processes/)).toBeVisible();
-    expect(box()).toBe(`${9 * 29 + 4}px`);
-    act(() => transport.push({ kind: "processes", ts_ms: 1, rows: batch(5) }));
+  it("a brushed range scopes the table", async () => {
+    const { user } = render();
+    await screen.findByRole("table", { name: "GPU by app" });
+    act(() =>
+      screen.getByRole("slider", { name: "Select a time range" }).focus()
+    );
+    await user.keyboard("{Enter}");
     expect(
-      within(
-        screen.getByRole("table", { name: "GPU by process" })
-      ).getAllByRole("row")
-    ).toHaveLength(6);
-    expect(box()).toBe(`${9 * 29 + 4}px`);
-    act(() => transport.push({ kind: "processes", ts_ms: 2, rows: batch(10) }));
-    expect(box()).toBe(`${11 * 29 + 4}px`);
+      await screen.findByRole("heading", { name: "GPU by app, selected 10 s" })
+    ).toBeVisible();
   });
 
-  it("says it is measuring while a batch carries no GPU time (the baseline)", async () => {
-    const { transport } = renderWithProviders(<GpuRoute />);
-    await screen.findByRole("table", { name: "GPU by process" });
-    act(() => transport.push({ kind: "processes", ts_ms: 1, rows: PROCESSES }));
-    expect(await screen.findByText("Measuring GPU by process…")).toBeVisible();
-  });
-
-  it("has no process section when the host cannot attribute GPU time", async () => {
-    const { transport } = renderWithProviders(<GpuRoute />, {
-      transportOptions: { scenarios: ["no-process-gpu"] },
-    });
-    await screen.findByRole("heading", { name: "GPU" });
-    expect(screen.queryByRole("heading", { name: "Processes" })).toBeNull();
-    expect(views(transport.calls)).toEqual([]);
+  it("without per-process GPU time: the range figures, no apps table", async () => {
+    render(["no-process-gpu"]);
+    await vi.waitFor(() =>
+      expect(screen.getByTestId("gpu-range-totals")).toHaveTextContent(
+        /Avg · 5 min[\d.]+%/
+      )
+    );
+    expect(screen.queryByRole("table", { name: "GPU by app" })).toBeNull();
+    expect(
+      screen.getByRole("slider", { name: "Select a time range" })
+    ).toBeVisible();
   });
 });

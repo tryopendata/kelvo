@@ -225,6 +225,21 @@ export function usageCoverage(data: UsageByApp): UsageCoverage {
   return { kind: "full" };
 }
 
+/**
+ * GPU time measured for less of the range than processes were (Performance
+ * mode samples it only while a GPU view is open, D-099): the measured span,
+ * or null when GPU covered the sampled time. 10 s or 1% of slack.
+ */
+export function gpuShortfall(
+  data: UsageByApp
+): { gpuMs: number; coveredMs: number } | null {
+  const c = data.covered_ms;
+  if (c <= 0 || data.gpu_covered_ms >= c - Math.max(10_000, c * 0.01)) {
+    return null;
+  }
+  return { gpuMs: data.gpu_covered_ms, coveredMs: c };
+}
+
 /** An answer whose buckets no longer change: read once. */
 export const usageFinal = (data: UsageByApp | undefined) =>
   data !== undefined &&

@@ -7,6 +7,7 @@ import type {
 } from "@core/generated/bindings";
 import { CommandFailure } from "@core/transport";
 import {
+  gpuShortfall,
   processCount,
   type RemainderRow,
   remainderRows,
@@ -199,6 +200,7 @@ function UsageBody({
           Mac slept or sampling paused). Averages are over the sampled time.
         </AppsNote>
       )}
+      {by === "gpu" && <GpuShortfallNote data={data} />}
       {data.other.clamped.includes(by) && (
         <AppsNote>
           Apps measured above the system total somewhere in this range (the two
@@ -282,6 +284,20 @@ function UsageBody({
         </Table>
       </div>
     </>
+  );
+}
+
+function GpuShortfallNote({ data }: { data: UsageByApp }) {
+  const short = gpuShortfall(data);
+  if (short === null) return null;
+  return (
+    <AppsNote>
+      GPU time was measured for{" "}
+      <span className="data-mono">{formatSpan(short.gpuMs)}</span> of the{" "}
+      <span className="data-mono">{formatSpan(short.coveredMs)}</span> sampled
+      (Performance mode measures it only while a GPU view is open). Averages are
+      over the measured time.
+    </AppsNote>
   );
 }
 

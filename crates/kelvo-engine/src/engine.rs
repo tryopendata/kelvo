@@ -41,6 +41,7 @@ use crate::netacc::{Anchor, NET_BUCKET_MS, NetAppAcc, NetSlot};
 use crate::power::{PowerEvent, PowerSignals, PowerState};
 use crate::source::SourceSink;
 use crate::ticker::{Ticker, leeway_for};
+use crate::usage::USAGE_BUCKET_MS;
 
 /// Base tick while backed off (battery with "slow down on battery", or Low Power Mode):
 /// double the user's interval, capped at the longest interval Settings offers (D-061).
@@ -652,6 +653,9 @@ pub struct Engine {
     last_proc_bucket: Option<i64>,
     /// Paces process sampling to the period windows asked for.
     proc_every: Every,
+    /// When GPU time next joins a process sample with no GPU view open (D-099),
+    /// `continuous_ns`: once per usage bucket, not on every 1 s process tick.
+    gpu_always_next_ns: u64,
     ticks: u64,
     store_errors: RateLimit,
     detect: Detectors,
@@ -735,6 +739,7 @@ impl Engine {
             timeline: 0,
             last_proc_bucket: None,
             proc_every: Every::new(0),
+            gpu_always_next_ns: 0,
             ticks: 0,
             store_errors: RateLimit::default(),
             detect,
@@ -1294,6 +1299,15 @@ impl Engine {
         // samples, tray-only included, and keeps the session open meanwhile (D-089). Not
         // through `wants_network`: on demand means every tick or never.
         let history = self.shared.net_history.load(Ordering::Acquire);
+        // Per-app GPU over a range (D-099) needs GPU time through every usage bucket,
+        // tray-only included, so outside Performance mode the GPU collector is held like
+        // network history and joins a process sample at most once per 10 s bucket (each
+        // 30 s background sample; every tenth 1 s one). A share covers the time since the
+        // previous GPU sample, so averages over the samples stay right. A GPU view still
+        // gets it on every process tick. Without the entitlement (App Store) its slot is
+        // inactive and this costs nothing.
+        let gpu_always = !performance;
+        let gpu_always_due = gpu_always && t.continuous_ns >= self.gpu_always_next_ns;
         let processes_due = wants_processes && self.proc_every.due_with(process_period, &t);
         let interests = Interests {
             processes: processes_due,
@@ -1309,7 +1323,7 @@ impl Engine {
         let held = Interests {
             processes: wants_processes,
             network_processes: wants_network || history,
-            gpu_processes: wants_gpu,
+            gpu_processes: wants_gpu || gpu_always,
             port_processes: wants_ports,
             ..interests
         };
@@ -1338,6 +1352,7 @@ impl Engine {
                         .iter()
                         .any(|m| menu_bar.contains(m)),
                 network_processes: interests.network_processes || (history && processes_sampled),
+                gpu_processes: interests.gpu_processes || (gpu_always_due && processes_sampled),
                 ..interests
             };
             let cadence = slot.collector.cadence();
@@ -1409,6 +1424,13 @@ impl Engine {
                     *at = ts;
                 }
             }
+        }
+        if gpu_always_due && processes_sampled {
+            // Half a tick of slack, so timer jitter does not push it a tick later.
+            let wait_ms = u64::try_from(USAGE_BUCKET_MS)
+                .unwrap_or(0)
+                .saturating_sub(u64::from(interval) / 2);
+            self.gpu_always_next_ns = t.continuous_ns.saturating_add(wait_ms * 1_000_000);
         }
         if let Some(primary) = self.buf.primary_iface()
             && *primary != self.primary_iface

@@ -45,16 +45,52 @@ for (const theme of THEMES) {
   }
 }
 
-test("cpu top processes fill in and Show all opens Processes", async ({
+test("cpu apps table fills in and Every process opens Processes", async ({
   page,
 }) => {
   await page.goto("/?window=dashboard&route=/dashboard/cpu&ticks=0");
-  await expect(page.getByRole("table")).toBeVisible();
-  await page.getByRole("button", { name: "Show all" }).click();
+  await expect(page.getByRole("table", { name: "CPU by app" })).toBeVisible();
+  await page.getByRole("button", { name: "Every process" }).click();
   await expect(
     page.getByRole("heading", { name: "Processes", exact: true })
   ).toBeVisible();
 });
+
+// Dragging across the lead chart scopes the page's apps table (D-099).
+for (const p of [
+  { route: "/dashboard/cpu", noun: "CPU" },
+  { route: "/dashboard/gpu", noun: "GPU" },
+  { route: "/dashboard/memory", noun: "Memory" },
+  { route: "/dashboard/disk", noun: "Disk" },
+] as const) {
+  test(`dragging on the ${p.noun} chart scopes its apps table`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 1000 });
+    await page.goto(`/?window=dashboard&route=${p.route}&ticks=0`);
+    await expect(
+      page.getByRole("heading", { name: new RegExp(`^${p.noun} by app, last`) })
+    ).toBeVisible();
+    const brush = page.getByRole("slider", { name: "Select a time range" });
+    const box = await brush.first().boundingBox();
+    if (!box) throw new Error("chart not laid out");
+    await page.mouse.move(box.x + box.width * 0.5, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width * 0.7, box.y + box.height / 2, {
+      steps: 5,
+    });
+    await page.mouse.up();
+    await expect(
+      page.getByRole("heading", {
+        name: new RegExp(`^${p.noun} by app, selected`),
+      })
+    ).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(
+      page.getByRole("heading", { name: new RegExp(`^${p.noun} by app, last`) })
+    ).toBeVisible();
+  });
+}
 
 test("power page without fans reads passive cooling", async ({ page }) => {
   await page.goto(

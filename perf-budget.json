@@ -30,7 +30,7 @@
     }
   },
   "engine": {
-    "_doc": "Engine gates (D-062), crates/kelvo-engine/tests/perf_gates.rs, real macOS collectors on the fake ticker, at 1 s with a window open and 2 s tray-only (D-094). allocsPerTick: Rust heap allocations per tick in steady state (after warmupTicks), engine core and per collector (_default for any collector not named); CF/IOKit mallocs are not seen. callsPerTick: OS calls per tick by API family (kelvo_collect::calls), libproc per listed process. store: rows, payload bytes and bytes appended to the WAL per hour in tray-only mode at the default commit interval, extrapolated from a run of `minutes` (WAL: D-070). perf: release engine CPU from `make perf` (scripts/perf.sh, getrusage, percent of one core), tray-only with the 1 s setting (the engine ticks at the background's 2 s since D-094; the baseline below is from the 1 s tick until re-measured), runs one at a time; baseline is the highest of the D-067 measurements, and a run more than regressionPct over it fails twice in a row. regressionPct is 30, not the coalition's 10, because identical engine code measures 0.15 to 0.38 across sittings and up to 1.5x within one (D-075). Measured on the dev M3 Max on 2026-10-05; each ceiling is the measurement plus headroom, see D-062 and D-067 for the numbers. windowGpu (D-085): the per-process GPU walk makes three IOKit calls per GPU user client (two property reads and the registry id) plus the iterator validity check, so its iokit ceiling follows how many processes hold the GPU (measured 277 per tick in all with about 90 clients); the other modes' iokit ceilings leave no room for it. Network history (D-089), on by default: the per-process network collector queries NetworkStatistics on every process sample, so trayOnly allows 0.25 (one query per 10 s plus a description query while an owner is unknown; measured 0.10) and window and windowGpu 1.2 like windowNetwork; trayOnlyHistoryOff is tray-only with the setting off and keeps D-082's zero. store rows and WAL bytes include the proc_net_10s and proc_net_1m rows (measured 1,188 rows/h and 4.8 MB/h of WAL, from 774 and 4.0). Background (D-094): tray-only ticks at 2 s with processes every 30 s and temperatures every 10 s, so its counts per tick are per 2 s; it replaced trayOnlyPerformance, which measured the same. Its ceilings sit between its measurement on 2026-10-07 and the same run without the background's slow cadences (5 s temperatures, 10 s processes): smc 15 (12.93 and 16.80), hid 12 (9.20 and 15.33), libprocPerProcess 0.3 (0.15 and 0.43), nstat 0.15 (0.07 and 0.20), so losing either cadence fails. allocsPerTick battery and disk_capacity for the tray-only modes are 1, from 0.5: the same allocations per sample, but a 2 s tick sees twice the samples of a 5 s or 60 s collector (measured 0.60 and 0.80).",
+    "_doc": "Engine gates (D-062), crates/kelvo-engine/tests/perf_gates.rs, real macOS collectors on the fake ticker, at 1 s with a window open and 2 s tray-only (D-094). allocsPerTick: Rust heap allocations per tick in steady state (after warmupTicks), engine core and per collector (_default for any collector not named); CF/IOKit mallocs are not seen. callsPerTick: OS calls per tick by API family (kelvo_collect::calls), libproc per listed process. store: rows, payload bytes and bytes appended to the WAL per hour in tray-only mode at the default commit interval, extrapolated from a run of `minutes` (WAL: D-070). perf: release engine CPU from `make perf` (scripts/perf.sh, getrusage, percent of one core), tray-only with the 1 s setting (the engine ticks at the background's 2 s since D-094; the baseline below is from the 1 s tick until re-measured), runs one at a time; baseline is the highest of the D-067 measurements, and a run more than regressionPct over it fails twice in a row. regressionPct is 30, not the coalition's 10, because identical engine code measures 0.15 to 0.38 across sittings and up to 1.5x within one (D-075). Measured on the dev M3 Max on 2026-10-05; each ceiling is the measurement plus headroom, see D-062 and D-067 for the numbers. windowGpu (D-085): the per-process GPU walk makes three IOKit calls per GPU user client (two property reads and the registry id) plus the iterator validity check, so its iokit ceiling follows how many processes hold the GPU (measured 277 per tick in all with about 90 clients); the other modes' iokit ceilings leave no room for it. Network history (D-089), on by default: the per-process network collector queries NetworkStatistics on every process sample, so trayOnly allows 0.25 (one query per 10 s plus a description query while an owner is unknown; measured 0.10) and window and windowGpu 1.2 like windowNetwork; trayOnlyHistoryOff is tray-only with the setting off and keeps D-082's zero. store rows and WAL bytes include the proc_net_10s and proc_net_1m rows (measured 1,188 rows/h and 4.8 MB/h of WAL, from 774 and 4.0). Background (D-094): tray-only ticks at 2 s with processes every 30 s and temperatures every 10 s, so its counts per tick are per 2 s; it replaced trayOnlyPerformance, which measured the same. Its ceilings sit between its measurement on 2026-10-07 and the same run without the background's slow cadences (5 s temperatures, 10 s processes): smc 15 (12.93 and 16.80), hid 12 (9.20 and 15.33), libprocPerProcess 0.3 (0.15 and 0.43), nstat 0.15 (0.07 and 0.20), so losing either cadence fails. Per-app GPU over a range (D-099): outside Performance mode the per-process GPU walk runs with no GPU view open, at most once per 10 s usage bucket, so trayOnly and trayOnlyHistoryOff allow 26 IOKit calls per tick (measured 19.53: one walk per 30 s background process sample, about 264 calls with about 90 GPU clients) and window and windowNetwork 40 (measured 30.50: one walk per 10 s), from 6; like windowGpu, the count follows how many processes hold the GPU. allocsPerTick battery and disk_capacity for the tray-only modes are 1, from 0.5: the same allocations per sample, but a 2 s tick sees twice the samples of a 5 s or 60 s collector (measured 0.60 and 0.80).",
     "warmupTicks": 130,
     "ticks": 120,
     "allocsPerTick": {
@@ -89,7 +89,7 @@
     },
     "callsPerTick": {
       "trayOnly": {
-        "iokit": 6,
+        "iokit": 26,
         "smc": 15,
         "ioreport": 0.2,
         "hid": 12,
@@ -98,7 +98,7 @@
         "nstat": 0.15
       },
       "trayOnlyHistoryOff": {
-        "iokit": 6,
+        "iokit": 26,
         "smc": 15,
         "ioreport": 0.2,
         "hid": 12,
@@ -107,7 +107,7 @@
         "nstat": 0
       },
       "window": {
-        "iokit": 6,
+        "iokit": 40,
         "smc": 16,
         "ioreport": 1,
         "hid": 15,
@@ -116,7 +116,7 @@
         "nstat": 1.2
       },
       "windowNetwork": {
-        "iokit": 6,
+        "iokit": 40,
         "smc": 16,
         "ioreport": 1,
         "hid": 15,
