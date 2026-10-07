@@ -165,6 +165,38 @@ describe("chart brush (D-089)", () => {
     expect(range()).toBe("none");
   });
 
+  it("a press on an open dialog's backdrop keeps the selection", async () => {
+    renderWithProviders(
+      <BrushProvider>
+        {chart}
+        <p data-testid="outside">empty</p>
+        <Probe />
+      </BrushProvider>,
+      { transportOptions: { now: () => NOW } }
+    );
+    const brush = await screen.findByRole("slider", {
+      name: "Select a time range",
+    });
+    brush.getBoundingClientRect = () =>
+      ({ left: 0, top: 0, width: WIDTH, height: 193 }) as DOMRect;
+    fireEvent.pointerDown(brush, { button: 0, clientX: xAt(T - 24 * S) });
+    fireEvent.pointerUp(brush, { clientX: xAt(T - 24 * S) });
+    expect(range()).not.toBe("none");
+
+    // Radix portals the overlay beside the dialog content, not inside it.
+    const backdrop = document.createElement("div");
+    const dialog = document.createElement("div");
+    dialog.setAttribute("role", "alertdialog");
+    document.body.append(backdrop, dialog);
+    fireEvent.pointerDown(backdrop, { button: 0 });
+    expect(range()).not.toBe("none");
+
+    backdrop.remove();
+    dialog.remove();
+    fireEvent.pointerDown(screen.getByTestId("outside"), { button: 0 });
+    expect(range()).toBe("none");
+  });
+
   it("selects no time after the newest elapsed 10 s edge", async () => {
     const { brush } = await setup();
     // [T, T + 6 s) is on the chart but the bucket has not finished.
