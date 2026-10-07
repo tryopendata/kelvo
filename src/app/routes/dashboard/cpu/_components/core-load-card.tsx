@@ -2,11 +2,11 @@ import { gridIntervalMs } from "@core/live-state";
 import { windowWords } from "@core/live-window";
 import { sk } from "@core/series-key";
 import { heatmapBucketMs } from "@core/series-stats";
-import { useDeferredValue, useId } from "react";
+import { useDeferredValue } from "react";
+import { SectionCard } from "~/components/section-card";
 import { useGapBands } from "~/hooks/use-gap-bands";
 import { useHeld, useRingBuckets } from "~/hooks/use-ring";
 import { useHost } from "~/stores/host-store";
-import { Card } from "~/widgets/card";
 import { CoreHeatmap, HeatScaleLegend } from "~/widgets/core-heatmap";
 import type { ClusterView } from "../_lib/clusters";
 
@@ -30,7 +30,6 @@ export function CoreLoadCard({
   // redo it synchronously; if the perf gate flakes here, keep cells mounted
   // across a window change instead (the Cell keys in core-heatmap.tsx).
   const windowMs = useDeferredValue(windowProp);
-  const titleId = useId();
   const bucketMs = heatmapBucketMs(
     windowMs,
     useHost((s) => gridIntervalMs(s.status))
@@ -53,19 +52,14 @@ export function CoreLoadCard({
   );
 
   return (
-    <Card
+    <SectionCard
       accent="cpu"
-      variant="chart"
       origin="bl"
-      labelledBy={titleId}
-      className="col-span-2 flex flex-col gap-3 p-4"
+      title={`Per-core load, ${span}`}
+      aside={<HeatScaleLegend />}
+      headerAlign="center"
+      className="col-span-2 gap-3"
     >
-      <div className="flex flex-wrap items-center gap-3">
-        <h2 id={titleId} className="m-0 flex-1 font-[590] text-[14px]">
-          Per-core load, {span}
-        </h2>
-        <HeatScaleLegend />
-      </div>
       <CoreHeatmap
         gaps={gaps}
         cores={cores.map((c) => ({
@@ -79,6 +73,6 @@ export function CoreLoadCard({
         endMs={endMs}
         ariaLabel={`Per-core load, ${span}, ${bucketMs / 1000} second columns`}
       />
-    </Card>
+    </SectionCard>
   );
 }

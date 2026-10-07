@@ -1,12 +1,12 @@
 import { ratio } from "@core/chart-math";
 import { bytesParts, formatBytes, formatPercent, MISSING } from "@core/format";
 import type { MetricStat } from "@core/generated/bindings";
-import { useId, useMemo } from "react";
+import { useMemo } from "react";
 import { brushScopeProps } from "~/components/brush-overlay";
 import { RangeTotalsStrip } from "~/components/range-totals-strip";
+import { SectionCard } from "~/components/section-card";
 import { useHeld } from "~/hooks/use-ring";
 import { useUnits } from "~/hooks/use-units";
-import { Card } from "~/widgets/card";
 import { StackBar } from "~/widgets/stack-bar";
 import { StatStrip } from "~/widgets/stat-strip";
 import { pressureState } from "../_lib/pressure";
@@ -39,7 +39,6 @@ export function CompositionCard({
   totalBytes: number | null;
   windowMs: number;
 }) {
-  const titleId = useId();
   const units = useUnits();
   const v = useHeld(HELD);
   const at = (k: string) => v[k] ?? null;
@@ -62,14 +61,13 @@ export function CompositionCard({
 
   return (
     <div {...brushScopeProps} className="contents">
-      <Card
+      <SectionCard
         accent="mem"
-        labelledBy={titleId}
-        className="flex flex-col gap-4 p-4"
+        variant="default"
+        title="Memory composition"
+        hiddenTitle
+        className="gap-4"
       >
-        <h2 id={titleId} className="sr-only">
-          Memory composition
-        </h2>
         <div className="flex flex-wrap items-end justify-between gap-x-7 gap-y-3">
           <StatStrip
             hero={{
@@ -139,7 +137,7 @@ export function CompositionCard({
             },
           ]}
         />
-      </Card>
+      </SectionCard>
     </div>
   );
 }

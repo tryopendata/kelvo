@@ -20,7 +20,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { HistoryNotices } from "~/components/history-notices";
 import { SegmentedControl } from "~/components/segmented-control";
-import { SettingsRow } from "~/components/settings-row";
+import { SettingsPanel, SettingsRow } from "~/components/settings-row";
 import { Button } from "~/components/ui/button";
 import {
   Dialog,
@@ -98,163 +98,155 @@ export function SamplingPanel({
   const performanceOn = !!sampling.performance_mode || byLowPower;
 
   return (
-    <section
-      aria-labelledby="settings-sampling"
-      className="flex flex-col gap-2.5"
+    <SettingsPanel
+      title="Sampling"
+      after={<HistoryNotices health={health.health} error={health.error} />}
     >
-      <h2 id="settings-sampling" className="font-[590] text-[14px]">
-        Sampling
-      </h2>
-      <div className="overflow-hidden rounded-card border border-border bg-card">
-        <SettingsRow
-          label="Performance mode"
-          sub={
-            byLowPower
-              ? "On while Low Power Mode is on"
-              : "Uses less CPU by updating less often and turning off animations"
+      <SettingsRow
+        label="Performance mode"
+        sub={
+          byLowPower
+            ? "On while Low Power Mode is on"
+            : "Uses less CPU by updating less often and turning off animations"
+        }
+      >
+        <Switch
+          checked={performanceOn}
+          disabled={byLowPower}
+          aria-label="Performance mode"
+          aria-describedby="settings-performance-changes"
+          onCheckedChange={(on) =>
+            write({ sampling: { performance_mode: on } })
+          }
+        />
+        <PerformanceChanges
+          sampling={sampling}
+          modules={modules}
+          reason={performance}
+        />
+      </SettingsRow>
+      <SettingsRow
+        label="Sample interval"
+        sub={
+          overhead === "measuring" ? (
+            `Measuring Kelvo's CPU at ${intervalLabel(liveInterval)}…`
+          ) : overhead !== null ? (
+            <>
+              Kelvo uses about{" "}
+              <span className="data-mono">
+                {formatPercent(overhead, { decimals: 1 })}
+              </span>{" "}
+              CPU at {intervalLabel(liveInterval)}, this window included
+            </>
+          ) : null
+        }
+      >
+        <SegmentedControl
+          ariaLabel="Sample interval"
+          options={INTERVAL_OPTIONS}
+          value={String(sampling.interval_ms)}
+          onChange={(v) => write({ sampling: { interval_ms: Number(v) } })}
+        />
+      </SettingsRow>
+      <SettingsRow
+        label="Slow down on battery"
+        sub={performanceOn && "Set by Performance mode"}
+      >
+        <span className="font-normal text-[12px] text-muted-foreground">
+          to{" "}
+          {intervalLabel(
+            slowestIntervalMs({ ...sampling, slow_on_battery: true })
+          )}
+        </span>
+        <Switch
+          checked={sampling.slow_on_battery || performanceOn}
+          disabled={performanceOn}
+          aria-label="Slow down on battery"
+          onCheckedChange={(on) => write({ sampling: { slow_on_battery: on } })}
+        />
+      </SettingsRow>
+      <SettingsRow
+        label="Keep history"
+        htmlFor="settings-retention"
+        sub={
+          current?.limitedDays != null &&
+          `Limited to about ${current.limitedDays} days by the ${limitText} limit`
+        }
+      >
+        <span className="data-mono text-[12px] text-muted-foreground">
+          {current ? `about ${approxSize(current.bytes)}` : "–"}
+        </span>
+        <Select
+          value={String(history.retention_days)}
+          onValueChange={(v) =>
+            write({ history: { retention_days: Number(v) } })
           }
         >
-          <Switch
-            checked={performanceOn}
-            disabled={byLowPower}
-            aria-label="Performance mode"
-            aria-describedby="settings-performance-changes"
-            onCheckedChange={(on) =>
-              write({ sampling: { performance_mode: on } })
-            }
-          />
-          <PerformanceChanges
-            sampling={sampling}
-            modules={modules}
-            reason={performance}
-          />
-        </SettingsRow>
-        <SettingsRow
-          label="Sample interval"
-          sub={
-            overhead === "measuring" ? (
-              `Measuring Kelvo's CPU at ${intervalLabel(liveInterval)}…`
-            ) : overhead !== null ? (
-              <>
-                Kelvo uses about{" "}
-                <span className="data-mono">
-                  {formatPercent(overhead, { decimals: 1 })}
-                </span>{" "}
-                CPU at {intervalLabel(liveInterval)}, this window included
-              </>
-            ) : null
-          }
-        >
-          <SegmentedControl
-            ariaLabel="Sample interval"
-            options={INTERVAL_OPTIONS}
-            value={String(sampling.interval_ms)}
-            onChange={(v) => write({ sampling: { interval_ms: Number(v) } })}
-          />
-        </SettingsRow>
-        <SettingsRow
-          label="Slow down on battery"
-          sub={performanceOn && "Set by Performance mode"}
-        >
-          <span className="font-normal text-[12px] text-muted-foreground">
-            to{" "}
-            {intervalLabel(
-              slowestIntervalMs({ ...sampling, slow_on_battery: true })
-            )}
-          </span>
-          <Switch
-            checked={sampling.slow_on_battery || performanceOn}
-            disabled={performanceOn}
-            aria-label="Slow down on battery"
-            onCheckedChange={(on) =>
-              write({ sampling: { slow_on_battery: on } })
-            }
-          />
-        </SettingsRow>
-        <SettingsRow
-          label="Keep history"
-          htmlFor="settings-retention"
-          sub={
-            current?.limitedDays != null &&
-            `Limited to about ${current.limitedDays} days by the ${limitText} limit`
-          }
-        >
-          <span className="data-mono text-[12px] text-muted-foreground">
-            {current ? `about ${approxSize(current.bytes)}` : "–"}
-          </span>
-          <Select
-            value={String(history.retention_days)}
-            onValueChange={(v) =>
-              write({ history: { retention_days: Number(v) } })
-            }
+          <SelectTrigger
+            id="settings-retention"
+            size="sm"
+            className="px-2 text-[12px]"
           >
-            <SelectTrigger
-              id="settings-retention"
-              size="sm"
-              className="px-2 text-[12px]"
-            >
-              <SelectValue>{history.retention_days} days</SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              {RETENTION_DAYS.map((d) => {
-                const p = projection(d);
-                return (
-                  <SelectItem key={d} value={String(d)}>
-                    {d} days
-                    <span className="data-mono text-[11px] text-muted-foreground">
-                      {p === null
-                        ? "–"
-                        : p.limitedDays === null
-                          ? `about ${approxSize(p.bytes)}`
-                          : `${limitText}, about ${p.limitedDays} days`}
-                    </span>
-                  </SelectItem>
-                );
-              })}
-            </SelectContent>
-          </Select>
-        </SettingsRow>
-        <SettingsRow label="History size limit" htmlFor="settings-size-limit">
-          <Select
-            value={String(history.size_limit_mb)}
-            onValueChange={(v) =>
-              write({ history: { size_limit_mb: Number(v) } })
-            }
-          >
-            <SelectTrigger
-              id="settings-size-limit"
-              size="sm"
-              className="px-2 text-[12px]"
-            >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {SIZE_LIMITS_MB.map((mb) => (
-                <SelectItem key={mb} value={String(mb)}>
-                  {sizeLimitLabel(mb)}
+            <SelectValue>{history.retention_days} days</SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            {RETENTION_DAYS.map((d) => {
+              const p = projection(d);
+              return (
+                <SelectItem key={d} value={String(d)}>
+                  {d} days
+                  <span className="data-mono text-[11px] text-muted-foreground">
+                    {p === null
+                      ? "–"
+                      : p.limitedDays === null
+                        ? `about ${approxSize(p.bytes)}`
+                        : `${limitText}, about ${p.limitedDays} days`}
+                  </span>
                 </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </SettingsRow>
-        {perAppNetwork && (
-          <SettingsRow
-            label="Network history"
-            sub="Keeps which apps used the network, in 10 s steps. Costs about 0.1% CPU when idle."
+              );
+            })}
+          </SelectContent>
+        </Select>
+      </SettingsRow>
+      <SettingsRow label="History size limit" htmlFor="settings-size-limit">
+        <Select
+          value={String(history.size_limit_mb)}
+          onValueChange={(v) =>
+            write({ history: { size_limit_mb: Number(v) } })
+          }
+        >
+          <SelectTrigger
+            id="settings-size-limit"
+            size="sm"
+            className="px-2 text-[12px]"
           >
-            <Switch
-              checked={history.network_history !== false}
-              aria-label="Network history"
-              onCheckedChange={(on) =>
-                write({ history: { network_history: on } })
-              }
-            />
-          </SettingsRow>
-        )}
-        <HistoryOnDisk />
-      </div>
-      <HistoryNotices health={health.health} error={health.error} />
-    </section>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {SIZE_LIMITS_MB.map((mb) => (
+              <SelectItem key={mb} value={String(mb)}>
+                {sizeLimitLabel(mb)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </SettingsRow>
+      {perAppNetwork && (
+        <SettingsRow
+          label="Network history"
+          sub="Keeps which apps used the network, in 10 s steps. Costs about 0.1% CPU when idle."
+        >
+          <Switch
+            checked={history.network_history !== false}
+            aria-label="Network history"
+            onCheckedChange={(on) =>
+              write({ history: { network_history: on } })
+            }
+          />
+        </SettingsRow>
+      )}
+      <HistoryOnDisk />
+    </SettingsPanel>
   );
 }
 

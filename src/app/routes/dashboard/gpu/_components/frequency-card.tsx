@@ -2,10 +2,9 @@ import { fixed, MISSING } from "@core/format";
 import { windowWords } from "@core/live-window";
 import { residencyRows } from "@core/residency";
 import { labelOf } from "@core/series-key";
-import { useId } from "react";
+import { SectionCard } from "~/components/section-card";
 import { useGpuMaxMhz } from "~/hooks/use-host-record";
 import { useHeld, useLayout, useRingStats } from "~/hooks/use-ring";
-import { Card } from "~/widgets/card";
 import { ResidencyBar } from "~/widgets/residency-bar";
 import { RingGauge } from "~/widgets/ring-gauge";
 
@@ -16,7 +15,6 @@ import { RingGauge } from "~/widgets/ring-gauge";
  * MHz, as for CPU clusters.
  */
 export function FrequencyCard({ windowMs }: { windowMs: number }) {
-  const titleId = useId();
   const span = `last ${windowWords(windowMs)}`;
   const layout = useLayout();
   const states: { key: string; state: string }[] = [];
@@ -40,10 +38,12 @@ export function FrequencyCard({ windowMs }: { windowMs: number }) {
   const maxGhz = maxMhz === null ? null : maxMhz / 1000;
 
   return (
-    <Card accent="gpu" labelledBy={titleId} className="flex flex-col gap-4 p-4">
-      <h2 id={titleId} className="m-0 font-[590] text-[14px]">
-        Frequency
-      </h2>
+    <SectionCard
+      accent="gpu"
+      variant="default"
+      title="Frequency"
+      className="gap-4"
+    >
       <div className="flex items-start gap-5">
         <figure className="m-0 flex flex-col items-center gap-2.5">
           <RingGauge
@@ -72,6 +72,6 @@ export function FrequencyCard({ windowMs }: { windowMs: number }) {
           )}
         </div>
       </div>
-    </Card>
+    </SectionCard>
   );
 }

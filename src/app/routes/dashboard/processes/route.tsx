@@ -9,6 +9,7 @@ import {
 } from "~/components/process-actions";
 import { type ProcessSort, ProcessTable } from "~/components/process-table";
 import { SearchField } from "~/components/search-field";
+import { SectionCard } from "~/components/section-card";
 import { SegmentedControl } from "~/components/segmented-control";
 import { useEdition } from "~/hooks/use-edition";
 import {
@@ -19,7 +20,6 @@ import {
 } from "~/hooks/use-process-interest";
 import { useQuitFlow } from "~/hooks/use-quit-flow";
 import { useUnits } from "~/hooks/use-units";
-import { Card } from "~/widgets/card";
 import {
   COLUMN_SETS,
   type ColumnSet,
@@ -129,15 +129,13 @@ export default function ProcessesRoute() {
           </div>
         }
       />
-      <Card
+      <SectionCard
         accent="cpu"
-        variant="chart"
-        labelledBy="processes-table-title"
-        className="flex min-h-0 flex-1 flex-col"
+        title="All processes"
+        hiddenTitle
+        flush
+        className="min-h-0 flex-1"
       >
-        <h2 id="processes-table-title" className="sr-only">
-          All processes
-        </h2>
         <div ref={bodyRef} className="min-h-0 flex-1 px-1 pt-1">
           {shown.length > 0 ? (
             <ProcessTable
@@ -172,7 +170,7 @@ export default function ProcessesRoute() {
           <span className="data-mono">{countLine(rows, shown)}</span>
           {note && <span>{note}</span>}
         </footer>
-      </Card>
+      </SectionCard>
       <QuitDialog flow={flow} />
     </div>
   );

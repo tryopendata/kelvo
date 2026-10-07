@@ -1,9 +1,9 @@
 import { formatPercent } from "@core/format";
 import { Info } from "lucide-react";
-import { type ReactNode, useId } from "react";
+import type { ReactNode } from "react";
+import { SectionCard } from "~/components/section-card";
 import { TableCell, TableRow } from "~/components/ui/table";
 import { cn } from "~/lib/utils";
-import { Card } from "~/widgets/card";
 import type { Accent } from "~/widgets/lib/accent";
 import { MeterTrack } from "~/widgets/meter-track";
 
@@ -30,22 +30,19 @@ export function AppsShell({
   accent?: Accent;
   children?: ReactNode;
 }) {
-  const titleId = useId();
   return (
-    <Card
+    <SectionCard
       accent={accent}
       origin="tr"
-      labelledBy={titleId}
-      className="flex min-w-0 flex-col pb-1"
+      variant="default"
+      title={title}
+      aside={aside}
+      headerAlign="center"
+      flush
+      className="pb-1"
     >
-      <div className="flex min-h-6 flex-wrap items-center gap-3 px-4 pt-3.5 pb-2">
-        <h2 id={titleId} className="flex-1 font-[590] text-[14px]">
-          {title}
-        </h2>
-        {aside}
-      </div>
       {children}
-    </Card>
+    </SectionCard>
   );
 }
 

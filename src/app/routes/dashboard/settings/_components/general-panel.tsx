@@ -4,7 +4,7 @@ import type {
   UpdateStatus,
 } from "@core/generated/bindings";
 import { useState } from "react";
-import { SettingsRow } from "~/components/settings-row";
+import { SettingsPanel, SettingsRow } from "~/components/settings-row";
 import { Button } from "~/components/ui/button";
 import {
   Select,
@@ -47,77 +47,65 @@ export function GeneralPanel({ general }: { general: Settings["general"] }) {
   };
 
   return (
-    <section
-      aria-labelledby="settings-general"
-      className="flex flex-col gap-2.5"
-    >
-      <h2 id="settings-general" className="font-[590] text-[14px]">
-        General
-      </h2>
-      <div className="overflow-hidden rounded-card border border-border bg-card">
-        <SettingsRow label="Launch at login">
-          <Switch
-            checked={general.launch_at_login}
-            aria-label="Launch at login"
-            onCheckedChange={(on) =>
-              write({ general: { launch_at_login: on } })
-            }
-          />
-        </SettingsRow>
-        <SettingsRow label="Show in Dock">
-          <Switch
-            checked={general.show_in_dock}
-            aria-label="Show in Dock"
-            onCheckedChange={(on) => write({ general: { show_in_dock: on } })}
-          />
-        </SettingsRow>
-        <SettingsRow label="Appearance" htmlFor="settings-appearance">
-          <Select
-            value={general.appearance}
-            onValueChange={(v) =>
-              write({ general: { appearance: v as Appearance } })
-            }
-          >
-            <SelectTrigger
-              id="settings-appearance"
-              size="sm"
-              className="px-2 text-[12px]"
-            >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {APPEARANCES.map((a) => (
-                <SelectItem key={a.value} value={a.value}>
-                  {a.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </SettingsRow>
-        <SettingsRow
-          label="Check for updates automatically"
-          sub="The only network request Kelvo makes"
+    <SettingsPanel title="General">
+      <SettingsRow label="Launch at login">
+        <Switch
+          checked={general.launch_at_login}
+          aria-label="Launch at login"
+          onCheckedChange={(on) => write({ general: { launch_at_login: on } })}
+        />
+      </SettingsRow>
+      <SettingsRow label="Show in Dock">
+        <Switch
+          checked={general.show_in_dock}
+          aria-label="Show in Dock"
+          onCheckedChange={(on) => write({ general: { show_in_dock: on } })}
+        />
+      </SettingsRow>
+      <SettingsRow label="Appearance" htmlFor="settings-appearance">
+        <Select
+          value={general.appearance}
+          onValueChange={(v) =>
+            write({ general: { appearance: v as Appearance } })
+          }
         >
-          <Switch
-            checked={general.check_updates}
-            aria-label="Check for updates automatically"
-            onCheckedChange={(on) => write({ general: { check_updates: on } })}
-          />
-        </SettingsRow>
-        <SettingsRow label="Version" sub={status ?? undefined}>
-          <span className="data-mono text-[12px] text-fg-subtle">
-            {version}
-          </span>
-          <Button
-            variant="outline"
+          <SelectTrigger
+            id="settings-appearance"
             size="sm"
-            disabled={checking}
-            onClick={checkNow}
+            className="px-2 text-[12px]"
           >
-            Check now
-          </Button>
-        </SettingsRow>
-      </div>
-    </section>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {APPEARANCES.map((a) => (
+              <SelectItem key={a.value} value={a.value}>
+                {a.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </SettingsRow>
+      <SettingsRow
+        label="Check for updates automatically"
+        sub="The only network request Kelvo makes"
+      >
+        <Switch
+          checked={general.check_updates}
+          aria-label="Check for updates automatically"
+          onCheckedChange={(on) => write({ general: { check_updates: on } })}
+        />
+      </SettingsRow>
+      <SettingsRow label="Version" sub={status ?? undefined}>
+        <span className="data-mono text-[12px] text-fg-subtle">{version}</span>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={checking}
+          onClick={checkNow}
+        >
+          Check now
+        </Button>
+      </SettingsRow>
+    </SettingsPanel>
   );
 }
