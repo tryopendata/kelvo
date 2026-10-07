@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use kelvo_schema::{
     Cursor, Event, Gap, GapReason, HostId, HostInfo, HostRecord, Labels, MetricId, Module,
-    SeriesKey, SyncKinds, SyncRowKind, Tier,
+    SeriesKey, SyncKinds, SyncRowKind, Tier, floor_to,
 };
 use rusqlite::{Connection, OptionalExtension, params};
 use uuid::Uuid;
@@ -616,7 +616,7 @@ struct Merge<'q> {
 
 impl<'q> Merge<'q> {
     fn new(q: &'q HistoryQuery, width: i64) -> Self {
-        let base = q.from_ms - q.from_ms.rem_euclid(width);
+        let base = floor_to(q.from_ms, width);
         let buckets = (q.to_ms - base + width - 1) / width;
         let per_slot =
             (buckets + i64::from(q.max_points.max(1)) - 1) / i64::from(q.max_points.max(1));

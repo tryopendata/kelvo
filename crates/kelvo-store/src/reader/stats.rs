@@ -2,7 +2,7 @@
 //! A bucket counts the time it covers, cut at now, less any gap inside it that applies to
 //! the metric's module; a bucket with no reading counts nothing.
 
-use kelvo_schema::MetricDef;
+use kelvo_schema::{MetricDef, ceil_to, floor_to};
 
 use crate::types::HistoryResult;
 
@@ -40,10 +40,8 @@ pub fn range_stats(
     now_ms: i64,
 ) -> RangeStats {
     let width = read.bucket_ms.max(1);
-    let from = from_ms - from_ms.rem_euclid(width);
-    let to = (to_ms + (width - to_ms.rem_euclid(width)) % width)
-        .min(now_ms)
-        .max(from);
+    let from = floor_to(from_ms, width);
+    let to = ceil_to(to_ms, width).min(now_ms).max(from);
     let metrics = defs
         .iter()
         .map(|d| {

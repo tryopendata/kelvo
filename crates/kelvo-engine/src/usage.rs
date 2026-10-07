@@ -32,10 +32,11 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 
 use kelvo_collect::ProcessSample;
+use kelvo_schema::{Tier, ceil_to, floor_to};
 use serde::{Deserialize, Serialize};
 
-/// Width of a usage bucket.
-pub const USAGE_BUCKET_MS: i64 = 10_000;
+/// Width of a usage bucket: the S10 tier's.
+pub const USAGE_BUCKET_MS: i64 = Tier::S10.bucket_ms().expect("S10 has a bucket width");
 
 /// How far back the ring reaches: the longest chart window plus one bucket, so an
 /// hour-long window still finds its first bucket.
@@ -338,7 +339,7 @@ pub struct UsageRing {
 }
 
 fn bucket_of(ts_ms: i64) -> i64 {
-    ts_ms - ts_ms.rem_euclid(USAGE_BUCKET_MS)
+    floor_to(ts_ms, USAGE_BUCKET_MS)
 }
 
 /// Per-app sums of one batch.
@@ -639,11 +640,7 @@ impl UsageRing {
     /// name.
     pub fn by_app(&self, from_ms: i64, to_ms: i64, by: UsageKey, limit: usize) -> UsageByApp {
         let from = bucket_of(from_ms);
-        let to = if to_ms.rem_euclid(USAGE_BUCKET_MS) == 0 {
-            to_ms
-        } else {
-            bucket_of(to_ms) + USAGE_BUCKET_MS
-        };
+        let to = ceil_to(to_ms, USAGE_BUCKET_MS);
         #[derive(Default)]
         struct AppSum {
             used: Use,
@@ -769,7 +766,7 @@ impl UsageRing {
             from_ms: from,
             to_ms: to,
             since_ms: self.since_ms,
-            complete_to_ms: latest.map(|l| l - l.rem_euclid(USAGE_BUCKET_MS)),
+            complete_to_ms: latest.map(|l| floor_to(l, USAGE_BUCKET_MS)),
             covered_ms: covered_ms.round() as i64,
             gpu_covered_ms: gpu_covered_ms.round() as i64,
             total: UsageTotal {

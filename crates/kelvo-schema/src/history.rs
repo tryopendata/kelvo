@@ -67,9 +67,35 @@ impl Tier {
     /// negative timestamps). `None` for [`Tier::Unknown`].
     pub const fn bucket_start(self, ts_ms: i64) -> Option<i64> {
         match self.bucket_ms() {
-            Some(w) => Some(ts_ms - ts_ms.rem_euclid(w)),
+            Some(w) => Some(floor_to(ts_ms, w)),
             None => None,
         }
+    }
+
+    /// End (exclusive) of the bucket containing `ts_ms`: its start plus the width. `None`
+    /// for [`Tier::Unknown`].
+    pub const fn bucket_end(self, ts_ms: i64) -> Option<i64> {
+        match self.bucket_ms() {
+            Some(w) => Some(floor_to(ts_ms, w) + w),
+            None => None,
+        }
+    }
+}
+
+/// `ts_ms` floored to a multiple of `width_ms`, also for negative timestamps
+/// (`floor_to(-1, 10) == -10`). `width_ms` must be positive.
+pub const fn floor_to(ts_ms: i64, width_ms: i64) -> i64 {
+    ts_ms - ts_ms.rem_euclid(width_ms)
+}
+
+/// `ts_ms` rounded up to a multiple of `width_ms`; a value already on a boundary is kept
+/// (`ceil_to(10, 10) == 10`, `ceil_to(-1, 10) == 0`). `width_ms` must be positive.
+pub const fn ceil_to(ts_ms: i64, width_ms: i64) -> i64 {
+    let floor = floor_to(ts_ms, width_ms);
+    if floor == ts_ms {
+        ts_ms
+    } else {
+        floor + width_ms
     }
 }
 
@@ -374,6 +400,39 @@ mod tests {
         assert!(!Tier::Unknown.is_persisted());
         assert!(!Tier::Live1s.is_persisted());
         assert!(Tier::PERSISTED.iter().all(|t| t.is_persisted()));
+    }
+
+    #[test]
+    fn bucket_end_is_start_plus_width() {
+        assert_eq!(
+            Tier::S10.bucket_end(1_790_000_012_345),
+            Some(1_790_000_020_000)
+        );
+        assert_eq!(
+            Tier::S10.bucket_end(1_790_000_010_000),
+            Some(1_790_000_020_000)
+        );
+        assert_eq!(Tier::M1.bucket_end(-1), Some(0));
+        assert_eq!(Tier::Unknown.bucket_end(5), None);
+    }
+
+    #[test]
+    fn floor_and_ceil_round_toward_the_boundaries() {
+        assert_eq!(floor_to(12_345, 10_000), 10_000);
+        assert_eq!(ceil_to(12_345, 10_000), 20_000);
+        // On a boundary both keep the value.
+        assert_eq!(floor_to(20_000, 10_000), 20_000);
+        assert_eq!(ceil_to(20_000, 10_000), 20_000);
+        assert_eq!((floor_to(0, 10_000), ceil_to(0, 10_000)), (0, 0));
+        // Negative timestamps floor down and ceil up, not toward zero.
+        assert_eq!(floor_to(-1, 10_000), -10_000);
+        assert_eq!(ceil_to(-1, 10_000), 0);
+        assert_eq!(floor_to(-10_000, 10_000), -10_000);
+        assert_eq!(ceil_to(-10_000, 10_000), -10_000);
+        assert_eq!(
+            (floor_to(-10_001, 10_000), ceil_to(-10_001, 10_000)),
+            (-20_000, -10_000)
+        );
     }
 
     #[test]

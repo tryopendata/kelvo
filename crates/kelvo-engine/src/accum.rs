@@ -186,8 +186,7 @@ impl TierAcc {
 
     /// End of the open bucket: rows have been (or will be) written up to here.
     pub(crate) fn bucket_end(&self) -> Option<i64> {
-        let width = self.tier.bucket_ms()?;
-        self.bucket.map(|b| b + width)
+        self.bucket.and_then(|b| self.tier.bucket_end(b))
     }
 
     /// Emits the rows of the open bucket without resetting it.

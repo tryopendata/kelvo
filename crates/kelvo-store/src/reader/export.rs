@@ -18,7 +18,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::io::Write;
 use std::iter::Peekable;
 
-use kelvo_schema::{Gap, HostId, SeriesKey, SeriesSelector, Tier};
+use kelvo_schema::{Gap, HostId, SeriesKey, SeriesSelector, Tier, floor_to};
 use rusqlite::params;
 
 use super::{Acc, Reader, f32_at, load_layout};
@@ -98,7 +98,7 @@ impl Reader {
             Vec::new()
         };
         // A bucket counts when it starts in the range, as in a history read.
-        let base = q.from_ms - q.from_ms.rem_euclid(width);
+        let base = floor_to(q.from_ms, width);
         let tables = bucket_sources(tier)?;
 
         // Pass 1: the layouts in range, so the header names every column before the
@@ -189,7 +189,7 @@ impl Reader {
             let mut slot: Option<i64> = None;
             let mut accs: Vec<Acc> = (0..series.len()).map(|_| Acc::default()).collect();
             while let Some((ts, layout_id, stats, weight)) = next_in_order(&mut streams)? {
-                let t = ts - ts.rem_euclid(width);
+                let t = floor_to(ts, width);
                 if let Some(s) = slot
                     && s != t
                 {

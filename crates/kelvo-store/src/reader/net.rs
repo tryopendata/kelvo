@@ -11,7 +11,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use kelvo_schema::{HostId, Tier};
+use kelvo_schema::{HostId, Tier, ceil_to, floor_to};
 use rusqlite::{OptionalExtension, params};
 
 use super::Reader;
@@ -20,9 +20,9 @@ use crate::db::net_table;
 use crate::error::{Result, StoreError};
 use crate::types::{NetApp, NetBucket, NetByApp, NetSpan};
 
-const S10: i64 = 10_000;
-const M1: i64 = 60_000;
-const M15: i64 = 900_000;
+const S10: i64 = Tier::S10.bucket_ms().expect("S10 has a bucket width");
+const M1: i64 = Tier::M1.bucket_ms().expect("M1 has a bucket width");
+const M15: i64 = Tier::M15.bucket_ms().expect("M15 has a bucket width");
 
 /// A 10 s bucket: a stored row, or one of the caller's in-memory buckets.
 enum Ten<'a> {
@@ -115,15 +115,6 @@ fn push_span(spans: &mut Vec<NetSpan>, from_ms: i64, to_ms: i64, tier: Option<Ti
     });
 }
 
-fn floor(t: i64, w: i64) -> i64 {
-    t - t.rem_euclid(w)
-}
-
-fn ceil(t: i64, w: i64) -> i64 {
-    let f = floor(t, w);
-    if f == t { t } else { f + w }
-}
-
 /// An empty read of a range that starts at `from10`.
 fn empty(from10: i64) -> NetByApp {
     NetByApp {
@@ -204,13 +195,13 @@ pub fn net_by_app_recent(
     to_ms: i64,
     recent: &[(i64, NetBucket)],
 ) -> Result<NetByApp> {
-    let (from10, to10) = (floor(from_ms, S10), ceil(to_ms, S10));
+    let (from10, to10) = (floor_to(from_ms, S10), ceil_to(to_ms, S10));
     if to10 <= from10 {
         return Ok(empty(from10));
     }
     let tens: BTreeMap<i64, &NetBucket> = recent
         .iter()
-        .map(|(ts, b)| (floor(*ts, S10), b))
+        .map(|(ts, b)| (floor_to(*ts, S10), b))
         .filter(|(ts, _)| (from10..to10).contains(ts))
         .collect();
     let mut sums = Sums::default();
@@ -276,13 +267,13 @@ impl Reader {
         recent: impl FnOnce() -> R,
     ) -> Result<NetByApp> {
         let host_ref = self.host_ref(host)?;
-        let (from10, to10) = (floor(from_ms, S10), ceil(to_ms, S10));
+        let (from10, to10) = (floor_to(from_ms, S10), ceil_to(to_ms, S10));
         if to10 <= from10 {
             return Ok(empty(from10));
         }
         // Whole quarters around the range: whether a minute or quarter has finer rows
         // is decided over all of it, not just the part inside the range.
-        let (q_start, q_end) = (floor(from10, M15), ceil(to10, M15));
+        let (q_start, q_end) = (floor_to(from10, M15), ceil_to(to10, M15));
         let (stored_tens, minutes, quarters) = {
             // One snapshot for the three tiers: a commit or prune between the reads could
             // otherwise show a span in two tiers, or in none.
@@ -305,7 +296,7 @@ impl Reader {
             .map(|(ts, b)| (ts, Ten::Stored(b)))
             .collect();
         for (ts, b) in recent.as_ref() {
-            let ts = floor(*ts, S10);
+            let ts = floor_to(*ts, S10);
             if (q_start..q_end).contains(&ts) {
                 tens.insert(ts, Ten::Recent(b));
             }
@@ -413,12 +404,5 @@ mod tests {
                 },
             ]
         );
-    }
-
-    #[test]
-    fn grid_rounding() {
-        assert_eq!((floor(-1, S10), ceil(-1, S10)), (-10_000, 0));
-        assert_eq!((floor(10_000, S10), ceil(10_000, S10)), (10_000, 10_000));
-        assert_eq!(ceil(10_001, S10), 20_000);
     }
 }
