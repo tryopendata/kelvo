@@ -1,10 +1,13 @@
 //! Interning: host rows, series, layouts and process names, each cached per host.
 
-use std::collections::HashSet;
+use std::borrow::Borrow;
+use std::collections::{HashMap, HashSet};
+use std::fmt::Debug;
+use std::hash::Hash;
 use std::sync::Arc;
 
 use kelvo_schema::{HostId, HostRecord, SeriesKey};
-use rusqlite::{OptionalExtension, params};
+use rusqlite::{OptionalExtension, Params, params};
 
 use super::{State, now_ms, to_u32};
 use crate::blob::{self, OTHER_APPS};
@@ -17,6 +20,36 @@ use crate::error::{Result, StoreError};
 /// The count lives in the writer, so it starts over when the app restarts.
 pub const NET_NEW_NAMES_PER_HOUR: u32 = 64;
 const HOUR_MS: i64 = 3_600_000;
+
+/// An intern table: the queries that find and add the row of one host's key.
+struct Intern {
+    /// What a row names, for errors.
+    what: &'static str,
+    select: &'static str,
+    insert: &'static str,
+    /// Id 0 is [`OTHER_APPS`] in network rows, so a row with it is corrupt.
+    reserves_zero: bool,
+}
+
+const SERIES: Intern = Intern {
+    what: "series",
+    select: "SELECT id FROM series WHERE host_id = ?1 AND metric_id = ?2 AND labels = ?3",
+    insert: "INSERT INTO series (host_id, metric_id, labels) VALUES (?1, ?2, ?3)",
+    reserves_zero: false,
+};
+
+const PROC_NAMES: Intern = Intern {
+    what: "process name",
+    select: "SELECT id FROM proc_names WHERE host_id = ?1 AND name = ?2",
+    insert: "INSERT INTO proc_names (host_id, name) VALUES (?1, ?2)",
+    reserves_zero: false,
+};
+
+/// `proc_names` as network buckets intern into it.
+const NET_NAMES: Intern = Intern {
+    reserves_zero: true,
+    ..PROC_NAMES
+};
 
 impl State {
     // --- interning --------------------------------------------------------------------
@@ -73,35 +106,17 @@ impl State {
     }
 
     pub(super) fn series_id(&mut self, host_ref: i64, key: &SeriesKey) -> Result<u32> {
-        if let Some(&id) = self.series.get(&host_ref).and_then(|m| m.get(key)) {
-            return Ok(id);
-        }
         let metric = key.metric.as_str();
         let labels = key.labels.canonical();
-        let found: Option<i64> = self
-            .conn
-            .prepare_cached(
-                "SELECT id FROM series WHERE host_id = ?1 AND metric_id = ?2 AND labels = ?3",
-            )?
-            .query_row(params![host_ref, metric, labels], |r| r.get(0))
-            .optional()?;
-        let id = match found {
-            Some(id) => id,
-            None => {
-                self.conn
-                    .prepare_cached(
-                        "INSERT INTO series (host_id, metric_id, labels) VALUES (?1, ?2, ?3)",
-                    )?
-                    .execute(params![host_ref, metric, labels])?;
-                self.conn.last_insert_rowid()
-            }
-        };
-        let id = to_u32(id, "series")?;
-        self.series
-            .entry(host_ref)
-            .or_default()
-            .insert(key.clone(), id);
-        Ok(id)
+        let id = self.intern_id(
+            |s| &mut s.series,
+            &SERIES,
+            host_ref,
+            key,
+            params![host_ref, metric, labels],
+            |_| true,
+        )?;
+        Ok(id.expect("admit always allows"))
     }
 
     /// The layout ID for this exact series list, minting one on first sight. Layouts are
@@ -151,29 +166,15 @@ impl State {
     }
 
     pub(super) fn proc_name_id(&mut self, host_ref: i64, name: &str) -> Result<u32> {
-        if let Some(&id) = self.proc_names.get(&host_ref).and_then(|m| m.get(name)) {
-            return Ok(id);
-        }
-        let found: Option<i64> = self
-            .conn
-            .prepare_cached("SELECT id FROM proc_names WHERE host_id = ?1 AND name = ?2")?
-            .query_row(params![host_ref, name], |r| r.get(0))
-            .optional()?;
-        let id = match found {
-            Some(id) => id,
-            None => {
-                self.conn
-                    .prepare_cached("INSERT INTO proc_names (host_id, name) VALUES (?1, ?2)")?
-                    .execute(params![host_ref, name])?;
-                self.conn.last_insert_rowid()
-            }
-        };
-        let id = to_u32(id, "process name")?;
-        self.proc_names
-            .entry(host_ref)
-            .or_default()
-            .insert(name.to_owned(), id);
-        Ok(id)
+        let id = self.intern_id(
+            |s| &mut s.proc_names,
+            &PROC_NAMES,
+            host_ref,
+            name,
+            params![host_ref, name],
+            |_| true,
+        )?;
+        Ok(id.expect("admit always allows"))
     }
 
     /// The `proc_names` id of a network app, or [`OTHER_APPS`] for one with no name or
@@ -187,43 +188,75 @@ impl State {
         let Some(name) = name.filter(|n| !n.is_empty()) else {
             return Ok(OTHER_APPS);
         };
-        if let Some(&id) = self.proc_names.get(&host_ref).and_then(|m| m.get(name)) {
-            return Ok(id);
+        let admit = |s: &mut State| {
+            let hour = bucket_ts.div_euclid(HOUR_MS);
+            let used = s.net_new_names.entry(host_ref).or_insert((hour, 0));
+            if used.0 != hour {
+                *used = (hour, 0);
+            }
+            if used.1 >= NET_NEW_NAMES_PER_HOUR {
+                return false;
+            }
+            used.1 += 1;
+            true
+        };
+        let id = self.intern_id(
+            |s| &mut s.proc_names,
+            &NET_NAMES,
+            host_ref,
+            name,
+            params![host_ref, name],
+            admit,
+        )?;
+        Ok(id.unwrap_or(OTHER_APPS))
+    }
+
+    /// The id of `key` in `host_ref`'s `intern` table: from `cache`, else the row
+    /// `intern.select` finds, else the row `intern.insert` adds once `admit` allows it
+    /// (both queries bound to `params`). `None` when `admit` refused.
+    fn intern_id<K, Q>(
+        &mut self,
+        cache: fn(&mut State) -> &mut HashMap<i64, HashMap<K, u32>>,
+        intern: &Intern,
+        host_ref: i64,
+        key: &Q,
+        params: impl Params + Copy,
+        admit: impl FnOnce(&mut State) -> bool,
+    ) -> Result<Option<u32>>
+    where
+        K: Borrow<Q> + Eq + Hash,
+        Q: ToOwned<Owned = K> + Eq + Hash + Debug + ?Sized,
+    {
+        if let Some(&id) = cache(self).get(&host_ref).and_then(|m| m.get(key)) {
+            return Ok(Some(id));
         }
         let found: Option<i64> = self
             .conn
-            .prepare_cached("SELECT id FROM proc_names WHERE host_id = ?1 AND name = ?2")?
-            .query_row(params![host_ref, name], |r| r.get(0))
+            .prepare_cached(intern.select)?
+            .query_row(params, |r| r.get(0))
             .optional()?;
         let id = match found {
             Some(id) => id,
             None => {
-                let hour = bucket_ts.div_euclid(HOUR_MS);
-                let used = self.net_new_names.entry(host_ref).or_insert((hour, 0));
-                if used.0 != hour {
-                    *used = (hour, 0);
+                if !admit(self) {
+                    return Ok(None);
                 }
-                if used.1 >= NET_NEW_NAMES_PER_HOUR {
-                    return Ok(OTHER_APPS);
-                }
-                used.1 += 1;
-                self.conn
-                    .prepare_cached("INSERT INTO proc_names (host_id, name) VALUES (?1, ?2)")?
-                    .execute(params![host_ref, name])?;
+                self.conn.prepare_cached(intern.insert)?.execute(params)?;
                 self.conn.last_insert_rowid()
             }
         };
-        let id = to_u32(id, "process name")?;
-        if id == OTHER_APPS {
+        let id = to_u32(id, intern.what)?;
+        if intern.reserves_zero && id == OTHER_APPS {
             // Rowids start at 1; a 0 would read back as "other apps".
             return Err(StoreError::Corrupt(format!(
-                "process name {name:?} has the reserved id 0"
+                "{} {key:?} has the reserved id 0",
+                intern.what
             )));
         }
-        self.proc_names
+        cache(self)
             .entry(host_ref)
             .or_default()
-            .insert(name.to_owned(), id);
-        Ok(id)
+            .insert(key.to_owned(), id);
+        Ok(Some(id))
     }
 }
