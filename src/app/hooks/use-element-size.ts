@@ -3,9 +3,9 @@ import { useLayoutEffect, useRef, useState } from "react";
 /**
  * One content-box dimension of the element on `ref`, tracked with a
  * ResizeObserver as the window resizes. Measured before the first paint;
- * `initial` stands in until a non-zero reading. A zero reading (the element hidden or detached) keeps the
- * last size. Only the named axis is state, so a change on the other axis
- * re-renders nothing.
+ * `initial` stands in until a non-zero reading. A zero reading (the element
+ * hidden or detached) keeps the last size. Only the named axis is state, so a
+ * change on the other axis re-renders nothing.
  */
 export function useElementSize<T extends Element = HTMLDivElement>(
   axis: "width" | "height",

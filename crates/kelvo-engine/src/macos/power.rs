@@ -29,7 +29,7 @@ use core_foundation::dictionary::CFDictionary;
 use core_foundation::string::CFString;
 use core_foundation_sys::dictionary::CFDictionaryRef;
 use kelvo_collect::macos::dispatch::Queue;
-use kelvo_collect::macos::iokit::{SystemPower as Registration, allow_power_change};
+use kelvo_collect::macos::iokit::{SystemPowerRegistration, allow_power_change};
 use kelvo_collect::macos::power_sources::Snapshot;
 use objc2_foundation::NSProcessInfo;
 
@@ -97,7 +97,8 @@ extern "C" fn on_system_power(refcon: *mut c_void, _service: u32, msg: u32, arg:
 /// The system power registration. Fields drop in order: the registration (torn down, its
 /// queue drained so no callback can still read `ctx`), then the context.
 struct SystemPower {
-    _registration: Registration,
+    // Do not reorder: drop order is the teardown order.
+    _registration: SystemPowerRegistration,
     _ctx: Box<PowerCtx>,
 }
 
@@ -110,7 +111,11 @@ impl SystemPower {
         });
         // SAFETY: the refcon is kept in `_ctx`, which drops after the registration.
         let registration = unsafe {
-            Registration::register(queue, (&raw const *ctx).cast_mut().cast(), on_system_power)
+            SystemPowerRegistration::register(
+                queue,
+                (&raw const *ctx).cast_mut().cast(),
+                on_system_power,
+            )
         };
         let Some(registration) = registration else {
             tracing::warn!("IORegisterForSystemPower failed; sleep gaps rely on stall detection");
@@ -255,7 +260,28 @@ impl PowerSignals for MacPowerSignals {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::mpsc;
+
     use super::*;
+
+    /// Registers for real system power messages and drops the registration: teardown
+    /// (deregister, queue drain, context) must return rather than hang.
+    #[test]
+    fn system_power_start_and_drop() {
+        let (inbox, _rx) = Inbox::new();
+        let (done_tx, done_rx) = mpsc::channel();
+        std::thread::spawn(move || {
+            let mut signals = MacPowerSignals::new();
+            signals.start(inbox);
+            let started = signals.system.is_some();
+            drop(signals);
+            let _ = done_tx.send(started);
+        });
+        let started = done_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("dropping the power signals returns");
+        assert!(started, "IORegisterForSystemPower succeeded");
+    }
 
     /// Reads the real power state once.
     #[test]
