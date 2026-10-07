@@ -11,8 +11,9 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use kelvo_engine::{Housekeeping, HousekeepingHandle, Schedule};
 use kelvo_schema::{HostRecord, Labels, MetricId, SeriesKey, Tier};
 use kelvo_store::{
-    BucketRow, ExportQuery, HistoryQuery, HistoryResult, ProcResolution, Reader, Retention, Store,
-    StoreConfig, StoreError, TierChoice, Writer,
+    BATTERY_CHARGE, BATTERY_CHARGING, BatteryCell, BucketRow, ExportQuery, HistoryQuery,
+    HistoryResult, ProcResolution, RangeStats, Reader, Retention, Store, StoreConfig, StoreError,
+    TierChoice, Writer, fill_battery_hours,
 };
 
 use crate::error::{CommandError, HistoryUnavailableReason};
@@ -196,20 +197,7 @@ impl History {
         to_ms: i64,
         recent: impl FnOnce() -> kelvo_engine::RecentNet,
     ) -> Result<NetworkByApp, CommandError> {
-        if to_ms < from_ms {
-            return Err(CommandError::InvalidArgument {
-                message: format!("the range ends ({to_ms}) before it starts ({from_ms})"),
-            });
-        }
-        if to_ms - from_ms > MAX_NET_SPAN_MS {
-            return Err(CommandError::InvalidArgument {
-                message: format!(
-                    "the range is {} days long; history keeps at most {} days",
-                    (to_ms - from_ms) / Retention::DAY_MS,
-                    MAX_NET_SPAN_MS / Retention::DAY_MS
-                ),
-            });
-        }
+        validate_range(from_ms, to_ms, MAX_NET_SPAN_MS)?;
         let mut recent = Some(recent);
         let mut complete_to_ms = None;
         let mut take = || {
@@ -285,20 +273,7 @@ impl History {
         now_ms: i64,
         recent: impl Fn() -> Vec<BucketRow>,
     ) -> Result<RangeStats, CommandError> {
-        if to_ms < from_ms {
-            return Err(CommandError::InvalidArgument {
-                message: format!("the range ends ({to_ms}) before it starts ({from_ms})"),
-            });
-        }
-        if to_ms - from_ms > MAX_NET_SPAN_MS {
-            return Err(CommandError::InvalidArgument {
-                message: format!(
-                    "the range is {} days long; history keeps at most {} days",
-                    (to_ms - from_ms) / Retention::DAY_MS,
-                    MAX_NET_SPAN_MS / Retention::DAY_MS
-                ),
-            });
-        }
+        validate_range(from_ms, to_ms, MAX_NET_SPAN_MS)?;
         let catalog = kelvo_schema::Catalog::builtin();
         let defs = metrics
             .iter()
@@ -312,24 +287,19 @@ impl History {
                 }),
             })
             .collect::<Result<Vec<_>, _>>()?;
-        let finest = Tier::S10.bucket_ms().unwrap_or(10_000);
-        let query = HistoryQuery {
+        // One point per bucket of the finest tier: no merging.
+        let query = per_bucket_query(
             host,
-            selectors: defs
-                .iter()
-                .map(|d| kelvo_schema::SeriesSelector {
-                    metric: d.id.clone(),
-                    labels: Labels::new(),
-                })
-                .collect(),
+            defs.iter().map(|d| d.id.clone()),
             from_ms,
             to_ms,
-            tier: TierChoice::Auto,
-            // One point per bucket of the finest tier: no merging.
-            max_points: u32::try_from((to_ms - from_ms) / finest + 2).unwrap_or(u32::MAX),
-        };
+            TierChoice::Auto,
+            Tier::S10.bucket_ms().unwrap_or(10_000),
+        );
         let read = self.history_through_now(&query, recent)?;
-        Ok(range_stats(&read, &defs, from_ms, to_ms, now_ms))
+        Ok(kelvo_store::range_stats(
+            &read, &defs, from_ms, to_ms, now_ms,
+        ))
     }
 
     /// `battery_hours`: for each hour between consecutive `hour_starts` (the
@@ -362,62 +332,53 @@ impl History {
         if let Some(&(start, _)) = cells.iter().find(|(start, end)| end < start) {
             return Err(invalid(format!("hour boundaries go backwards at {start}")));
         }
-        let mut out: Vec<BatteryHour> = cells
-            .iter()
-            .map(|&(start_ms, _)| BatteryHour {
-                start_ms,
-                charge: None,
-                charging: false,
-            })
-            .collect();
+        let mut out = vec![BatteryCell::default(); cells.len()];
         let (from_ms, to_ms) = (
             cells.first().map_or(0, |c| c.0),
             cells.last().map_or(0, |c| c.1),
         );
-        if to_ms <= from_ms {
-            return Ok(out);
-        }
-        let query = |tier: Tier, from_ms: i64, to_ms: i64| {
-            let width = tier.bucket_ms().unwrap_or(60_000);
-            HistoryQuery {
-                host,
-                selectors: [CHARGE, CHARGING]
-                    .into_iter()
-                    .map(|m| kelvo_schema::SeriesSelector {
-                        metric: MetricId::from_static(m),
-                        labels: Labels::new(),
-                    })
-                    .collect(),
-                from_ms,
-                to_ms,
-                tier: TierChoice::Fixed(tier),
-                // One point per bucket: no merging.
-                max_points: u32::try_from((to_ms - from_ms) / width + 2).unwrap_or(u32::MAX),
-            }
-        };
-        let minutes = self.history_through_now(&query(Tier::M1, from_ms, to_ms), &recent)?;
-        let mut last_t = vec![i64::MIN; out.len()];
-        fill_battery_hours(&cells, &minutes, &mut out, &mut last_t);
-        // Hours older than the minutes kept: their quarter hours.
-        let bare = |i: &usize| last_t.get(*i).is_some_and(|&t| t == i64::MIN);
-        let first = (0..cells.len()).find(bare);
-        let last = (0..cells.len()).rev().find(bare);
-        if let (Some(&(q_from, _)), Some(&(_, q_to))) = (
-            first.and_then(|i| cells.get(i)),
-            last.and_then(|i| cells.get(i)),
-        ) && q_to > q_from
-        {
-            let quarters = self.history_through_now(&query(Tier::M15, q_from, q_to), &recent)?;
-            let mut quarter_out: Vec<BatteryHour> = out.clone();
-            let mut quarter_t = vec![i64::MIN; out.len()];
-            fill_battery_hours(&cells, &quarters, &mut quarter_out, &mut quarter_t);
-            for ((hour, q), &t) in out.iter_mut().zip(quarter_out).zip(&last_t) {
-                if t == i64::MIN {
-                    *hour = q;
+        if to_ms > from_ms {
+            let query = |tier: Tier, from_ms: i64, to_ms: i64| {
+                per_bucket_query(
+                    host,
+                    [BATTERY_CHARGE, BATTERY_CHARGING].map(MetricId::from_static),
+                    from_ms,
+                    to_ms,
+                    TierChoice::Fixed(tier),
+                    tier.bucket_ms().unwrap_or(60_000),
+                )
+            };
+            let minutes = self.history_through_now(&query(Tier::M1, from_ms, to_ms), &recent)?;
+            fill_battery_hours(&cells, &minutes, &mut out);
+            // Hours older than the minutes kept: their quarter hours.
+            let bare = |i: &usize| out.get(*i).is_some_and(|c| !c.has_charge());
+            let first = (0..cells.len()).find(bare);
+            let last = (0..cells.len()).rev().find(bare);
+            if let (Some(&(q_from, _)), Some(&(_, q_to))) = (
+                first.and_then(|i| cells.get(i)),
+                last.and_then(|i| cells.get(i)),
+            ) && q_to > q_from
+            {
+                let quarters =
+                    self.history_through_now(&query(Tier::M15, q_from, q_to), &recent)?;
+                let mut quarter_out = out.clone();
+                fill_battery_hours(&cells, &quarters, &mut quarter_out);
+                for (hour, q) in out.iter_mut().zip(quarter_out) {
+                    if !hour.has_charge() {
+                        *hour = q;
+                    }
                 }
             }
         }
-        Ok(out)
+        Ok(cells
+            .iter()
+            .zip(out)
+            .map(|(&(start_ms, _), c)| BatteryHour {
+                start_ms,
+                charge: c.charge,
+                charging: c.charging,
+            })
+            .collect())
     }
 
     /// Runs `f` on a pooled read connection. Blocking: call it off the main thread.
@@ -587,147 +548,58 @@ fn tier_choice(tier: TierRequest) -> TierChoice {
     }
 }
 
+/// `invalid_argument` unless `[from_ms, to_ms)` runs forwards and spans at most `max_ms`
+/// (whole days).
+fn validate_range(from_ms: i64, to_ms: i64, max_ms: i64) -> Result<(), CommandError> {
+    if to_ms < from_ms {
+        return Err(CommandError::InvalidArgument {
+            message: format!("the range ends ({to_ms}) before it starts ({from_ms})"),
+        });
+    }
+    if to_ms - from_ms > max_ms {
+        return Err(CommandError::InvalidArgument {
+            message: format!(
+                "the range is {} days long; history keeps at most {} days",
+                (to_ms - from_ms) / Retention::DAY_MS,
+                max_ms / Retention::DAY_MS
+            ),
+        });
+    }
+    Ok(())
+}
+
+/// A read of the unlabelled `metrics` with room for one point per `bucket_ms` bucket of
+/// `[from_ms, to_ms)`, so none are merged.
+fn per_bucket_query(
+    host: kelvo_schema::HostId,
+    metrics: impl IntoIterator<Item = MetricId>,
+    from_ms: i64,
+    to_ms: i64,
+    tier: TierChoice,
+    bucket_ms: i64,
+) -> HistoryQuery {
+    HistoryQuery {
+        host,
+        selectors: metrics
+            .into_iter()
+            .map(|metric| kelvo_schema::SeriesSelector {
+                metric,
+                labels: Labels::new(),
+            })
+            .collect(),
+        from_ms,
+        to_ms,
+        tier,
+        max_points: u32::try_from((to_ms - from_ms) / bucket_ms + 2).unwrap_or(u32::MAX),
+    }
+}
+
 /// The most days one heatmap request may ask for: the longest retention (90 days) plus
 /// slack for the days a range starts and ends in.
 pub const MAX_HEATMAP_DAYS: usize = 92;
 
 /// The most hours one `battery_hours` request may ask for: a heatmap's days.
 pub const MAX_BATTERY_HOURS: usize = MAX_HEATMAP_DAYS * 24;
-
-const CHARGE: &str = "battery.charge";
-const CHARGING: &str = "battery.charging";
-
-/// One metric's [`RangeStats`].
-#[derive(Clone, Debug, PartialEq)]
-pub struct MetricStats {
-    pub metric: &'static str,
-    /// Time inside the range with a reading, outside the gaps that apply to the metric.
-    pub measured_ms: i64,
-    /// Span-weighted average over `measured_ms`; `None` when nothing was measured.
-    pub avg: Option<f64>,
-    /// The largest sample; `None` when nothing was measured.
-    pub max: Option<f64>,
-    /// `avg` times the measured seconds.
-    pub integral: f64,
-}
-
-/// [`History::series_stats`]: the range widened to whole buckets, as the read took them,
-/// and cut at now, with one entry per metric asked for, in order.
-#[derive(Clone, Debug, PartialEq)]
-pub struct RangeStats {
-    pub from_ms: i64,
-    pub to_ms: i64,
-    pub metrics: Vec<MetricStats>,
-}
-
-/// Sums a `series_stats` read. A bucket is measured where the metric has a reading,
-/// outside the gaps that apply to its module (host-wide ones and the module's own); an
-/// open gap runs to `now_ms`.
-fn range_stats(
-    read: &HistoryResult,
-    defs: &[&'static kelvo_schema::MetricDef],
-    from_ms: i64,
-    to_ms: i64,
-    now_ms: i64,
-) -> RangeStats {
-    let width = read.bucket_ms.max(1);
-    let from = from_ms - from_ms.rem_euclid(width);
-    let to = (to_ms + (width - to_ms.rem_euclid(width)) % width)
-        .min(now_ms)
-        .max(from);
-    let metrics = defs
-        .iter()
-        .map(|d| {
-            let mut gaps: Vec<(i64, i64)> = read
-                .gaps
-                .iter()
-                .filter(|g| g.module.is_none_or(|m| m == d.module))
-                .map(|g| (g.start_ms, g.end_ms.unwrap_or(now_ms)))
-                .collect();
-            gaps.sort_unstable();
-            // Time in `[a, b)` outside every gap.
-            let measured = |a: i64, b: i64| -> i64 {
-                let mut covered = 0;
-                let mut cursor = a;
-                for &(s, e) in &gaps {
-                    let (s, e) = (s.max(cursor), e.min(b));
-                    if e > s {
-                        covered += e - s;
-                        cursor = e;
-                    }
-                }
-                (b - a - covered).max(0)
-            };
-            let mut measured_ms = 0_i64;
-            let mut weighted = 0.0_f64;
-            let mut max: Option<f64> = None;
-            let points = read
-                .series
-                .iter()
-                .filter(|s| s.key.metric == d.id)
-                .flat_map(|s| &s.points);
-            for p in points {
-                let ms = measured(p.t.max(from), (p.t + width).min(to));
-                if ms > 0 && p.avg.is_finite() {
-                    measured_ms += ms;
-                    weighted += f64::from(p.avg) * ms as f64;
-                    if p.max.is_finite() {
-                        max = Some(max.map_or(f64::from(p.max), |m| m.max(f64::from(p.max))));
-                    }
-                }
-            }
-            let avg = (measured_ms > 0).then(|| weighted / measured_ms as f64);
-            MetricStats {
-                metric: d.id.as_str(),
-                measured_ms,
-                avg,
-                max,
-                integral: avg.map_or(0.0, |a| a.max(0.0) * measured_ms as f64 / 1_000.0),
-            }
-        })
-        .collect();
-    RangeStats {
-        from_ms: from,
-        to_ms: to,
-        metrics,
-    }
-}
-
-/// Each battery point of `result` into the hour of `cells` holding it: the latest charge
-/// (`last_t` tracks its time, `i64::MIN` while the hour has none) and whether any bucket
-/// charged.
-fn fill_battery_hours(
-    cells: &[(i64, i64)],
-    result: &HistoryResult,
-    out: &mut [BatteryHour],
-    last_t: &mut [i64],
-) {
-    for s in &result.series {
-        for p in &s.points {
-            let Some(i) = cell_of(cells, p.t) else {
-                continue;
-            };
-            let (Some(hour), Some(last)) = (out.get_mut(i), last_t.get_mut(i)) else {
-                continue;
-            };
-            match s.key.metric.as_str() {
-                CHARGE if p.t > *last => {
-                    hour.charge = Some(p.avg);
-                    *last = p.t;
-                }
-                CHARGING if p.max >= 0.5 => hour.charging = true,
-                _ => {}
-            }
-        }
-    }
-}
-
-/// The index of the cell `[start, end)` containing `ts`; cells are in order of start.
-fn cell_of(cells: &[(i64, i64)], ts: i64) -> Option<usize> {
-    let i = cells.partition_point(|c| c.0 <= ts).checked_sub(1)?;
-    let (start, end) = *cells.get(i)?;
-    (start <= ts && ts < end).then_some(i)
-}
 
 impl HeatmapMetric {
     pub fn series(self) -> SeriesKey {

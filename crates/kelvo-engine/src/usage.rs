@@ -32,6 +32,7 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 
 use kelvo_collect::ProcessSample;
+use serde::{Deserialize, Serialize};
 
 /// Width of a usage bucket.
 pub const USAGE_BUCKET_MS: i64 = 10_000;
@@ -78,15 +79,21 @@ const PROC_FLOOR: Floor = Floor {
     mem_bytes: 32 << 20,
 };
 
-/// What to sort apps by in [`UsageRing::by_app`].
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+// Also what [`UsageRing::by_app`] sorts by. The doc comment is the webview's, since the
+// shell takes this over IPC as it is (D-100).
+/// What `query_usage_by_app` sorts apps by (D-099).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
 pub enum UsageKey {
+    /// Average CPU.
     Cpu,
+    /// Average GPU.
     Gpu,
     /// Peak footprint.
     Memory,
-    /// Read plus written.
+    /// Bytes read plus written.
     Disk,
+    /// Joules.
     Energy,
 }
 

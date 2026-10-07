@@ -24,6 +24,10 @@ tokio = { workspace = true, features = ["sync"] }
 crossbeam-channel = "0.5.17"
 thiserror.workspace = true
 tracing.workspace = true
+# The app shell exports ProcessView, ProcessSort and UsageKey over IPC as they are
+# (D-100). Both already in the graph through kelvo-schema.
+serde.workspace = true
+specta = { workspace = true, features = ["derive"] }
 libc = "0.2.190"
 # Host ids are random v4 UUIDs (identity.rs).
 uuid = { workspace = true, features = ["v4"] }

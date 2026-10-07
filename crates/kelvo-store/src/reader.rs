@@ -25,10 +25,13 @@ mod export;
 mod growth;
 mod heatmap;
 mod net;
+mod stats;
 
 pub use export::{ExportQuery, ExportSummary};
 pub use growth::{HistoryGrowth, MIN_MEASURED_MS};
+pub use heatmap::{BATTERY_CHARGE, BATTERY_CHARGING, BatteryCell, fill_battery_hours};
 pub use net::net_by_app_recent;
+pub use stats::{MetricStats, RangeStats, range_stats};
 
 /// How far from the requested instant a process snapshot still counts as "at" it: half
 /// the widest snapshot spacing (30 s in Performance mode, D-088), so an instant between

@@ -26,7 +26,7 @@
 //! often), tied to the page load that asked for it through the stream id. It counts only
 //! while the window is visible, and the registry tells each host the shortest period any
 //! visible window wants, which is how often its collector runs. Which rows a view gets is
-//! [`kelvo_engine::select_processes`]; this maps the IPC view to the engine's.
+//! [`kelvo_engine::select_processes`], on the engine's view the window sent.
 //!
 //! Detail interest works the same way without being asked for: a visible window with a
 //! live stream for a host counts once toward that engine's detail interest, which samples
@@ -41,17 +41,16 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
-use kelvo_engine::process_control::{self, OwnProcesses, ProcessOs, SystemProcessOs};
 use kelvo_engine::{
     BackfillSegment, BusMsg, EngineStatus, FrameLayout, LiveFrame, LiveHub, ProcessSample,
-    ProcessView as EngineView, Recv, Subscriber,
+    ProcessView, Recv, Subscriber,
 };
 use kelvo_schema::{Capabilities, Catalog, HostId, MetricKind, PerformanceReason, SeriesSelector};
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 use tokio::time::Instant;
 
-use crate::ipc::{LiveMsg, LiveProcess, LiveStatus, ProcessSort, ProcessView, SubscriptionInfo};
+use crate::ipc::{LiveMsg, LiveProcess, LiveStatus, SubscriptionInfo};
 use crate::process_signal::SignalRefusal;
 
 /// One host's live data, as a stream needs it.
@@ -209,9 +208,12 @@ fn pick_holds(pick: &Pick, holds: &[u32]) -> Vec<u32> {
     }
 }
 
-/// One row for the webview. `me` is this process and `own` Kelvo's own processes, both
-/// read once per batch.
-fn live_process(r: &ProcessSample, me: i32, own: &OwnProcesses) -> LiveProcess {
+/// One row for the webview. `refusal` is [`crate::process_signal::refusals`], read once
+/// per batch.
+fn live_process(
+    r: &ProcessSample,
+    refusal: &impl Fn(i32, i64, &str) -> Option<SignalRefusal>,
+) -> LiveProcess {
     LiveProcess {
         pid: r.pid,
         start_time_us: r.start_time_us,
@@ -229,39 +231,7 @@ fn live_process(r: &ProcessSample, me: i32, own: &OwnProcesses) -> LiveProcess {
         gpu_pct: r.gpu_pct,
         ports: r.ports.as_deref().map(<[u16]>::to_vec),
         user: r.user.to_string(),
-        refusal: SignalRefusal::of(r.pid, &r.name, me, own.contains(r.pid, r.start_time_us)),
-    }
-}
-
-impl From<ProcessView> for kelvo_engine::ProcessView {
-    fn from(v: ProcessView) -> Self {
-        Self {
-            limit: v.limit,
-            sort: v.sort.into_iter().map(Into::into).collect(),
-            period_ms: v.period_ms,
-            network: v.network,
-            gpu: v.gpu,
-            ports: v.ports,
-        }
-    }
-}
-
-impl From<ProcessSort> for kelvo_engine::ProcessSort {
-    fn from(s: ProcessSort) -> Self {
-        match s {
-            ProcessSort::Cpu => Self::Cpu,
-            ProcessSort::Memory => Self::Memory,
-            ProcessSort::Threads => Self::Threads,
-            ProcessSort::Wakeups => Self::Wakeups,
-            ProcessSort::Energy => Self::Energy,
-            ProcessSort::DiskRead => Self::DiskRead,
-            ProcessSort::DiskWrite => Self::DiskWrite,
-            ProcessSort::DiskTotal => Self::DiskTotal,
-            ProcessSort::NetRx => Self::NetRx,
-            ProcessSort::NetTx => Self::NetTx,
-            ProcessSort::NetTotal => Self::NetTotal,
-            ProcessSort::Gpu => Self::Gpu,
-        }
+        refusal: refusal(r.pid, r.start_time_us, &r.name),
     }
 }
 
@@ -333,7 +303,7 @@ struct Stream {
     series: Option<Vec<SeriesSelector>>,
     min_period_ms: i64,
     /// This window's process view while its interest is active for this stream.
-    procs: Arc<Mutex<Option<EngineView>>>,
+    procs: Arc<Mutex<Option<ProcessView>>>,
     /// The last layout a pick was computed for.
     pick: Option<(Arc<FrameLayout>, Pick)>,
     /// The last layout sent.
@@ -369,7 +339,7 @@ impl Stream {
         feed: Arc<dyn LiveFeed>,
         sink: Arc<dyn LiveSink>,
         req: LiveRequest,
-        procs: Arc<Mutex<Option<EngineView>>>,
+        procs: Arc<Mutex<Option<ProcessView>>>,
     ) -> Self {
         Self {
             feed,
@@ -685,9 +655,8 @@ impl Stream {
                     return Ok(());
                 }
             }
-            let me = SystemProcessOs.self_pid();
-            let own = process_control::own_processes();
-            kelvo_engine::select_processes(rows, view, |r| live_process(r, me, &own))
+            let refusal = crate::process_signal::refusals();
+            kelvo_engine::select_processes(rows, view, |r| live_process(r, &refusal))
         };
         self.last_procs_ts = Some(ts_ms);
         self.send(LiveMsg::Processes {
@@ -786,11 +755,11 @@ impl Stream {
 struct StreamSlot {
     id: u32,
     task: JoinHandle<()>,
-    procs: Arc<Mutex<Option<EngineView>>>,
+    procs: Arc<Mutex<Option<ProcessView>>>,
 }
 
 struct ProcInterest {
-    view: EngineView,
+    view: ProcessView,
     /// The stream (page load) it belongs to; `None` from a caller that does not say,
     /// which then counts whatever stream the window has.
     token: Option<u32>,
@@ -821,7 +790,7 @@ impl HostSlot {
     }
 
     /// The process view in effect: interest whose token matches the current stream.
-    fn active_procs(&self) -> Option<&EngineView> {
+    fn active_procs(&self) -> Option<&ProcessView> {
         let p = self.procs.as_ref()?;
         match (p.token, &self.stream) {
             (None, _) => Some(&p.view),
@@ -1064,10 +1033,7 @@ impl LiveRegistry {
             .hosts
             .entry(host)
             .or_insert_with(|| HostSlot::new(Arc::clone(&feed)));
-        slot.procs = view.map(|view| ProcInterest {
-            view: view.into(),
-            token,
-        });
+        slot.procs = view.map(|view| ProcInterest { view, token });
         slot.sync(vis);
         inner.apply_process_interest(&feed);
     }

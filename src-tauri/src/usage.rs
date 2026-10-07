@@ -4,8 +4,8 @@
 //! view that offers it agrees.
 
 use kelvo_engine::{UsageApp, UsageProc};
+use kelvo_store::{MetricStats, RangeStats};
 
-use crate::history::{MetricStats, RangeStats};
 use crate::ipc::{
     AppUsage, MetricStat, ProcessUsage, SeriesStats, UsageByApp, UsageKey, UsageOther, UsageTotal,
 };
@@ -16,18 +16,6 @@ pub const CPU_TOTAL: &str = "cpu.total";
 pub const GPU_UTIL: &str = "gpu.util";
 pub const DISK_READ: &str = "disk.read_total";
 pub const DISK_WRITE: &str = "disk.write_total";
-
-/// The engine's key for the IPC one.
-pub fn engine_key(by: crate::ipc::UsageKey) -> kelvo_engine::UsageKey {
-    use crate::ipc::UsageKey as K;
-    match by {
-        K::Cpu => kelvo_engine::UsageKey::Cpu,
-        K::Gpu => kelvo_engine::UsageKey::Gpu,
-        K::Memory => kelvo_engine::UsageKey::Memory,
-        K::Disk => kelvo_engine::UsageKey::Disk,
-        K::Energy => kelvo_engine::UsageKey::Energy,
-    }
-}
 
 /// The process an app row's Quit acts on: the running main executable (quitting it
 /// quits the app and its helpers), else the only running process.

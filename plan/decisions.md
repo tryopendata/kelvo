@@ -104,6 +104,7 @@ See [README](README.md) for the roadmap and [architecture.md](architecture.md) f
 | D-095 | Public release prep: Apache-2.0, bundle identifier com.tryopendata.kelvo, design mocks retired | Accepted |
 | D-096 | macOS checks move to a pre-push hook; hosted CI runs Linux jobs on push | Accepted |
 | D-098 | Network page totals over the chart window, from the stored interface totals | Accepted |
+| D-100 | The engine's process view and usage key carry their own IPC derives | Accepted |
 
 ---
 
@@ -3152,3 +3153,17 @@ The Network page let you brush a range and see totals and bytes per app over it 
 - The ring is in memory and local: a remote host's pages show no per-app table, and a range before launch (or before the hour) reads "Unrecorded" or "Kelvo started counting at".
 - D-085's zero idle IOKit cost for GPU is given up for GPU coverage of every range.
 - GPU time is charged when a batch of GPU work finishes, so during a long compute job the GPU table is approximate; the footnote says so.
+
+## D-100: The engine's process view and usage key carry their own IPC derives
+
+Status: Accepted. Date: 2026-10-07. Engine types `ProcessView`, `ProcessSort`, `UsageKey`; IPC commands `set_process_interest` and `query_usage_by_app`. No wire change.
+
+### Decision
+
+- `kelvo-engine`'s `ProcessView`, `ProcessSort` and `UsageKey` derive `Serialize`, `Deserialize` and `specta::Type` with the serde attributes the shell's copies had, and `ipc.rs` re-exports them. The shell's hand-written mirrors and their `From` maps are gone, so a new sort key can no longer be added on one side only. The generated TypeScript is unchanged.
+- They stay in the engine rather than moving to `kelvo-schema`: they shape the process table for the app's live channels and the v4 headless agent alike (`procview.rs`), and in schema they would become wire vocabulary.
+
+### Consequences
+
+- Renaming a variant or field of these types is now an IPC change; `make bindings-check` catches it.
+- `kelvo-engine` depends on `serde` and `specta` directly (both already in its graph through `kelvo-schema`).
