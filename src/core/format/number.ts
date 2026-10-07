@@ -41,3 +41,15 @@ export function autoDecimals(v: number): number {
 export function joinQuantity(q: Quantity, compact = false): string {
   return compact ? `${q.value}${q.unit}` : `${q.value} ${q.unit}`;
 }
+
+const grouped = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
+
+/** Rounded, with en-US thousands separators whatever the system locale: "1,850". */
+export function formatInteger(n: number): string {
+  return grouped.format(n);
+}
+
+/** A count with the noun that agrees with it: "1 process", "1,440 rows". */
+export function countNoun(n: number, one: string, many: string): string {
+  return `${formatInteger(n)} ${n === 1 ? one : many}`;
+}

@@ -1,3 +1,4 @@
+import { countNoun } from "@core/format";
 import { sk } from "@core/series-key";
 import type { VolumeRow } from "~/components/volume-table";
 
@@ -34,6 +35,6 @@ export function diskSubtitle(
 ): string {
   const parts: string[] = [];
   if (devices.length > 0) parts.push(devices.join(", "));
-  parts.push(`${volumeCount} ${volumeCount === 1 ? "volume" : "volumes"}`);
+  parts.push(countNoun(volumeCount, "volume", "volumes"));
   return parts.join(" · ");
 }

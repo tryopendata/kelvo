@@ -17,9 +17,7 @@ describe("export helpers", () => {
         gap_rows: 2,
         bytes: 1,
       })
-    ).toBe(
-      `Exported ${(1440).toLocaleString()} rows and 2 gaps to /Users/me/kelvo.csv`
-    );
+    ).toBe("Exported 1,440 rows and 2 gaps to /Users/me/kelvo.csv");
     expect(
       exportSaved({
         kind: "saved",

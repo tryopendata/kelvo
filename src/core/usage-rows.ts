@@ -3,7 +3,9 @@
  * averages, peaks, grouping, the remainder and which process an app's Quit
  * acts on; this module filters, ranks for display and words shares.
  */
+import { matchProcessQuery } from "@core/app-search";
 import { percentOf } from "@core/chart-math";
+import { countNoun } from "@core/format";
 import type {
   AppUsage,
   ProcessUsage,
@@ -98,10 +100,7 @@ export function usageRows(
   query: string
 ): UsageRow[] {
   const whole = usageWhole(data, by);
-  const q = query.trim().toLowerCase();
-  const digits = /^\d+$/.test(q);
-  const matches = (p: ProcessUsage) =>
-    p.name.toLowerCase().includes(q) || (digits && String(p.pid).startsWith(q));
+  const matches = matchProcessQuery(query);
   const out: UsageRow[] = [];
   for (const app of data.apps) {
     const quit =
@@ -111,7 +110,7 @@ export function usageRows(
           (app.processes.find((p) => p.running && p.pid === app.quit_pid) ??
           null);
     const row = { app, share: percentOf(usageValue(by, app), whole), quit };
-    if (!q || app.name.toLowerCase().includes(q)) {
+    if (!matches || matches({ name: app.name })) {
       out.push({ ...row, processes: app.processes, matchedInside: false });
       continue;
     }
@@ -242,5 +241,5 @@ export const usageFinal = (data: UsageByApp | undefined) =>
 
 /** "4 processes" for an app row's collapsed summary. */
 export function processCount(n: number): string {
-  return `${n} ${n === 1 ? "process" : "processes"}`;
+  return countNoun(n, "process", "processes");
 }

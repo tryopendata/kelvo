@@ -1,4 +1,5 @@
 import {
+  formatInteger,
   isPresent,
   joinQuantity,
   type MaybeNumber,
@@ -6,11 +7,9 @@ import {
   type Quantity,
 } from "./number";
 
-const grouped = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
-
 /** Fan speed split from its unit: { value: "1,850", unit: "RPM" }. */
 export function rpmParts(rpm: number): Quantity {
-  return { value: grouped.format(rpm), unit: "RPM" };
+  return { value: formatInteger(rpm), unit: "RPM" };
 }
 
 /** Fan speed, rounded and grouped: "1,850 RPM". */
