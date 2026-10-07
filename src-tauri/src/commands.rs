@@ -13,9 +13,9 @@ use tauri::{AppHandle, Manager, State};
 
 use crate::error::CommandError;
 use crate::ipc::{
-    BatteryHour, ByteCount, EnergyByApp, ExportOutcome, ExportRequest, HeatmapDay, HeatmapRequest,
+    BatteryHour, ByteCount, ExportOutcome, ExportRequest, HeatmapDay, HeatmapRequest,
     HistoryGrowth, HistoryHealth, HistoryPage, HistoryRequest, LiveMsg, Millis, NetworkAddresses,
-    NetworkByApp, NetworkTotals, ProcessView, ProcessesAt, SensorDump, SensorReading, SeriesStats,
+    NetworkByApp, ProcessView, ProcessesAt, SensorDump, SensorReading, SeriesStats,
     SettingsSnapshot, SubscriptionInfo, UpdateStatus, UsageByApp, UsageKey, WindowAppearance,
 };
 use crate::live::{DEFAULT_BACKFILL_MS, LiveFeed, LiveRequest, LiveSink};
@@ -222,71 +222,6 @@ pub async fn query_network_by_app(
         state.history.network_by_app(host, from_ms.0, to_ms.0, || {
             entry.recent_net(from_ms.0, to_ms.0)
         })
-    })
-    .await
-}
-
-/// The bytes the reported interfaces moved over `[from_ms, to_ms)`, widened to whole
-/// buckets and cut at now, from the `net.rx_total` and `net.tx_total` rollups through now.
-/// Needs neither per-app network history nor NetworkStatistics, so it answers in every
-/// edition; with history unavailable, the engine's last 15 minutes alone.
-/// `invalid_argument` when `to_ms` is before `from_ms` or the range is longer than the
-/// longest history retention.
-#[tauri::command]
-#[specta::specta]
-pub async fn query_network_totals(
-    app: AppHandle,
-    host: HostId,
-    from_ms: Millis,
-    to_ms: Millis,
-) -> Result<NetworkTotals, CommandError> {
-    blocking(app, move |state| {
-        let entry = state.host(host)?;
-        let now_ms = kelvo_engine::wall_ms();
-        let recent_start = recent_from(from_ms.0);
-        state
-            .history
-            .network_totals(host, from_ms.0, to_ms.0, now_ms, || {
-                entry.recent_rows(host, recent_start, to_ms.0)
-            })
-    })
-    .await
-}
-
-/// Which apps used energy over `[from_ms, to_ms)` (D-093), widened to whole 10 s
-/// buckets, from the last hour of process samples the host's hub keeps in memory: a
-/// range reaching further back is answered for the part inside that hour, and
-/// `since_ms` says where counting started. `remote_host` for a host other than this Mac;
-/// `invalid_argument` when `to_ms` is before `from_ms`.
-#[tauri::command]
-#[specta::specta]
-pub async fn query_energy_by_app(
-    app: AppHandle,
-    host: HostId,
-    from_ms: Millis,
-    to_ms: Millis,
-) -> Result<EnergyByApp, CommandError> {
-    if to_ms.0 < from_ms.0 {
-        return Err(CommandError::InvalidArgument {
-            message: format!("to_ms {} is before from_ms {}", to_ms.0, from_ms.0),
-        });
-    }
-    blocking(app, move |state| {
-        let entry = state.host(host)?;
-        if !entry.record().is_local {
-            return Err(CommandError::RemoteHost { host });
-        }
-        let me = kelvo_engine::process_control::ProcessOs::self_pid(&SystemProcessOs);
-        let own = kelvo_engine::process_control::own_processes();
-        Ok(crate::usage::energy_by_app(
-            entry.usage_by_app(
-                from_ms.0,
-                to_ms.0,
-                kelvo_engine::UsageKey::Energy,
-                usize::MAX,
-            ),
-            |pid, start, name| SignalRefusal::of(pid, name, me, own.contains(pid, start)),
-        ))
     })
     .await
 }

@@ -3129,3 +3129,26 @@ The Network page showed live rates and, with per-app history, bytes per app, but
 - The totals show in every edition and with Network history off.
 - They come from the interface series, the Apps table's interface bytes from the per-app buckets' headers. Both read the same counters but are summed separately, so they can differ by rounding at bucket edges and by a sample whose span crosses a bucket boundary.
 - Rows written before span weighting (D-092) are count-weighted, so totals over them are approximate.
+
+## D-099: CPU, GPU, Memory and Disk pages aggregate over the chart window or a brushed range
+
+Status: Accepted. Date: 2026-10-07. CPU, GPU, Memory, Disk, Network and Power pages; IPC commands `query_usage_by_app` and `query_series_stats`, replacing `query_energy_by_app` and `query_network_totals`. Amends D-085, D-093 and D-098.
+
+### Context
+
+The Network page let you brush a range and see totals and bytes per app over it (D-089, D-098). The CPU, GPU, Memory and Disk pages had live-only "top processes" tables, so they could say what is busy now but not what used the resource over the last 15 minutes or during a spike.
+
+### Decision
+
+- The energy ring (D-093) becomes a usage ring (`kelvo-engine/src/usage.rs`) that keeps an hour of 10 s buckets per app and per process: CPU seconds, GPU seconds, read and written bytes, energy, and memory (per-app peak of the summed footprint, and byte-seconds for an average). A sample's interval is charged pro rata to the buckets it overlaps, and each bucket keeps the time samples covered (`covered_ms`, and `gpu_covered_ms` for GPU), so averages divide by measured time and sleep adds none. App figures are summed at push time from every row with no floor; per-process rows (the expanded children) keep floors. With a full hour the ring holds about 2.98 MB.
+- `query_usage_by_app(host, from, to, by, limit)` returns the top `limit` apps by `by` (cpu, gpu, memory, disk or energy) with their processes, and `other`: what the host's own series (`cpu.total` times cores, `gpu.util`, `disk.*_total`) measured beyond the apps over the covered part, clamped at 0, with `clamped` listing each key that clamped. Apps and processes whose ranked figure is 0 are left out. `complete_to_ms` says where final buckets end, so the client reads a closed range once and polls an open one every 10 s.
+- `query_series_stats(host, metrics, from, to)` returns, per unlabelled metric, the span-weighted average, the peak and the integral over the measured time, through now, as `query_network_totals` did for two metrics (D-098). Network's totals strip moves onto it and `query_network_totals` is removed. `query_energy_by_app` is removed; the Power page's energy table is the shared table sorted by energy.
+- Rates are averaged over time, levels taken at their peak, flows summed. CPU and GPU list average %, Memory lists peak footprint with "avg while running", Disk lists read, written and total bytes. Each page has a totals strip (CPU and GPU average and peak, Memory peak used and peak swap, Disk read and written) and a table titled "<noun> by app, last 15 minutes" or "selected 90 s", with "Other apps" and "System and other" rows where the figure adds up. Every brushable chart, strip and table carries its own `data-brush-scope`, so a click on any other card clears the selection.
+- GPU (amends D-085): outside Performance mode the engine holds the GPU collector's interest and joins per-process GPU time to a process sample at most once per 10 s usage bucket, so every range has GPU figures. In Performance mode GPU per process is sampled only while a GPU view asks, as before, and the table notes the part of the range GPU was not measured. Measured IOKit calls per tick rose to 19.5 tray-only and 30.5 with a window open (pacing to once per 10 s brought the window case down from 267); the `iokit` ceilings rise from 6 to 26 (`trayOnly`, `trayOnlyHistoryOff`) and 40 (`window`, `windowNetwork`). `make perf` tray-only measured 0.320% and 0.346% against 0.368% for main in the same sitting, with the GPU collector at 0.007-0.008%. Allocations per tick measured 8.97 and 10.09 with the ring, within budget.
+
+### Consequences
+
+- The four live process cards are gone, and with them these pages' process interest. Processes are sampled on the idle cadence (10 s, 30 s in the background) while these pages are open; only the Overview and the Processes page drive 1 s rows. "Every process" in the CPU and Disk footnotes opens the Processes page.
+- The ring is in memory and local: a remote host's pages show no per-app table, and a range before launch (or before the hour) reads "Unrecorded" or "Kelvo started counting at".
+- D-085's zero idle IOKit cost for GPU is given up for GPU coverage of every range.
+- GPU time is charged when a batch of GPU work finishes, so during a long compute job the GPU table is approximate; the footnote says so.

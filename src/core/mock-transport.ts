@@ -90,7 +90,6 @@ import {
   RING_SPAN_MS,
 } from "@core/generated/bindings";
 import { CHART_WINDOWS } from "./live-window";
-import { mockEnergyByApp } from "./mock/energy";
 import { mockEvents } from "./mock/events";
 import {
   capabilities,
@@ -111,7 +110,6 @@ import {
   mockBatteryHours,
   mockGaps,
   mockHistory,
-  mockNetworkTotals,
   mockRecentHistory,
   mockSeriesStats,
 } from "./mock/history";
@@ -1255,29 +1253,6 @@ export function createMockTransport(
       );
     },
 
-    async queryEnergyByApp(host, fromMs, toMs) {
-      record("query_energy_by_app", host, fromMs, toMs);
-      const bad = unknownHost(host);
-      if (bad) return bad;
-      if (toMs < fromMs) {
-        return err({
-          kind: "invalid_argument",
-          message: "the range ends before it starts",
-        });
-      }
-      const latestMs = rows[rows.length - 1]?.ts ?? startMs;
-      return ok(
-        mockEnergyByApp({
-          processes: processRows(),
-          user: MOCK_USER,
-          fromMs,
-          toMs,
-          // The engine keeps an hour; the mock's ring is its whole run.
-          sinceMs: Math.max(ringStartMs, latestMs - 3_600_000),
-          latestMs,
-        })
-      );
-    },
     async queryUsageByApp(host, fromMs, toMs, by, limit) {
       record("query_usage_by_app", host, fromMs, toMs, by, limit);
       const bad = unknownHost(host);
@@ -1381,24 +1356,7 @@ export function createMockTransport(
       }
       return ok(mockHeatmap(request, now()));
     },
-    async queryNetworkTotals(host, fromMs, toMs) {
-      record("query_network_totals", host, fromMs, toMs);
-      const bad = unknownHost(host);
-      if (bad) return bad;
-      if (toMs < fromMs) {
-        return err({
-          kind: "invalid_argument",
-          message: "the range ends before it starts",
-        });
-      }
-      if (toMs - fromMs > NET_MAX_SPAN_MS) {
-        return err({
-          kind: "invalid_argument",
-          message: "the range is longer than history keeps",
-        });
-      }
-      return ok(mockNetworkTotals(host, fromMs, toMs, now(), historyPage));
-    },
+
     async batteryHours(host, hourStartsMs) {
       record("battery_hours", host, hourStartsMs);
       const bad = unknownHost(host);

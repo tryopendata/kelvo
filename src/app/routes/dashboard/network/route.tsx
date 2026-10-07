@@ -1,10 +1,15 @@
-import { formatPercent, formatRate } from "@core/format";
+import { formatBytes, formatPercent, formatRate } from "@core/format";
+import type { MetricStat } from "@core/generated/bindings";
 import { labelValues, sk } from "@core/series-key";
 import { useMemo } from "react";
 import { BRUSH_SCOPE_ATTR } from "~/components/brush-overlay";
 import { InterfaceTable } from "~/components/interface-table";
 import { LiveMirrorChart } from "~/components/live-mirror-chart";
 import { PageHeader } from "~/components/page-header";
+import {
+  type RangeTotal,
+  RangeTotalsStrip,
+} from "~/components/range-totals-strip";
 import { SectionCard } from "~/components/section-card";
 import { WindowControl } from "~/components/window-control";
 import { useChartWindow } from "~/hooks/use-chart-window";
@@ -21,10 +26,23 @@ import { AddressLine } from "./_components/address-line";
 import { AppsCard } from "./_components/apps-card";
 import { AppsNowCard } from "./_components/apps-now-card";
 import { SelectionSummary } from "./_components/selection-summary";
-import { TotalsStrip } from "./_components/totals-strip";
 import { interfaceRows, networkSubtitle, ofLink } from "./_lib/network";
 
 const NO_KEYS: readonly string[] = [];
+
+/** Interface bytes from the stored totals, in every edition (D-091, D-098). */
+const TOTALS: readonly RangeTotal[] = [
+  {
+    metric: "net.rx_total",
+    label: "↓ Downloaded",
+    format: (s: MetricStat) => formatBytes(s.integral),
+  },
+  {
+    metric: "net.tx_total",
+    label: "↑ Uploaded",
+    format: (s: MetricStat) => formatBytes(s.integral),
+  },
+];
 
 /**
  * Network (plan 4.11): the Overview Network card and the popover's
@@ -104,7 +122,11 @@ export default function NetworkRoute() {
                       },
                     ]}
                   />
-                  <TotalsStrip windowMs={windowMs} />
+                  <RangeTotalsStrip
+                    windowMs={windowMs}
+                    totals={TOTALS}
+                    testId="network-totals"
+                  />
                 </div>
                 <div className="flex flex-col gap-1.5">
                   <LiveMirrorChart

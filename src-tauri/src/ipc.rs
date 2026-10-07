@@ -369,29 +369,6 @@ pub struct BatteryHour {
     pub charging: bool,
 }
 
-/// `query_network_totals`: the bytes the reported interfaces moved over a range, from
-/// the stored `net.rx_total` and `net.tx_total` rollups. Works without per-app network
-/// history and in the App Store edition.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, specta::Type)]
-pub struct NetworkTotals {
-    /// The range the sums cover: the request widened to whole buckets of the tier that
-    /// answered (10 s, or 1 m and 15 m for older history) and cut at now.
-    #[specta(type = JsSafeInt)]
-    pub from_ms: i64,
-    #[specta(type = JsSafeInt)]
-    pub to_ms: i64,
-    /// How much of `[from_ms, to_ms)` was measured, ms: buckets with a reading, less any
-    /// gap inside them (sleep, Kelvo not running, Network switched off).
-    #[specta(type = JsSafeInt)]
-    pub measured_ms: u64,
-    /// Bytes received over the measured time.
-    #[specta(type = JsSafeInt)]
-    pub rx_bytes: u64,
-    /// Bytes sent over the measured time.
-    #[specta(type = JsSafeInt)]
-    pub tx_bytes: u64,
-}
-
 /// The series a heatmap shows.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "snake_case")]
@@ -595,65 +572,6 @@ pub struct NetworkByApp {
     /// or history from before per-app bytes counted only the reported interfaces.
     /// `system_*` is then 0 and the parts exceed the total.
     pub clamped: bool,
-}
-
-/// One process's energy over a `query_energy_by_app` range (D-093).
-#[derive(Clone, Debug, PartialEq, Serialize, specta::Type)]
-pub struct ProcessEnergy {
-    pub pid: i32,
-    /// With `pid`, the process's identity, as on `LiveProcess`.
-    #[specta(type = JsSafeInt)]
-    pub start_time_us: i64,
-    pub name: String,
-    /// Joules over the range.
-    pub energy_j: f64,
-    /// Average watts over the range's measured span.
-    pub avg_w: f64,
-    /// It was in the newest process sample. An exited process cannot be quit.
-    pub running: bool,
-    /// Why Quit and Force Quit refuse it, as on `LiveProcess`; `null` for an exited
-    /// process too, which has nothing to quit.
-    pub refusal: Option<SignalRefusal>,
-}
-
-/// One app's energy: its processes', summed (D-093). Helpers count toward their app
-/// by the identity rule per-app network uses (D-089).
-#[derive(Clone, Debug, PartialEq, Serialize, specta::Type)]
-pub struct AppEnergy {
-    /// "Google Chrome", "Safari", `node`; the process name when no app was resolved.
-    pub name: String,
-    pub energy_j: f64,
-    pub avg_w: f64,
-    /// The process that Quit on the app's row acts on: its running main executable,
-    /// or, for an app without one (a CLI), its only running process. `null` when
-    /// neither exists; each running process can still be quit on its own.
-    pub quit_pid: Option<i32>,
-    /// Largest first.
-    pub processes: Vec<ProcessEnergy>,
-}
-
-/// `query_energy_by_app`: which apps used energy over a range, from the last hour of
-/// process samples Kelvo keeps in memory (D-093). CPU energy as the kernel estimates
-/// it per process; GPU, display and other users' processes are not attributed.
-#[derive(Clone, Debug, PartialEq, Serialize, specta::Type)]
-pub struct EnergyByApp {
-    /// The range the sums cover: the request widened to whole 10 s buckets.
-    #[specta(type = JsSafeInt)]
-    pub from_ms: i64,
-    #[specta(type = JsSafeInt)]
-    pub to_ms: i64,
-    /// When Kelvo started counting (this launch, or the last history clear); `null`
-    /// before the first process sample. After `from_ms`, the range is covered only from
-    /// here.
-    #[specta(type = Option<JsSafeInt>)]
-    pub since_ms: Option<i64>,
-    /// How much of the range was measured, ms; the averages divide by it.
-    #[specta(type = JsSafeInt)]
-    pub measured_ms: i64,
-    /// Every app's joules, summed: what shares are of.
-    pub total_j: f64,
-    /// Largest first.
-    pub apps: Vec<AppEnergy>,
 }
 
 /// What `query_usage_by_app` sorts apps by (D-099).

@@ -64,8 +64,6 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             commands::query_history,
             commands::query_processes_at,
             commands::query_network_by_app,
-            commands::query_network_totals,
-            commands::query_energy_by_app,
             commands::query_usage_by_app,
             commands::query_series_stats,
             commands::get_network_addresses,

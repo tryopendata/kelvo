@@ -86,23 +86,6 @@ export const commands = {
 	 */
 	queryNetworkByApp: (host: HostId, fromMs: Millis, toMs: Millis) => typedError<NetworkByApp, CommandError>(__TAURI_INVOKE("query_network_by_app", { host, fromMs, toMs })),
 	/**
-	 *  The bytes the reported interfaces moved over `[from_ms, to_ms)`, widened to whole
-	 *  buckets and cut at now, from the `net.rx_total` and `net.tx_total` rollups through now.
-	 *  Needs neither per-app network history nor NetworkStatistics, so it answers in every
-	 *  edition; with history unavailable, the engine's last 15 minutes alone.
-	 *  `invalid_argument` when `to_ms` is before `from_ms` or the range is longer than the
-	 *  longest history retention.
-	 */
-	queryNetworkTotals: (host: HostId, fromMs: Millis, toMs: Millis) => typedError<NetworkTotals, CommandError>(__TAURI_INVOKE("query_network_totals", { host, fromMs, toMs })),
-	/**
-	 *  Which apps used energy over `[from_ms, to_ms)` (D-093), widened to whole 10 s
-	 *  buckets, from the last hour of process samples the host's hub keeps in memory: a
-	 *  range reaching further back is answered for the part inside that hour, and
-	 *  `since_ms` says where counting started. `remote_host` for a host other than this Mac;
-	 *  `invalid_argument` when `to_ms` is before `from_ms`.
-	 */
-	queryEnergyByApp: (host: HostId, fromMs: Millis, toMs: Millis) => typedError<EnergyByApp, CommandError>(__TAURI_INVOKE("query_energy_by_app", { host, fromMs, toMs })),
-	/**
 	 *  Which apps used CPU, GPU, memory, disk and energy over `[from_ms, to_ms)` (D-099),
 	 *  widened to whole 10 s buckets, from the last hour of process samples the host's hub
 	 *  keeps in memory: the largest `limit` by `by`. A range reaching further back is
@@ -329,25 +312,6 @@ export type AppBytes = {
 };
 
 /**
- *  One app's energy: its processes', summed (D-093). Helpers count toward their app
- *  by the identity rule per-app network uses (D-089).
- */
-export type AppEnergy = {
-	/**  "Google Chrome", "Safari", `node`; the process name when no app was resolved. */
-	name: string,
-	energy_j: number | null,
-	avg_w: number | null,
-	/**
-	 *  The process that Quit on the app's row acts on: its running main executable,
-	 *  or, for an app without one (a CLI), its only running process. `null` when
-	 *  neither exists; each running process can still be quit on its own.
-	 */
-	quit_pid: number | null,
-	/**  Largest first. */
-	processes: ProcessEnergy[],
-};
-
-/**
  *  One app's use over a range: every one of its processes, summed at each sample, with
  *  no floor (D-099). Helpers count toward their app by the identity rule per-app network
  *  uses (D-089).
@@ -505,29 +469,6 @@ export type Edition = {
 	 *  `process_signal` answers `unavailable`; the UI should hide the actions.
 	 */
 	process_signal: boolean,
-};
-
-/**
- *  `query_energy_by_app`: which apps used energy over a range, from the last hour of
- *  process samples Kelvo keeps in memory (D-093). CPU energy as the kernel estimates
- *  it per process; GPU, display and other users' processes are not attributed.
- */
-export type EnergyByApp = {
-	/**  The range the sums cover: the request widened to whole 10 s buckets. */
-	from_ms: number,
-	to_ms: number,
-	/**
-	 *  When Kelvo started counting (this launch, or the last history clear); `null`
-	 *  before the first process sample. After `from_ms`, the range is covered only from
-	 *  here.
-	 */
-	since_ms: number | null,
-	/**  How much of the range was measured, ms; the averages divide by it. */
-	measured_ms: number,
-	/**  Every app's joules, summed: what shares are of. */
-	total_j: number | null,
-	/**  Largest first. */
-	apps: AppEnergy[],
 };
 
 export type Event = {
@@ -1320,29 +1261,6 @@ export type NetworkSpan = {
 	tier: Tier | null,
 };
 
-/**
- *  `query_network_totals`: the bytes the reported interfaces moved over a range, from
- *  the stored `net.rx_total` and `net.tx_total` rollups. Works without per-app network
- *  history and in the App Store edition.
- */
-export type NetworkTotals = {
-	/**
-	 *  The range the sums cover: the request widened to whole buckets of the tier that
-	 *  answered (10 s, or 1 m and 15 m for older history) and cut at now.
-	 */
-	from_ms: number,
-	to_ms: number,
-	/**
-	 *  How much of `[from_ms, to_ms)` was measured, ms: buckets with a reading, less any
-	 *  gap inside them (sleep, Kelvo not running, Network switched off).
-	 */
-	measured_ms: number,
-	/**  Bytes received over the measured time. */
-	rx_bytes: number,
-	/**  Bytes sent over the measured time. */
-	tx_bytes: number,
-};
-
 /**  MB/s or Mb/s. */
 export type NetworkUnit = "bytes_per_sec" | "bits_per_sec";
 
@@ -1407,25 +1325,6 @@ export type PowerSource =
 "adapter" | 
 /**  On external power and the battery is charging. */
 "charging";
-
-/**  One process's energy over a `query_energy_by_app` range (D-093). */
-export type ProcessEnergy = {
-	pid: number,
-	/**  With `pid`, the process's identity, as on `LiveProcess`. */
-	start_time_us: number,
-	name: string,
-	/**  Joules over the range. */
-	energy_j: number | null,
-	/**  Average watts over the range's measured span. */
-	avg_w: number | null,
-	/**  It was in the newest process sample. An exited process cannot be quit. */
-	running: boolean,
-	/**
-	 *  Why Quit and Force Quit refuse it, as on `LiveProcess`; `null` for an exited
-	 *  process too, which has nothing to quit.
-	 */
-	refusal: SignalRefusal | null,
-};
 
 export type ProcessResolution = 
 /**

@@ -1,4 +1,4 @@
-//! `query_usage_by_app` and `query_energy_by_app` (D-093, D-099): the engine's per-app use
+//! `query_usage_by_app` (D-093, D-099): the engine's per-app use
 //! over a range, with what the Quit actions need and what the host measured beyond
 //! Kelvo's processes. Which process an app row's Quit acts on is decided here, so every
 //! view that offers it agrees.
@@ -7,8 +7,7 @@ use kelvo_engine::{UsageApp, UsageProc};
 
 use crate::history::{MetricStats, RangeStats};
 use crate::ipc::{
-    AppEnergy, AppUsage, EnergyByApp, MetricStat, ProcessEnergy, ProcessUsage, SeriesStats,
-    UsageByApp, UsageKey, UsageOther, UsageTotal,
+    AppUsage, MetricStat, ProcessUsage, SeriesStats, UsageByApp, UsageKey, UsageOther, UsageTotal,
 };
 use crate::process_signal::SignalRefusal;
 
@@ -52,47 +51,6 @@ fn refusal_of(
         refusal(p.pid, p.start_time_us, &p.name)
     } else {
         None
-    }
-}
-
-/// The `query_energy_by_app` answer from a usage read sorted by energy. `refusal` is the
-/// rule `process_signal` checks, for a running process `(pid, start_time_us, name)`.
-pub fn energy_by_app(
-    e: kelvo_engine::UsageByApp,
-    refusal: impl Fn(i32, i64, &str) -> Option<SignalRefusal>,
-) -> EnergyByApp {
-    let app = |a: UsageApp| AppEnergy {
-        name: a.name.to_string(),
-        energy_j: a.energy_j,
-        avg_w: a.avg_w,
-        quit_pid: quit_pid(&a.processes),
-        processes: a
-            .processes
-            .iter()
-            .filter(|p| p.energy_j > 0.0)
-            .map(|p| ProcessEnergy {
-                pid: p.pid,
-                start_time_us: p.start_time_us,
-                name: p.name.to_string(),
-                energy_j: p.energy_j,
-                avg_w: p.avg_w,
-                running: p.running,
-                refusal: refusal_of(p, &refusal),
-            })
-            .collect(),
-    };
-    EnergyByApp {
-        from_ms: e.from_ms,
-        to_ms: e.to_ms,
-        since_ms: e.since_ms,
-        measured_ms: e.covered_ms,
-        total_j: e.total.energy_j,
-        apps: e
-            .apps
-            .into_iter()
-            .filter(|a| a.energy_j > 0.0)
-            .map(app)
-            .collect(),
     }
 }
 
@@ -312,12 +270,12 @@ mod tests {
             )],
             ..kelvo_engine::UsageByApp::default()
         };
-        let out = energy_by_app(e, |_, _, _| Some(SignalRefusal::WindowServer));
+        let out = usage_by_app(e, None, 8, |_, _, _| Some(SignalRefusal::WindowServer));
         let procs = &out.apps[0].processes;
         assert_eq!(procs[0].refusal, Some(SignalRefusal::WindowServer));
         assert_eq!(procs[1].refusal, None);
         assert_eq!(out.apps[0].quit_pid, Some(1));
-        assert_eq!(out.measured_ms, 10_000);
+        assert_eq!(out.covered_ms, 10_000);
     }
 
     #[test]

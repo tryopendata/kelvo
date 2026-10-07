@@ -1,4 +1,4 @@
-import { type TimeRange, windowRange } from "@core/brush";
+import type { TimeRange } from "@core/brush";
 import {
   formatBytes,
   formatClockSeconds,
@@ -27,10 +27,9 @@ import {
   TableHeader,
   TableRow,
 } from "~/components/ui/table";
-import { useOpenEdge } from "~/hooks/use-range-scope";
+import { heldFor, useOpenEdge, useRangeScope } from "~/hooks/use-range-scope";
 import { useUnits } from "~/hooks/use-units";
 import { cn } from "~/lib/utils";
-import { useBrushRange } from "~/stores/brush-store";
 import {
   useCompleteEdge,
   useLatestBucket,
@@ -60,25 +59,14 @@ import {
  * other".
  */
 export function AppsCard({ windowMs }: { windowMs: number }) {
-  const selection = useBrushRange();
   const complete = useCompleteEdge(useOpenEdge());
-  const range =
-    selection ?? (complete === null ? null : windowRange(complete, windowMs));
-  const totals = useNetworkByApp(range, {
-    keepPrevious: selection === null,
-  });
+  const { selection, range, keepPrevious } = useRangeScope(windowMs, complete);
+  const totals = useNetworkByApp(range, { keepPrevious });
   const latest = useLatestBucket(complete);
   const units = useUnits();
   const [sort, setSort] = useState<AppSort>({ by: "total", dir: "desc" });
 
-  // A held answer stands in only for the window it was read for (the key
-  // moving every 10 s), never for a selection that was just cleared.
-  const data =
-    totals.isPlaceholderData &&
-    totals.data &&
-    totals.data.to_ms - totals.data.from_ms !== windowMs
-      ? undefined
-      : totals.data;
+  const data = heldFor(totals, windowMs);
   const now = useMemo(() => nowRates(latest.data), [latest.data]);
   const rows = useMemo(
     () => (data ? sortApps(appRows(data, now), sort) : []),

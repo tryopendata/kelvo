@@ -13,7 +13,6 @@ import {
   type HistoryRequest,
   HOLD_FACTOR,
   METRIC_MODULES,
-  type NetworkTotals,
   type SeriesKey,
   type SeriesStats,
   type Tier,
@@ -386,32 +385,5 @@ export function mockSeriesStats(
         integral: avg === null ? 0 : (Math.max(0, avg) * measuredMs) / 1000,
       };
     }),
-  };
-}
-
-/** `query_network_totals` from `mockSeriesStats`, as `history.rs` builds it. */
-export function mockNetworkTotals(
-  host: string,
-  fromMs: number,
-  toMs: number,
-  now: number,
-  history: (req: HistoryRequest) => HistoryPage
-): NetworkTotals {
-  const s = mockSeriesStats(
-    host,
-    ["net.rx_total", "net.tx_total"],
-    fromMs,
-    toMs,
-    now,
-    history
-  );
-  const [rx, tx] = s.metrics;
-  return {
-    from_ms: s.from_ms,
-    to_ms: s.to_ms,
-    // Both directions are read together, so either one's time is the interface's.
-    measured_ms: Math.max(rx?.measured_ms ?? 0, tx?.measured_ms ?? 0),
-    rx_bytes: Math.round(rx?.integral ?? 0),
-    tx_bytes: Math.round(tx?.integral ?? 0),
   };
 }

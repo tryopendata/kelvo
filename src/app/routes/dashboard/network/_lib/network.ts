@@ -1,5 +1,5 @@
-import { formatRate, formatSpan, MISSING } from "@core/format";
-import type { LiveProcess, NetworkTotals } from "@core/generated/bindings";
+import { formatRate, MISSING } from "@core/format";
+import type { LiveProcess } from "@core/generated/bindings";
 import { sk } from "@core/series-key";
 import type { InterfaceRow } from "~/components/interface-table";
 
@@ -55,18 +55,4 @@ export function measuredTraffic(rows: readonly LiveProcess[]): LiveProcess[] {
       p.net_tx_bps !== null &&
       p.net_rx_bps + p.net_tx_bps > 0
   );
-}
-
-/**
- * How long the totals measured, when that is short of their range: "11 min"
- * for 11 measured minutes of 15 (sleep, Kelvo not running). Null when the
- * whole range was measured, within a bucket's rounding. Nothing measured is
- * also a span ("0 s"): the values are then 0 B, not missing.
- */
-export function totalsMeasured(t: NetworkTotals): string | null {
-  const span = t.to_ms - t.from_ms;
-  if (span <= 0 || t.measured_ms >= span - Math.max(1_000, span * 0.01)) {
-    return null;
-  }
-  return formatSpan(t.measured_ms);
 }

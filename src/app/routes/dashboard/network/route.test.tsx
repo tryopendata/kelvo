@@ -22,8 +22,8 @@ const views = (calls: { command: string; args: unknown[] }[]) =>
     .map((c) => c.args[2] as ProcessView | null);
 const totalsCalls = (calls: { command: string; args: unknown[] }[]) =>
   calls
-    .filter((c) => c.command === "query_network_totals")
-    .map((c) => [c.args[1], c.args[2]] as [number, number]);
+    .filter((c) => c.command === "query_series_stats")
+    .map((c) => [c.args[2], c.args[3]] as [number, number]);
 const byAppCalls = (calls: { command: string; args: unknown[] }[]) =>
   calls
     .filter((c) => c.command === "query_network_by_app")

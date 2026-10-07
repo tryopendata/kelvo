@@ -1,20 +1,50 @@
-import { formatHoursMinutes, formatWatts } from "@core/format";
+import {
+  formatEnergy,
+  formatHoursMinutes,
+  formatWatts,
+  formatWattsFine,
+} from "@core/format";
 import { moduleState } from "@core/module-state";
 import { useState } from "react";
 import { BatteryDayCard } from "~/components/battery-day-card";
 import { PageHeader } from "~/components/page-header";
 import { SensorDumpDialog } from "~/components/sensor-dump-dialog";
 import { UnsupportedNotice } from "~/components/unsupported-notice";
+import {
+  UsageAppsCard,
+  type UsageTableConfig,
+} from "~/components/usage-apps-card";
 import { WindowControl } from "~/components/window-control";
 import { useChartWindow } from "~/hooks/use-chart-window";
 import { useHostRecord } from "~/hooks/use-host-record";
 import { useHeld } from "~/hooks/use-ring";
 import { useHost } from "~/stores/host-store";
 import { usePowerSource } from "~/stores/live-selectors";
-import { EnergyCard } from "./_components/energy-card";
 import { PowerStackCard } from "./_components/power-stack-card";
 import { RingCards } from "./_components/ring-cards";
 import { ZonesCard } from "./_components/zones-card";
+
+/** Energy by app over the chart window (D-093, D-099). */
+const ENERGY_TABLE: UsageTableConfig = {
+  by: "energy",
+  noun: "Energy",
+  accent: "power",
+  columns: [
+    {
+      label: "Energy",
+      format: (u) => formatEnergy(u.energy_j),
+      ranked: true,
+    },
+    { label: "Average", format: (u) => formatWattsFine(u.avg_w) },
+  ],
+  footnote: (
+    <>
+      CPU energy per process, as macOS estimates it. GPU, display and other
+      users&apos; processes (system daemons) aren&apos;t attributed, so these
+      add up to less than system draw.
+    </>
+  ),
+};
 
 /**
  * Power & Sensors (plan 4.10). An unknown chip shows the notice
@@ -63,7 +93,7 @@ export default function PowerRoute() {
             <ZonesCard windowMs={windowMs} />
             <PowerStackCard windowMs={windowMs} />
           </div>
-          <EnergyCard windowMs={windowMs} />
+          <UsageAppsCard windowMs={windowMs} config={ENERGY_TABLE} />
           {hasBattery && <BatteryDayCard origin="tl" />}
         </>
       )}

@@ -1,26 +1,41 @@
 import type {
-  AppEnergy,
-  EnergyByApp,
-  ProcessEnergy,
+  AppUsage,
+  ProcessUsage,
+  UsageByApp,
 } from "@core/generated/bindings";
 import { createMockTransport } from "@core/mock-transport";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import { renderWithProviders } from "@tests/test-utils";
-import { EnergyCard } from "./energy-card";
+import { UsageAppsCard, type UsageTableConfig } from "./usage-apps-card";
 
 const NOW = 1_800_000_000_000;
 const WINDOW_MS = 600_000;
+
+const CONFIG: UsageTableConfig = {
+  by: "energy",
+  noun: "Energy",
+  accent: "power",
+  columns: [
+    { label: "Energy", format: (u) => `${u.energy_j} J`, ranked: true },
+  ],
+  footnote: "CPU energy per process.",
+};
 
 function proc(
   pid: number,
   name: string,
   j: number,
-  over: Partial<ProcessEnergy> = {}
-): ProcessEnergy {
+  over: Partial<ProcessUsage> = {}
+): ProcessUsage {
   return {
     pid,
     start_time_us: pid * 1000,
     name,
+    cpu_avg_pct: null,
+    gpu_avg_pct: null,
+    mem_peak_bytes: 0,
+    read_bytes: null,
+    write_bytes: null,
     energy_j: j,
     avg_w: j / 600,
     running: true,
@@ -32,13 +47,25 @@ function proc(
 function app(
   name: string,
   quit: number | null,
-  processes: ProcessEnergy[]
-): AppEnergy {
+  processes: ProcessUsage[]
+): AppUsage {
   const j = processes.reduce((s, p) => s + (p.energy_j ?? 0), 0);
-  return { name, energy_j: j, avg_w: j / 600, quit_pid: quit, processes };
+  return {
+    name,
+    cpu_avg_pct: null,
+    gpu_avg_pct: null,
+    mem_peak_bytes: 0,
+    mem_avg_bytes: 0,
+    read_bytes: null,
+    write_bytes: null,
+    energy_j: j,
+    avg_w: j / 600,
+    quit_pid: quit,
+    processes,
+  };
 }
 
-const APPS: AppEnergy[] = [
+const APPS: AppUsage[] = [
   app("Google Chrome", 10, [
     proc(11, "Google Chrome Helper (Renderer)", 300),
     proc(10, "Google Chrome", 100),
@@ -49,9 +76,9 @@ const APPS: AppEnergy[] = [
   ]),
 ];
 
-function render(answer: (fromMs: number, toMs: number) => EnergyByApp | null) {
+function render(answer: (fromMs: number, toMs: number) => UsageByApp | null) {
   const transport = createMockTransport({ now: () => NOW, autoTick: false });
-  transport.queryEnergyByApp = async (_host, fromMs, toMs) => {
+  transport.queryUsageByApp = async (_host, fromMs, toMs) => {
     const data = answer(fromMs, toMs);
     return data === null
       ? {
@@ -60,25 +87,42 @@ function render(answer: (fromMs: number, toMs: number) => EnergyByApp | null) {
         }
       : { status: "ok", data };
   };
-  const r = renderWithProviders(<EnergyCard windowMs={WINDOW_MS} />, {
-    transport,
-  });
+  const r = renderWithProviders(
+    <UsageAppsCard windowMs={WINDOW_MS} config={CONFIG} />,
+    { transport }
+  );
   act(() => transport.tick());
   return r;
 }
 
-const full = (fromMs: number, toMs: number): EnergyByApp => ({
+const full = (fromMs: number, toMs: number): UsageByApp => ({
   from_ms: fromMs,
   to_ms: toMs,
   since_ms: fromMs - 60_000,
-  measured_ms: toMs - fromMs,
-  total_j: 530,
+  complete_to_ms: toMs,
+  covered_ms: toMs - fromMs,
+  gpu_covered_ms: 0,
+  total: {
+    cpu_avg_pct: null,
+    gpu_avg_pct: null,
+    read_bytes: null,
+    write_bytes: null,
+    energy_j: 530,
+    avg_w: 530 / 600,
+  },
+  other: {
+    cpu_avg_pct: null,
+    gpu_avg_pct: null,
+    read_bytes: null,
+    write_bytes: null,
+    clamped: [],
+  },
   apps: APPS,
 });
 
 const table = () => screen.findByRole("table", { name: "Energy by app" });
 
-describe("Energy by app (D-093)", () => {
+describe("UsageAppsCard (D-093, D-099)", () => {
   it("quits an app through its main process, after the dialog", async () => {
     const { user, transport } = render(full);
     await table();
@@ -133,7 +177,7 @@ describe("Energy by app (D-093)", () => {
     await table();
     await user.type(
       screen.getByRole("searchbox", {
-        name: "Search energy by app, process or PID",
+        name: "Search Energy by app, process or PID",
       }),
       "renderer"
     );
@@ -149,18 +193,18 @@ describe("Energy by app (D-093)", () => {
     render((fromMs, toMs) => ({
       ...full(fromMs, toMs),
       since_ms: toMs - 120_000,
-      measured_ms: 120_000,
+      covered_ms: 120_000,
     }));
     expect(
       await screen.findByText(/Kelvo started counting at/)
-    ).toHaveTextContent("so these totals cover");
+    ).toHaveTextContent("so these figures cover");
   });
 
-  it("explains a host whose energy is not kept here", async () => {
+  it("explains a host whose use is not kept here", async () => {
     render(() => null);
     expect(
       await screen.findByText(
-        "Energy by app is only kept on the Mac it describes."
+        "Use by app is only kept on the Mac it describes."
       )
     ).toBeVisible();
   });

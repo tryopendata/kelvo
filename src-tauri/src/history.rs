@@ -19,7 +19,7 @@ use crate::error::{CommandError, HistoryUnavailableReason};
 use crate::ipc::{
     BatteryHour, ExportRequest, HeatmapDay, HeatmapMetric, HeatmapRequest, HistoryHealth,
     HistoryPage, HistoryPoint, HistoryRequest, HistorySeries, NetworkByApp, NetworkSpan,
-    NetworkTotals, ProcessResolution, ProcessesAt, StoredProcess, TierRequest,
+    ProcessResolution, ProcessesAt, StoredProcess, TierRequest,
 };
 
 /// File name of the history database in the app data directory (v1-local-monitor.md 6.5).
@@ -332,33 +332,6 @@ impl History {
         Ok(range_stats(&read, &defs, from_ms, to_ms, now_ms))
     }
 
-    /// `query_network_totals`: bytes over `[from_ms, to_ms)` from the `net.rx_total` and
-    /// `net.tx_total` rollups ([`Self::series_stats`]). Blocking.
-    pub fn network_totals(
-        &self,
-        host: kelvo_schema::HostId,
-        from_ms: i64,
-        to_ms: i64,
-        now_ms: i64,
-        recent: impl Fn() -> Vec<BucketRow>,
-    ) -> Result<NetworkTotals, CommandError> {
-        let metrics = [NET_RX_TOTAL.to_owned(), NET_TX_TOTAL.to_owned()];
-        let s = self.series_stats(host, &metrics, from_ms, to_ms, now_ms, recent)?;
-        // One entry per metric asked for, in order.
-        let of = |m: &str| s.metrics.iter().find(|x| x.metric == m);
-        let (rx, tx) = (of(NET_RX_TOTAL), of(NET_TX_TOTAL));
-        let ms = |x: Option<&MetricStats>| x.map_or(0, |x| x.measured_ms);
-        let bytes = |x: Option<&MetricStats>| x.map_or(0, |x| x.integral.round() as u64);
-        Ok(NetworkTotals {
-            from_ms: s.from_ms,
-            to_ms: s.to_ms,
-            // Both directions are read together, so either one's time is the interface's.
-            measured_ms: u64::try_from(ms(rx).max(ms(tx))).unwrap_or(0),
-            rx_bytes: bytes(rx),
-            tx_bytes: bytes(tx),
-        })
-    }
-
     /// `battery_hours`: for each hour between consecutive `hour_starts` (the
     /// client's local hours in UTC ms, DST applied, as a heatmap day's), the charge in the
     /// hour's last minute that sampled it and whether it charged in any minute. Minutes
@@ -623,8 +596,6 @@ pub const MAX_BATTERY_HOURS: usize = MAX_HEATMAP_DAYS * 24;
 
 const CHARGE: &str = "battery.charge";
 const CHARGING: &str = "battery.charging";
-const NET_RX_TOTAL: &str = "net.rx_total";
-const NET_TX_TOTAL: &str = "net.tx_total";
 
 /// One metric's [`RangeStats`].
 #[derive(Clone, Debug, PartialEq)]
@@ -1490,7 +1461,7 @@ mod tests {
     }
 
     #[test]
-    fn network_totals_count_measured_time_through_now() {
+    fn series_stats_count_measured_time_through_now() {
         const S: i64 = 1_000;
         let dir = temp_dir("network-totals");
         let history = History::open(&dir);
@@ -1527,31 +1498,51 @@ mod tests {
         w.flush().unwrap();
         // Bucket 27 is open: now is halfway through it. 28 is past now.
         let recent = || net_buckets(20..29);
+        let net = || vec!["net.rx_total".to_owned(), "net.tx_total".to_owned()];
         let totals = history
-            .network_totals(host, NOW + 5 * S, NOW + 400 * S, NOW + 275 * S, recent)
+            .series_stats(
+                host,
+                &net(),
+                NOW + 5 * S,
+                NOW + 400 * S,
+                NOW + 275 * S,
+                recent,
+            )
             .unwrap();
         // 28 buckets to now, less 12 and 13, 10 (asleep), half of 11 and half of 27.
         let measured = 240 * S;
+        let rx_tx = |t: &RangeStats| {
+            t.metrics
+                .iter()
+                .map(|m| (m.measured_ms, m.integral.round() as i64))
+                .collect::<Vec<_>>()
+        };
         assert_eq!(
-            totals,
-            NetworkTotals {
-                from_ms: NOW,
-                to_ms: NOW + 275 * S,
-                measured_ms: measured as u64,
-                rx_bytes: 240_000,
-                tx_bytes: 24_000,
-            },
-            "widened to the bucket, cut at now, gaps and empty buckets not counted"
+            (totals.from_ms, totals.to_ms),
+            (NOW, NOW + 275 * S),
+            "widened to the bucket, cut at now"
+        );
+        assert_eq!(
+            rx_tx(&totals),
+            [(measured, 240_000), (measured, 24_000)],
+            "gaps and empty buckets not counted"
         );
         history.close();
 
         // Live-only: the engine's rows alone.
         let totals = History::unavailable()
-            .network_totals(host, NOW + 200 * S, NOW + 270 * S, NOW + 275 * S, recent)
+            .series_stats(
+                host,
+                &net(),
+                NOW + 200 * S,
+                NOW + 270 * S,
+                NOW + 275 * S,
+                recent,
+            )
             .unwrap();
-        assert_eq!((totals.measured_ms, totals.rx_bytes), (70_000, 70_000));
+        assert_eq!(rx_tx(&totals)[0], (70_000, 70_000));
 
-        let bad = History::unavailable().network_totals(host, NOW + S, NOW, NOW, Vec::new);
+        let bad = History::unavailable().series_stats(host, &net(), NOW + S, NOW, NOW, Vec::new);
         assert!(matches!(bad, Err(CommandError::InvalidArgument { .. })));
     }
 
