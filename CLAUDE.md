@@ -90,8 +90,8 @@ If a fix doesn't resolve the issue after 2 attempts without running a new diagno
 ## Quick Commands
 
 ```bash
-bun run tauri dev          # Full app (Vite on :1420 + Rust)
-bun run dev                # Browser only, mock transport
+bun run dev                # Full app (tauri dev: Vite on :1420 + Rust)
+bun run dev:fast           # Browser only, mock transport
 bun run typecheck          # tsc
 bun run lint               # Biome lint (includes boundary rules)
 bun run format             # Biome format + import/class sorting + safe fixes

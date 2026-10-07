@@ -11,7 +11,7 @@ State: `main` holds v1.0, v1.1 and v1.2. The app runs from source with `bun run 
 Stage: manual QA and polish (`v1-local-monitor.md` section 8, "v1.x QA and polish"). The user runs the dev build day to day and files bugs and UX issues; each session takes a batch, fixes it with a regression test where one fits, and logs it here. After QA comes the release phase (same section).
 
 How to work a QA session:
-1. Read the issues the user filed for the session. Reproduce each in the browser dev server (`bun run dev`, mock transport) when it is a UI issue, or in `bun run tauri dev` when it needs real collectors.
+1. Read the issues the user filed for the session. Reproduce each in the browser dev server (`bun run dev:fast`, mock transport) when it is a UI issue, or in `bun run dev` (the full app) when it needs real collectors.
 2. Check UI fixes against design-system.md and the screens already built, and name any difference left in place.
 3. Run `make check` and `bun run test:e2e` before merging. The perf-gate long-task checks fail under heavy machine load (several worktrees building at once) on unchanged code; rerun on a quiet machine before suspecting a regression (see "v1.2 code review fixes").
 

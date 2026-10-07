@@ -44,10 +44,10 @@ hooks:
 	uvx pre-commit install --install-hooks -t pre-commit -t commit-msg -t pre-push
 
 dev:
-	bun run tauri dev
+	bun run dev
 
 dev-web:
-	bun run dev
+	bun run dev:fast
 
 build:
 	bun run tauri build

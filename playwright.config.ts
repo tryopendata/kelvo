@@ -102,7 +102,7 @@ export default defineConfig({
   ],
 
   webServer: {
-    command: `bun run dev --port ${PORT} --strictPort`,
+    command: `bun run dev:fast --port ${PORT} --strictPort`,
     url: BASE_URL,
     reuseExistingServer: REUSE_SERVER,
     timeout: 120000,

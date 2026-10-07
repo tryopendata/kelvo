@@ -6,7 +6,8 @@
   "repository": "github:tryopendata/kelvo",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "tauri dev",
+    "dev:fast": "vite",
     "build": "bun run typecheck && vite build",
     "build:local": "scripts/build-local.sh",
     "preview": "vite preview",

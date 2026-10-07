@@ -101,8 +101,8 @@ Yes, once testing wraps up: a signed DMG on GitHub Releases, a Homebrew cask, an
 
 | Command | What it does |
 | --- | --- |
-| `bun run tauri dev` | The full app with hot reload |
-| `bun run dev` | The interface only, in a browser with simulated data. Faster for UI work |
+| `bun run dev` | The full app with hot reload |
+| `bun run dev:fast` | The interface only, in a browser with simulated data. Faster for UI work |
 | `make check` | Lint, typecheck and every test. The pre-push hook runs it (`make hooks` installs the hooks) |
 
 [`CLAUDE.md`](CLAUDE.md) covers the project layout and conventions, and [`plan/README.md`](plan/README.md) covers what's being built.
