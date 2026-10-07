@@ -152,7 +152,8 @@ export function LiveMemoryCard() {
       value={
         mem.used === null
           ? MISSING
-          : bytesParts(mem.used, { units: bytes, unit: bytes }).value
+          : bytesParts(mem.used, { units: bytes, unit: bytes, decimals: 1 })
+              .value
       }
       unit={total === null ? undefined : ` / ${marketingGb(total)} GB`}
       notice={notice}
