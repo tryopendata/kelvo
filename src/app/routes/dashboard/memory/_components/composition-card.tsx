@@ -1,3 +1,4 @@
+import { ratio } from "@core/chart-math";
 import { bytesParts, formatBytes, formatPercent, MISSING } from "@core/format";
 import type { MetricStat } from "@core/generated/bindings";
 import { useId, useMemo } from "react";
@@ -44,10 +45,7 @@ export function CompositionCard({
   const at = (k: string) => v[k] ?? null;
   const used = at("mem.used");
   // Shares of installed memory; a missing part is its own empty segment.
-  const frac = (x: number | null) =>
-    x === null || totalBytes === null || totalBytes <= 0
-      ? null
-      : x / totalBytes;
+  const frac = (x: number | null) => ratio(x, totalBytes);
   const fmt = (x: number | null) => formatBytes(x, { units: units.bytes });
   const state = pressureState(at("mem.pressure_level"));
   const totals = useMemo(

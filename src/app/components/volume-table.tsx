@@ -1,3 +1,4 @@
+import { clamp01 } from "@core/chart-math";
 import { type ByteUnits, formatBytes } from "@core/format";
 import {
   Table,
@@ -47,7 +48,7 @@ export function VolumeTable({ rows, units }: VolumeTableProps) {
         {rows.map((r) => {
           const frac =
             r.usedBytes != null && r.totalBytes
-              ? Math.min(1, Math.max(0, r.usedBytes / r.totalBytes))
+              ? clamp01(r.usedBytes / r.totalBytes)
               : null;
           return (
             <TableRow key={r.id} className="text-[12px]">

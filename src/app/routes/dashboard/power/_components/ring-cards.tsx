@@ -1,3 +1,4 @@
+import { clamp01, ratio } from "@core/chart-math";
 import {
   formatGhz,
   formatWatts,
@@ -154,6 +155,5 @@ export function RingCards({
 }
 
 function frac(v: number | null, max: number | null): number {
-  if (v === null || max === null || max <= 0) return 0;
-  return Math.min(1, Math.max(0, v / max));
+  return clamp01(ratio(v, max) ?? 0);
 }

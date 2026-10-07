@@ -1,8 +1,8 @@
+import { clamp01 } from "@core/chart-math";
 import { cn } from "~/lib/utils";
 import {
   type Accent,
   accentVars,
-  clamp01,
   type RampStep,
   rampBackground,
 } from "./lib/accent";

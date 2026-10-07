@@ -1,4 +1,5 @@
 import { scopeWords, type TimeRange } from "@core/brush";
+import { percentOf } from "@core/chart-math";
 import { formatClockSeconds, formatSpan } from "@core/format";
 import type {
   ProcessUsage,
@@ -11,7 +12,6 @@ import {
   processCount,
   type RemainderRow,
   remainderRows,
-  shareOf,
   type UsageFigures,
   type UsageRow,
   usageCoverage,
@@ -408,7 +408,10 @@ function AppRows({
             config={config}
             share={
               share
-                ? shareOf(usageValue(config.by, p), usageWhole(data, config.by))
+                ? percentOf(
+                    usageValue(config.by, p),
+                    usageWhole(data, config.by)
+                  )
                 : undefined
             }
             flow={flow}

@@ -1,3 +1,5 @@
+import { clamp01 } from "./numeric";
+
 export const HEATMAP_ALPHA_MIN = 0.06;
 export const HEATMAP_ALPHA_RANGE = 0.89;
 
@@ -13,6 +15,6 @@ export function heatmapAlpha(
   vmax: number
 ): number | null {
   if (value == null || !Number.isFinite(value)) return null;
-  const t = vmax > 0 ? Math.min(1, Math.max(0, value / vmax)) : 0;
+  const t = vmax > 0 ? clamp01(value / vmax) : 0;
   return HEATMAP_ALPHA_MIN + t * HEATMAP_ALPHA_RANGE;
 }

@@ -2,6 +2,7 @@
  * Clock and axis helpers for the Timeline, in the Mac's local time
  * ("Sun Oct 4 · 22:40", hour ticks, "14:02:00" in the tooltip).
  */
+import { clamp01 } from "@core/chart-math";
 import { formatClock, monthName, weekdayName } from "@core/format";
 import { HISTORY_TIERS } from "@core/generated/bindings";
 
@@ -300,5 +301,5 @@ export function heatmapCellView(
 export function fractionAt(tMs: number, fromMs: number, toMs: number): number {
   const span = toMs - fromMs;
   if (span <= 0) return 0;
-  return Math.min(1, Math.max(0, (tMs - fromMs) / span));
+  return clamp01((tMs - fromMs) / span);
 }

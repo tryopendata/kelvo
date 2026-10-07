@@ -16,6 +16,7 @@ import type {
   UsageKey,
 } from "@core/generated/bindings";
 import { USAGE_BUCKET_MS as BUCKET_MS } from "@core/generated/bindings";
+import { ceilTo, floorTo } from "@core/time-grid";
 
 /** Helpers and services, by the app the identity rule charges them to. */
 export const APP_OF: Record<string, string> = {
@@ -62,10 +63,6 @@ function clears(
     watts >= 1e-5 ||
     memBytes >= memFloor
   );
-}
-
-function floorTo(t: number): number {
-  return t - (((t % BUCKET_MS) + BUCKET_MS) % BUCKET_MS);
 }
 
 /** The value apps and processes sort by. */
@@ -147,8 +144,8 @@ export function mockUsageByApp({
   stats: SeriesStats | null;
   cores: number;
 }): UsageByApp {
-  const from = floorTo(fromMs);
-  const to = toMs % BUCKET_MS === 0 ? toMs : floorTo(toMs) + BUCKET_MS;
+  const from = floorTo(fromMs, BUCKET_MS);
+  const to = ceilTo(toMs, BUCKET_MS);
   const coveredMs = Math.max(
     0,
     Math.min(latestMs, to) - Math.max(sinceMs, from)
@@ -374,7 +371,7 @@ export function mockUsageByApp({
     from_ms: from,
     to_ms: to,
     since_ms: sinceMs,
-    complete_to_ms: floorTo(latestMs),
+    complete_to_ms: floorTo(latestMs, BUCKET_MS),
     covered_ms: coveredMs,
     gpu_covered_ms: gpuCoveredMs,
     total,

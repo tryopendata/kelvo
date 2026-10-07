@@ -3,6 +3,7 @@
  * averages, peaks, grouping, the remainder and which process an app's Quit
  * acts on; this module filters, ranks for display and words shares.
  */
+import { percentOf } from "@core/chart-math";
 import type {
   AppUsage,
   ProcessUsage,
@@ -86,13 +87,6 @@ export function usageWhole(data: UsageByApp, by: UsageKey): number | null {
   return whole !== null && whole > 0 ? whole : null;
 }
 
-export function shareOf(
-  value: number | null,
-  whole: number | null
-): number | null {
-  return value === null || whole === null ? null : (value / whole) * 100;
-}
-
 /**
  * Rows for the table, in Rust's order. A search is a case-insensitive
  * substring of the app or a process name, or the leading digits of a PID;
@@ -116,7 +110,7 @@ export function usageRows(
         : // A reused pid can list an exited process too; Rust picks a running one.
           (app.processes.find((p) => p.running && p.pid === app.quit_pid) ??
           null);
-    const row = { app, share: shareOf(usageValue(by, app), whole), quit };
+    const row = { app, share: percentOf(usageValue(by, app), whole), quit };
     if (!q || app.name.toLowerCase().includes(q)) {
       out.push({ ...row, processes: app.processes, matchedInside: false });
       continue;
@@ -160,7 +154,7 @@ export function remainderRows(data: UsageByApp, by: UsageKey): RemainderRow[] {
       kind: "other",
       name: "Other apps",
       figures: rest,
-      share: shareOf(restValue, whole),
+      share: percentOf(restValue, whole),
     });
   }
   const system: UsageFigures = {
@@ -178,7 +172,7 @@ export function remainderRows(data: UsageByApp, by: UsageKey): RemainderRow[] {
       kind: "system",
       name: "System and other",
       figures: system,
-      share: shareOf(systemValue, whole),
+      share: percentOf(systemValue, whole),
     });
   }
   return out;

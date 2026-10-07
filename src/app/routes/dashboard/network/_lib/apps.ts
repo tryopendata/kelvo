@@ -1,4 +1,5 @@
 import { scopeWords, type TimeRange } from "@core/brush";
+import { percentOf } from "@core/chart-math";
 import type { NetworkByApp } from "@core/generated/bindings";
 
 /** One row of the Apps table: a named app or one of the remainder rows. */
@@ -59,9 +60,6 @@ function tableBytes(data: NetworkByApp): number {
   return data.apps.reduce((n, a) => n + a.rx_bytes + a.tx_bytes, remainder);
 }
 
-const shareOf = (bytes: number, whole: number) =>
-  whole > 0 ? (bytes / whole) * 100 : null;
-
 /** The named apps as rows, with their "now" rate from `now`. */
 export function appRows(
   data: NetworkByApp,
@@ -77,7 +75,7 @@ export function appRows(
       rxBytes: a.rx_bytes,
       txBytes: a.tx_bytes,
       totalBytes: total,
-      share: shareOf(total, whole),
+      share: percentOf(total, whole),
       nowBps: now === null ? null : (now.get(a.name) ?? 0),
     };
   });
@@ -102,7 +100,7 @@ export function remainderRows(data: NetworkByApp): AppRow[] {
     rxBytes: rx,
     txBytes: tx,
     totalBytes: rx + tx,
-    share: shareOf(rx + tx, whole),
+    share: percentOf(rx + tx, whole),
     nowBps: null,
   });
   const out: AppRow[] = [];

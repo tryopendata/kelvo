@@ -1,3 +1,5 @@
+import { clamp01 } from "./numeric";
+
 export interface RingArc {
   /** Visible arc length in user units. */
   length: number;
@@ -33,7 +35,7 @@ export function ringArcs(
   const c = circumference.toFixed(1);
   let used = 0;
   const arcs = fractions.map((f) => {
-    const clamped = Number.isFinite(f) ? Math.min(1, Math.max(0, f)) : 0;
+    const clamped = clamp01(f);
     const take = Math.min(clamped, 1 - used);
     const start = used;
     used += take;
