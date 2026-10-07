@@ -3,6 +3,7 @@ import { gridIntervalMs } from "@core/live-state";
 import { windowWords } from "@core/live-window";
 import { useRef } from "react";
 import { BrushOverlay } from "~/components/brush-overlay";
+import { PLOT_INSET } from "~/components/charts/layout";
 import { MirrorHover } from "~/components/mirror-hover";
 import { useChartBrush } from "~/hooks/use-chart-brush";
 import { useNiceCeiling } from "~/hooks/use-nice-ceiling";
@@ -109,7 +110,7 @@ export function LiveMirrorChart({
 
   return (
     <div className="flex flex-col gap-1.5">
-      <div className="relative pl-24">
+      <div className="relative" style={{ paddingLeft: PLOT_INSET }}>
         <div
           aria-hidden
           className="absolute top-0 left-0 flex w-22 flex-col justify-between"
@@ -153,8 +154,8 @@ export function LiveMirrorChart({
         )}
         {gaps && gaps.length > 0 && endMs !== null && (
           <div
-            className="pointer-events-none absolute top-0 right-0 left-24"
-            style={{ height: upHeight + downHeight + 1 }}
+            className="pointer-events-none absolute top-0 right-0"
+            style={{ left: PLOT_INSET, height: upHeight + downHeight + 1 }}
           >
             <GapBands
               gaps={gaps}
@@ -166,7 +167,7 @@ export function LiveMirrorChart({
         {endMs !== null && (
           <MirrorHover
             plotRef={plotRef}
-            inset={96}
+            inset={PLOT_INSET}
             height={upHeight + downHeight + 1}
             count={count}
             firstMs={firstMs}
@@ -182,7 +183,7 @@ export function LiveMirrorChart({
           />
         )}
       </div>
-      <WindowTicks ticks={ticks} className="pl-24" />
+      <WindowTicks ticks={ticks} style={{ paddingLeft: PLOT_INSET }} />
     </div>
   );
 }

@@ -19,6 +19,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { PLOT_INSET } from "~/components/charts/layout";
 import { useBrush, useBrushStore } from "~/stores/brush-store";
 
 /** Pointer travel, px, below which a press is a click rather than a drag. */
@@ -112,7 +113,7 @@ export function BrushOverlay({
   spanMs,
   height,
   selectableToMs,
-  inset = 96,
+  inset = PLOT_INSET,
 }: BrushOverlayProps) {
   const store = useBrushStore();
   const view = useBrush((s) => s.draft ?? s.range);
