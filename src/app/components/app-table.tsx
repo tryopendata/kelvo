@@ -1,7 +1,7 @@
 import { formatPercent } from "@core/format";
 import { Info } from "lucide-react";
 import { type ReactNode, useId } from "react";
-import { TableCell, TableHead, TableRow } from "~/components/ui/table";
+import { TableCell, TableRow } from "~/components/ui/table";
 import { cn } from "~/lib/utils";
 import { Card } from "~/widgets/card";
 import type { Accent } from "~/widgets/lib/accent";
@@ -119,53 +119,6 @@ export function OtherAppsRow({
       </TableCell>
       {children}
     </TableRow>
-  );
-}
-
-export interface ColumnSort<K extends string> {
-  by: K;
-  dir: "asc" | "desc";
-}
-
-/** A sortable numeric column head: first click sorts descending. */
-export function SortHead<K extends string>({
-  by,
-  label,
-  sort,
-  onSort,
-}: {
-  by: K;
-  label: string;
-  sort: ColumnSort<K>;
-  onSort: (s: ColumnSort<K>) => void;
-}) {
-  const active = sort.by === by;
-  return (
-    <TableHead
-      aria-sort={
-        active ? (sort.dir === "asc" ? "ascending" : "descending") : undefined
-      }
-      className="p-0 text-right"
-    >
-      <button
-        type="button"
-        onClick={() =>
-          onSort({
-            by,
-            dir: active && sort.dir === "desc" ? "asc" : "desc",
-          })
-        }
-        className={cn(
-          "w-full px-3 py-2 text-right uppercase tracking-[.08em] outline-none focus-visible:ring-2 focus-visible:ring-ring",
-          active
-            ? "text-foreground"
-            : "text-muted-foreground hover:text-foreground"
-        )}
-      >
-        {label}
-        {active && (sort.dir === "desc" ? " ↓" : " ↑")}
-      </button>
-    </TableHead>
   );
 }
 

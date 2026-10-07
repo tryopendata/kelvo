@@ -3,6 +3,7 @@ import {
   type TemperatureUnits,
   temperatureParts,
 } from "@core/format";
+import { FIELD_LABEL } from "~/widgets/lib/classes";
 import { MeterTrack } from "~/widgets/meter-track";
 
 export interface ZoneRow {
@@ -52,9 +53,6 @@ function range(
   return `${lo}–${hi}`;
 }
 
-const head =
-  "data-mono font-normal text-[10px] text-muted-foreground uppercase tracking-[.08em]";
-
 /**
  * Body rows are 24 px and the header 22 px; the table scrolls past ten and a
  * half rows, so the cut row says there is more.
@@ -95,13 +93,17 @@ export function ZoneTable({ rows, extras, units, rangeLabel }: ZoneTableProps) {
           </colgroup>
           <thead className="sticky top-0 z-10 bg-card">
             <tr style={{ height: HEAD_PX }}>
-              <th className={`${head} pb-1.5 text-left`}>Zone</th>
-              <th className={`${head} pb-1.5 pl-2.5 text-left`}>Sensor</th>
+              <th className={`${FIELD_LABEL} pb-1.5 text-left`}>Zone</th>
+              <th className={`${FIELD_LABEL} pb-1.5 pl-2.5 text-left`}>
+                Sensor
+              </th>
               <th className="pb-1.5">
                 <span className="sr-only">Range bar</span>
               </th>
-              <th className={`${head} pb-1.5 text-right`}>Now</th>
-              <th className={`${head} pb-1.5 text-right`}>{rangeLabel}</th>
+              <th className={`${FIELD_LABEL} pb-1.5 text-right`}>Now</th>
+              <th className={`${FIELD_LABEL} pb-1.5 text-right`}>
+                {rangeLabel}
+              </th>
             </tr>
           </thead>
           <tbody>

@@ -33,6 +33,7 @@ import { brushScopeProps } from "~/components/brush-overlay";
 import { ProcessRowActions, QuitDialog } from "~/components/process-actions";
 import { SearchField } from "~/components/search-field";
 import { SelectionChip } from "~/components/selection-chip";
+import { SortHeader } from "~/components/sort-header";
 import {
   Table,
   TableBody,
@@ -214,16 +215,15 @@ function UsageBody({
           <TableHeader>
             <TableRow className="hover:bg-transparent">
               <TableHead>App</TableHead>
-              {config.columns.map((c) => (
-                <TableHead
-                  key={c.label}
-                  aria-sort={c.ranked ? "descending" : undefined}
-                  className={cn("text-right", c.ranked && "text-foreground")}
-                >
-                  {c.label}
-                  {c.ranked && <span aria-hidden> ↓</span>}
-                </TableHead>
-              ))}
+              {config.columns.map((c) =>
+                c.ranked ? (
+                  <SortHeader key={c.label} ranked label={c.label} />
+                ) : (
+                  <TableHead key={c.label} className="text-right">
+                    {c.label}
+                  </TableHead>
+                )
+              )}
               {share && <TableHead className="text-right">Share</TableHead>}
               <TableHead className="w-[132px]">
                 <span className="sr-only">Actions</span>

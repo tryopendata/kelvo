@@ -1,5 +1,6 @@
 import * as React from "react";
 import { cn } from "~/lib/utils";
+import { FIELD_LABEL } from "~/widgets/lib/classes";
 
 const Table = React.forwardRef<
   HTMLTableElement,
@@ -67,7 +68,8 @@ const TableHead = React.forwardRef<
   <th
     ref={ref}
     className={cn(
-      "h-8 px-3 text-left align-middle font-mono font-normal text-[10px] text-muted-foreground uppercase tracking-[0.08em] [&:has([role=checkbox])]:pr-0",
+      "h-8 px-3 text-left align-middle [&:has([role=checkbox])]:pr-0",
+      FIELD_LABEL,
       className
     )}
     {...props}

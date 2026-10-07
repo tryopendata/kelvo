@@ -16,10 +16,10 @@ import {
   AppsShell,
   OtherAppsRow,
   ShareCell,
-  SortHead,
   UnrecordedRange,
 } from "~/components/app-table";
 import { SelectionChip } from "~/components/selection-chip";
+import { SortHeader } from "~/components/sort-header";
 import {
   Table,
   TableBody,
@@ -193,9 +193,9 @@ function AppsTable({
             <TableHead>App</TableHead>
             <TableHead className="text-right">Down</TableHead>
             <TableHead className="text-right">Up</TableHead>
-            <SortHead by="total" label="Total" sort={sort} onSort={onSort} />
+            <SortHeader by="total" label="Total" sort={sort} onSort={onSort} />
             <TableHead className="text-right">Share</TableHead>
-            <SortHead by="now" label="Now" sort={sort} onSort={onSort} />
+            <SortHeader by="now" label="Now" sort={sort} onSort={onSort} />
           </TableRow>
         </TableHeader>
         <TableBody>
