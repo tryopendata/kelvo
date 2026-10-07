@@ -2,6 +2,7 @@
  * Clock and axis helpers for the Timeline, in the Mac's local time
  * ("Sun Oct 4 · 22:40", hour ticks, "14:02:00" in the tooltip).
  */
+import { formatClock, monthName, weekdayName } from "@core/format";
 import { HISTORY_TIERS } from "@core/generated/bindings";
 
 /**
@@ -132,51 +133,21 @@ export function resolutionLabel(bucketMs: number): string {
   return `${bucketMs / HOUR} h avg`;
 }
 
-const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-const MONTHS = [
-  "Jan",
-  "Feb",
-  "Mar",
-  "Apr",
-  "May",
-  "Jun",
-  "Jul",
-  "Aug",
-  "Sep",
-  "Oct",
-  "Nov",
-  "Dec",
-];
-
-const pad = (n: number) => String(n).padStart(2, "0");
-
-/** "14:02". */
-export function clock(ms: number): string {
-  const d = new Date(ms);
-  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
-/** "14:02:00". */
-export function clockSeconds(ms: number): string {
-  const d = new Date(ms);
-  return `${clock(ms)}:${pad(d.getSeconds())}`;
-}
-
 /** "Sun Oct 4". */
 export function dayLabel(ms: number): string {
   const d = new Date(ms);
-  return `${WEEKDAYS[d.getDay()]} ${MONTHS[d.getMonth()]} ${d.getDate()}`;
+  return `${weekdayName(d)} ${monthName(d)} ${d.getDate()}`;
 }
 
 /** "Sun Oct 4 · 22:40". */
 export function dayClock(ms: number): string {
-  return `${dayLabel(ms)} · ${clock(ms)}`;
+  return `${dayLabel(ms)} · ${formatClock(ms)}`;
 }
 
 /** "Oct 4". */
 export function monthDay(ms: number): string {
   const d = new Date(ms);
-  return `${MONTHS[d.getMonth()]} ${d.getDate()}`;
+  return `${monthName(d)} ${d.getDate()}`;
 }
 
 const sameDay = (a: number, b: number) =>
@@ -214,7 +185,7 @@ export function rangeSubtitle(
   if (live) {
     return { lead: `Last ${LIVE_WORDS[span]}, ending `, times: dayClock(toMs) };
   }
-  const end = sameDay(fromMs, toMs) ? clock(toMs) : dayClock(toMs);
+  const end = sameDay(fromMs, toMs) ? formatClock(toMs) : dayClock(toMs);
   return {
     lead: `${PAST_WORDS[span]}, `,
     times: `${dayClock(fromMs)} – ${end}`,
@@ -229,8 +200,8 @@ export function rangeSubtitle(
  */
 export function momentLabel(span: Span, ms: number): string {
   if (span === "30d") return monthDay(ms);
-  if (span === "7d") return `${WEEKDAYS[new Date(ms).getDay()]} ${clock(ms)}`;
-  return clock(ms);
+  if (span === "7d") return `${weekdayName(new Date(ms))} ${formatClock(ms)}`;
+  return formatClock(ms);
 }
 
 /**
@@ -240,8 +211,8 @@ export function momentLabel(span: Span, ms: number): string {
 export function endLabel(span: Span, toMs: number, live: boolean): string {
   if (live) return "now";
   return span === "6h" || span === "7d" || span === "30d"
-    ? `${monthDay(toMs)} · ${clock(toMs)}`
-    : clock(toMs);
+    ? `${monthDay(toMs)} · ${formatClock(toMs)}`
+    : formatClock(toMs);
 }
 
 export interface AxisTick {
@@ -272,7 +243,7 @@ export function axisTicks(
     for (; d.getTime() < edge; d.setDate(d.getDate() + 1)) {
       const t = d.getTime();
       if (span === "7d") {
-        ticks.push({ tMs: t, label: `${WEEKDAYS[d.getDay()]} ${d.getDate()}` });
+        ticks.push({ tMs: t, label: `${weekdayName(d)} ${d.getDate()}` });
       } else if (d.getDay() === 1) {
         ticks.push({ tMs: t, label: monthDay(t) });
       }
@@ -286,7 +257,7 @@ export function axisTicks(
     if (d.getTime() < fromMs) d.setHours(d.getHours() + 1);
     for (; d.getTime() < edge; d.setHours(d.getHours() + 1)) {
       if (d.getHours() % every === 0) {
-        ticks.push({ tMs: d.getTime(), label: clock(d.getTime()) });
+        ticks.push({ tMs: d.getTime(), label: formatClock(d.getTime()) });
       }
     }
     return ticks;
@@ -297,7 +268,7 @@ export function axisTicks(
   if (rem !== 0 || d.getTime() < fromMs)
     d.setMinutes(d.getMinutes() - rem + 10);
   for (; d.getTime() < edge; d.setMinutes(d.getMinutes() + 10)) {
-    ticks.push({ tMs: d.getTime(), label: clock(d.getTime()) });
+    ticks.push({ tMs: d.getTime(), label: formatClock(d.getTime()) });
   }
   return ticks;
 }

@@ -1,5 +1,9 @@
-import { formatBytes, formatDuration, formatPercent } from "@core/format";
-import { clockTime } from "@core/history-state";
+import {
+  formatBytes,
+  formatClock,
+  formatDuration,
+  formatPercent,
+} from "@core/format";
 import { useShallow } from "zustand/react/shallow";
 import { MachineHeader, type MachineSpec } from "~/components/machine-header";
 import { useHostRecord } from "~/hooks/use-host-record";
@@ -72,7 +76,7 @@ export function LiveMachineHeader() {
     label: "Uptime",
     value: [
       formatDuration(now - info.boot_time_ms, { parts: 3 }),
-      lastWake === null ? null : `last wake ${clockTime(lastWake)}`,
+      lastWake === null ? null : `last wake ${formatClock(lastWake)}`,
     ]
       .filter(Boolean)
       .join(" · "),

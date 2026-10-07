@@ -1,3 +1,4 @@
+import { pad2 } from "@core/format";
 import { ChartAnnotation, type ChartAnnotationProps } from "./chart-annotation";
 import { accentVars } from "./lib/accent";
 
@@ -14,7 +15,7 @@ const HATCH =
   "repeating-linear-gradient(135deg, var(--color-grid) 0 1px, transparent 1px 7px)";
 
 function hourLabel(tsMs: number): string {
-  return String(new Date(tsMs).getHours()).padStart(2, "0");
+  return pad2(new Date(tsMs).getHours());
 }
 
 /**

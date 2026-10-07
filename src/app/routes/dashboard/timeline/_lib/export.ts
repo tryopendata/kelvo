@@ -1,9 +1,8 @@
+import { pad2 } from "@core/format";
 import type { CommandError, ExportOutcome } from "@core/generated/bindings";
 import { localDateIso } from "@core/heatmap-days";
 import { historyUnavailable } from "@core/history-state";
 import type { Span } from "./time";
-
-const pad = (n: number) => String(n).padStart(2, "0");
 
 /**
  * The name the save dialog proposes: the range's local start and its
@@ -12,7 +11,7 @@ const pad = (n: number) => String(n).padStart(2, "0");
  */
 export function exportFileName(span: Span, fromMs: number): string {
   const d = new Date(fromMs);
-  return `kelvo-${localDateIso(d)}-${pad(d.getHours())}${pad(d.getMinutes())}-${span}.csv`;
+  return `kelvo-${localDateIso(d)}-${pad2(d.getHours())}${pad2(d.getMinutes())}-${span}.csv`;
 }
 
 /** The toast after a save: where it went and how much. `null` for a cancel. */

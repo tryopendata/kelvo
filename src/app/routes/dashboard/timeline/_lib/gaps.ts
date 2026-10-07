@@ -4,9 +4,11 @@
  * "Annotations": pills must not overlap; later ones move to a second row or
  * merge into a "+N").
  */
+
+import { formatClock } from "@core/format";
 import type { Gap } from "@core/generated/bindings";
 import { dedupeGaps, type GapBandSpec, gapBands } from "@core/history-state";
-import { clock, type Span } from "./time";
+import type { Span } from "./time";
 
 /** A gap band on the Timeline; a module-scoped one covers that lane only. */
 export type Band = GapBandSpec;
@@ -46,14 +48,14 @@ export function sleepMarkers(
       out.push({
         tMs: g.start_ms,
         kind: "sleep",
-        label: `${clock(g.start_ms)} Sleep`,
+        label: `${formatClock(g.start_ms)} Sleep`,
       });
     }
     if (g.end_ms !== null && g.end_ms >= fromMs && g.end_ms < toMs) {
       out.push({
         tMs: g.end_ms,
         kind: "wake",
-        label: `${clock(g.end_ms)} Wake`,
+        label: `${formatClock(g.end_ms)} Wake`,
       });
     }
   }

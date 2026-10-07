@@ -1,4 +1,5 @@
 export * from "./bytes";
+export * from "./clock";
 export * from "./duration";
 export * from "./figure";
 export * from "./frequency";

@@ -1,7 +1,6 @@
+import { formatClock, formatClockSeconds } from "@core/format";
 import {
   axisTicks,
-  clock,
-  clockSeconds,
   dayClock,
   dayLabel,
   endLabel,
@@ -275,10 +274,10 @@ describe("the 6h span", () => {
 describe("clock and date labels", () => {
   it("pads the clock to two digits", () => {
     const t = at(1, 4, 9, 5) + 7_000;
-    expect(clock(t)).toBe("09:05");
-    expect(clockSeconds(t)).toBe("09:05:07");
-    expect(clock(at(12, 31, 0, 0))).toBe("00:00");
-    expect(clockSeconds(at(12, 31, 23, 59) + 59_000)).toBe("23:59:59");
+    expect(formatClock(t)).toBe("09:05");
+    expect(formatClockSeconds(t)).toBe("09:05:07");
+    expect(formatClock(at(12, 31, 0, 0))).toBe("00:00");
+    expect(formatClockSeconds(at(12, 31, 23, 59) + 59_000)).toBe("23:59:59");
   });
 
   it("names every month and weekday in English", () => {
