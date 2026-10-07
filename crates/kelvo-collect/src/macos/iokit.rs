@@ -4,7 +4,7 @@
 //! vendored one (`vendor/iokit.rs`), so the IOKit FFI is declared once. Only documented
 //! IOKit calls live here; private-API collectors keep their own FFI.
 
-use std::ffi::{CStr, c_char};
+use std::ffi::{CStr, c_char, c_void};
 
 use core_foundation::base::{CFType, TCFType};
 use core_foundation::boolean::CFBoolean;
@@ -13,11 +13,15 @@ use core_foundation::number::CFNumber;
 use core_foundation::string::CFString;
 use core_foundation_sys::base::kCFAllocatorDefault;
 
-use super::vendor::iokit::{IOIteratorNext, IORegistryEntryCreateCFProperty};
+use super::vendor::iokit::IORegistryEntryCreateCFProperty;
+pub use super::vendor::iokit::{IOIteratorNext, IOObjectRelease, IOServiceMatching};
 pub(crate) use super::vendor::iokit::{IoObject, matching_services};
 
 type IoObjectT = u32;
 type KernReturn = i32;
+
+/// `IONotificationPortRef`.
+pub type NotificationPort = *mut c_void;
 
 #[link(name = "IOKit", kind = "framework")]
 unsafe extern "C" {
@@ -33,6 +37,10 @@ unsafe extern "C" {
         iterator: *mut IoObjectT,
     ) -> KernReturn;
     fn IORegistryEntryGetRegistryEntryID(entry: IoObjectT, id: *mut u64) -> KernReturn;
+    /// For the engine's device and system-power notifications.
+    pub fn IONotificationPortCreate(main_port: u32) -> NotificationPort;
+    pub fn IONotificationPortSetDispatchQueue(port: NotificationPort, queue: *mut c_void);
+    pub fn IONotificationPortDestroy(port: NotificationPort);
 }
 
 const SERVICE_PLANE: &CStr = c"IOService";

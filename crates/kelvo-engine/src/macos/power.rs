@@ -28,6 +28,9 @@ use core_foundation::boolean::CFBoolean;
 use core_foundation::dictionary::CFDictionary;
 use core_foundation::string::CFString;
 use core_foundation_sys::dictionary::CFDictionaryRef;
+use kelvo_collect::macos::iokit::{
+    IONotificationPortDestroy, IONotificationPortSetDispatchQueue, NotificationPort,
+};
 use kelvo_collect::macos::power_sources::Snapshot;
 use objc2_foundation::NSProcessInfo;
 
@@ -45,7 +48,6 @@ pub const SLOW_POLL: Duration = Duration::from_secs(2);
 
 type IoConnect = u32;
 type IoObject = u32;
-type NotificationPort = *mut c_void;
 type InterestCallback = extern "C" fn(*mut c_void, IoObject, u32, *mut c_void);
 
 // iokit_common_msg(...) = sys_iokit (0xe0000000) | sub_iokit_common (0) | message.
@@ -63,8 +65,6 @@ unsafe extern "C" {
     ) -> IoConnect;
     fn IODeregisterForSystemPower(notifier: *mut IoObject) -> c_int;
     fn IOAllowPowerChange(kernel_port: IoConnect, notification_id: isize) -> c_int;
-    fn IONotificationPortSetDispatchQueue(port: NotificationPort, queue: *mut c_void);
-    fn IONotificationPortDestroy(port: NotificationPort);
     fn IOServiceClose(connect: IoConnect) -> c_int;
 }
 

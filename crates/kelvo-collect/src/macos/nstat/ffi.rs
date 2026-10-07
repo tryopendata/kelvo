@@ -21,6 +21,7 @@ use super::ledger::{Counts, Ledger, Owner, relock};
 use super::{FRAMEWORK, QUERY_TIMEOUT, libproc, network};
 use crate::CollectError;
 use crate::calls::{self, Api as Calls};
+use crate::macos::dispatch::{dispatch_queue_create, dispatch_release, dispatch_sync_f};
 
 type Manager = *mut c_void;
 type Source = *mut c_void;
@@ -30,12 +31,6 @@ type AddedBlock = Block<dyn Fn(Source, *mut c_void)>;
 /// Counts blocks receive the dictionary as a raw `CFDictionaryRef`, valid for the call.
 type DictBlock = Block<dyn Fn(*const c_void)>;
 type VoidBlock = Block<dyn Fn()>;
-
-unsafe extern "C" {
-    fn dispatch_queue_create(label: *const c_char, attr: *mut c_void) -> Queue;
-    fn dispatch_sync_f(queue: Queue, context: *mut c_void, work: extern "C" fn(*mut c_void));
-    fn dispatch_release(object: *mut c_void);
-}
 
 /// A dictionary key: one of the framework's exported `CFStringRef` constants.
 #[derive(Clone, Copy, Debug)]

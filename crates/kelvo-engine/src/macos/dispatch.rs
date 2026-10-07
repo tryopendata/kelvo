@@ -1,59 +1,23 @@
-//! The few libdispatch calls the engine needs. libdispatch is part of libSystem, so no
-//! extra link is required. Function pointers (`*_f` variants) are used instead of blocks.
+//! The few libdispatch calls the engine needs: a utility-QoS serial queue, and the timer
+//! calls the ticker makes. The declarations are collect's (`kelvo_collect::macos::dispatch`),
+//! shared with the NetworkStatistics collector.
 
-use std::ffi::{CStr, c_char, c_int, c_void};
+use std::ffi::{CStr, c_void};
 
-/// `dispatch_object_t` and friends: opaque, reference counted, thread-safe.
-pub(super) type DispatchObject = *mut c_void;
+pub(super) use kelvo_collect::macos::dispatch::{
+    _dispatch_source_type_timer, DispatchObject, dispatch_release, dispatch_resume,
+    dispatch_set_context, dispatch_source_cancel, dispatch_source_create,
+    dispatch_source_set_event_handler_f, dispatch_source_set_timer, dispatch_time,
+};
+use kelvo_collect::macos::dispatch::{
+    dispatch_queue_attr_make_with_qos_class, dispatch_queue_create, dispatch_sync_f,
+};
 
 /// `DISPATCH_TIME_NOW`.
 pub(super) const TIME_NOW: u64 = 0;
 
 /// `QOS_CLASS_UTILITY`.
 const QOS_CLASS_UTILITY: u32 = 0x11;
-
-#[repr(C)]
-pub(super) struct SourceType {
-    _opaque: [u8; 0],
-}
-
-unsafe extern "C" {
-    /// `DISPATCH_SOURCE_TYPE_TIMER` is `&_dispatch_source_type_timer`.
-    pub(super) static _dispatch_source_type_timer: SourceType;
-
-    fn dispatch_queue_create(label: *const c_char, attr: *mut c_void) -> DispatchObject;
-    fn dispatch_queue_attr_make_with_qos_class(
-        attr: *mut c_void,
-        qos_class: u32,
-        relative_priority: c_int,
-    ) -> *mut c_void;
-    pub(super) fn dispatch_source_create(
-        kind: *const SourceType,
-        handle: usize,
-        mask: usize,
-        queue: DispatchObject,
-    ) -> DispatchObject;
-    pub(super) fn dispatch_source_set_timer(
-        source: DispatchObject,
-        start: u64,
-        interval: u64,
-        leeway: u64,
-    );
-    pub(super) fn dispatch_source_set_event_handler_f(
-        source: DispatchObject,
-        handler: extern "C" fn(*mut c_void),
-    );
-    pub(super) fn dispatch_source_cancel(source: DispatchObject);
-    pub(super) fn dispatch_set_context(object: DispatchObject, context: *mut c_void);
-    pub(super) fn dispatch_resume(object: DispatchObject);
-    pub(super) fn dispatch_release(object: DispatchObject);
-    pub(super) fn dispatch_time(when: u64, delta: i64) -> u64;
-    fn dispatch_sync_f(
-        queue: DispatchObject,
-        context: *mut c_void,
-        work: extern "C" fn(*mut c_void),
-    );
-}
 
 /// A serial dispatch queue at utility QoS, released on drop.
 pub(super) struct Queue(DispatchObject);

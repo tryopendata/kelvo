@@ -6,11 +6,12 @@
 pub mod battery;
 pub mod cpu;
 pub mod disk;
+pub mod dispatch;
 pub mod gpu;
 pub mod gpu_procs;
 pub mod hid;
 pub mod ifaddrs;
-mod iokit;
+pub mod iokit;
 pub mod ioreport;
 mod libproc;
 pub mod memory;
