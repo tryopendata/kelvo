@@ -1,6 +1,6 @@
 import type { ChartWindow, LiveMsg } from "@core/generated/bindings";
 import { MOCK_HOST_ID } from "./mock/fixtures";
-import { createMockTransport } from "./mock-transport";
+import { createMockTransport, type MockTransport } from "./mock-transport";
 
 const NOW = 1_800_000_000_000;
 
@@ -205,5 +205,103 @@ describe("mock transport", () => {
     t.tick();
     expect(msgs.length).toBe(before);
     expect(t.subscriberCount()).toBe(0);
+  });
+});
+
+/**
+ * The checks every host command runs before answering, in Rust's order:
+ * unknown host, then the store being unavailable, then the range.
+ */
+describe("host command preamble", () => {
+  const H = 3_600_000;
+  const calls = (t: MockTransport, host: string, from: number, to: number) => {
+    const sel = [{ metric: "cpu.total", labels: [] }];
+    const req = { host, selectors: sel, from_ms: from, to_ms: to };
+    return {
+      getHost: () => t.getHost(host),
+      getCapabilities: () => t.getCapabilities(host),
+      setProcessInterest: () => t.setProcessInterest(host, false, null, null),
+      queryHistory: () =>
+        t.queryHistory({ ...req, tier: "auto", max_points: 10 }),
+      queryProcessesAt: () => t.queryProcessesAt(host, to),
+      queryNetworkByApp: () => t.queryNetworkByApp(host, from, to),
+      queryUsageByApp: () => t.queryUsageByApp(host, from, to, "cpu", 5),
+      querySeriesStats: () => t.querySeriesStats(host, ["cpu.total"], from, to),
+      getNetworkAddresses: () => t.getNetworkAddresses(host),
+      queryEvents: () => t.queryEvents(host, from, to),
+      queryHeatmap: () => t.queryHeatmap({ host, metric: "cpu", days: [] }),
+      batteryHours: () => t.batteryHours(host, [from, to]),
+      exportCsv: () => t.exportCsv({ ...req, tier: "auto" }),
+      historySize: () => t.historySize(host),
+      historyGrowth: () => t.historyGrowth(host),
+      historyHealth: () => t.historyHealth(host),
+      sensorDump: () => t.sensorDump(host),
+    };
+  };
+  /** Each command's outcome: "ok", the error kind, or `kind: message`. */
+  async function outcomes(
+    t: MockTransport,
+    host: string,
+    from: number,
+    to: number
+  ) {
+    const out: Record<string, string> = {};
+    for (const [name, call] of Object.entries(calls(t, host, from, to))) {
+      const res = await call();
+      out[name] =
+        res.status === "ok"
+          ? "ok"
+          : "message" in res.error
+            ? `${res.error.kind}: ${res.error.message}`
+            : res.error.kind;
+    }
+    return out;
+  }
+  const names = Object.keys(calls(createMockTransport(), "", 0, 0));
+  const all = (v: string) => Object.fromEntries(names.map((n) => [n, v]));
+
+  it("records each call, then answers unknown_host before anything else", async () => {
+    const t = createMockTransport({
+      now: () => NOW,
+      scenarios: ["history-unavailable"],
+    });
+    expect(await outcomes(t, "nope", NOW, NOW - H)).toEqual(
+      all("unknown_host")
+    );
+    expect(t.calls).toHaveLength(names.length);
+  });
+
+  it("fails only the store's commands while history is unavailable", async () => {
+    const t = createMockTransport({
+      now: () => NOW,
+      scenarios: ["history-unavailable"],
+    });
+    expect(await outcomes(t, MOCK_HOST_ID, NOW - H, NOW)).toEqual({
+      ...all("ok"),
+      queryEvents: "history_unavailable",
+      queryHeatmap: "history_unavailable",
+      exportCsv: "history_unavailable",
+      historySize: "history_unavailable",
+      historyGrowth: "history_unavailable",
+      historyHealth: "history_unavailable",
+    });
+  });
+
+  it("rejects a range that ends before it starts or is too long", async () => {
+    const t = createMockTransport({ now: () => NOW });
+    expect(await outcomes(t, MOCK_HOST_ID, NOW, NOW - H)).toMatchObject({
+      queryHistory: "invalid_argument: empty selectors or negative span",
+      queryNetworkByApp: "invalid_argument: the range ends before it starts",
+      queryUsageByApp: "invalid_argument: the range ends before it starts",
+      querySeriesStats: "invalid_argument: the range ends before it starts",
+      exportCsv: "invalid_argument: empty selectors or empty range",
+      queryEvents: "ok",
+    });
+    const tooLong = "invalid_argument: the range is longer than history keeps";
+    expect(await outcomes(t, MOCK_HOST_ID, 0, NOW)).toMatchObject({
+      queryNetworkByApp: tooLong,
+      querySeriesStats: tooLong,
+      queryUsageByApp: "ok",
+    });
   });
 });

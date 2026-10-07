@@ -73,7 +73,7 @@ describe("reduceLive", () => {
       "cpu.load{core=P0}": 3,
       "cpu.load{core=E0}": null,
     });
-    expect(s.rows.length).toBe(2);
+    expect(s.columns.length).toBe(2);
     expect(s.lastTsMs).toBe(2000);
   });
 
@@ -91,7 +91,11 @@ describe("reduceLive", () => {
       },
     ]);
     expect(s.held["cpu.total"]).toBe(42);
-    expect(s.rows.last()?.values).toEqual([null, 4, 5]);
+    const slot = s.columns.slot(s.columns.length - 1);
+    const raw = ["cpu.total", "cpu.load{core=P0}", "cpu.load{core=E0}"].map(
+      (k) => s.columns.column(k)?.[slot]
+    );
+    expect(raw).toEqual([Number.NaN, 4, 5]);
   });
 
   it("drops a frame or backfill row that is not newer than the ring", () => {
@@ -104,7 +108,7 @@ describe("reduceLive", () => {
       held: [ts, 0, 0],
     });
     const s = apply([layout, frame(3000), frame(2000), frame(3000)]);
-    expect(s.rows.length).toBe(1);
+    expect(s.columns.length).toBe(1);
   });
 
   it("ignores frames for an unknown layout", () => {

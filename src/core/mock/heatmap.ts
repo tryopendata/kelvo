@@ -14,15 +14,11 @@ import type {
   HeatmapMetric,
   HeatmapRequest,
 } from "@core/generated/bindings";
-import { rng } from "./rng";
+import { fnv1a, rng } from "./rng";
 
 /** FNV-1a of `s`, as a Lehmer seed (1 to 2^31 - 2). */
 function hash(s: string): number {
-  let h = 2166136261;
-  for (let i = 0; i < s.length; i++) {
-    h = Math.imul(h ^ s.charCodeAt(i), 16777619);
-  }
-  return ((h >>> 0) % 2147483646) + 1;
+  return (fnv1a(s) % 2147483646) + 1;
 }
 
 /** Average CPU % per local hour of `date` (`YYYY-MM-DD`), by the rules above. */

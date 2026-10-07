@@ -5,12 +5,10 @@
  * Current numbers come from the frame's `held` array (D-047, D-049): the
  * latest value of each series while it is still current, `null` once stale.
  * Chart lines come from raw rows (`values`, backfill rows), kept for one
- * hour twice: as rows (`rows`, for readers that walk whole rows) and as one
- * typed column per series (`columns`, for charts and window statistics, so a
- * tick costs one write per series and a window read is a scan of one
- * Float32Array, not a key lookup per row). Both are appended in place (a 1 Hz
- * tick must not copy an hour of history), so readers subscribe to
- * `rowsVersion` and read them.
+ * hour as one typed column per series (`columns`, so a tick costs one write
+ * per series and a window read is a scan of one Float32Array, not a key
+ * lookup per row). They are appended in place (a 1 Hz tick must not copy an
+ * hour of history), so readers subscribe to `rowsVersion` and read them.
  *
  * History arrives in two phases (D-066): `backfill` (the last two minutes)
  * and frames are appended; `backfill_earlier` chunks, newest first, are
@@ -56,82 +54,8 @@ function holdsFor(layout: LayoutInfo, holdsMs: readonly number[]): Holds {
   return new Map(layout.keys.map((k, i) => [k, holdsMs[i] ?? 0]));
 }
 
-export interface LiveRow {
-  tsMs: number;
-  layoutNo: number;
-  values: readonly (number | null)[];
-}
-
-/** The engine ring's rows (`RING_MAX_ROWS`: an hour at 0.5 s), oldest first. */
-export class RowRing {
-  private rows: LiveRow[] = [];
-  constructor(readonly capacity: number = RING_MAX_ROWS) {}
-
-  push(row: LiveRow): void {
-    const last = this.rows[this.rows.length - 1];
-    // A resumed channel only backfills what it missed (D-049); drop anything
-    // that is not newer than what we hold.
-    if (last && row.tsMs <= last.tsMs) return;
-    this.rows.push(row);
-    if (this.rows.length > this.capacity * 1.25) {
-      this.rows = this.rows.slice(-this.capacity);
-    }
-  }
-
-  /**
-   * Put `older` (oldest first) in front of the held rows. Rows not older
-   * than the oldest held row are dropped, and so are the oldest of them when
-   * the ring would overflow: the newest history wins.
-   */
-  prepend(older: readonly LiveRow[]): void {
-    const first = this.rows[0];
-    let end = older.length;
-    if (first) {
-      while (end > 0 && (older[end - 1] as LiveRow).tsMs >= first.tsMs) end--;
-    }
-    const room = Math.max(0, this.capacity - this.rows.length);
-    const start = Math.max(0, end - room);
-    if (start >= end) return;
-    this.rows = older.slice(start, end).concat(this.rows);
-  }
-
-  get length(): number {
-    return this.rows.length;
-  }
-
-  /** Drop the rows at or after `tsMs`; returns how many went. */
-  truncateFrom(tsMs: number): number {
-    let lo = 0;
-    let hi = this.rows.length;
-    while (lo < hi) {
-      const mid = (lo + hi) >> 1;
-      if ((this.rows[mid] as LiveRow).tsMs >= tsMs) hi = mid;
-      else lo = mid + 1;
-    }
-    const removed = this.rows.length - lo;
-    this.rows.length = lo;
-    return removed;
-  }
-
-  last(): LiveRow | undefined {
-    return this.rows[this.rows.length - 1];
-  }
-
-  /** Rows with `tsMs > fromMs`, oldest first. */
-  since(fromMs: number): LiveRow[] {
-    let lo = 0;
-    let hi = this.rows.length;
-    while (lo < hi) {
-      const mid = (lo + hi) >> 1;
-      if ((this.rows[mid] as LiveRow).tsMs > fromMs) hi = mid;
-      else lo = mid + 1;
-    }
-    return this.rows.slice(lo);
-  }
-}
-
 /**
- * One hour of rows as a circular buffer of timestamps plus one Float32Array
+ * One hour of rows (`RING_MAX_ROWS`: an hour at 0.5 s) as a circular buffer of timestamps plus one Float32Array
  * per series key, `NaN` where the row did not measure the series (missing
  * from the row's layout, or `null`). Columns are created the first time a
  * key appears and back-filled with `NaN`. Appending a row writes every
@@ -170,7 +94,7 @@ export class SeriesColumns {
   /**
    * Append a row: `values[i]` is the value of `keys[i]`, and `holds` how
    * long each one stays current. A row not newer than the newest one is
-   * dropped, like `RowRing.push`.
+   * dropped: a resumed channel only backfills what it missed (D-049).
    */
   push(
     tsMs: number,
@@ -300,8 +224,7 @@ export interface HostLive {
    * restarts after a clock step. Caches of closed buckets key on it.
    */
   rowsEpoch: number;
-  rows: RowRing;
-  /** The same rows as one typed column per series key. */
+  /** The ring's rows, one typed column per series key. */
   columns: SeriesColumns;
   processes: { tsMs: number; rows: LiveProcess[] } | null;
   /** No frame for three frame periods while not paused or display-idle (plan 4.17). */
@@ -331,7 +254,6 @@ export function initialHostLive(hostId: HostId): HostLive {
     lastTsMs: null,
     rowsVersion: 0,
     rowsEpoch: 0,
-    rows: new RowRing(),
     columns: new SeriesColumns(),
     processes: null,
     stale: false,
@@ -420,10 +342,8 @@ export function reduceLive(state: HostLive, msg: LiveMsg): HostLive {
       const holds = holdsFor(layout, msg.holds_ms);
       msg.rows.forEach((values, i) => {
         const tsMs = msg.start_ms + i * msg.interval_ms;
-        state.rows.push({ tsMs, layoutNo: msg.layout_no, values });
         state.columns.push(tsMs, layout.keys, values, holds);
       });
-      const last = state.rows.last();
       // Readouts before the first frame: the backfill's last row, for series
       // not already held. A frame replaces it within one tick.
       const lastRow = msg.rows[msg.rows.length - 1];
@@ -434,7 +354,7 @@ export function reduceLive(state: HostLive, msg: LiveMsg): HostLive {
         ...state,
         connection: "live",
         held,
-        lastTsMs: last?.tsMs ?? state.lastTsMs,
+        lastTsMs: state.columns.lastTsMs() ?? state.lastTsMs,
         rowsVersion: state.rowsVersion + 1,
         statusSinceMs: null,
       };
@@ -453,11 +373,6 @@ export function reduceLive(state: HostLive, msg: LiveMsg): HostLive {
       const layout = state.layouts[msg.layout_no];
       if (!layout) return state;
       state = onTimeline(state, msg.timeline, msg.ts_ms);
-      state.rows.push({
-        tsMs: msg.ts_ms,
-        layoutNo: msg.layout_no,
-        values: msg.values,
-      });
       state.columns.push(msg.ts_ms, layout.keys, msg.values, state.frameHolds);
       return {
         ...state,
@@ -493,7 +408,6 @@ function onTimeline(
 ): HostLive {
   if (state.timeline === timeline) return state;
   if (state.timeline === null) return { ...state, timeline };
-  state.rows.truncateFrom(fromMs);
   const removed = state.columns.truncateFrom(fromMs);
   if (removed === 0) return { ...state, timeline, statusSinceMs: null };
   return {
@@ -510,7 +424,6 @@ function onTimeline(
 export function clearRows<S extends HostLive>(state: S): S {
   return {
     ...state,
-    rows: new RowRing(state.rows.capacity),
     columns: new SeriesColumns(state.columns.capacity),
     lastTsMs: null,
     rowsVersion: state.rowsVersion + 1,
@@ -529,22 +442,15 @@ function prependEarlier(
 ): HostLive {
   const layout = state.layouts[msg.layout_no];
   if (!layout || msg.rows.length === 0) return state;
-  const older: LiveRow[] = msg.rows.map((values, i) => ({
-    tsMs: msg.start_ms + i * msg.interval_ms,
-    layoutNo: msg.layout_no,
-    values,
-  }));
   const before = state.columns.length;
   const first = state.columns.firstTsMs();
   const holds = holdsFor(layout, msg.holds_ms);
-  for (let i = older.length - 1; i >= 0; i--) {
-    const row = older[i] as LiveRow;
-    if (first !== null && row.tsMs >= first) continue;
-    if (!state.columns.prepend(row.tsMs, layout.keys, row.values, holds)) {
-      break;
-    }
+  for (let i = msg.rows.length - 1; i >= 0; i--) {
+    const tsMs = msg.start_ms + i * msg.interval_ms;
+    if (first !== null && tsMs >= first) continue;
+    const values = msg.rows[i] as (number | null)[];
+    if (!state.columns.prepend(tsMs, layout.keys, values, holds)) break;
   }
-  state.rows.prepend(older);
   if (state.columns.length === before) return state;
   return {
     ...state,

@@ -54,27 +54,31 @@ export function useRingStats(
  * Averages per key in `count` wall-clock-aligned buckets ending with the one
  * that holds the newest row. Buckets that can no longer change are computed
  * only when a bucket closes; the open one, and the closed ones a later sample
- * can still fill back into within its hold (`liveBucketCount`), every tick. `endMs` is the newest bucket's
- * start (null before the first row).
+ * can still fill back into within its hold (`liveBucketCount`), every tick.
+ * Re-renders once per tick. `endMs` is the newest bucket's start (null
+ * before the first row, or while `enabled` is false, which skips the bucket
+ * work but keeps the hook order for a caller that switches modes).
  */
 export function useRingBuckets(
   keys: readonly string[],
   bucketMs: number,
-  count: number
+  count: number,
+  { enabled = true }: { enabled?: boolean } = {}
 ): { values: Record<string, (number | null)[]>; endMs: number | null } {
   const store = useHostStore();
   useHost((s) => s.rowsVersion);
   // Earlier history prepended, or the ring restarted: closed buckets change.
   const epoch = useHost((s) => s.rowsEpoch);
   const state = store.getState();
-  const lastTs = state.lastTsMs;
+  const lastTs = enabled ? state.lastTsMs : null;
   const last = lastTs === null ? null : bucketIndex(lastTs, bucketMs);
   const keyList = keys.join("\n");
-  const live = Math.min(count, liveBucketCount(state, keys, bucketMs));
+  const live =
+    last === null ? 0 : Math.min(count, liveBucketCount(state, keys, bucketMs));
 
-  // Keyed by the closed bucket index, the epoch and the key list, not the
-  // store snapshot. The epoch is never negative; the test only makes it a
-  // dependency.
+  // Keyed by the newest bucket's index, the epoch and the key list, not the
+  // store snapshot: the final buckets only change when one of them moves. The
+  // epoch is never negative; the test only makes it a dependency.
   const closed = useMemo(
     () =>
       epoch < 0 || last === null
