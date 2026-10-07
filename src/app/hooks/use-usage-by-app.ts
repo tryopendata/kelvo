@@ -3,10 +3,7 @@ import type { UsageByApp, UsageKey } from "@core/generated/bindings";
 import { historyKeys } from "@core/query-keys";
 import { unwrap } from "@core/transport";
 import { usageFinal } from "@core/usage-rows";
-import { useQuery } from "@tanstack/react-query";
-import { rangeQueryOptions } from "~/lib/range-query";
-import { useTransport } from "~/lib/transport-context";
-import { useHostId } from "~/stores/host-store";
+import { useRangeQuery } from "~/lib/range-query";
 
 /** Apps a usage table asks for: every app a search could find, in practice. */
 export const USAGE_LIMIT = 200;
@@ -21,15 +18,12 @@ export function useUsageByApp(
   by: UsageKey,
   { keepPrevious = false }: { keepPrevious?: boolean } = {}
 ) {
-  const transport = useTransport();
-  const hostId = useHostId();
-  const fromMs = range?.fromMs ?? 0;
-  const toMs = range?.toMs ?? 0;
-  return useQuery({
-    queryKey: historyKeys.usageByApp(hostId, by, USAGE_LIMIT, fromMs, toMs),
-    queryFn: () =>
+  return useRangeQuery<UsageByApp>(range, {
+    key: (hostId, fromMs, toMs) =>
+      historyKeys.usageByApp(hostId, by, USAGE_LIMIT, fromMs, toMs),
+    fetch: (transport, hostId, fromMs, toMs) =>
       unwrap(transport.queryUsageByApp(hostId, fromMs, toMs, by, USAGE_LIMIT)),
-    enabled: range !== null,
-    ...rangeQueryOptions<UsageByApp>(usageFinal, keepPrevious),
+    isFinal: usageFinal,
+    keepPrevious,
   });
 }
