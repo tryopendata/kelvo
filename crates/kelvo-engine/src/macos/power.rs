@@ -97,6 +97,7 @@ extern "C" fn on_system_power(refcon: *mut c_void, _service: u32, msg: u32, arg:
 /// The system power registration. Fields drop in order: the registration (torn down, its
 /// queue drained so no callback can still read `ctx`), then the context.
 struct SystemPower {
+    // Do not reorder: drop order is the teardown order.
     _registration: SystemPowerRegistration,
     _ctx: Box<PowerCtx>,
 }
@@ -259,7 +260,28 @@ impl PowerSignals for MacPowerSignals {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::mpsc;
+
     use super::*;
+
+    /// Registers for real system power messages and drops the registration: teardown
+    /// (deregister, queue drain, context) must return rather than hang.
+    #[test]
+    fn system_power_start_and_drop() {
+        let (inbox, _rx) = Inbox::new();
+        let (done_tx, done_rx) = mpsc::channel();
+        std::thread::spawn(move || {
+            let mut signals = MacPowerSignals::new();
+            signals.start(inbox);
+            let started = signals.system.is_some();
+            drop(signals);
+            let _ = done_tx.send(started);
+        });
+        let started = done_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("dropping the power signals returns");
+        assert!(started, "IORegisterForSystemPower succeeded");
+    }
 
     /// Reads the real power state once.
     #[test]

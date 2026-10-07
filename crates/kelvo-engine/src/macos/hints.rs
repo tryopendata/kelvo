@@ -36,6 +36,7 @@ extern "C" fn on_match(refcon: *mut c_void, iterator: u32) {
 /// Fields drop in order: the iterators (cancelling their notifications), then the port
 /// (destroyed, its queue drained so no callback is left running), then the contexts.
 struct Watch {
+    // Do not reorder: drop order is the teardown order.
     iterators: Vec<MatchIterator>,
     port: NotificationPort,
     // Boxed on purpose: IOKit holds raw pointers to each context, so they must not move
@@ -100,5 +101,32 @@ impl DeviceHints for IoKitDeviceHints {
                 tracing::warn!("IOKit device notifications unavailable; no re-probe hints");
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    use super::*;
+
+    /// Arms the real IOKit notifications and drops them: teardown (iterators, port and
+    /// queue drain, contexts) must return rather than hang.
+    #[test]
+    fn device_hints_start_and_drop() {
+        let (inbox, _rx) = Inbox::new();
+        let (done_tx, done_rx) = mpsc::channel();
+        std::thread::spawn(move || {
+            let mut hints = IoKitDeviceHints::new();
+            hints.start(inbox);
+            let started = hints.watch.is_some();
+            drop(hints);
+            let _ = done_tx.send(started);
+        });
+        let started = done_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("dropping the device hints returns");
+        assert!(started, "IOKit device notifications armed");
     }
 }
