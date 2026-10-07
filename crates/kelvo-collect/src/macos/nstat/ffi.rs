@@ -16,8 +16,9 @@ use core_foundation_sys::number::{
 use core_foundation_sys::string::{
     CFStringGetCString, CFStringGetTypeID, CFStringRef, kCFStringEncodingUTF8,
 };
+use kelvo_schema::lock::LockExt;
 
-use super::ledger::{Counts, Ledger, Owner, relock};
+use super::ledger::{Counts, Ledger, Owner};
 use super::{FRAMEWORK, QUERY_TIMEOUT, libproc, network};
 use crate::CollectError;
 use crate::calls::{self, Api as Calls};
@@ -312,7 +313,9 @@ unsafe fn identify(
     let name = libproc::app_identity(owner.pid, owner.upid)
         // SAFETY: per the caller.
         .or_else(|| unsafe { recorded_identity(dict, keys) });
-    relock(ledger).identify(src, owner, name.as_deref(), Instant::now());
+    ledger
+        .lock_ok()
+        .identify(src, owner, name.as_deref(), Instant::now());
 }
 
 /// Which interface indexes are reported ([`network::is_reported_interface`]), looked up
@@ -347,19 +350,19 @@ pub(super) struct Done {
 impl Done {
     /// Called by the completion block.
     pub(super) fn complete(&self) {
-        *relock(&self.n) += 1;
+        *self.n.lock_ok() += 1;
         self.cv.notify_all();
     }
 
     /// The count to wait past; take it before issuing the query.
     pub(super) fn mark(&self) -> u64 {
-        *relock(&self.n)
+        *self.n.lock_ok()
     }
 
     /// Waits up to `timeout` for a completion after `mark`. `false` on timeout.
     pub(super) fn wait_past(&self, mark: u64, timeout: Duration) -> bool {
         let deadline = Instant::now() + timeout;
-        let mut n = relock(&self.n);
+        let mut n = self.n.lock_ok();
         while *n <= mark {
             let left = deadline.saturating_duration_since(Instant::now());
             if left.is_zero() {
@@ -422,18 +425,18 @@ impl Session {
             let keys = api.keys;
             RcBlock::new(move |src: Source, _ctx: *mut c_void| {
                 let id = src as usize;
-                relock(&ledger).added(id);
+                ledger.lock_ok().added(id);
                 let counts = {
                     let ledger = Arc::clone(&ledger);
                     let reported = Arc::clone(&reported);
                     RcBlock::new(move |dict: *const c_void| {
                         let dict: CFDictionaryRef = dict.cast();
-                        let is_reported = |i| relock(&reported).get(i);
+                        let is_reported = |i| reported.lock_ok().get(i);
                         // SAFETY: the framework passes a CFDictionary valid for the call.
                         let Some(c) = (unsafe { parse_counts(dict, &keys, is_reported) }) else {
                             return;
                         };
-                        let need = relock(&ledger).counts(id, c);
+                        let need = ledger.lock_ok().counts(id, c);
                         if let Some(owner) = need {
                             // SAFETY: as above.
                             unsafe { identify(&ledger, id, owner, dict, &keys) };
@@ -448,7 +451,7 @@ impl Session {
                         let Some(o) = (unsafe { parse_owner(dict, &keys) }) else {
                             return;
                         };
-                        let need = relock(&ledger).described(id, o.pid, o.upid);
+                        let need = ledger.lock_ok().described(id, o.pid, o.upid);
                         if let Some(owner) = need {
                             // SAFETY: as above.
                             unsafe { identify(&ledger, id, owner, dict, &keys) };
@@ -457,7 +460,7 @@ impl Session {
                 };
                 let removed = {
                     let ledger = Arc::clone(&ledger);
-                    RcBlock::new(move || relock(&ledger).removed(id))
+                    RcBlock::new(move || ledger.lock_ok().removed(id))
                 };
                 // SAFETY: `src` is the live source this callback announces; the framework
                 // copies the blocks it keeps.

@@ -45,6 +45,7 @@ use kelvo_engine::{
     BackfillSegment, BusMsg, EngineStatus, FrameLayout, LiveFrame, LiveHub, ProcessSample,
     ProcessView, Recv, Subscriber,
 };
+use kelvo_schema::lock::LockExt;
 use kelvo_schema::{Capabilities, Catalog, HostId, MetricKind, PerformanceReason, SeriesSelector};
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
@@ -645,7 +646,7 @@ impl Stream {
             return Ok(());
         }
         let picked = {
-            let view = self.procs.lock().unwrap_or_else(|e| e.into_inner());
+            let view = self.procs.lock_ok();
             let Some(view) = view.as_ref() else {
                 return Ok(());
             };
@@ -802,7 +803,7 @@ impl HostSlot {
     /// Hands the stream its process view and applies detail interest for `visible`.
     fn sync(&mut self, visible: bool) {
         if let Some(s) = &self.stream {
-            *s.procs.lock().unwrap_or_else(|e| e.into_inner()) = self.active_procs().cloned();
+            *s.procs.lock_ok() = self.active_procs().cloned();
         }
         let detail = visible && self.stream.is_some();
         if detail != self.detail_applied {
@@ -913,7 +914,7 @@ impl LiveRegistry {
     }
 
     fn lock(&self) -> MutexGuard<'_, Inner> {
-        self.inner.lock().unwrap_or_else(|e| e.into_inner())
+        self.inner.lock_ok()
     }
 
     /// Starts (or restarts, after a page reload) the stream for `label` and the feed's

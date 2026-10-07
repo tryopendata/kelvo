@@ -13,6 +13,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use crossbeam_channel::{Receiver, RecvTimeoutError, Sender};
+use kelvo_schema::lock::LockExt;
 use kelvo_schema::settings::HistorySettings;
 use kelvo_store::{LowDiskGuard, PruneReport, Retention, StatVfs, StoreError, Writer};
 
@@ -198,7 +199,7 @@ where
                         log_cap_trim(report, retention.max_bytes);
                     }
                     let changed = {
-                        let mut h = self.health.lock().unwrap_or_else(|e| e.into_inner());
+                        let mut h = self.health.lock_ok();
                         let next = next_health(*h, report.as_ref(), paused, now, &retention);
                         let changed = next != *h;
                         *h = next;

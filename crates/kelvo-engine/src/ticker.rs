@@ -7,9 +7,11 @@
 //! - Tests: [`FakeTicker`], driven by hand through its [`FakeClock`].
 
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::Duration;
+
+use kelvo_schema::lock::LockExt;
 
 use crate::clock::{self, ClockReading};
 use crate::inbox::Inbox;
@@ -152,27 +154,22 @@ impl FakeTicker {
     }
 }
 
-fn lock(state: &Mutex<FakeState>) -> MutexGuard<'_, FakeState> {
-    // A test thread that panicked while holding the lock already failed the test.
-    state.lock().unwrap_or_else(|e| e.into_inner())
-}
-
 impl Ticker for FakeTicker {
     fn start(&mut self, inbox: Inbox, period: Duration, _leeway: Duration) {
-        let mut s = lock(&self.state);
+        let mut s = self.state.lock_ok();
         s.running = Some((inbox, period));
         s.started += 1;
     }
 
     fn stop(&mut self) {
-        let mut s = lock(&self.state);
+        let mut s = self.state.lock_ok();
         if s.running.take().is_some() {
             s.stopped += 1;
         }
     }
 
     fn now(&self) -> ClockReading {
-        lock(&self.state).now
+        self.state.lock_ok().now
     }
 }
 
@@ -185,7 +182,7 @@ impl FakeClock {
     /// Advances both clocks by one period and delivers a tick, if the ticker is running.
     /// Returns whether a tick was delivered.
     pub fn tick(&self) -> bool {
-        let mut s = lock(&self.state);
+        let mut s = self.state.lock_ok();
         let Some((inbox, period)) = s.running.clone() else {
             return false;
         };
@@ -195,7 +192,7 @@ impl FakeClock {
 
     /// Advances both clocks by one period without a tick: a tick the timer missed.
     pub fn skip(&self) {
-        let mut s = lock(&self.state);
+        let mut s = self.state.lock_ok();
         if let Some((_, period)) = s.running.clone() {
             advance(&mut s.now, period);
         }
@@ -203,17 +200,17 @@ impl FakeClock {
 
     /// Advances both clocks by `by` (a sleep, or time passing while stopped).
     pub fn advance(&self, by: Duration) {
-        advance(&mut lock(&self.state).now, by);
+        advance(&mut self.state.lock_ok().now, by);
     }
 
     /// Moves only the wall clock (an NTP step, a manual clock change).
     pub fn jump_wall(&self, by_ms: i64) {
-        lock(&self.state).now.wall_ms += by_ms;
+        self.state.lock_ok().now.wall_ms += by_ms;
     }
 
     /// Sets the wall clock so the next tick lands exactly on `wall_ms`.
     pub fn set_next_tick_wall(&self, wall_ms: i64) {
-        let mut s = lock(&self.state);
+        let mut s = self.state.lock_ok();
         let period_ms = s
             .running
             .as_ref()
@@ -223,21 +220,21 @@ impl FakeClock {
     }
 
     pub fn now(&self) -> ClockReading {
-        lock(&self.state).now
+        self.state.lock_ok().now
     }
 
     pub fn is_running(&self) -> bool {
-        lock(&self.state).running.is_some()
+        self.state.lock_ok().running.is_some()
     }
 
     /// The period the ticker was last started with, if running.
     pub fn period(&self) -> Option<Duration> {
-        lock(&self.state).running.as_ref().map(|(_, p)| *p)
+        self.state.lock_ok().running.as_ref().map(|(_, p)| *p)
     }
 
     /// How many times the ticker was started and stopped.
     pub fn starts_stops(&self) -> (u32, u32) {
-        let s = lock(&self.state);
+        let s = self.state.lock_ok();
         (s.started, s.stopped)
     }
 }

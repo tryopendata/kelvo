@@ -2,6 +2,8 @@
 //! host identity, capabilities, alert-rule data, settings and the typed `Snapshot` view.
 //!
 //! Pure data. No I/O, no tokio, no OS APIs; every other crate depends on this one.
+//! The one item that is not data is [`lock`], a std-only poison-recovering lock helper
+//! kept here because every crate can reach it.
 //!
 //! # Map for downstream crates
 //!
@@ -44,6 +46,7 @@ mod compat;
 mod event;
 mod history;
 mod host;
+pub mod lock;
 mod series;
 pub mod settings;
 mod snapshot;

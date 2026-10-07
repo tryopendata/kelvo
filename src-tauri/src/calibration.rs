@@ -13,9 +13,10 @@
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, PoisonError};
+use std::sync::Mutex;
 
 use kelvo_engine::ScaleStore;
+use kelvo_schema::lock::LockExt;
 use serde::{Deserialize, Serialize};
 
 /// The file name in the app data directory.
@@ -70,7 +71,7 @@ impl FileScaleStore {
 
 impl ScaleStore for FileScaleStore {
     fn load(&self, chip: &str) -> Option<f64> {
-        let contents = self.contents.lock().unwrap_or_else(PoisonError::into_inner);
+        let contents = self.contents.lock_ok();
         contents.cpu_power_scale.get(chip).copied()
     }
 
@@ -78,7 +79,7 @@ impl ScaleStore for FileScaleStore {
         if !scale.is_finite() {
             return;
         }
-        let mut contents = self.contents.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut contents = self.contents.lock_ok();
         contents.cpu_power_scale.insert(chip.to_owned(), scale);
         match self.write(&contents) {
             Ok(()) => tracing::debug!(chip, scale, "saved the CPU power calibration"),

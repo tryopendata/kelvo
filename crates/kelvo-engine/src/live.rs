@@ -28,6 +28,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 use std::collections::BTreeMap;
 
+use kelvo_schema::lock::LockExt;
 use kelvo_schema::{CATALOG, HostId, SeriesKey};
 use kelvo_store::{BucketRow, HistoryResult, NetBucket};
 
@@ -93,7 +94,7 @@ impl LiveHub {
 
     fn lock(&self) -> MutexGuard<'_, Retained> {
         // Nothing panics while holding this lock; a poisoned one still holds valid data.
-        self.retained.lock().unwrap_or_else(|e| e.into_inner())
+        self.retained.lock_ok()
     }
 
     /// Records what the hub retains from `msg`, then publishes it. Never blocks on
@@ -219,7 +220,7 @@ impl LiveHub {
 
     fn net(&self) -> MutexGuard<'_, NetRing> {
         // As for `lock`: nothing panics while holding it.
-        self.net.lock().unwrap_or_else(|e| e.into_inner())
+        self.net.lock_ok()
     }
 
     /// Per-app network buckets overlapping `[from_ms, to_ms)` from the last hour, the
@@ -265,7 +266,7 @@ impl LiveHub {
 
     fn usage(&self) -> MutexGuard<'_, UsageRing> {
         // As for `lock`: nothing panics while holding it.
-        self.usage.lock().unwrap_or_else(|e| e.into_inner())
+        self.usage.lock_ok()
     }
 
     /// Use per app over `[from_ms, to_ms)` from the last hour of process batches, the
@@ -281,7 +282,7 @@ impl LiveHub {
 
     pub(crate) fn rollups(&self) -> MutexGuard<'_, Rollups> {
         // As for `lock`: nothing panics while holding it.
-        self.rollups.lock().unwrap_or_else(|e| e.into_inner())
+        self.rollups.lock_ok()
     }
 
     /// The history bucket rows of buckets starting in `[from_ms, to_ms)` the engine

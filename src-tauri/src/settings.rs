@@ -15,6 +15,7 @@ use kelvo_engine::EngineSettings;
 use kelvo_schema::AlertRule;
 use kelvo_schema::Module;
 use kelvo_schema::Settings;
+use kelvo_schema::lock::LockExt;
 use kelvo_schema::settings::{
     Appearance, ChartWindow, MemoryUnit, MenuBarMode, NetworkUnit, TemperatureUnit,
 };
@@ -285,7 +286,7 @@ impl SettingsOwner {
     }
 
     fn lock(&self) -> MutexGuard<'_, Current> {
-        self.current.lock().unwrap_or_else(|e| e.into_inner())
+        self.current.lock_ok()
     }
 
     pub fn get(&self) -> SettingsSnapshot {

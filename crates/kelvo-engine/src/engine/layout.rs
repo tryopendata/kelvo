@@ -5,13 +5,13 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::Arc;
 
 use kelvo_collect::{Cadence, Interest, Interests, Probe};
+use kelvo_schema::lock::LockExt;
 use kelvo_schema::{Capabilities, MetricKind, Module, ModuleCap, SeriesKey};
 
 use super::Engine;
 use super::cadence::{
     background_interval_ms, backoff_interval_ms, performance_period, performance_slowdown,
 };
-use super::control::lock;
 use crate::bus::{BusMsg, FrameLayout};
 
 /// Series not gated by a module switch (catalog: "nothing gates it on the CPU module").
@@ -261,7 +261,7 @@ impl Engine {
             s.collector.cadence() == Cadence::OnDemand(Interest::GpuProcesses)
                 && matches!(s.probe, Some(Probe::Supported(_)))
         });
-        let mut caps = lock(&self.shared.caps);
+        let mut caps = self.shared.caps.lock_ok();
         if caps.modules != modules
             || caps.process_network != process_network
             || caps.process_gpu != process_gpu

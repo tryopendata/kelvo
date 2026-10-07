@@ -18,6 +18,8 @@ use std::collections::VecDeque;
 use std::sync::{Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
+use kelvo_schema::lock::LockExt;
+
 pub const LABEL: &str = "popover";
 /// The page the panel loads; the frontend maps it to its `/popover` route.
 pub const ROUTE: &str = "popover";
@@ -126,7 +128,7 @@ pub struct Popover {
 
 impl Popover {
     fn lock(&self) -> MutexGuard<'_, Inner> {
-        self.inner.lock().unwrap_or_else(|e| e.into_inner())
+        self.inner.lock_ok()
     }
 
     /// Whether a click now should be swallowed because it is the one that just hid the

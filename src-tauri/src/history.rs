@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use kelvo_engine::{Housekeeping, HousekeepingHandle, Schedule};
+use kelvo_schema::lock::LockExt;
 use kelvo_schema::{HostRecord, Labels, MetricId, SeriesKey, Tier};
 use kelvo_store::{
     BATTERY_CHARGE, BATTERY_CHARGING, BatteryCell, BucketRow, ExportQuery, HistoryQuery,
@@ -126,7 +127,7 @@ impl History {
     }
 
     fn inner(&self) -> MutexGuard<'_, Inner> {
-        lock_inner(&self.inner)
+        self.inner.lock_ok()
     }
 
     /// Writes `record` into the store and returns the writer a source for it should use.
@@ -151,13 +152,13 @@ impl History {
 
     /// Low-disk pause and byte-cap trim state, as of the last check.
     pub fn health(&self) -> HistoryHealth {
-        (*self.health.lock().unwrap_or_else(|e| e.into_inner())).into()
+        (*self.health.lock_ok()).into()
     }
 
     /// Forgets the trim after the history was cleared. Returns the new health when it
     /// changed, for `history-health-changed`.
     pub fn clear_trim(&self) -> Option<HistoryHealth> {
-        let mut h = self.health.lock().unwrap_or_else(|e| e.into_inner());
+        let mut h = self.health.lock_ok();
         let next = h.without_trim();
         (next != *h).then(|| {
             *h = next;
@@ -428,8 +429,7 @@ impl History {
     pub fn reset(&self, now_ms: i64) -> Result<Writer, CommandError> {
         let mut inner = self.inner();
         inner.close(None);
-        *self.health.lock().unwrap_or_else(|e| e.into_inner()) =
-            kelvo_engine::HistoryHealth::default();
+        *self.health.lock_ok() = kelvo_engine::HistoryHealth::default();
         let opened = kelvo_store::move_aside(&self.path, now_ms).and_then(|moved| {
             if let Some(moved) = moved {
                 tracing::warn!(to = %moved.display(), "history database moved aside");
@@ -475,10 +475,6 @@ impl History {
     }
 }
 
-fn lock_inner(m: &Mutex<Inner>) -> MutexGuard<'_, Inner> {
-    m.lock().unwrap_or_else(|e| e.into_inner())
-}
-
 impl History {
     /// Starts [`Housekeeping`] on this history's file: pruning with the retention
     /// `retention` returns at that moment, the low-disk check, and `on_change` with the new
@@ -494,7 +490,7 @@ impl History {
         Housekeeping {
             path: self.path.clone(),
             schedule: Schedule::default(),
-            writer: move || lock_inner(&inner).writer.clone(),
+            writer: move || inner.lock_ok().writer.clone(),
             retention,
             health: Arc::clone(&self.health),
             on_change: move |h: kelvo_engine::HistoryHealth| on_change(h.into()),

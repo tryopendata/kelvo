@@ -10,6 +10,7 @@ use kelvo_engine::{
     Bus, LiveFrame, LiveHub, RecentNet, Source, SourceControl, SourceError, SourceHandle,
     SourceSink,
 };
+use kelvo_schema::lock::{LockExt, RwLockExt};
 use kelvo_schema::{Capabilities, HostId, HostRecord, SeriesKey, Settings};
 use kelvo_store::{BucketRow, Writer};
 
@@ -27,7 +28,7 @@ pub struct HostEntry {
 
 impl HostEntry {
     fn handle(&self) -> MutexGuard<'_, Option<SourceHandle>> {
-        self.handle.lock().unwrap_or_else(|e| e.into_inner())
+        self.handle.lock_ok()
     }
 
     fn with_control<T>(&self, f: impl FnOnce(&dyn SourceControl) -> T) -> Option<T> {
@@ -35,16 +36,13 @@ impl HostEntry {
     }
 
     pub fn record(&self) -> HostRecord {
-        self.record
-            .read()
-            .unwrap_or_else(|e| e.into_inner())
-            .clone()
+        self.record.read_ok().clone()
     }
 
     /// Replaces the record (the local host learns `chip_known` from its first
     /// capabilities). Returns whether it changed.
     pub fn update_record(&self, f: impl FnOnce(&mut HostRecord)) -> bool {
-        let mut r = self.record.write().unwrap_or_else(|e| e.into_inner());
+        let mut r = self.record.write_ok();
         let before = r.clone();
         f(&mut r);
         *r != before
@@ -150,7 +148,7 @@ impl HostEntry {
 
 impl LiveFeed for HostEntry {
     fn host(&self) -> HostId {
-        self.record.read().unwrap_or_else(|e| e.into_inner()).id
+        self.record.read_ok().id
     }
 
     fn hub(&self) -> &LiveHub {
@@ -201,17 +199,13 @@ impl HostRegistry {
             handle: Mutex::new(None),
             live: LiveHub::default(),
         });
-        self.hosts
-            .write()
-            .unwrap_or_else(|e| e.into_inner())
-            .insert(id, Arc::clone(&entry));
+        self.hosts.write_ok().insert(id, Arc::clone(&entry));
         entry
     }
 
     pub fn get(&self, host: HostId) -> Result<Arc<HostEntry>, CommandError> {
         self.hosts
-            .read()
-            .unwrap_or_else(|e| e.into_inner())
+            .read_ok()
             .get(&host)
             .cloned()
             .ok_or(CommandError::UnknownHost { host })
@@ -219,13 +213,7 @@ impl HostRegistry {
 
     /// Every host, local first.
     pub fn all(&self) -> Vec<Arc<HostEntry>> {
-        let mut all: Vec<_> = self
-            .hosts
-            .read()
-            .unwrap_or_else(|e| e.into_inner())
-            .values()
-            .cloned()
-            .collect();
+        let mut all: Vec<_> = self.hosts.read_ok().values().cloned().collect();
         all.sort_by_key(|h| {
             let r = h.record();
             (!r.is_local, r.display_name)
