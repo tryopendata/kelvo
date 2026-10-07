@@ -14,8 +14,10 @@ import {
   APP_CELL,
   AppsNote,
   AppsShell,
+  OtherAppsRow,
   ShareCell,
   SortHead,
+  UnrecordedRange,
 } from "~/components/app-table";
 import { SelectionChip } from "~/components/selection-chip";
 import {
@@ -156,36 +158,17 @@ function Unrecorded({
   const later = useNetworkByApp(after);
   const started = later.data ? firstRecordedMs(later.data) : null;
   return (
-    <div className="px-4 pt-1 pb-3.5">
-      <div className="flex h-33 items-center justify-center rounded-lg border border-border-strong/40 border-dashed bg-[repeating-linear-gradient(135deg,var(--color-grid)_0_1px,transparent_1px_7px)]">
-        <span className="rounded-md border border-border bg-card px-2 py-1 font-normal text-[11px] text-fg-subtle">
-          {started === null ? (
-            "No app data for this range"
-          ) : (
-            <>
-              No app data · Network history started{" "}
-              <span className="data-mono">{formatClockSeconds(started)}</span>
-            </>
-          )}
-        </span>
-      </div>
-    </div>
+    <UnrecordedRange>
+      {started === null ? (
+        "No app data for this range"
+      ) : (
+        <>
+          No app data · Network history started{" "}
+          <span className="data-mono">{formatClockSeconds(started)}</span>
+        </>
+      )}
+    </UnrecordedRange>
   );
-}
-
-function AppIcon({ row }: { row: AppRow }) {
-  if (row.kind === "system") {
-    return (
-      <span
-        aria-hidden
-        className="inline-block size-4 flex-none rounded-[4px] border border-border-strong/50 border-dashed"
-      />
-    );
-  }
-  if (row.kind !== "app") {
-    return <span aria-hidden className="inline-block w-4 flex-none" />;
-  }
-  return <InitialChip text={row.name} />;
 }
 
 function AppsTable({
@@ -220,7 +203,7 @@ function AppsTable({
             <TableRow key={r.key} className="text-fg-subtle">
               <TableCell className={APP_CELL}>
                 <span className="inline-flex items-center gap-2 text-foreground">
-                  <AppIcon row={r} />
+                  <InitialChip text={r.name} />
                   {r.name}
                 </span>
               </TableCell>
@@ -247,21 +230,13 @@ function AppsTable({
               </TableCell>
             </TableRow>
           ))}
-          {rest.map((r) => (
-            <TableRow
+          {rest.map((r, i) => (
+            <OtherAppsRow
               key={r.key}
-              className={cn(
-                "text-muted-foreground",
-                r.kind === rest[0]?.kind && "border-border border-t",
-                r.kind === "system" && "border-b-0"
-              )}
+              name={r.name}
+              system={r.kind === "system"}
+              first={i === 0}
             >
-              <TableCell className={APP_CELL}>
-                <span className="inline-flex items-center gap-2">
-                  <AppIcon row={r} />
-                  {r.name}
-                </span>
-              </TableCell>
               <TableCell className={cn(APP_CELL, "data-mono text-right")}>
                 {bytes(r.rxBytes)}
               </TableCell>
@@ -277,7 +252,7 @@ function AppsTable({
               >
                 {MISSING}
               </TableCell>
-            </TableRow>
+            </OtherAppsRow>
           ))}
           <TableRow className="hover:bg-transparent">
             <TableCell

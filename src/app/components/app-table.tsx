@@ -1,7 +1,7 @@
 import { formatPercent } from "@core/format";
 import { Info } from "lucide-react";
 import { type ReactNode, useId } from "react";
-import { TableCell, TableHead } from "~/components/ui/table";
+import { TableCell, TableHead, TableRow } from "~/components/ui/table";
 import { cn } from "~/lib/utils";
 import { Card } from "~/widgets/card";
 import type { Accent } from "~/widgets/lib/accent";
@@ -56,6 +56,68 @@ export function AppsNote({ children }: { children: ReactNode }) {
         <span>{children}</span>
       </p>
     </div>
+  );
+}
+
+/**
+ * A range with nothing recorded in it: a hatched box with a chip saying so
+ * (and, when known, when recording started).
+ */
+export function UnrecordedRange({ children }: { children: ReactNode }) {
+  return (
+    <div className="px-4 pt-1 pb-3.5">
+      <div className="flex h-33 items-center justify-center rounded-lg border border-border-strong/40 border-dashed bg-[repeating-linear-gradient(135deg,var(--color-grid)_0_1px,transparent_1px_7px)]">
+        <span className="rounded-md border border-border bg-card px-2 py-1 font-normal text-[11px] text-fg-subtle">
+          {children}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * A remainder row after the apps ("Other apps", "System and other"): muted,
+ * a rule above the first, a dashed square marking the system row. `indent`
+ * leaves room for the expand chevron the app rows above have. `children`
+ * are the figure cells.
+ */
+export function OtherAppsRow({
+  name,
+  system,
+  first,
+  indent = false,
+  children,
+}: {
+  name: string;
+  system: boolean;
+  first: boolean;
+  indent?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <TableRow
+      className={cn(
+        "text-muted-foreground",
+        first && "border-border border-t",
+        system && "border-b-0"
+      )}
+    >
+      <TableCell className={APP_CELL}>
+        <span className="inline-flex items-center gap-2">
+          {indent && <span aria-hidden className="-ml-1 inline-block size-4" />}
+          {system ? (
+            <span
+              aria-hidden
+              className="inline-block size-4 flex-none rounded-[4px] border border-border-strong/50 border-dashed"
+            />
+          ) : (
+            <span aria-hidden className="inline-block w-4 flex-none" />
+          )}
+          {name}
+        </span>
+      </TableCell>
+      {children}
+    </TableRow>
   );
 }
 

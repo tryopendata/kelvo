@@ -25,7 +25,9 @@ import {
   APP_CELL,
   AppsNote,
   AppsShell,
+  OtherAppsRow,
   ShareCell,
+  UnrecordedRange,
 } from "~/components/app-table";
 import { brushScopeProps } from "~/components/brush-overlay";
 import { ProcessRowActions, QuitDialog } from "~/components/process-actions";
@@ -304,20 +306,16 @@ function GpuShortfallNote({ data }: { data: UsageByApp }) {
 /** A range with no process sample in it: a hatched box, as on Network. */
 function Unrecorded({ sinceMs }: { sinceMs: number | null }) {
   return (
-    <div className="px-4 pt-1 pb-3.5">
-      <div className="flex h-33 items-center justify-center rounded-lg border border-border-strong/40 border-dashed bg-[repeating-linear-gradient(135deg,var(--color-grid)_0_1px,transparent_1px_7px)]">
-        <span className="rounded-md border border-border bg-card px-2 py-1 font-normal text-[11px] text-fg-subtle">
-          {sinceMs === null ? (
-            "No process data for this range"
-          ) : (
-            <>
-              No process data · Kelvo started counting at{" "}
-              <span className="data-mono">{formatClockSeconds(sinceMs)}</span>
-            </>
-          )}
-        </span>
-      </div>
-    </div>
+    <UnrecordedRange>
+      {sinceMs === null ? (
+        "No process data for this range"
+      ) : (
+        <>
+          No process data · Kelvo started counting at{" "}
+          <span className="data-mono">{formatClockSeconds(sinceMs)}</span>
+        </>
+      )}
+    </UnrecordedRange>
   );
 }
 
@@ -473,31 +471,16 @@ function RestRow({
   first: boolean;
 }) {
   return (
-    <TableRow
-      className={cn(
-        "text-muted-foreground",
-        first && "border-border border-t",
-        row.kind === "system" && "border-b-0"
-      )}
+    <OtherAppsRow
+      name={row.name}
+      system={row.kind === "system"}
+      first={first}
+      indent
     >
-      <TableCell className={APP_CELL}>
-        <span className="inline-flex items-center gap-2">
-          <span aria-hidden className="-ml-1 inline-block size-4" />
-          {row.kind === "system" ? (
-            <span
-              aria-hidden
-              className="inline-block size-4 flex-none rounded-[4px] border border-border-strong/50 border-dashed"
-            />
-          ) : (
-            <span aria-hidden className="inline-block w-4 flex-none" />
-          )}
-          {row.name}
-        </span>
-      </TableCell>
       <FigureCells u={row.figures} config={config} strong={false} />
       <ShareCell share={row.share} muted />
       <TableCell className={APP_CELL} />
-    </TableRow>
+    </OtherAppsRow>
   );
 }
 
