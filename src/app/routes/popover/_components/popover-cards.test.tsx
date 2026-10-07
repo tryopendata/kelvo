@@ -1,8 +1,8 @@
 import type { LiveMsg } from "@core/generated/bindings";
-import { act, screen } from "@testing-library/react";
+import { act, screen, waitFor } from "@testing-library/react";
 import { renderWithProviders } from "@tests/test-utils";
 import { type HostStore, useHostStore } from "~/stores/host-store";
-import { LiveCpuCard, LivePowerCard } from "./popover-cards";
+import { LiveCpuCard, LiveMemoryCard, LivePowerCard } from "./popover-cards";
 
 let storeRef: HostStore | null = null;
 function GrabStore() {
@@ -28,6 +28,30 @@ function frameWithout(missing: string[]): LiveMsg {
     held: values,
   };
 }
+
+describe("popover memory card", () => {
+  it("shows used memory in the GB/GiB setting next to the marketing total", async () => {
+    const { transport } = renderWithProviders(
+      <>
+        <GrabStore />
+        <LiveMemoryCard />
+      </>
+    );
+    await screen.findByText(/^\/ \d+ GB$/);
+    const used = () => storeRef?.getState().held["mem.used"] ?? null;
+    // The headline figure is the text before the " / 24 GB" unit.
+    const value = () =>
+      screen.getByText(/^\/ \d+ GB$/).parentElement?.firstChild?.textContent;
+    await waitFor(() => expect(used()).not.toBeNull());
+    expect(value()).toBe(((used() as number) / 1e9).toFixed(1));
+
+    await act(() => transport.updateSettings({ units: { memory: "binary" } }));
+    await waitFor(() =>
+      expect(value()).toBe(((used() as number) / 2 ** 30).toFixed(1))
+    );
+    expect(screen.getByText(/^\/ \d+ GB$/)).toBeInTheDocument();
+  });
+});
 
 describe("popover cards with missing values", () => {
   it("draws a missing CPU user share as an empty track, not a 0 bar", async () => {

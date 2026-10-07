@@ -1,5 +1,6 @@
 import type { HistoryPage, TierRequest } from "@core/generated/bindings";
 import { seriesKeyString } from "@core/series-key";
+import { floorTo } from "@core/time-grid";
 
 /** The part of a history read that a bucket closing asks for again. */
 export interface TailRange {
@@ -28,8 +29,8 @@ export function tailRange(
   // The slots start at the read's first bucket, not necessarily at a
   // multiple of the merged width: take their phase from a point.
   const t0 = page.series.find((s) => s.points.length > 0)?.points[0]?.t ?? 0;
-  const phase = ((t0 % w) + w) % w;
-  const fromMs = Math.floor((readAtMs - phase) / w) * w + phase;
+  const phase = t0 - floorTo(t0, w);
+  const fromMs = floorTo(readAtMs - phase, w) + phase;
   const slots = Math.max(1, Math.floor((nowMs - fromMs) / w) + 1);
   return {
     fromMs,

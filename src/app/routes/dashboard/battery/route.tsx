@@ -1,3 +1,4 @@
+import { clamp01 } from "@core/chart-math";
 import { formatTemperature, formatWatts, MISSING } from "@core/format";
 import { Navigate } from "react-router";
 import { BatteryDayCard } from "~/components/battery-day-card";
@@ -15,8 +16,7 @@ import { batterySubtitle, powerText, timeField } from "./_lib/battery";
 const TEN_MIN_MS = 600_000;
 const POWER_KEY = ["battery.power"];
 
-const frac = (pct: number | null) =>
-  pct === null ? [] : [Math.min(1, Math.max(0, pct / 100))];
+const frac = (pct: number | null) => (pct === null ? [] : [clamp01(pct / 100)]);
 
 const wh = (v: number | null) => (v === null ? MISSING : v.toFixed(1));
 

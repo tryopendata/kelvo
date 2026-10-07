@@ -1,7 +1,7 @@
 import { formatRate } from "@core/format";
 import { useMemo } from "react";
 import { Link } from "react-router";
-import { AppInitial, AppsNote, AppsShell } from "~/components/app-table";
+import { AppsNote, AppsShell } from "~/components/app-table";
 import {
   Table,
   TableBody,
@@ -16,6 +16,7 @@ import {
   useProcessRows,
 } from "~/hooks/use-process-interest";
 import { useUnits } from "~/hooks/use-units";
+import { InitialChip } from "~/widgets/initial-chip";
 import { measuredTraffic } from "../_lib/network";
 
 const ROWS = 12;
@@ -84,7 +85,7 @@ export function AppsNowCard() {
               <TableRow key={r.pid} className="text-[12px]">
                 <TableCell className="px-3 py-1.75 text-foreground">
                   <span className="inline-flex items-center gap-2">
-                    <AppInitial name={r.name} />
+                    <InitialChip text={r.name} />
                     {r.name}
                   </span>
                 </TableCell>

@@ -1,5 +1,6 @@
+import { clamp01 } from "@core/chart-math";
 import { Legend, type SwatchStep } from "./legend";
-import { type Accent, accentVars, clamp01, rampBackground } from "./lib/accent";
+import { type Accent, accentVars, rampBackground } from "./lib/accent";
 
 export interface StackBarSegment {
   key: string;

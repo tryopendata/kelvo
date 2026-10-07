@@ -1,4 +1,5 @@
-import { type Accent, accentVars, clamp01 } from "./lib/accent";
+import { clamp01 } from "@core/chart-math";
+import { type Accent, accentVars } from "./lib/accent";
 
 export interface ResidencyBarProps {
   /** "P-cluster". */

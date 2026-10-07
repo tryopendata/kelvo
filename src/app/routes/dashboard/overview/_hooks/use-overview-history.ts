@@ -1,6 +1,6 @@
 import type { Module } from "@core/generated/bindings";
+import { probeHistory } from "@core/history-probe";
 import { historyKeys } from "@core/query-keys";
-import { unwrap } from "@core/transport";
 import { useQuery } from "@tanstack/react-query";
 import { useHistoryHealth } from "~/hooks/use-history-health";
 import { useTransport } from "~/lib/transport-context";
@@ -25,16 +25,13 @@ export function useMax24h(module: Module, metric: string): number | undefined {
     queryKey: historyKeys.maxima(hostId, module, metric),
     queryFn: async () => {
       const now = Date.now();
-      const page = await unwrap(
-        transport.queryHistory({
-          host: hostId,
-          selectors: [{ metric, labels: [] }],
-          from_ms: now - DAY_MS,
-          to_ms: now,
-          tier: "auto",
-          max_points: 288,
-        })
-      );
+      const page = await probeHistory(transport, {
+        host: hostId,
+        metric,
+        fromMs: now - DAY_MS,
+        toMs: now,
+        maxPoints: 288,
+      });
       return pageMax(page);
     },
     staleTime: REFRESH_MS,
@@ -54,16 +51,13 @@ export function useLastWake(): number | null {
     queryKey: historyKeys.lastWake(hostId),
     queryFn: async () => {
       const now = Date.now();
-      const page = await unwrap(
-        transport.queryHistory({
-          host: hostId,
-          selectors: [{ metric: "cpu.total", labels: [] }],
-          from_ms: now - 7 * DAY_MS,
-          to_ms: now,
-          tier: "auto",
-          max_points: 1,
-        })
-      );
+      const page = await probeHistory(transport, {
+        host: hostId,
+        metric: "cpu.total",
+        fromMs: now - 7 * DAY_MS,
+        toMs: now,
+        maxPoints: 1,
+      });
       return lastWakeMs(page.gaps);
     },
     staleTime: REFRESH_MS,

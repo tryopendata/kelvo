@@ -4,7 +4,8 @@ import { HISTORY_COMMIT_MS } from "@core/history-state";
 import { historyKeys } from "@core/query-keys";
 import { type CommandFailure, unwrap } from "@core/transport";
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
+import { useNextBoundary } from "~/hooks/use-next-boundary";
 import { useTransport } from "~/lib/transport-context";
 import { useHostId } from "~/stores/host-store";
 import { currentCell, type HeatmapRow, heatmapRows } from "../_lib/heatmap";
@@ -24,18 +25,15 @@ export function localHourStart(ms: number): number {
  * with the 1 Hz frames.
  */
 export function useLocalHour(): number {
-  const [hour, setHour] = useState(() => localHourStart(Date.now()));
-  useEffect(() => {
-    const next = new Date(hour);
-    next.setHours(next.getHours() + 1);
-    // A little past the boundary, so the new hour's start is what we read.
-    const id = setTimeout(
-      () => setHour(localHourStart(Date.now())),
-      Math.max(1000, next.getTime() - Date.now() + 1000)
-    );
-    return () => clearTimeout(id);
-  }, [hour]);
-  return hour;
+  return useNextBoundary(currentHourStart, nextHourStart);
+}
+
+const currentHourStart = () => localHourStart(Date.now());
+
+function nextHourStart(hour: number): number {
+  const next = new Date(hour);
+  next.setHours(next.getHours() + 1);
+  return next.getTime();
 }
 
 export interface HeatmapData {

@@ -4,7 +4,6 @@ import type {
   HistoryHealth,
 } from "@core/generated/bindings";
 import {
-  clockTime,
   collectingHeader,
   dedupeGaps,
   gapBands,
@@ -259,12 +258,6 @@ describe("resetHistoryFailure", () => {
     expect(resetHistoryFailure({ kind: "internal", message: "panic" })).toBe(
       "Couldn't reset history."
     );
-  });
-});
-
-describe("clockTime", () => {
-  it("pads hours and minutes", () => {
-    expect(clockTime(at(6, 5))).toBe("06:05");
   });
 });
 

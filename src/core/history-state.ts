@@ -6,7 +6,7 @@
  * low-disk and size-limit notices (D-057, D-059).
  */
 
-import { formatDuration } from "@core/format";
+import { formatClock, formatDuration, monthName } from "@core/format";
 import type {
   CommandError,
   Gap,
@@ -22,12 +22,6 @@ import { sizeLimitLabel } from "@core/history-projection";
  * through now (D-092).
  */
 export { HISTORY_COMMIT_MS } from "@core/generated/bindings";
-
-/** Wall-clock "HH:MM" in the viewer's zone. */
-export function clockTime(ms: number): string {
-  const d = new Date(ms);
-  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-}
 
 const MODULE_LABEL: Partial<Record<Module, string>> = {
   cpu: "CPU",
@@ -60,9 +54,10 @@ export function gapLabel(gap: Gap, style: GapLabelStyle = "clock"): string {
   const reason: string = gap.reason;
   switch (reason) {
     case "sleep":
-      if (gap.end_ms === null) return `Asleep since ${clockTime(gap.start_ms)}`;
+      if (gap.end_ms === null)
+        return `Asleep since ${formatClock(gap.start_ms)}`;
       return style === "clock"
-        ? `Asleep ${clockTime(gap.start_ms)}–${clockTime(gap.end_ms)} · not interpolated`
+        ? `Asleep ${formatClock(gap.start_ms)}–${formatClock(gap.end_ms)} · not interpolated`
         : `Asleep ${formatDuration(gap.end_ms - gap.start_ms)} · no samples`;
     case "app_not_running":
       return "Kelvo not running";
@@ -190,7 +185,7 @@ export function collectingHeader(
     perSecond >= 1
       ? `${Number.isInteger(perSecond) ? perSecond : perSecond.toFixed(1)} sample/s`
       : `1 sample/${Math.round(intervalMs / 1000)}s`;
-  return `started ${clockTime(recordedFromMs)} · ${rate}`;
+  return `started ${formatClock(recordedFromMs)} · ${rate}`;
 }
 
 /** What the unavailable banner says, and whether "Reset history" can help. */
@@ -293,12 +288,10 @@ export function resetHistoryFailure(error: CommandError): string {
   return "Couldn't reset history.";
 }
 
-const MONTHS = "Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec".split(" ");
-
 /** "Sep 12 14:02" in the viewer's zone. */
 function dayTime(ms: number): string {
   const d = new Date(ms);
-  return `${MONTHS[d.getMonth()]} ${d.getDate()} ${clockTime(ms)}`;
+  return `${monthName(d)} ${d.getDate()} ${formatClock(ms)}`;
 }
 
 /**

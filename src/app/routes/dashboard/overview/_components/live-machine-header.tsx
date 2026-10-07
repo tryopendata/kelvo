@@ -1,12 +1,17 @@
-import { formatBytes, formatDuration, formatPercent } from "@core/format";
-import { clockTime } from "@core/history-state";
+import {
+  formatBytes,
+  formatClock,
+  formatDuration,
+  formatMarketingMemory,
+  formatPercent,
+} from "@core/format";
 import { useShallow } from "zustand/react/shallow";
 import { MachineHeader, type MachineSpec } from "~/components/machine-header";
 import { useHostRecord } from "~/hooks/use-host-record";
 import { useNow } from "~/hooks/use-now";
 import { useHost } from "~/stores/host-store";
 import { useLastWake } from "../_hooks/use-overview-history";
-import { coresLabel, marketingMemory } from "../_lib/card-props";
+import { coresLabel } from "../_lib/card-props";
 import { volumeCapacity } from "../_lib/selectors";
 
 /** "Apple M4 Pro" reads as "M4 Pro" inside the title's parentheses. */
@@ -51,7 +56,7 @@ export function LiveMachineHeader() {
     { label: "Chip", value: chipParts.join(" · ") || "—" },
     {
       label: "Memory",
-      value: `${marketingMemory(info.mem_total_bytes)} unified`,
+      value: `${formatMarketingMemory(info.mem_total_bytes)} unified`,
     },
     {
       label: "Storage",
@@ -72,7 +77,7 @@ export function LiveMachineHeader() {
     label: "Uptime",
     value: [
       formatDuration(now - info.boot_time_ms, { parts: 3 }),
-      lastWake === null ? null : `last wake ${clockTime(lastWake)}`,
+      lastWake === null ? null : `last wake ${formatClock(lastWake)}`,
     ]
       .filter(Boolean)
       .join(" · "),

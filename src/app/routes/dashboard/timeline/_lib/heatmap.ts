@@ -1,4 +1,10 @@
-import { formatPercent, formatTemperature } from "@core/format";
+import {
+  formatPercent,
+  formatTemperature,
+  monthName,
+  pad2,
+  WEEKDAYS_2,
+} from "@core/format";
 import type {
   HeatmapDay,
   HeatmapDaySpec,
@@ -55,22 +61,6 @@ export function legendEnds(
   return [f(lo), `${f(hi)}+`];
 }
 
-const MONTHS = [
-  "Jan",
-  "Feb",
-  "Mar",
-  "Apr",
-  "May",
-  "Jun",
-  "Jul",
-  "Aug",
-  "Sep",
-  "Oct",
-  "Nov",
-  "Dec",
-];
-const WEEKDAYS_2 = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
-
 /** `2026-09-05` as a local date. */
 function parseIso(date: string): Date {
   const [y, m, d] = date.split("-").map(Number);
@@ -80,7 +70,7 @@ function parseIso(date: string): Date {
 /** The row label, "Sep 05 Sa". */
 export function heatmapDayLabel(date: string): string {
   const d = parseIso(date);
-  return `${MONTHS[d.getMonth()]} ${String(d.getDate()).padStart(2, "0")} ${WEEKDAYS_2[d.getDay()]}`;
+  return `${monthName(d)} ${pad2(d.getDate())} ${WEEKDAYS_2[d.getDay()]}`;
 }
 
 /** One heatmap row: the day's boundaries from the request, its values from the reply. */
@@ -173,7 +163,7 @@ export function cellName(
   ctx: CellContext
 ): string {
   const d = parseIso(row.date);
-  const when = `${MONTHS[d.getMonth()]} ${d.getDate()}, ${String(hour).padStart(2, "0")}:00`;
+  const when = `${monthName(d)} ${d.getDate()}, ${pad2(hour)}:00`;
   if (isFutureCell(row, hour, ctx.nowHourMs)) return `${when}, not yet`;
   if (ctx.loading) return `${when}, loading`;
   if (isPendingCell(row, hour, ctx.nowHourMs)) {

@@ -1,3 +1,5 @@
+import { matchProcessQuery } from "@core/app-search";
+import { countNoun, formatInteger } from "@core/format";
 import type { LiveProcess } from "@core/generated/bindings";
 import type { ProcessColumn, ProcessSort } from "~/components/process-table";
 
@@ -100,16 +102,8 @@ export function filterProcesses(
   rows: readonly LiveProcess[],
   query: string
 ): readonly LiveProcess[] {
-  const q = query.trim().toLowerCase();
-  if (!q) return rows;
-  const digits = /^\d+$/.test(q);
-  return rows.filter(
-    (p) =>
-      p.name.toLowerCase().includes(q) ||
-      (digits &&
-        (String(p.pid).startsWith(q) ||
-          (p.ports ?? []).some((port) => String(port).startsWith(q))))
-  );
+  const matches = matchProcessQuery(query);
+  return matches ? rows.filter(matches) : rows;
 }
 
 export function threadCount(rows: readonly LiveProcess[]): number {
@@ -118,19 +112,17 @@ export function threadCount(rows: readonly LiveProcess[]): number {
   return n;
 }
 
-const grouped = new Intl.NumberFormat("en-US");
-
 /** Footer line: "312 processes · 2,104 threads", or "4 of 312" while searching. */
 export function countLine(
   all: readonly LiveProcess[],
   shown: readonly LiveProcess[]
 ): string {
-  const n = grouped.format(all.length);
+  const n = formatInteger(all.length);
   const procs =
     shown.length === all.length
-      ? `${n} ${all.length === 1 ? "process" : "processes"}`
-      : `${grouped.format(shown.length)} of ${n} processes`;
-  return `${procs} · ${grouped.format(threadCount(shown))} threads`;
+      ? countNoun(all.length, "process", "processes")
+      : `${formatInteger(shown.length)} of ${n} processes`;
+  return `${procs} · ${formatInteger(threadCount(shown))} threads`;
 }
 
 /**
@@ -143,5 +135,5 @@ export function hiddenNote(hidden: number | null): string {
     return "Some processes owned by other users are hidden: macOS only lets administrators read them.";
   }
   if (hidden === 0) return "";
-  return `${grouped.format(hidden)} ${hidden === 1 ? "process" : "processes"} hidden: owned by other users, readable only by administrators.`;
+  return `${countNoun(hidden, "process", "processes")} hidden: owned by other users, readable only by administrators.`;
 }

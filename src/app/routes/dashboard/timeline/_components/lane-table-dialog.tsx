@@ -1,3 +1,4 @@
+import { formatClock } from "@core/format";
 import {
   Dialog,
   DialogContent,
@@ -10,7 +11,7 @@ import type { Bucket } from "../_lib/buckets";
 import { formatMetric, type LaneUnits } from "../_lib/format";
 import type { Band } from "../_lib/gaps";
 import type { LaneDef } from "../_lib/lanes";
-import { clock, dayClock } from "../_lib/time";
+import { dayClock } from "../_lib/time";
 
 export interface LaneTableDialogProps {
   lane: { def: LaneDef; series: Record<string, Bucket[]> } | null;
@@ -106,7 +107,9 @@ export function LaneTableDialog({
                     key={`gap-${row.t}`}
                     className="border-border-subtle border-t"
                   >
-                    <td className="data-mono py-1">{clock(row.band.fromMs)}</td>
+                    <td className="data-mono py-1">
+                      {formatClock(row.band.fromMs)}
+                    </td>
                     <td
                       colSpan={metrics.length * 3}
                       className="py-1 text-right font-normal text-muted-foreground"
@@ -116,7 +119,7 @@ export function LaneTableDialog({
                   </tr>
                 ) : (
                   <tr key={row.t} className="border-border-subtle border-t">
-                    <td className="data-mono py-1">{clock(row.t)}</td>
+                    <td className="data-mono py-1">{formatClock(row.t)}</td>
                     {metrics.flatMap((m, i) => {
                       const b = row.values[i];
                       return (["min", "avg", "max"] as const).map((stat) => (

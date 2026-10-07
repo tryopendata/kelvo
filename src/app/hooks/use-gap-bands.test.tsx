@@ -1,4 +1,4 @@
-import { clockTime } from "@core/history-state";
+import { formatClock } from "@core/format";
 import type { ScenarioName } from "@core/mock/fixtures";
 import { act, screen, waitFor } from "@testing-library/react";
 import { renderWithProviders } from "@tests/test-utils";
@@ -10,7 +10,7 @@ import { useGapBands } from "./use-gap-bands";
 const NOW = 1_800_000_000_000;
 const MIN = 60_000;
 // A sleep inside the last hour (mock `sleep-gap` scenario).
-const ASLEEP = `Asleep ${clockTime(NOW - 52 * MIN)}–${clockTime(NOW - 23 * MIN)} · not interpolated`;
+const ASLEEP = `Asleep ${formatClock(NOW - 52 * MIN)}–${formatClock(NOW - 23 * MIN)} · not interpolated`;
 
 function Charts({ windowMs }: { windowMs: number }) {
   const gaps = useGapBands("network");

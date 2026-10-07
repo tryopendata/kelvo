@@ -3,14 +3,19 @@ import {
   formatBytes,
   formatDuration,
   formatEnergy,
+  formatGhz,
   formatHoursMinutes,
+  formatMarketingMemory,
   formatPercent,
   formatRate,
+  formatRpm,
   formatTemperature,
   formatWatts,
   formatWattsFine,
   MISSING,
+  marketingGb,
   rateParts,
+  rpmParts,
   temperatureParts,
   wattsParts,
 } from "@core/format";
@@ -201,5 +206,29 @@ describe("formatHoursMinutes", () => {
     expect(formatHoursMinutes(5 * MIN)).toBe("0:05");
     expect(formatHoursMinutes(26 * HOUR)).toBe("26:00");
     expect(formatHoursMinutes(12 * MIN + 59_999)).toBe("0:12");
+  });
+});
+
+describe("formatRpm", () => {
+  it("rounds and groups fan speed with an upper-case unit", () => {
+    expect(formatRpm(1849.6)).toBe("1,850 RPM");
+    expect(formatRpm(0)).toBe("0 RPM");
+    expect(rpmParts(5210)).toEqual({ value: "5,210", unit: "RPM" });
+    expect(formatRpm(null)).toBe(MISSING);
+  });
+});
+
+describe("marketing memory", () => {
+  it("rounds the byte total to whole GiB and labels it GB", () => {
+    expect(marketingGb(24 * 2 ** 30 - 5e6)).toBe(24);
+    expect(formatMarketingMemory(16 * 2 ** 30)).toBe("16 GB");
+  });
+});
+
+describe("formatGhz", () => {
+  it("shows Hz as GHz and missing input as a dash", () => {
+    expect(formatGhz(3.204e9)).toBe("3.2 GHz");
+    expect(formatGhz(4.512e9, { decimals: 2 })).toBe("4.51 GHz");
+    expect(formatGhz(null)).toBe(MISSING);
   });
 });

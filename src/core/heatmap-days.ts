@@ -11,12 +11,12 @@
  * `new Date(y, m, d, h)` already does both: a nonexistent local time moves
  * forward past the jump, an ambiguous one resolves to the earlier instant.
  */
+import { pad2 } from "@core/format";
 import type { HeatmapDaySpec } from "@core/generated/bindings";
 
 /** `2026-10-04` for the local date of `d`. */
 export function localDateIso(d: Date): string {
-  const p = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 }
 
 /** One local day's 25 boundaries: hours 00 to 23, then the next midnight. */

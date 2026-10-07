@@ -1,4 +1,4 @@
-import { clockTime } from "@core/history-state";
+import { formatClock } from "@core/format";
 import { readFailureMs } from "@core/read-failure";
 import { useHost } from "~/stores/host-store";
 
@@ -12,5 +12,5 @@ export function useReadFailure(key: string): string | undefined {
   if (lastGood === undefined) return undefined;
   return lastGood === null
     ? "Sensor read failed"
-    : `Sensor read failed · last value ${clockTime(lastGood)}`;
+    : `Sensor read failed · last value ${formatClock(lastGood)}`;
 }

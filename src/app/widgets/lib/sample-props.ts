@@ -134,7 +134,7 @@ export const OVERVIEW_CARDS: MetricCardProps[] = [
     ring: { fractions: [0.43, 0.27], value: "14.8", label: "Watts" },
     bars: [
       { label: "Hottest SoC zone", value: "61 °C", fraction: 0.58 },
-      { label: "Fans", value: "1,850 rpm", fraction: 0.32 },
+      { label: "Fans", value: "1,850 RPM", fraction: 0.32 },
     ],
     legend: [
       { label: "CPU", value: "6.4 W", step: 1 },

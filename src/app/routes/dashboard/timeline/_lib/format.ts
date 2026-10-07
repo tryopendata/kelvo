@@ -1,6 +1,8 @@
 import {
+  formatGhz,
   formatPercent,
   formatRate,
+  formatRpm,
   formatTemperature,
   formatWatts,
   type RateUnits,
@@ -42,13 +44,9 @@ export function formatMetric(
     case "bytes_per_sec":
       return formatRate(value, { units: units.rate });
     case "rpm":
-      return value == null || !Number.isFinite(value)
-        ? "—"
-        : `${Math.round(value).toLocaleString("en-US")} RPM`;
+      return formatRpm(value);
     case "hz":
-      return value == null || !Number.isFinite(value)
-        ? "—"
-        : `${(value / 1e9).toFixed(1)} GHz`;
+      return formatGhz(value);
     default:
       return formatPercent(value);
   }

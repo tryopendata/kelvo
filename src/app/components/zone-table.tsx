@@ -1,3 +1,4 @@
+import { clamp01 } from "@core/chart-math";
 import {
   formatTemperature,
   type TemperatureUnits,
@@ -38,7 +39,7 @@ const HI = 110;
 
 function barFraction(c: number | null): number {
   if (c == null || !Number.isFinite(c)) return 0;
-  return Math.min(1, Math.max(0, (c - LO) / (HI - LO)));
+  return clamp01((c - LO) / (HI - LO));
 }
 
 function range(

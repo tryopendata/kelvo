@@ -5,6 +5,8 @@
  * else merged into "other", and idle last.
  */
 
+import { formatGhz } from "@core/format";
+
 export const IDLE_STATE = "idle";
 export const OTHER_STATE = "other";
 
@@ -17,7 +19,7 @@ export interface ResidencyRow {
 
 /** "4512" (MHz) as "4.51 GHz". */
 export function stateLabel(mhz: number): string {
-  return `${(mhz / 1000).toFixed(2)} GHz`;
+  return formatGhz(mhz * 1e6, { decimals: 2 });
 }
 
 /**

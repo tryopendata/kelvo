@@ -1,6 +1,7 @@
 /**
  * Pure helpers for the Power & Sensors page (plan 4.10).
  */
+import { MISSING, rpmParts } from "@core/format";
 
 /** Zone rows hold their order this long so rows do not jump every tick. */
 export const ZONE_RESORT_MS = 10_000;
@@ -61,19 +62,13 @@ export function sensorLabel(name: string): string {
   }
 }
 
-const rpm = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
-
 /** "Left 1,840 · right 1,860" for two fans; "Fan 1,850" for one. */
 export function fanSummary(fans: readonly (number | null)[]): string {
-  const f = (v: number | null) => (v === null ? "—" : rpm.format(v));
+  const f = (v: number | null) => (v === null ? MISSING : rpmParts(v).value);
   if (fans.length === 1) return `Fan ${f(fans[0] ?? null)}`;
   if (fans.length === 2)
     return `Left ${f(fans[0] ?? null)} · right ${f(fans[1] ?? null)}`;
   return fans.map((v, i) => `${i + 1}: ${f(v)}`).join(" · ");
-}
-
-export function formatRpm(v: number | null): string {
-  return v === null ? "—" : rpm.format(v);
 }
 
 /**

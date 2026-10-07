@@ -1,3 +1,4 @@
+import { clamp01 } from "@core/chart-math";
 import {
   type ByteUnits,
   fixed,
@@ -263,10 +264,7 @@ function Cell({
         </span>
       );
     case "cpu": {
-      const frac =
-        p.cpu_pct == null
-          ? 0
-          : Math.min(1, Math.max(0, p.cpu_pct / cpuBarMaxPct));
+      const frac = p.cpu_pct == null ? 0 : clamp01(p.cpu_pct / cpuBarMaxPct);
       return (
         <span className="inline-flex items-center gap-2">
           <span className="inline-block h-1 w-12 overflow-hidden rounded-full bg-track">
@@ -337,8 +335,7 @@ function Cell({
       );
     case "gpu": {
       // Percent of the whole GPU (D-085), so the bar is out of 100.
-      const frac =
-        p.gpu_pct == null ? 0 : Math.min(1, Math.max(0, p.gpu_pct / 100));
+      const frac = p.gpu_pct == null ? 0 : clamp01(p.gpu_pct / 100);
       return (
         <span className="inline-flex items-center gap-2">
           <span className="inline-block h-1 w-12 overflow-hidden rounded-full bg-track">

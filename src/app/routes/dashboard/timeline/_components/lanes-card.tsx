@@ -1,5 +1,10 @@
 import { eventLabel } from "@core/events";
-import { formatPercent, type RateUnit, rateParts } from "@core/format";
+import {
+  formatClockSeconds,
+  formatPercent,
+  type RateUnit,
+  rateParts,
+} from "@core/format";
 import type { Event } from "@core/generated/bindings";
 import {
   type KeyboardEvent,
@@ -26,7 +31,6 @@ import { buildLaneModel } from "../_lib/lane-model";
 import { LANE_GAP, LANE_HEIGHT, type LaneDef } from "../_lib/lanes";
 import {
   axisTicks,
-  clockSeconds,
   dayLabel,
   endLabel,
   fractionAt,
@@ -327,7 +331,7 @@ export function LanesCard({
           })
         )}
         <CrosshairTooltip
-          title={`${dayLabel(cursor)} · ${clockSeconds(cursor)}`}
+          title={`${dayLabel(cursor)} · ${formatClockSeconds(cursor)}`}
           resolution={resolution}
           rows={rows}
           processes={gapHere ? null : processes}
@@ -467,7 +471,7 @@ export function LanesCard({
             aria-valuetext={
               cursor === null
                 ? "No time selected"
-                : `${dayLabel(cursor)} ${clockSeconds(cursor)}`
+                : `${dayLabel(cursor)} ${formatClockSeconds(cursor)}`
             }
             className={cn(
               "absolute inset-0 cursor-crosshair rounded-tile outline-none focus-visible:ring-2 focus-visible:ring-ring"

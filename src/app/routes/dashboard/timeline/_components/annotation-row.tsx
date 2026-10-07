@@ -1,6 +1,6 @@
+import { formatClock } from "@core/format";
 import { cn } from "~/lib/utils";
 import { layoutMarkers, type Marker } from "../_lib/gaps";
-import { clock } from "../_lib/time";
 
 export interface AnnotationRowProps {
   markers: readonly Marker[];
@@ -75,7 +75,9 @@ export function AnnotationRow({
               onClick={() => onSelect?.(p.tMs)}
             >
               <span>
-                <span className="data-mono text-power-ink">{clock(p.tMs)}</span>{" "}
+                <span className="data-mono text-power-ink">
+                  {formatClock(p.tMs)}
+                </span>{" "}
                 {p.label}
                 {p.more > 0 && (
                   <span className="text-muted-foreground"> +{p.more}</span>

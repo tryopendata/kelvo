@@ -4,8 +4,7 @@
  * so a running tween never goes through a React render. No `window` access at
  * module scope.
  */
-
-export const clamp01 = (t: number): number => Math.min(1, Math.max(0, t));
+import { clamp01 } from "@core/chart-math";
 
 export const lerp = (a: number, b: number, t: number): number =>
   a + (b - a) * t;

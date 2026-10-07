@@ -1,9 +1,8 @@
+import { countNoun, pad2 } from "@core/format";
 import type { CommandError, ExportOutcome } from "@core/generated/bindings";
 import { localDateIso } from "@core/heatmap-days";
 import { historyUnavailable } from "@core/history-state";
 import type { Span } from "./time";
-
-const pad = (n: number) => String(n).padStart(2, "0");
 
 /**
  * The name the save dialog proposes: the range's local start and its
@@ -12,16 +11,16 @@ const pad = (n: number) => String(n).padStart(2, "0");
  */
 export function exportFileName(span: Span, fromMs: number): string {
   const d = new Date(fromMs);
-  return `kelvo-${localDateIso(d)}-${pad(d.getHours())}${pad(d.getMinutes())}-${span}.csv`;
+  return `kelvo-${localDateIso(d)}-${pad2(d.getHours())}${pad2(d.getMinutes())}-${span}.csv`;
 }
 
 /** The toast after a save: where it went and how much. `null` for a cancel. */
 export function exportSaved(outcome: ExportOutcome): string | null {
   if (outcome.kind === "cancelled") return null;
-  const rows = `${outcome.rows.toLocaleString()} ${outcome.rows === 1 ? "row" : "rows"}`;
+  const rows = countNoun(outcome.rows, "row", "rows");
   const gaps =
     outcome.gap_rows > 0
-      ? ` and ${outcome.gap_rows} ${outcome.gap_rows === 1 ? "gap" : "gaps"}`
+      ? ` and ${countNoun(outcome.gap_rows, "gap", "gaps")}`
       : "";
   return `Exported ${rows}${gaps} to ${outcome.path}`;
 }

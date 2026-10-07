@@ -52,4 +52,20 @@ describe("BatteryHistoryBars", () => {
       /border/
     );
   });
+
+  it("labels hours with the two-digit local hour", () => {
+    const at = (h: number) => new Date(2026, 9, 4, h).getTime();
+    const { getByRole } = render(
+      <BatteryHistoryBars
+        hours={[
+          { tsMs: at(7), charge: 68, charging: false },
+          { tsMs: at(13), charge: 70.4, charging: true },
+        ]}
+        annotations={[]}
+      />
+    );
+    expect(getByRole("img").getAttribute("aria-label")).toContain(
+      "07:00 68%, 13:00 70%"
+    );
+  });
 });

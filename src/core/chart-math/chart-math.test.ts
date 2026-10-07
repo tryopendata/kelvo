@@ -1,15 +1,44 @@
 import {
   type CeilingState,
-  downsampleMinMaxAvg,
+  clamp01,
   heatmapAlpha,
   nextCeiling,
   niceCeiling,
+  percentOf,
+  ratio,
   ringArcs,
   splitGaps,
   stackRemainder,
   stackSum,
   stepBelow,
 } from "@core/chart-math";
+
+describe("clamp01", () => {
+  it("clamps to [0, 1] and turns non-finite input into 0", () => {
+    expect(clamp01(0.4)).toBe(0.4);
+    expect(clamp01(-2)).toBe(0);
+    expect(clamp01(7)).toBe(1);
+    expect(clamp01(Number.NaN)).toBe(0);
+    expect(clamp01(Number.POSITIVE_INFINITY)).toBe(0);
+  });
+});
+
+describe("ratio and percentOf", () => {
+  it("is null when either side is missing, so the bar draws no fill", () => {
+    expect(ratio(null, 10)).toBeNull();
+    expect(ratio(5, null)).toBeNull();
+    expect(ratio(5, 10)).toBe(0.5);
+    expect(percentOf(5, 10)).toBe(50);
+    expect(percentOf(null, 10)).toBeNull();
+  });
+
+  it("is null for a whole of zero or less, never Infinity or NaN", () => {
+    expect(ratio(5, 0)).toBeNull();
+    expect(ratio(0, 0)).toBeNull();
+    expect(ratio(5, -1)).toBeNull();
+    expect(percentOf(5, 0)).toBeNull();
+  });
+});
 
 describe("stack remainder", () => {
   it("is the whole less its parts, floored at 0", () => {
@@ -45,46 +74,6 @@ describe("splitGaps", () => {
   it("returns nothing for an all-gap or empty series", () => {
     expect(splitGaps([null, null])).toEqual([]);
     expect(splitGaps([])).toEqual([]);
-  });
-});
-
-describe("downsampleMinMaxAvg", () => {
-  it("keeps a one-sample spike in the max", () => {
-    const series = Array.from({ length: 100 }, (_, i) => (i === 37 ? 95 : 10));
-    const out = downsampleMinMaxAvg(series, 10);
-    expect(out).toHaveLength(10);
-    expect(out[3]).toEqual({ min: 10, max: 95, avg: 18.5 });
-    expect(out[4]).toEqual({ min: 10, max: 10, avg: 10 });
-  });
-
-  it("assigns every sample to exactly one bucket when n is not a multiple", () => {
-    const series = [1, 2, 3, 4, 5, 6, 7];
-    const out = downsampleMinMaxAvg(series, 3);
-    expect(out).toEqual([
-      { min: 1, max: 2, avg: 1.5 },
-      { min: 3, max: 4, avg: 3.5 },
-      { min: 5, max: 7, avg: 6 },
-    ]);
-  });
-
-  it("skips nulls and returns null for an all-gap bucket", () => {
-    const out = downsampleMinMaxAvg([4, null, null, null, 2, 6], 3);
-    expect(out).toEqual([
-      { min: 4, max: 4, avg: 4 },
-      null,
-      { min: 2, max: 6, avg: 4 },
-    ]);
-  });
-
-  it("passes short series through one sample per bucket", () => {
-    expect(downsampleMinMaxAvg([3, null], 10)).toEqual([
-      { min: 3, max: 3, avg: 3 },
-      null,
-    ]);
-  });
-
-  it("returns nothing for zero buckets", () => {
-    expect(downsampleMinMaxAvg([1, 2], 0)).toEqual([]);
   });
 });
 

@@ -55,14 +55,6 @@ export function formatHoursMinutes(ms: MaybeNumber): string {
   return `${h}:${String(m).padStart(2, "0")}`;
 }
 
-/** Local wall-clock time with seconds, "14:02:10": a brushed range's ends. */
-export function formatClockSeconds(ms: MaybeNumber): string {
-  if (!isPresent(ms)) return MISSING;
-  const d = new Date(ms);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
-}
-
 /**
  * A selected span in the Apps title: "90 s" under two minutes, then "2 min",
  * "2 min 30 s", and "1 h 5 min" from an hour.

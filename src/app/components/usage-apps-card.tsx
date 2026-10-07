@@ -1,4 +1,5 @@
 import { scopeWords, type TimeRange } from "@core/brush";
+import { percentOf } from "@core/chart-math";
 import { formatClockSeconds, formatSpan } from "@core/format";
 import type {
   ProcessUsage,
@@ -11,7 +12,6 @@ import {
   processCount,
   type RemainderRow,
   remainderRows,
-  shareOf,
   type UsageFigures,
   type UsageRow,
   usageCoverage,
@@ -23,7 +23,6 @@ import { ChevronRight } from "lucide-react";
 import { type ReactNode, useMemo, useState } from "react";
 import {
   APP_CELL,
-  AppInitial,
   AppsNote,
   AppsShell,
   ShareCell,
@@ -45,6 +44,7 @@ import { type QuitFlow, useQuitFlow } from "~/hooks/use-quit-flow";
 import { heldFor, useRangeScope } from "~/hooks/use-range-scope";
 import { useUsageByApp } from "~/hooks/use-usage-by-app";
 import { cn } from "~/lib/utils";
+import { InitialChip } from "~/widgets/initial-chip";
 import type { Accent } from "~/widgets/lib/accent";
 
 /** Apps listed before "Show all": enough to find the culprit, short enough to scan. */
@@ -387,7 +387,7 @@ function AppRows({
             ) : (
               <span aria-hidden className="-ml-1 inline-block size-4" />
             )}
-            <AppInitial name={app.name} />
+            <InitialChip text={app.name} />
             <span className="truncate">{app.name}</span>
             {many && (
               <span className="font-normal text-[11px] text-muted-foreground">
@@ -408,7 +408,10 @@ function AppRows({
             config={config}
             share={
               share
-                ? shareOf(usageValue(config.by, p), usageWhole(data, config.by))
+                ? percentOf(
+                    usageValue(config.by, p),
+                    usageWhole(data, config.by)
+                  )
                 : undefined
             }
             flow={flow}

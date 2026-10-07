@@ -1,3 +1,4 @@
+import { clamp01 } from "@core/chart-math";
 import { cn } from "~/lib/utils";
 import { type Accent, accentVars, rampColor } from "./lib/accent";
 import { useTickScroll } from "./lib/use-tick-scroll";
@@ -27,9 +28,7 @@ export interface MirrorBarsProps {
 
 function heights(values: (number | null)[], max: number, h: number) {
   return values.map((v) =>
-    v == null || !Number.isFinite(v) || max <= 0
-      ? null
-      : Math.min(1, Math.max(0, v / max)) * h
+    v == null || !Number.isFinite(v) || max <= 0 ? null : clamp01(v / max) * h
   );
 }
 

@@ -1,10 +1,14 @@
+import { formatClock, formatClockSeconds } from "@core/format";
 import {
   axisTicks,
+  dayClock,
+  dayLabel,
   endLabel,
   heatmapCellView,
   historyWindow,
   liveView,
   momentLabel,
+  monthDay,
   rangeSubtitle,
   requestBucketMs,
   resolutionLabel,
@@ -264,5 +268,68 @@ describe("the 6h span", () => {
     expect(
       rangeSubtitle("6h", at(9, 20, 11, 30), at(9, 20, 17, 30), false)
     ).toEqual({ lead: "6 hours, ", times: "Sun Sep 20 · 11:30 – 17:30" });
+  });
+});
+
+describe("clock and date labels", () => {
+  it("pads the clock to two digits", () => {
+    const t = at(1, 4, 9, 5) + 7_000;
+    expect(formatClock(t)).toBe("09:05");
+    expect(formatClockSeconds(t)).toBe("09:05:07");
+    expect(formatClock(at(12, 31, 0, 0))).toBe("00:00");
+    expect(formatClockSeconds(at(12, 31, 23, 59) + 59_000)).toBe("23:59:59");
+  });
+
+  it("names every month and weekday in English", () => {
+    const months = Array.from({ length: 12 }, (_, i) => monthDay(at(i + 1, 1)));
+    expect(months).toEqual([
+      "Jan 1",
+      "Feb 1",
+      "Mar 1",
+      "Apr 1",
+      "May 1",
+      "Jun 1",
+      "Jul 1",
+      "Aug 1",
+      "Sep 1",
+      "Oct 1",
+      "Nov 1",
+      "Dec 1",
+    ]);
+    // Sun Oct 4 2026 to Sat Oct 10.
+    const days = Array.from({ length: 7 }, (_, i) => dayLabel(at(10, 4 + i)));
+    expect(days).toEqual([
+      "Sun Oct 4",
+      "Mon Oct 5",
+      "Tue Oct 6",
+      "Wed Oct 7",
+      "Thu Oct 8",
+      "Fri Oct 9",
+      "Sat Oct 10",
+    ]);
+    expect(dayClock(at(10, 4, 7, 3))).toBe("Sun Oct 4 · 07:03");
+    expect(momentLabel("7d", at(10, 5, 7, 3))).toBe("Mon 07:03");
+  });
+
+  it("labels 1h and 24h ticks with the clock", () => {
+    const hour = axisTicks(at(10, 4, 9, 0), at(10, 4, 10, 0), "1h");
+    expect(hour.map((t) => t.label)).toEqual([
+      "09:00",
+      "09:10",
+      "09:20",
+      "09:30",
+      "09:40",
+      "09:50",
+    ]);
+    const day = axisTicks(at(10, 3, 22, 40), at(10, 4, 22, 40), "24h");
+    expect(day.map((t) => t.label)).toEqual([
+      "00:00",
+      "03:00",
+      "06:00",
+      "09:00",
+      "12:00",
+      "15:00",
+      "18:00",
+    ]);
   });
 });

@@ -3,13 +3,17 @@
  * Each card reads its own module selector, so a frame that only moves CPU
  * values re-renders the CPU cards and nothing else.
  */
-import { stackRemainder } from "@core/chart-math";
+import { ratio, stackRemainder } from "@core/chart-math";
 import { cpuPowerNote } from "@core/cpu-power-source";
 import {
+  bytesParts,
   formatBytes,
+  formatGhz,
   formatHoursMinutes,
   formatPercent,
   formatWatts,
+  MISSING,
+  marketingGb,
   rateParts,
 } from "@core/format";
 import { METRIC_CODES } from "@core/generated/bindings";
@@ -50,16 +54,6 @@ function useOpen() {
 const WINDOW_MS = 60_000;
 const NET_WINDOW_MS = 48_000;
 
-const ghz = (hz: number | null) =>
-  hz === null ? "–" : `${(hz / 1e9).toFixed(1)} GHz`;
-
-/**
- * Fraction of a whole, `null` when either side is missing: the bar draws its
- * empty track, never a fill of 0 that reads as a measurement.
- */
-const share = (part: number | null, whole: number | null) =>
-  part === null || whole === null || whole <= 0 ? null : part / whole;
-
 export function LiveCpuCard() {
   const open = useOpen();
   const cpu = useCpu();
@@ -92,13 +86,13 @@ export function LiveCpuCard() {
         <InlineBar
           label="User"
           value={formatPercent(cpu.user, { decimals: 1 })}
-          fraction={share(cpu.user, 100)}
+          fraction={ratio(cpu.user, 100)}
           layout="row"
         />
         <InlineBar
           label="System"
           value={formatPercent(cpu.system, { decimals: 1 })}
-          fraction={share(cpu.system, 100)}
+          fraction={ratio(cpu.system, 100)}
           rampStep={2}
           layout="row"
         />
@@ -115,7 +109,7 @@ export function LiveCoresCard() {
   const clusters = (host?.info.cpu_topology ?? []).map((c) => ({
     id: c.name,
     name: c.kind === "efficiency" ? "E-cluster" : "P-cluster",
-    freq: ghz(c.kind === "efficiency" ? cpu.eFreqHz : cpu.pFreqHz),
+    freq: formatGhz(c.kind === "efficiency" ? cpu.eFreqHz : cpu.pFreqHz),
     cores: c.cores.map((id) => ({ id, load: cores[id] ?? null })),
   }));
   return (
@@ -138,7 +132,9 @@ export function LiveMemoryCard() {
   const host = useHostRecord();
   const notice = useReadFailure("mem.used");
   const total = host?.info.mem_total_bytes ?? null;
-  const frac = (v: number | null) => share(v, total);
+  // Used follows the GB/GiB setting; the total is the marketing size (plan 4.9).
+  const bytes = useSettings((s) => s.units.memory) === "binary" ? "GiB" : "GB";
+  const frac = (v: number | null) => ratio(v, total);
   const codes = METRIC_CODES["mem.pressure_level"];
   const level =
     mem.pressureLevel === codes.critical
@@ -152,14 +148,18 @@ export function LiveMemoryCard() {
       title="Memory"
       href="/dashboard/memory"
       onOpen={open}
-      value={mem.used === null ? "–" : (mem.used / 1e9).toFixed(1)}
-      unit={total === null ? undefined : ` / ${Math.round(total / 2 ** 30)} GB`}
+      value={
+        mem.used === null
+          ? MISSING
+          : bytesParts(mem.used, { units: bytes, unit: bytes }).value
+      }
+      unit={total === null ? undefined : ` / ${marketingGb(total)} GB`}
       notice={notice}
     >
       <InlineBar
         label={`Pressure · ${level}`}
         value={formatPercent(mem.pressure)}
-        fraction={share(mem.pressure, 100)}
+        fraction={ratio(mem.pressure, 100)}
         layout="wide"
       />
       <StackBar
@@ -224,7 +224,7 @@ export function LiveGpuCard() {
       />
       <StatGrid
         items={[
-          { label: "Freq", value: ghz(gpu.freqHz) },
+          { label: "Freq", value: formatGhz(gpu.freqHz) },
           { label: "Power", value: formatWatts(gpu.powerW) },
           { label: "Render", value: formatPercent(gpu.render) },
         ]}
@@ -244,7 +244,7 @@ export function LivePowerCard() {
   const cpuNote = cpuPowerNote(p.cpuSource);
   // The rest of the system is what the named rails leave.
   const rest = stackRemainder(p.system, [p.cpu, p.gpu, p.ane, p.dram]);
-  const frac = (v: number | null) => share(v, p.system);
+  const frac = (v: number | null) => ratio(v, p.system);
   return (
     <ModuleCard
       accent="power"
@@ -376,7 +376,7 @@ export function LiveBatteryCard() {
       >
         <span
           className="block h-full origin-left rounded-full bg-battery"
-          style={{ transform: `scaleX(${share(b.charge, 100)})` }}
+          style={{ transform: `scaleX(${ratio(b.charge, 100)})` }}
         />
       </span>
       <StatGrid

@@ -67,8 +67,3 @@ export function rampColor(step: 1 | 2 | 3 | 4, color = "var(--a)"): string {
   if (step === 1) return color;
   return `color-mix(in srgb, ${color} ${RAMP_PCT[step]}, transparent)`;
 }
-
-/** Clamp a fraction to [0, 1]; non-finite becomes 0. */
-export function clamp01(f: number): number {
-  return Number.isFinite(f) ? Math.min(1, Math.max(0, f)) : 0;
-}

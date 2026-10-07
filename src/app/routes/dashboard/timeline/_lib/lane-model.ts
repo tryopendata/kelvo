@@ -3,7 +3,7 @@
  * aligned columns, and the mapping from a value to a height in the lane for
  * the crosshair dots.
  */
-import { niceCeiling } from "@core/chart-math";
+import { clamp01, niceCeiling } from "@core/chart-math";
 import type { Accent } from "~/widgets/lib/accent";
 import {
   alignColumns,
@@ -39,8 +39,6 @@ export interface LaneModel {
 
 /** Temperature lane domain in °C (plan 4.6). */
 export const TEMP_DOMAIN: [number, number] = [30, 100];
-
-const clamp01 = (f: number) => Math.min(1, Math.max(0, f));
 
 function scaleCols(cols: SeriesColumns, k: number): SeriesColumns {
   const s = (c: Column) => c.map((v) => (v == null ? v : v * k));

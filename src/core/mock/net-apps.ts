@@ -32,6 +32,8 @@ import {
   type NetworkByApp,
   type NetworkSpan,
 } from "@core/generated/bindings";
+import { ceilTo, floorTo } from "@core/time-grid";
+
 /** Per-app history starts this long after the ring's first row. */
 export const NET_COLLECTION_DELAY_MS = 40_000;
 /** Rust's `MAX_NET_SPAN_MS`: the longest history retention. */
@@ -245,14 +247,6 @@ export interface NetByAppInput {
   fromMs: number;
   toMs: number;
 }
-
-function floorTo(t: number, w: number) {
-  return t - (((t % w) + w) % w);
-}
-const ceilTo = (t: number, w: number) => {
-  const f = floorTo(t, w);
-  return f === t ? t : f + w;
-};
 
 /** `query_network_by_app` over the mock's ring rows. */
 export function mockNetworkByApp(input: NetByAppInput): NetworkByApp {
