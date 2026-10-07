@@ -21,11 +21,3 @@ export function windowTicks(windowMs: number, count: number): string[] {
     agoLabel((windowMs * (count - 1 - i)) / (count - 1))
   );
 }
-
-/** Wall-clock "HH:MM" in the viewer's zone, from a ms epoch. */
-export function clockLabel(tsMs: number): string {
-  const d = new Date(tsMs);
-  const hh = String(d.getHours()).padStart(2, "0");
-  const mm = String(d.getMinutes()).padStart(2, "0");
-  return `${hh}:${mm}`;
-}

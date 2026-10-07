@@ -188,8 +188,3 @@ export const unrecorded = (data: NetworkByApp) =>
 export function firstRecordedMs(data: NetworkByApp): number | null {
   return data.coverage.find((c) => c.tier !== null)?.from_ms ?? null;
 }
-
-/** The whole window as complete 10 s buckets ending at the complete edge. */
-export function windowRange(edgeMs: number, windowMs: number): TimeRange {
-  return { fromMs: edgeMs - windowMs, toMs: edgeMs };
-}

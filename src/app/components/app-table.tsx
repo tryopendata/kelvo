@@ -133,15 +133,3 @@ export function ShareCell({
     </TableCell>
   );
 }
-
-/** The app's first letter in a 16 px tile, so names scan as a list. */
-export function AppInitial({ name }: { name: string }) {
-  return (
-    <span
-      aria-hidden
-      className="data-mono inline-flex size-4 flex-none items-center justify-center rounded-[4px] bg-raised text-[9px] text-fg-subtle"
-    >
-      {name.slice(0, 1)}
-    </span>
-  );
-}

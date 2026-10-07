@@ -12,7 +12,6 @@ import { CommandFailure } from "@core/transport";
 import { type ReactNode, useMemo, useState } from "react";
 import {
   APP_CELL,
-  AppInitial,
   AppsNote,
   AppsShell,
   ShareCell,
@@ -30,6 +29,7 @@ import {
 import { heldFor, useOpenEdge, useRangeScope } from "~/hooks/use-range-scope";
 import { useUnits } from "~/hooks/use-units";
 import { cn } from "~/lib/utils";
+import { InitialChip } from "~/widgets/initial-chip";
 import {
   useCompleteEdge,
   useLatestBucket,
@@ -185,7 +185,7 @@ function AppIcon({ row }: { row: AppRow }) {
   if (row.kind !== "app") {
     return <span aria-hidden className="inline-block w-4 flex-none" />;
   }
-  return <AppInitial name={row.name} />;
+  return <InitialChip text={row.name} />;
 }
 
 function AppsTable({

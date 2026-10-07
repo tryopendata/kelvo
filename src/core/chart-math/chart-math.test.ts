@@ -1,7 +1,6 @@
 import {
   type CeilingState,
   clamp01,
-  downsampleMinMaxAvg,
   heatmapAlpha,
   nextCeiling,
   niceCeiling,
@@ -75,46 +74,6 @@ describe("splitGaps", () => {
   it("returns nothing for an all-gap or empty series", () => {
     expect(splitGaps([null, null])).toEqual([]);
     expect(splitGaps([])).toEqual([]);
-  });
-});
-
-describe("downsampleMinMaxAvg", () => {
-  it("keeps a one-sample spike in the max", () => {
-    const series = Array.from({ length: 100 }, (_, i) => (i === 37 ? 95 : 10));
-    const out = downsampleMinMaxAvg(series, 10);
-    expect(out).toHaveLength(10);
-    expect(out[3]).toEqual({ min: 10, max: 95, avg: 18.5 });
-    expect(out[4]).toEqual({ min: 10, max: 10, avg: 10 });
-  });
-
-  it("assigns every sample to exactly one bucket when n is not a multiple", () => {
-    const series = [1, 2, 3, 4, 5, 6, 7];
-    const out = downsampleMinMaxAvg(series, 3);
-    expect(out).toEqual([
-      { min: 1, max: 2, avg: 1.5 },
-      { min: 3, max: 4, avg: 3.5 },
-      { min: 5, max: 7, avg: 6 },
-    ]);
-  });
-
-  it("skips nulls and returns null for an all-gap bucket", () => {
-    const out = downsampleMinMaxAvg([4, null, null, null, 2, 6], 3);
-    expect(out).toEqual([
-      { min: 4, max: 4, avg: 4 },
-      null,
-      { min: 2, max: 6, avg: 4 },
-    ]);
-  });
-
-  it("passes short series through one sample per bucket", () => {
-    expect(downsampleMinMaxAvg([3, null], 10)).toEqual([
-      { min: 3, max: 3, avg: 3 },
-      null,
-    ]);
-  });
-
-  it("returns nothing for zero buckets", () => {
-    expect(downsampleMinMaxAvg([1, 2], 0)).toEqual([]);
   });
 });
 

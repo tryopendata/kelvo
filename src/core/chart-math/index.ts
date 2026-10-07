@@ -1,4 +1,3 @@
-export * from "./downsample";
 export * from "./gaps";
 export * from "./heatmap";
 export * from "./nice-ceiling";
