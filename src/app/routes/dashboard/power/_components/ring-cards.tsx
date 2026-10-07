@@ -2,6 +2,7 @@ import {
   formatGhz,
   formatWatts,
   MISSING,
+  rpmParts,
   temperatureParts,
   wattsParts,
 } from "@core/format";
@@ -13,7 +14,7 @@ import { useUnits } from "~/hooks/use-units";
 import { useWindowSeries } from "~/hooks/use-window-series";
 import { usePowerSource } from "~/stores/live-selectors";
 import { RingStatCard } from "~/widgets/ring-stat-card";
-import { fanModeLabel, fanSummary, formatRpm } from "../_lib/sensors";
+import { fanModeLabel, fanSummary } from "../_lib/sensors";
 
 /** Ring scale for SoC temperatures (plan 4.5 uses the same 105 °C top). */
 const TEMP_MAX_C = 105;
@@ -128,7 +129,7 @@ export function RingCards({
           description={fanSummary(rpms)}
           ring={{
             fractions: [frac(rpmNow, rpmMax)],
-            value: formatRpm(rpmNow),
+            value: rpmNow === null ? MISSING : rpmParts(rpmNow).value,
             label: "RPM",
             accent: "power",
           }}

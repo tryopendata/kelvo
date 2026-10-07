@@ -1,3 +1,4 @@
+import { formatMarketingMemory } from "@core/format";
 import type { ModuleCap } from "@core/generated/bindings";
 import { historyUnavailable } from "@core/history-state";
 import { hostKeys } from "@core/query-keys";
@@ -70,7 +71,7 @@ export default function TimelineRoute() {
     staleTime: Number.POSITIVE_INFINITY,
   });
   const memTotal = host
-    ? `${Math.round(host.info.mem_total_bytes / 2 ** 30)} GB`
+    ? formatMarketingMemory(host.info.mem_total_bytes)
     : null;
 
   const { exportCsv, exporting } = useExportCsv();

@@ -1,15 +1,45 @@
 import {
   type CeilingState,
+  clamp01,
   downsampleMinMaxAvg,
   heatmapAlpha,
   nextCeiling,
   niceCeiling,
+  percentOf,
+  ratio,
   ringArcs,
   splitGaps,
   stackRemainder,
   stackSum,
   stepBelow,
 } from "@core/chart-math";
+
+describe("clamp01", () => {
+  it("clamps to [0, 1] and turns non-finite input into 0", () => {
+    expect(clamp01(0.4)).toBe(0.4);
+    expect(clamp01(-2)).toBe(0);
+    expect(clamp01(7)).toBe(1);
+    expect(clamp01(Number.NaN)).toBe(0);
+    expect(clamp01(Number.POSITIVE_INFINITY)).toBe(0);
+  });
+});
+
+describe("ratio and percentOf", () => {
+  it("is null when either side is missing, so the bar draws no fill", () => {
+    expect(ratio(null, 10)).toBeNull();
+    expect(ratio(5, null)).toBeNull();
+    expect(ratio(5, 10)).toBe(0.5);
+    expect(percentOf(5, 10)).toBe(50);
+    expect(percentOf(null, 10)).toBeNull();
+  });
+
+  it("is null for a whole of zero or less, never Infinity or NaN", () => {
+    expect(ratio(5, 0)).toBeNull();
+    expect(ratio(0, 0)).toBeNull();
+    expect(ratio(5, -1)).toBeNull();
+    expect(percentOf(5, 0)).toBeNull();
+  });
+});
 
 describe("stack remainder", () => {
   it("is the whole less its parts, floored at 0", () => {

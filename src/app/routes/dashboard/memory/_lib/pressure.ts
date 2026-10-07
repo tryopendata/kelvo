@@ -16,8 +16,3 @@ export function pressureState(level: number | null): PressureState | null {
   if (level >= LEVEL.warn) return "warn";
   return "normal";
 }
-
-/** The marketing size, "24 GB", from the byte total (plan 4.9). */
-export function marketingGb(totalBytes: number): number {
-  return Math.round(totalBytes / 2 ** 30);
-}

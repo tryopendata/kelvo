@@ -5,7 +5,6 @@ import {
   memoryCard,
   networkCard,
   powerCard,
-  ratio,
   topProcesses,
 } from "./card-props";
 
@@ -31,15 +30,6 @@ const proc = (p: Partial<LiveProcess> & { pid: number }): LiveProcess => ({
 
 const rowsOf = (card: ReturnType<typeof cpuCard>) =>
   card.body.kind === "list" ? card.body.rows : [];
-
-describe("ratio", () => {
-  it("is null when either side is missing, so the bar draws no fill", () => {
-    expect(ratio(null, 10)).toBeNull();
-    expect(ratio(5, null)).toBeNull();
-    expect(ratio(5, 0)).toBeNull();
-    expect(ratio(5, 10)).toBe(0.5);
-  });
-});
 
 describe("topProcesses", () => {
   it("sorts by value, drops rows without one and keys by pid and start time", () => {

@@ -3,10 +3,15 @@
  * the ring, bar and legend math is tested without rendering. Every input is
  * a raw catalog unit; `null` is a gap and renders "—", never 0.
  */
+
+import { ratio } from "@core/chart-math";
 import {
   formatBytes,
+  formatGhz,
+  formatMarketingMemory,
   formatPercent,
   formatRate,
+  formatRpm,
   formatTemperature,
   formatWatts,
   MISSING,
@@ -20,18 +25,6 @@ import type { ProcessListRow } from "~/widgets/process-list";
 import type { StreamAreaProps } from "~/widgets/stream-area";
 
 type CardBase = Omit<MetricCardProps, "origin" | "href" | "onOpen">;
-
-/** `part / whole`, or null when either is missing (an empty track, no fill). */
-export function ratio(
-  part: number | null,
-  whole: number | null
-): number | null {
-  if (part === null || whole === null || whole <= 0) return null;
-  return part / whole;
-}
-
-const ghz = (hz: number | null) =>
-  hz === null ? MISSING : `${(hz / 1e9).toFixed(1)} GHz`;
 
 /**
  * Top `n` processes by `value`, highest first. Rows without a value drop out;
@@ -87,7 +80,7 @@ export function cpuCard(input: {
     },
     bars: input.clusters.map((c) => ({
       label: c.label,
-      value: ghz(c.freqHz),
+      value: formatGhz(c.freqHz),
       fraction: ratio(c.freqHz, c.maxHz),
     })) as CardBase["bars"],
     legend: [
@@ -150,7 +143,7 @@ export function gpuCard(input: {
     bars: [
       {
         label: "Frequency",
-        value: ghz(input.freqHz),
+        value: formatGhz(input.freqHz),
         fraction: ratio(input.freqHz, input.maxFreqHz),
       },
       {
@@ -207,7 +200,7 @@ export function memoryCard(input: {
     accent: "mem",
     title: "Memory",
     subtitle:
-      input.totalBytes === null ? "" : marketingMemory(input.totalBytes),
+      input.totalBytes === null ? "" : formatMarketingMemory(input.totalBytes),
     ring: {
       fractions: [
         ratio(input.app, input.totalBytes),
@@ -293,10 +286,7 @@ export function powerCard(input: {
         ? { label: "Fans", value: "Passive cooling", fraction: "none" }
         : {
             label: "Fans",
-            value:
-              input.fanRpm === null
-                ? MISSING
-                : `${Math.round(input.fanRpm).toLocaleString("en-US")} rpm`,
+            value: formatRpm(input.fanRpm),
             fraction: ratio(input.fanRpm, input.fanMax),
           },
     ],
@@ -491,9 +481,4 @@ export function coresLabel(
   const e = count("efficiency");
   if (p === 0 && e === 0) return "";
   return [p ? `${p}P` : null, e ? `${e}E` : null].filter(Boolean).join(" + ");
-}
-
-/** "24 GB" for the machine header and Memory card: the marketing size. */
-export function marketingMemory(totalBytes: number): string {
-  return `${Math.round(totalBytes / 2 ** 30)} GB`;
 }

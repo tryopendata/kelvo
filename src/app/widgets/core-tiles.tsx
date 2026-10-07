@@ -6,7 +6,7 @@ export interface CoreTilesCluster {
   id: string;
   /** "P-cluster", "E-cluster". */
   name: string;
-  /** Formatted cluster frequency ("3.2 GHz"), or "–" when not sampled. */
+  /** Formatted cluster frequency ("3.2 GHz"), or "—" when not sampled. */
   freq: string;
   /** `load` is percent 0 to 100, `null` when the core was not sampled. */
   cores: { id: string; load: number | null }[];

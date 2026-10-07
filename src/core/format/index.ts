@@ -5,5 +5,6 @@ export * from "./figure";
 export * from "./frequency";
 export * from "./number";
 export * from "./percent";
+export * from "./rpm";
 export * from "./temperature";
 export * from "./watts";

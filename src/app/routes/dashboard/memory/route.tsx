@@ -1,4 +1,4 @@
-import { formatBytes, MISSING } from "@core/format";
+import { formatBytes, MISSING, marketingGb } from "@core/format";
 import { useMemo } from "react";
 import { PageHeader } from "~/components/page-header";
 import {
@@ -13,7 +13,6 @@ import { BrushProvider } from "~/stores/brush-store";
 import { CompositionCard } from "./_components/composition-card";
 import { PressureCard } from "./_components/pressure-card";
 import { SwapCard } from "./_components/swap-card";
-import { marketingGb } from "./_lib/pressure";
 
 /**
  * Memory page (plan 4.9): the Overview and popover Memory card pieces in the

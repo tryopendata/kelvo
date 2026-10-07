@@ -113,3 +113,17 @@ export function formatRate(
   if (!isPresent(bytesPerSecond)) return MISSING;
   return joinQuantity(rateParts(bytesPerSecond, options));
 }
+
+/**
+ * The installed-memory size as sold: Apple's "24 GB" is 24 GiB, so this
+ * divides by 2^30 and rounds. It reads "GB" in both unit modes; the GiB
+ * setting applies to measured values (plan 4.9).
+ */
+export function marketingGb(totalBytes: number): number {
+  return Math.round(totalBytes / 2 ** 30);
+}
+
+/** "24 GB": `marketingGb` with its unit. */
+export function formatMarketingMemory(totalBytes: number): string {
+  return `${marketingGb(totalBytes)} GB`;
+}
