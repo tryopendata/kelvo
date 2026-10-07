@@ -368,6 +368,105 @@ pub(crate) fn tier_width(tier: Tier) -> Result<i64> {
     tier.bucket_ms().ok_or(StoreError::NotPersisted(tier))
 }
 
+/// What a [`HistoryTable`] holds: where the cap trim counts its rows and which `pruned`
+/// mark its highest deleted `seq` moves.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum HistoryKind {
+    S10,
+    M1,
+    M15,
+    Gaps,
+    Events,
+    Proc,
+    Net,
+    Cursors,
+}
+
+/// A table of one host's history, and the column each whole-host operation cuts it at.
+pub(crate) struct HistoryTable {
+    pub(crate) name: &'static str,
+    pub(crate) kind: HistoryKind,
+    /// `discard_from` deletes the rows with this column at or after the cut; `None`
+    /// keeps them.
+    pub(crate) discard_col: Option<&'static str>,
+    /// `trim_to_cap` deletes the rows with this column before the cutoff; `None` keeps
+    /// them.
+    pub(crate) trim_col: Option<&'static str>,
+}
+
+/// Every table with per-host history: `clear_host` empties each, `discard_from` and
+/// `trim_to_cap` cut the ones with a column for it. In the order the cap trim deletes
+/// them. Gaps are discarded by start (a gap that began before the cut is shortened by
+/// the writer instead) and trimmed by end, so only gaps that closed before the cutoff
+/// go. Pruning keeps its own per-table cutoffs. A test fails when a table with a
+/// `host_id` column is neither here nor in its list of non-history tables.
+pub(crate) const HISTORY_TABLES: &[HistoryTable] = &[
+    HistoryTable::both("tier_15m", HistoryKind::M15, "bucket_ts"),
+    HistoryTable::both("tier_1m", HistoryKind::M1, "bucket_ts"),
+    HistoryTable {
+        name: "gaps",
+        kind: HistoryKind::Gaps,
+        discard_col: Some("start_ts"),
+        trim_col: Some("end_ts"),
+    },
+    HistoryTable::both("events", HistoryKind::Events, "ts"),
+    HistoryTable::both("proc_top_15m", HistoryKind::Proc, "bucket_ts"),
+    HistoryTable::both("proc_top_1m", HistoryKind::Proc, "bucket_ts"),
+    HistoryTable::both("tier_10s", HistoryKind::S10, "bucket_ts"),
+    HistoryTable::both("proc_snap", HistoryKind::Proc, "ts"),
+    HistoryTable::both("proc_net_15m", HistoryKind::Net, "bucket_ts"),
+    HistoryTable::both("proc_net_1m", HistoryKind::Net, "bucket_ts"),
+    HistoryTable::both("proc_net_10s", HistoryKind::Net, "bucket_ts"),
+    // Sync progress into the host's remote history: cleared with it, never cut by time.
+    HistoryTable {
+        name: "cursors",
+        kind: HistoryKind::Cursors,
+        discard_col: None,
+        trim_col: None,
+    },
+];
+
+impl HistoryTable {
+    /// Discarded and trimmed by the same column.
+    const fn both(name: &'static str, kind: HistoryKind, col: &'static str) -> Self {
+        Self {
+            name,
+            kind,
+            discard_col: Some(col),
+            trim_col: Some(col),
+        }
+    }
+}
+
+/// The tables a read of `tier` takes buckets from, each with the weight of its rows. An
+/// M15 read also takes the minutes still in `tier_1m`: a range that starts before the M1
+/// window usually ends inside it, and those minutes fall into the same 15-minute slots
+/// that the roll-down will fold them into (D-076). Each row weighs its width in minutes,
+/// so a slot holding both kinds is not tilted toward whichever has more rows.
+pub(crate) fn bucket_sources(tier: Tier) -> Result<&'static [(&'static str, u32)]> {
+    match tier {
+        Tier::S10 => Ok(&[("tier_10s", 1)]),
+        Tier::M1 => Ok(&[("tier_1m", 1)]),
+        Tier::M15 => Ok(&[("tier_15m", 15), ("tier_1m", 1)]),
+        Tier::Live1s | Tier::Unknown => Err(StoreError::NotPersisted(tier)),
+    }
+}
+
+/// `SELECT bucket_ts, layout_id, blob, weight` over every [`bucket_sources`] table of
+/// `tier`, for `host_id = ?1 AND bucket_ts >= ?2 AND bucket_ts < ?3`, as one `UNION ALL`.
+pub(crate) fn bucket_rows_sql(tier: Tier) -> Result<String> {
+    Ok(bucket_sources(tier)?
+        .iter()
+        .map(|(table, weight)| {
+            format!(
+                "SELECT bucket_ts, layout_id, blob, {weight} FROM {table}
+                   WHERE host_id = ?1 AND bucket_ts >= ?2 AND bucket_ts < ?3"
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n UNION ALL\n "))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -566,6 +665,49 @@ mod tests {
                 [],
             );
             assert!(dup.is_err(), "{table}: unique on (host, bucket_ts)");
+        }
+    }
+
+    /// Tables keyed by host that are not history: interning and the exporter's prune
+    /// marks. Clearing a host keeps them; discarding and trimming never cut them by time.
+    const NOT_HISTORY: &[&str] = &["series", "layouts", "proc_names", "pruned"];
+
+    /// A new table with a `host_id` column must be put in [`HISTORY_TABLES`] (so clearing,
+    /// discarding and trimming a host reach it) or in [`NOT_HISTORY`] on purpose.
+    #[test]
+    fn every_host_table_is_history_or_excluded() {
+        let dir = crate::test_dir("db-history-tables");
+        let (conn, _) = open_writer(&dir.join("h.sqlite"), 0).unwrap();
+        let with_host: Vec<String> = conn
+            .prepare(
+                "SELECT m.name FROM sqlite_master m
+                 WHERE m.type = 'table' AND EXISTS (
+                   SELECT 1 FROM pragma_table_info(m.name) WHERE name = 'host_id'
+                 ) ORDER BY m.name",
+            )
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        assert!(with_host.len() > NOT_HISTORY.len(), "{with_host:?}");
+        for table in &with_host {
+            let history = HISTORY_TABLES.iter().any(|t| t.name == table);
+            let excluded = NOT_HISTORY.contains(&table.as_str());
+            assert!(
+                history != excluded,
+                "{table}: history {history}, excluded {excluded}; it must be exactly one"
+            );
+        }
+        for t in HISTORY_TABLES {
+            assert!(
+                with_host.iter().any(|n| n == t.name),
+                "{} has no host_id",
+                t.name
+            );
+        }
+        for name in NOT_HISTORY {
+            assert!(with_host.iter().any(|n| n == name), "{name} has no host_id");
         }
     }
 

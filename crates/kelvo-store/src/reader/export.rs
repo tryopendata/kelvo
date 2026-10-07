@@ -22,7 +22,7 @@ use kelvo_schema::{Gap, HostId, SeriesKey, SeriesSelector, Tier};
 use rusqlite::params;
 
 use super::{Acc, Reader, f32_at, load_layout};
-use crate::db::{tier_table, tier_width};
+use crate::db::{bucket_sources, tier_width};
 use crate::error::{Result, StoreError};
 use crate::types::TierChoice;
 
@@ -99,11 +99,7 @@ impl Reader {
         };
         // A bucket counts when it starts in the range, as in a history read.
         let base = q.from_ms - q.from_ms.rem_euclid(width);
-        let tables: &[(&str, u32)] = if tier == Tier::M15 {
-            &[("tier_15m", 15), ("tier_1m", 1)]
-        } else {
-            &[(tier_table(tier)?, 1)]
-        };
+        let tables = bucket_sources(tier)?;
 
         // Pass 1: the layouts in range, so the header names every column before the
         // first row. The `(host_id, bucket_ts, layout_id)` key covers this scan.
