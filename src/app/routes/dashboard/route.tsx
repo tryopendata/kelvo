@@ -1,5 +1,5 @@
-import { useEffect } from "react";
-import { Outlet, useNavigate } from "react-router";
+import { type RefObject, useEffect, useLayoutEffect, useRef } from "react";
+import { Outlet, useLocation, useNavigate } from "react-router";
 import { pageEnter } from "~/lib/motion/enter";
 import { useTransport } from "~/lib/transport-context";
 import { cn } from "~/lib/utils";
@@ -28,6 +28,18 @@ function useNavigateRequests() {
 }
 
 /**
+ * The page scrolls inside `<main>`, which outlives route changes, so a new
+ * page would otherwise open at the previous page's offset. Reset before paint.
+ */
+function useScrollTopOnNavigate(ref: RefObject<HTMLElement | null>) {
+  const { pathname } = useLocation();
+  // biome-ignore lint/correctness/useExhaustiveDependencies: pathname is the trigger, not an input
+  useLayoutEffect(() => {
+    if (ref.current) ref.current.scrollTop = 0;
+  }, [pathname, ref]);
+}
+
+/**
  * Dashboard window shell (plan 4.4): the 220 px sidebar under the
  * overlay title bar, and the page. A stale stream (no frame for three
  * intervals) dims the page's values to 50% until the next frame. Each page's
@@ -35,12 +47,15 @@ function useNavigateRequests() {
  */
 export default function DashboardLayout() {
   useNavigateRequests();
+  const mainRef = useRef<HTMLElement>(null);
+  useScrollTopOnNavigate(mainRef);
   const sampling = useSampling();
   const stale = sampling.stale && !sampling.paused;
   return (
     <div className="flex h-svh bg-background text-foreground">
       <LiveSidebar />
       <main
+        ref={mainRef}
         data-stale={stale || undefined}
         className={cn(
           "min-w-0 flex-1 overflow-y-auto px-6 pt-5 pb-6 transition-opacity duration-(--motion-crossfade)",

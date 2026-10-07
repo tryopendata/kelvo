@@ -69,6 +69,27 @@ test("overview cards open their module page", async ({ page }) => {
   ).toBeVisible();
 });
 
+test("a sidebar tab opens its page scrolled to the top", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 600 });
+  await page.goto("/?window=dashboard&ticks=0");
+  await expect(
+    page.getByRole("list", { name: "Top processes by CPU" })
+  ).toContainText("Xcode");
+  const main = page.locator("main");
+  await main.evaluate((el) => {
+    el.scrollTop = el.scrollHeight;
+  });
+  expect(await main.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+  await page
+    .getByRole("navigation")
+    .getByRole("link", { name: /^Network/ })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "Network", exact: true })
+  ).toBeVisible();
+  expect(await main.evaluate((el) => el.scrollTop)).toBe(0);
+});
+
 test("unknown chip hides Power & Sensors and offers the sensor dump", async ({
   page,
 }, info) => {
