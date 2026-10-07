@@ -201,6 +201,10 @@ pub struct LiveProcess {
     /// it (`ProcessView.gpu`), or `Capabilities.process_gpu` is false. Approximate while
     /// a long compute job runs: time is charged when a command buffer completes (D-085).
     pub gpu_pct: Option<f32>,
+    /// TCP ports the process listens on, ascending; empty when none. `null` when not read:
+    /// no visible view asked for them (`ProcessView.ports`). Covers the current user's
+    /// processes only, like every row.
+    pub ports: Option<Vec<u16>>,
     pub user: String,
     /// Why Quit and Force Quit refuse this process, `null` when they may signal it: the
     /// rule `process_signal` checks, with Kelvo's own processes from the self-CPU
@@ -228,6 +232,11 @@ pub struct ProcessView {
     /// the GPU's IORegistry clients on the process ticks; otherwise rows carry `null`.
     #[serde(default)]
     pub gpu: bool,
+    /// The window shows the TCP ports processes listen on. While a visible window does,
+    /// the host reads each process's sockets on the process ticks (each process at most
+    /// every 5 s); otherwise rows carry `null`.
+    #[serde(default)]
+    pub ports: bool,
 }
 
 /// A descending sort key for [`ProcessView`].

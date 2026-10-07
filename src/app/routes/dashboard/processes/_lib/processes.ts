@@ -35,33 +35,50 @@ export function columnSetOptions(
   );
 }
 
-/** Visible columns and the default sort of each set. */
+/** Visible columns and the default sort of each set; every set shows ports. */
 export const COLUMN_SETS: Record<
   ColumnSet,
   { columns: ProcessColumn[]; sort: ProcessSort }
 > = {
   cpu: {
-    columns: ["name", "pid", "cpu", "mem", "threads", "wakeups", "user"],
+    columns: ["name", "pid", "port", "cpu", "mem", "threads", "user"],
     sort: { by: "cpu", dir: "desc" },
   },
   memory: {
-    columns: ["name", "pid", "mem", "compressed", "threads", "cpu", "user"],
+    columns: [
+      "name",
+      "pid",
+      "port",
+      "mem",
+      "compressed",
+      "threads",
+      "cpu",
+      "user",
+    ],
     sort: { by: "mem", dir: "desc" },
   },
   energy: {
-    columns: ["name", "pid", "energy", "cpu", "wakeups", "user"],
+    columns: ["name", "pid", "port", "energy", "cpu", "user"],
     sort: { by: "energy", dir: "desc" },
   },
   disk: {
-    columns: ["name", "pid", "diskRead", "diskWrite", "diskTotal", "user"],
+    columns: [
+      "name",
+      "pid",
+      "port",
+      "diskRead",
+      "diskWrite",
+      "diskTotal",
+      "user",
+    ],
     sort: { by: "diskTotal", dir: "desc" },
   },
   network: {
-    columns: ["name", "pid", "netRx", "netTx", "netTotal", "user"],
+    columns: ["name", "pid", "port", "netRx", "netTx", "netTotal", "user"],
     sort: { by: "netTotal", dir: "desc" },
   },
   gpu: {
-    columns: ["name", "pid", "gpu", "cpu", "mem", "user"],
+    columns: ["name", "pid", "port", "gpu", "cpu", "mem", "user"],
     sort: { by: "gpu", dir: "desc" },
   },
 };
@@ -76,7 +93,8 @@ export const GPU_COVERAGE =
 
 /**
  * Client-side search (plan 4.14): a case-insensitive substring of the name,
- * or a PID that starts with the digits typed. Blank keeps every row.
+ * or a PID or listening port that starts with the digits typed. Blank keeps
+ * every row.
  */
 export function filterProcesses(
   rows: readonly LiveProcess[],
@@ -88,7 +106,9 @@ export function filterProcesses(
   return rows.filter(
     (p) =>
       p.name.toLowerCase().includes(q) ||
-      (digits && String(p.pid).startsWith(q))
+      (digits &&
+        (String(p.pid).startsWith(q) ||
+          (p.ports ?? []).some((port) => String(port).startsWith(q))))
   );
 }
 

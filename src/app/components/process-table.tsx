@@ -16,6 +16,7 @@ import { InitialChip } from "~/widgets/initial-chip";
 export type ProcessColumn =
   | "name"
   | "pid"
+  | "port"
   | "cpu"
   | "mem"
   | "compressed"
@@ -81,6 +82,7 @@ const ROW_H = 29;
 const LABELS: Record<ProcessColumn, string> = {
   name: "Process",
   pid: "PID",
+  port: "Port",
   cpu: "% CPU",
   mem: "Memory",
   compressed: "Compressed",
@@ -107,6 +109,9 @@ function sortValue(p: LiveProcess, by: ProcessColumn): number | string | null {
       return p.user;
     case "pid":
       return p.pid;
+    case "port":
+      // The lowest port; a process listening on none sorts with the unread.
+      return p.ports?.[0] ?? null;
     case "cpu":
       return p.cpu_pct;
     case "mem":
@@ -202,6 +207,20 @@ export function sortProcesses(
 
 const grouped = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 
+/** Ports listed in a cell before the rest collapse to "+N". */
+const PORTS_SHOWN = 3;
+
+/**
+ * "3000, 5173", or "5432, 6379, 8080 +4" past three. Blank for a process
+ * listening on none, which is most rows; a dash only when ports were not read.
+ */
+export function portsText(ports: readonly number[] | null): string {
+  if (ports == null) return MISSING;
+  const head = ports.slice(0, PORTS_SHOWN).join(", ");
+  const rest = ports.length - PORTS_SHOWN;
+  return rest > 0 ? `${head} +${rest}` : head;
+}
+
 function num(v: number | null, decimals = 0): string {
   if (v == null || !Number.isFinite(v)) return MISSING;
   return decimals === 0 ? grouped.format(v) : fixed(v, decimals);
@@ -230,6 +249,19 @@ function Cell({
       );
     case "pid":
       return <span className="data-mono text-muted-foreground">{p.pid}</span>;
+    case "port":
+      return (
+        <span
+          className="data-mono text-muted-foreground"
+          title={
+            p.ports && p.ports.length > PORTS_SHOWN
+              ? p.ports.join(", ")
+              : undefined
+          }
+        >
+          {portsText(p.ports)}
+        </span>
+      );
     case "cpu": {
       const frac =
         p.cpu_pct == null

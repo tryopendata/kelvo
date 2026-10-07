@@ -101,6 +101,7 @@ import {
   scenarioFlags,
   withGpuPct,
   withNetRates,
+  withPorts,
 } from "./mock/fixtures";
 import { MockGenerator } from "./mock/generator";
 import { mockHeatmap } from "./mock/heatmap";
@@ -814,10 +815,11 @@ export function createMockTransport(
       interest.view.network === true && caps.process_network === true
         ? withNetRates(processRows())
         : processRows();
-    const all =
+    const gpu =
       interest.view.gpu === true && caps.process_gpu === true
         ? withGpuPct(net)
         : net;
+    const all = interest.view.ports === true ? withPorts(gpu) : gpu;
     const batch = selectProcesses(all, interest.view);
     push({ kind: "processes", ts_ms: ts, rows: batch });
   };

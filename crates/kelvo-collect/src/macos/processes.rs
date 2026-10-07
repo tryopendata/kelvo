@@ -333,6 +333,7 @@ impl Collector for Processes {
                     net_rx_bps: None,
                     net_tx_bps: None,
                     gpu_pct: None,
+                    ports: None,
                     user: known.user.clone(),
                 });
             }

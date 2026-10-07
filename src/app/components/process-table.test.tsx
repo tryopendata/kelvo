@@ -25,6 +25,7 @@ function proc(
     net_rx_bps: null,
     net_tx_bps: null,
     gpu_pct: null,
+    ports: null,
     user: "me",
     refusal: null,
     ...over,

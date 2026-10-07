@@ -71,6 +71,7 @@ pub trait LiveFeed: Send + Sync + 'static {
     fn set_network_process_interest(&self, interested: bool);
     /// Whether any visible window with process interest shows GPU time.
     fn set_gpu_process_interest(&self, interested: bool);
+    fn set_port_process_interest(&self, interested: bool);
     /// Adds (`true`) or removes (`false`) one unit of detail interest.
     fn set_detail_interest(&self, interested: bool);
 }
@@ -226,6 +227,7 @@ fn live_process(r: &ProcessSample, me: i32, own: &OwnProcesses) -> LiveProcess {
         net_rx_bps: r.net_rx_bps,
         net_tx_bps: r.net_tx_bps,
         gpu_pct: r.gpu_pct,
+        ports: r.ports.as_deref().map(<[u16]>::to_vec),
         user: r.user.to_string(),
         refusal: SignalRefusal::of(r.pid, &r.name, me, own.contains(r.pid, r.start_time_us)),
     }
@@ -239,6 +241,7 @@ impl From<ProcessView> for kelvo_engine::ProcessView {
             period_ms: v.period_ms,
             network: v.network,
             gpu: v.gpu,
+            ports: v.ports,
         }
     }
 }
@@ -872,8 +875,8 @@ impl WindowEntry {
 #[derive(Default)]
 struct Inner {
     windows: HashMap<String, WindowEntry>,
-    /// The process period and network and GPU flags last given to each host.
-    applied: HashMap<HostId, (Option<u32>, bool, bool)>,
+    /// The process period and network, GPU and ports flags last given to each host.
+    applied: HashMap<HostId, (Option<u32>, bool, bool, bool)>,
     /// Numbers `subscribe` calls, registry-wide, so a slot recreated after its window
     /// closed never matches a call that started before.
     next_seq: u64,
@@ -893,6 +896,7 @@ impl Inner {
         let mut period = None;
         let mut network = false;
         let mut gpu = false;
+        let mut ports = false;
         for v in self
             .windows
             .values()
@@ -903,8 +907,12 @@ impl Inner {
             period = Some(period.map_or(p, |q: u32| q.min(p)));
             network |= v.network;
             gpu |= v.gpu;
+            ports |= v.ports;
         }
-        let applied = self.applied.entry(host).or_insert((None, false, false));
+        let applied = self
+            .applied
+            .entry(host)
+            .or_insert((None, false, false, false));
         if applied.0 != period {
             applied.0 = period;
             feed.set_process_interest(period);
@@ -916,6 +924,10 @@ impl Inner {
         if applied.2 != gpu {
             applied.2 = gpu;
             feed.set_gpu_process_interest(gpu);
+        }
+        if applied.3 != ports {
+            applied.3 = ports;
+            feed.set_port_process_interest(ports);
         }
     }
 }

@@ -58,6 +58,30 @@ describe("Processes page", () => {
     expect(screen.queryByRole("cell", { name: /^Safari$/ })).toBeNull();
   });
 
+  it("shows listening ports, finds a process by port, and has no wake-ups column", async () => {
+    const { user, transport } = renderPage();
+    await screen.findByRole("cell", { name: /Xcode/ });
+    expect(screen.getByRole("columnheader", { name: "Port" })).toBeVisible();
+    expect(
+      screen.queryByRole("columnheader", { name: /wake-ups/i })
+    ).toBeNull();
+    expect(
+      transport.calls.find((c) => c.command === "set_process_interest")?.args[2]
+    ).toMatchObject({ ports: true });
+    expect(
+      await screen.findByRole("cell", { name: "3000, 5173" })
+    ).toBeVisible();
+
+    await user.type(
+      screen.getByRole("searchbox", { name: /search processes/i }),
+      "5432"
+    );
+    expect(
+      screen.getByRole("cell", { name: /com\.docker\.backend/ })
+    ).toBeVisible();
+    expect(screen.getByText(/^1 of \d+ processes/)).toBeVisible();
+  });
+
   it("switches columns and default sort with the column set", async () => {
     const { user } = renderPage();
     await screen.findByRole("cell", { name: /Xcode/ });

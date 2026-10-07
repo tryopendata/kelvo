@@ -198,6 +198,7 @@ const PROCESS_ROWS: LiveProcess[] = PROCS.map(
     net_rx_bps: null,
     net_tx_bps: null,
     gpu_pct: null,
+    ports: null,
     user,
     refusal:
       pid === 0

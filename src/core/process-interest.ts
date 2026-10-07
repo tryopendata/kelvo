@@ -21,8 +21,8 @@ export const FULL_TABLE: ProcessView = {
 /**
  * The union of several views: no limit if any has none, else the largest;
  * every sort key in first-seen order; the shortest period (`null`, every
- * sample, is shortest); network rates (D-081) and GPU time (D-085) if any
- * view shows them.
+ * sample, is shortest); network rates (D-081), GPU time (D-085) and
+ * listening ports if any view shows them.
  * `null` when there are no views (no interest).
  */
 export function unionViews(views: readonly ProcessView[]): ProcessView | null {
@@ -33,9 +33,11 @@ export function unionViews(views: readonly ProcessView[]): ProcessView | null {
   const sort: ProcessSort[] = [];
   let network = false;
   let gpu = false;
+  let ports = false;
   for (const v of views) {
     network ||= v.network === true;
     gpu ||= v.gpu === true;
+    ports ||= v.ports === true;
     limit =
       limit === null || v.limit === null ? null : Math.max(limit, v.limit);
     period =
@@ -57,6 +59,7 @@ export function unionViews(views: readonly ProcessView[]): ProcessView | null {
     ...view,
     ...(network ? { network } : {}),
     ...(gpu ? { gpu } : {}),
+    ...(ports ? { ports } : {}),
   };
 }
 
@@ -67,6 +70,7 @@ function sameView(a: ProcessView | null, b: ProcessView | null): boolean {
     a.period_ms === b.period_ms &&
     (a.network === true) === (b.network === true) &&
     (a.gpu === true) === (b.gpu === true) &&
+    (a.ports === true) === (b.ports === true) &&
     a.sort.length === b.sort.length &&
     a.sort.every((s, i) => b.sort[i] === s)
   );

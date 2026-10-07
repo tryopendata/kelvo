@@ -160,6 +160,10 @@ impl LiveFeed for HostEntry {
         self.with_control(|c| c.set_gpu_process_interest(interested));
     }
 
+    fn set_port_process_interest(&self, interested: bool) {
+        self.with_control(|c| c.set_port_process_interest(interested));
+    }
+
     fn set_detail_interest(&self, interested: bool) {
         self.with_control(|c| c.set_detail_interest(interested));
     }

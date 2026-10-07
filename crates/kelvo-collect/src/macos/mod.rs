@@ -16,6 +16,7 @@ mod libproc;
 pub mod memory;
 pub mod network;
 pub mod nstat;
+pub mod ports;
 pub(crate) mod process_control;
 pub mod processes;
 pub mod self_cpu;
@@ -182,6 +183,7 @@ pub fn collectors(scales: Arc<dyn ScaleStore>) -> Vec<Box<dyn Collector>> {
         Box::new(disk::DiskCapacity::new()),
         Box::new(battery::Battery::new()),
         Box::new(processes::Processes::new()),
+        Box::new(ports::ProcessPorts::new()),
         Box::new(nstat::NetPerProcess::new()),
         Box::new(self_cpu::SelfCpu::new()),
         Box::new(thermal_state::ThermalState::new()),

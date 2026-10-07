@@ -22,6 +22,7 @@ struct FakeFeed {
     /// Every network flag the registry set, in order.
     network: Mutex<Vec<bool>>,
     gpu: Mutex<Vec<bool>>,
+    ports: Mutex<Vec<bool>>,
     detail: AtomicI64,
     /// Behave like the engine (D-094): detail interest crossing between zero and one
     /// publishes a status with the visible 1 s or background 2 s tick before returning.
@@ -46,6 +47,7 @@ impl FakeFeed {
             periods: Mutex::new(Vec::new()),
             network: Mutex::new(Vec::new()),
             gpu: Mutex::new(Vec::new()),
+            ports: Mutex::new(Vec::new()),
             detail: AtomicI64::new(0),
             background_tick: AtomicBool::new(false),
             timeline: AtomicU32::new(0),
@@ -123,6 +125,9 @@ impl LiveFeed for FakeFeed {
     }
     fn set_gpu_process_interest(&self, interested: bool) {
         self.gpu.lock().unwrap().push(interested);
+    }
+    fn set_port_process_interest(&self, interested: bool) {
+        self.ports.lock().unwrap().push(interested);
     }
     fn set_detail_interest(&self, interested: bool) {
         let before = self
@@ -468,6 +473,7 @@ fn view(limit: Option<u16>, sort: &[ProcessSort], period_ms: Option<u32>) -> Pro
         period_ms,
         network: false,
         gpu: false,
+        ports: false,
     }
 }
 
@@ -565,6 +571,28 @@ async fn gpu_interest_follows_the_visible_views_that_ask_for_it() {
     assert!(
         feed.network.lock().unwrap().is_empty(),
         "GPU interest is not network interest"
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn ports_interest_follows_the_visible_views_that_ask_for_it() {
+    let feed = FakeFeed::new();
+    let reg = registry(&["dashboard", "popover"]);
+    let f = || -> Arc<dyn LiveFeed> { feed.clone() };
+    let ports = ProcessView {
+        ports: true,
+        ..view(None, &[], None)
+    };
+
+    reg.set_process_interest("popover", f(), Some(view(Some(5), &[], None)), None);
+    reg.set_process_interest("dashboard", f(), Some(ports.clone()), None);
+    reg.window_visible("dashboard", false);
+    reg.window_visible("dashboard", true);
+    reg.set_process_interest("dashboard", f(), Some(view(None, &[], None)), None);
+    assert_eq!(*feed.ports.lock().unwrap(), vec![true, false, true, false]);
+    assert!(
+        feed.gpu.lock().unwrap().is_empty(),
+        "ports interest is not GPU interest"
     );
 }
 
@@ -708,6 +736,7 @@ fn proc(pid: i32, cpu: f32, mem: u64) -> ProcessSample {
         net_rx_bps: None,
         net_tx_bps: None,
         gpu_pct: None,
+        ports: None,
         user: "me".into(),
     }
 }

@@ -56,6 +56,7 @@ fn proc(name: &str, pid: i32, cpu: f32, energy: f32) -> ProcessSample {
         net_rx_bps: None,
         net_tx_bps: None,
         gpu_pct: None,
+        ports: None,
         user: "u".into(),
     }
 }

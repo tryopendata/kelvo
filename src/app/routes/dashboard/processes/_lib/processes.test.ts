@@ -1,4 +1,4 @@
-import { PROCESSES } from "@core/mock/fixtures";
+import { PROCESSES, withPorts } from "@core/mock/fixtures";
 import { describe, expect, it } from "vitest";
 import {
   COLUMN_SETS,
@@ -46,6 +46,15 @@ describe("filterProcesses", () => {
     ]);
     expect(filterProcesses(PROCESSES, "18").map((p) => p.pid)).toEqual([1840]);
     expect(filterProcesses(PROCESSES, "  ")).toBe(PROCESSES);
+  });
+
+  it("matches listening ports by prefix", () => {
+    const rows = withPorts(PROCESSES);
+    expect(filterProcesses(rows, "5432").map((p) => p.name)).toEqual([
+      "com.docker.backend",
+    ]);
+    expect(filterProcesses(rows, "51").map((p) => p.pid)).toEqual([5531]);
+    expect(filterProcesses(rows, "300").map((p) => p.pid)).toEqual([5531]);
   });
 
   it("does not treat digits inside a name query as a PID", () => {

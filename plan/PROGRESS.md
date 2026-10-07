@@ -74,6 +74,12 @@ Status values: Not started, In progress, Blocked (say on what), Done (with the v
 
 ## Log
 
+### 2026-10-07 (process ports)
+
+The Processes page shows the TCP ports each process listens on, in every column set after PID, and search matches a port by prefix like a PID ("Name, PID or port"). The Idle wake-ups column is gone from the page (the CPU page's Top processes card keeps it). A new on-demand collector, `process.ports` (`kelvo-collect/src/macos/ports.rs`), fills `ProcessSample.ports` on the process ticks while a visible view sets `ProcessView.ports`, the same path per-process GPU uses; each process is re-read at most every 5 s. The read is `PROC_PIDLISTFDS` plus `PROC_PIDFDSOCKETINFO` per socket, keeping TCP sockets in LISTEN; `socket_fdinfo` offsets come from the macOS 27 SDK and a test listening on a port of its own checks them (red with a wrong offset). A full read of every readable process took about 2 ms on the dev machine (800 processes, 680 sockets). Only the user's own processes, like every row. `WireProcess` (remote wire format) and the store's process snapshot do not carry ports.
+
+Verified: `make check` (Vitest 822; the perf gates failed once on processes allocations while the suites ran in parallel and passed alone and on the rerun), new tests red with the port search removed. Screenshot of the CPU and Network sets and a port search in the browser dev server. Not measured: whole-app CPU with the Processes page open (`make bench`), and the perf gates have no ports scenario.
+
 ### 2026-10-07 (brand)
 
 Logo and app icon. The mark is a 4 x 4 slice of the history heatmap in the CPU accent, the newest cell solid. `brand/` holds the pack: `kelvo-icon` and `kelvo-logo` (mark plus an outlined Inter SemiBold wordmark), each with a `-dark` variant whose faint cells lift 20%, and `kelvo-app-icon.svg`, the source for `bun run tauri icon` (ink tile, 1024 canvas on Apple's 824 grid). `src-tauri/icons/` is regenerated from it, keeping only the macOS set; the Windows `.ico` and Store logos are gone from the repo and `bundle.icon`. In the UI, `KelvoMark` sits beside the popover title, above the onboarding title, and at the top of the dashboard sidebar: a 20 px mark with an 18 px wordmark under the traffic lights, divided from the nav by the group hairline and part of the window drag region.

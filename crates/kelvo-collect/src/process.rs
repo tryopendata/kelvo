@@ -49,6 +49,9 @@ pub struct ProcessSample {
     /// process's command buffers used divided by wall time. `None` when per-process GPU
     /// was not sampled for this row; `Some(0.0)` for a process that used none.
     pub gpu_pct: Option<f32>,
+    /// TCP ports the process listens on, ascending. `None` when ports were not read for
+    /// this row (no visible window shows them); empty when it listens on none.
+    pub ports: Option<Arc<[u16]>>,
     /// Owning user name, or the numeric uid when it has no name.
     pub user: Arc<str>,
 }

@@ -36,11 +36,14 @@ const TABLE_CHROME_PX = 33;
 
 const EMPTY: readonly LiveProcess[] = [];
 
-/** Every process, with network rates (D-081): the Network column set. */
-const FULL_TABLE_NETWORK: ProcessView = { ...FULL_TABLE, network: true };
+/** Every process with its listening ports: every column set shows them. */
+const FULL_TABLE_PORTS: ProcessView = { ...FULL_TABLE, ports: true };
 
-/** Every process, with GPU time (D-085): the GPU column set. */
-const FULL_TABLE_GPU: ProcessView = { ...FULL_TABLE, gpu: true };
+/** With network rates (D-081): the Network column set. */
+const FULL_TABLE_NETWORK: ProcessView = { ...FULL_TABLE_PORTS, network: true };
+
+/** With GPU time (D-085): the GPU column set. */
+const FULL_TABLE_GPU: ProcessView = { ...FULL_TABLE_PORTS, gpu: true };
 
 /** Height of the element, tracked as the window resizes. */
 function useMeasuredHeight(fallback: number) {
@@ -80,7 +83,7 @@ export default function ProcessesRoute() {
       ? FULL_TABLE_NETWORK
       : set === "gpu"
         ? FULL_TABLE_GPU
-        : FULL_TABLE
+        : FULL_TABLE_PORTS
   );
   const live = useProcessRows();
   const rows = live ?? EMPTY;
@@ -109,7 +112,11 @@ export default function ProcessesRoute() {
         title="Processes"
         actions={
           <div className="flex items-center gap-3">
-            <SearchField value={query} onChange={setQuery} />
+            <SearchField
+              value={query}
+              onChange={setQuery}
+              placeholder="Name, PID or port"
+            />
             <SegmentedControl
               options={columnSetOptions(processNetwork, processGpu)}
               value={set}

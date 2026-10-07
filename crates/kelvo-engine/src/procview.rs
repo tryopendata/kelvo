@@ -20,6 +20,8 @@ pub struct ProcessView {
     pub network: bool,
     /// The consumer shows per-process GPU time.
     pub gpu: bool,
+    /// The consumer shows the ports processes listen on.
+    pub ports: bool,
 }
 
 /// A descending sort key for [`ProcessView`].
@@ -113,6 +115,7 @@ mod tests {
             period_ms: None,
             network: false,
             gpu: false,
+            ports: false,
         }
     }
 
@@ -135,6 +138,7 @@ mod tests {
             net_rx_bps: None,
             net_tx_bps: None,
             gpu_pct: None,
+            ports: None,
             user: "me".into(),
         }
     }

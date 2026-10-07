@@ -70,6 +70,12 @@ describe("unionViews", () => {
     expect(unionViews([overview])?.gpu).toBeUndefined();
   });
 
+  it("asks for listening ports when any consumer shows them", () => {
+    const ports: ProcessView = { ...FULL_TABLE, ports: true };
+    expect(unionViews([overview, ports])).toEqual(ports);
+    expect(unionViews([overview])?.ports).toBeUndefined();
+  });
+
   it("is the full table at every sample when any consumer wants it", () => {
     expect(unionViews([overview, FULL_TABLE])).toEqual(FULL_TABLE);
   });

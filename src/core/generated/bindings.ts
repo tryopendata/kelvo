@@ -50,6 +50,12 @@ export const commands = {
 	 *  the GPU's IORegistry clients on the process ticks; otherwise rows carry `null`.
 	 */
 	gpu?: boolean,
+	/**
+	 *  The window shows the TCP ports processes listen on. While a visible window does,
+	 *  the host reads each process's sockets on the process ticks (each process at most
+	 *  every 5 s); otherwise rows carry `null`.
+	 */
+	ports?: boolean,
 } | null, stream: number | null) => typedError<null, CommandError>(__TAURI_INVOKE("set_process_interest", { host, interested, view, stream })),
 	/**
 	 *  Per-series points from one tier, through now: the store's rows and the engine's
@@ -983,6 +989,12 @@ export type LiveProcess = {
 	 *  a long compute job runs: time is charged when a command buffer completes (D-085).
 	 */
 	gpu_pct: number | null,
+	/**
+	 *  TCP ports the process listens on, ascending; empty when none. `null` when not read:
+	 *  no visible view asked for them (`ProcessView.ports`). Covers the current user's
+	 *  processes only, like every row.
+	 */
+	ports: number[] | null,
 	user: string,
 	/**
 	 *  Why Quit and Force Quit refuse this process, `null` when they may signal it: the
@@ -1390,6 +1402,12 @@ export type ProcessView = {
 	 *  the GPU's IORegistry clients on the process ticks; otherwise rows carry `null`.
 	 */
 	gpu?: boolean,
+	/**
+	 *  The window shows the TCP ports processes listen on. While a visible window does,
+	 *  the host reads each process's sockets on the process ticks (each process at most
+	 *  every 5 s); otherwise rows carry `null`.
+	 */
+	ports?: boolean,
 };
 
 /**  `query_processes_at`: the stored processes nearest a moment. */

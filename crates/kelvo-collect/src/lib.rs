@@ -106,6 +106,9 @@ pub enum Interest {
     /// A visible window shows per-process GPU time (v1.2). Sampled on the process ticks,
     /// like [`Interest::NetworkProcesses`].
     GpuProcesses,
+    /// A visible window shows the TCP ports processes listen on. Sampled on the process
+    /// ticks, after the processes collector, whose rows it fills in.
+    PortProcesses,
 }
 
 /// The interests in effect on a tick, for one collector.
@@ -116,6 +119,7 @@ pub struct Interests {
     pub live: bool,
     pub network_processes: bool,
     pub gpu_processes: bool,
+    pub port_processes: bool,
 }
 
 impl Interests {
@@ -126,6 +130,7 @@ impl Interests {
             Interest::Live => self.live,
             Interest::NetworkProcesses => self.network_processes,
             Interest::GpuProcesses => self.gpu_processes,
+            Interest::PortProcesses => self.port_processes,
         }
     }
 }
@@ -481,6 +486,12 @@ impl SampleBuf {
 
     pub fn processes(&self) -> &[ProcessSample] {
         &self.processes
+    }
+
+    /// The rows pushed this tick, for a collector that fills in a field of each (the
+    /// ports collector).
+    pub fn processes_mut(&mut self) -> &mut [ProcessSample] {
+        &mut self.processes
     }
 
     /// Takes the process rows, leaving an empty vector with room for as many again plus

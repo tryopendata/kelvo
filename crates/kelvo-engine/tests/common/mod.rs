@@ -196,6 +196,7 @@ impl Collector for FakeCollector {
                 net_rx_bps: None,
                 net_tx_bps: None,
                 gpu_pct: None,
+                ports: None,
                 user: "me".into(),
             });
         }

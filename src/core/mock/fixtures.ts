@@ -437,6 +437,7 @@ function proc(
     net_rx_bps: null,
     net_tx_bps: null,
     gpu_pct: null,
+    ports: null,
     user,
     refusal: refusal(pid, name),
   };
@@ -488,4 +489,20 @@ export const GPU_PCT: ReadonlyMap<number, number> = new Map([
 /** `rows` with measured GPU time, as a batch for a view with `gpu`. */
 export function withGpuPct(rows: readonly LiveProcess[]): LiveProcess[] {
   return rows.map((p) => ({ ...p, gpu_pct: GPU_PCT.get(p.pid) ?? 0 }));
+}
+
+/**
+ * Listening TCP ports by pid, ascending: a dev server, Docker's published
+ * ports and AirPlay Receiver. Every other process gets none, as Rust reports
+ * a process without a listening socket when ports are read.
+ */
+export const PORTS: ReadonlyMap<number, readonly number[]> = new Map([
+  [5531, [3000, 5173]],
+  [988, [5432, 6379, 8080]],
+  [702, [5000, 7000]],
+]);
+
+/** `rows` with their listening ports, as a batch for a view with `ports`. */
+export function withPorts(rows: readonly LiveProcess[]): LiveProcess[] {
+  return rows.map((p) => ({ ...p, ports: [...(PORTS.get(p.pid) ?? [])] }));
 }

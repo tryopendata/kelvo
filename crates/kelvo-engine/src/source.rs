@@ -55,6 +55,8 @@ pub trait SourceControl: Send + Sync {
     fn set_network_process_interest(&self, interested: bool);
     /// Whether a visible window with process interest shows GPU time.
     fn set_gpu_process_interest(&self, interested: bool);
+    /// Whether a visible window with process interest shows listening ports.
+    fn set_port_process_interest(&self, interested: bool);
     /// The "Network history" setting (D-089); see [`EngineControl::set_network_history`].
     fn set_network_history(&self, on: bool);
     /// A window that shows detail the tray does not is visible (D-061). Adding the first
@@ -120,6 +122,10 @@ impl SourceControl for EngineHandle {
 
     fn set_gpu_process_interest(&self, interested: bool) {
         self.control().set_gpu_process_interest(interested);
+    }
+
+    fn set_port_process_interest(&self, interested: bool) {
+        self.control().set_port_process_interest(interested);
     }
 
     fn set_detail_interest(&self, interested: bool) {

@@ -132,6 +132,89 @@ pub(crate) fn rusage(pid: i32) -> Option<RusageV6> {
     (rc == 0).then(|| unsafe { ri.assume_init() })
 }
 
+/// `sizeof(struct socket_fdinfo)` from `<sys/proc_info.h>`; libc does not define it. The
+/// fields read are at fixed offsets, checked against the SDK in the tests.
+const SOCKET_FDINFO_SIZE: usize = 792;
+/// `psi.soi_kind`.
+const SOI_KIND: usize = 256;
+/// `psi.soi_proto.pri_tcp.tcpsi_ini.insi_lport`, network byte order in an `int`.
+const TCP_LPORT: usize = 268;
+/// `psi.soi_proto.pri_tcp.tcpsi_state`.
+const TCP_STATE: usize = 344;
+const SOCKINFO_TCP: i32 = 2;
+const TSI_S_LISTEN: i32 = 1;
+const PROC_PIDFDSOCKETINFO: c_int = 3;
+
+fn i32_at(buf: &[u8], at: usize) -> i32 {
+    let mut b = [0u8; 4];
+    b.copy_from_slice(&buf[at..at + 4]);
+    i32::from_ne_bytes(b)
+}
+
+/// The TCP ports `pid` listens on, sorted and deduplicated (IPv4 and IPv6 sockets on one
+/// port count once), into `out`. `fds` is scratch. One `PROC_PIDLISTFDS` call plus one
+/// `PROC_PIDFDSOCKETINFO` per socket; like the calls above, it fails for other users'
+/// processes, which reads as no ports. About 2 ms for every readable process on the dev
+/// machine (800 processes, 680 sockets).
+pub(crate) fn listening_ports(pid: i32, fds: &mut Vec<libc::proc_fdinfo>, out: &mut Vec<u16>) {
+    out.clear();
+    let entry = size_of::<libc::proc_fdinfo>();
+    crate::calls::count(crate::calls::Api::Libproc);
+    // SAFETY: a null buffer asks for the size the fd list needs.
+    let need =
+        unsafe { libc::proc_pidinfo(pid, libc::PROC_PIDLISTFDS, 0, std::ptr::null_mut(), 0) };
+    if need <= 0 {
+        return;
+    }
+    // Headroom for fds opened between the two calls.
+    let cap = need as usize / entry + 16;
+    fds.clear();
+    // SAFETY: an all-zero proc_fdinfo is valid (two integers).
+    fds.resize(cap, unsafe { std::mem::zeroed() });
+    crate::calls::count(crate::calls::Api::Libproc);
+    // SAFETY: `fds` holds `cap` entries, `cap * entry` writable bytes.
+    let n = unsafe {
+        libc::proc_pidinfo(
+            pid,
+            libc::PROC_PIDLISTFDS,
+            0,
+            fds.as_mut_ptr().cast::<c_void>(),
+            (cap * entry) as c_int,
+        )
+    };
+    if n <= 0 {
+        return;
+    }
+    let mut info = [0u8; SOCKET_FDINFO_SIZE];
+    for fd in &fds[..(n as usize / entry).min(cap)] {
+        if fd.proc_fdtype as c_int != libc::PROX_FDTYPE_SOCKET {
+            continue;
+        }
+        crate::calls::count(crate::calls::Api::Libproc);
+        // SAFETY: `info` is SOCKET_FDINFO_SIZE writable bytes, a socket_fdinfo.
+        let got = unsafe {
+            libc::proc_pidfdinfo(
+                pid,
+                fd.proc_fd,
+                PROC_PIDFDSOCKETINFO,
+                info.as_mut_ptr().cast::<c_void>(),
+                SOCKET_FDINFO_SIZE as c_int,
+            )
+        };
+        if got as usize != SOCKET_FDINFO_SIZE
+            || i32_at(&info, SOI_KIND) != SOCKINFO_TCP
+            || i32_at(&info, TCP_STATE) != TSI_S_LISTEN
+        {
+            continue;
+        }
+        // The port is the low 16 bits, in network byte order.
+        let port = u16::from_be((i32_at(&info, TCP_LPORT) as u32 & 0xffff) as u16);
+        out.push(port);
+    }
+    out.sort_unstable();
+    out.dedup();
+}
+
 /// The process name: `pbi_name` (up to 32 bytes), falling back to `pbi_comm`. Borrowed
 /// from `bsd` when it is valid UTF-8, so a caller that keeps it pays one allocation for
 /// its own copy (the processes collector's `Arc<str>`), not three.
@@ -505,6 +588,18 @@ mod tests {
         // sizeof and offsetof from a C program against the macOS 27 SDK.
         assert_eq!(size_of::<RusageV6>(), 464);
         assert_eq!(std::mem::offset_of!(RusageV6, ri_energy_nj), 336);
+    }
+
+    #[test]
+    fn reads_a_listening_port_of_its_own() {
+        // sizeof and offsetof for `socket_fdinfo` came from a C program against the
+        // macOS 27 SDK (792; soi_kind 256, insi_lport 268, tcpsi_state 344). A socket
+        // this process listens on proves them.
+        let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = l.local_addr().unwrap().port();
+        let (mut fds, mut out) = (Vec::new(), Vec::new());
+        listening_ports(std::process::id() as i32, &mut fds, &mut out);
+        assert!(out.contains(&port), "{port} not in {out:?}");
     }
 
     /// One row per process the step-0 identity probe saw on macOS 27 (scratchpad

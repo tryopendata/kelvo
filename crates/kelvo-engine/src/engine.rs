@@ -274,6 +274,8 @@ struct Shared {
     network: AtomicBool,
     /// A visible window with process interest shows per-process GPU time.
     gpu: AtomicBool,
+    /// A visible window with process interest shows the ports processes listen on.
+    ports: AtomicBool,
     /// The "Network history" setting (D-089): per-app bytes are sampled on every process
     /// tick and persisted. Off, the per-process network collector runs only while a view
     /// asks for rates (D-082).
@@ -402,6 +404,17 @@ impl EngineControl {
 
     pub fn gpu_process_interest(&self) -> bool {
         self.shared.gpu.load(Ordering::Acquire)
+    }
+
+    /// Whether a visible window with process interest shows the TCP ports processes
+    /// listen on. Works like [`EngineControl::set_gpu_process_interest`]: the ports
+    /// collector fills the rows on the process ticks while it is set.
+    pub fn set_port_process_interest(&self, interested: bool) {
+        self.shared.ports.store(interested, Ordering::Release);
+    }
+
+    pub fn port_process_interest(&self) -> bool {
+        self.shared.ports.load(Ordering::Acquire)
     }
 
     /// The "Network history" setting (D-089), on by default. On, the per-process network
@@ -664,6 +677,7 @@ impl Engine {
             detail: AtomicU32::new(0),
             network: AtomicBool::new(false),
             gpu: AtomicBool::new(false),
+            ports: AtomicBool::new(false),
             net_history: AtomicBool::new(true),
         });
         let slots = parts
@@ -1275,6 +1289,7 @@ impl Engine {
         // cover the same span.
         let wants_network = wants_processes && self.shared.network.load(Ordering::Acquire);
         let wants_gpu = wants_processes && self.shared.gpu.load(Ordering::Acquire);
+        let wants_ports = wants_processes && self.shared.ports.load(Ordering::Acquire);
         // Network history samples per-app bytes on every tick the processes collector
         // samples, tray-only included, and keeps the session open meanwhile (D-089). Not
         // through `wants_network`: on demand means every tick or never.
@@ -1287,6 +1302,7 @@ impl Engine {
             live: detail,
             network_processes: wants_network && processes_due,
             gpu_processes: wants_gpu && processes_due,
+            port_processes: wants_ports && processes_due,
         };
         // Who holds each interest, due this tick or not: an on-demand collector is
         // released only when its interest is gone.
@@ -1294,6 +1310,7 @@ impl Engine {
             processes: wants_processes,
             network_processes: wants_network || history,
             gpu_processes: wants_gpu,
+            port_processes: wants_ports,
             ..interests
         };
         // Set once the processes collector sampled this tick; the per-process network
