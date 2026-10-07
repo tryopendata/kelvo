@@ -109,6 +109,7 @@ import {
   mockBatteryHours,
   mockGaps,
   mockHistory,
+  mockNetworkTotals,
   mockRecentHistory,
 } from "./mock/history";
 import {
@@ -1302,6 +1303,36 @@ export function createMockTransport(
         });
       }
       return ok(mockHeatmap(request, now()));
+    },
+    async queryNetworkTotals(host, fromMs, toMs) {
+      record("query_network_totals", host, fromMs, toMs);
+      const bad = unknownHost(host);
+      if (bad) return bad;
+      if (toMs < fromMs) {
+        return err({
+          kind: "invalid_argument",
+          message: "the range ends before it starts",
+        });
+      }
+      if (toMs - fromMs > NET_MAX_SPAN_MS) {
+        return err({
+          kind: "invalid_argument",
+          message: "the range is longer than history keeps",
+        });
+      }
+      return ok(
+        mockNetworkTotals(host, fromMs, toMs, now(), (req) =>
+          unavailable
+            ? mockRecentHistory(req, gen.specs, now(), status.interval_ms)
+            : mockHistory(
+                req,
+                gen.specs,
+                mockGaps(flags, startMs),
+                now(),
+                status.interval_ms
+              )
+        )
+      );
     },
     async batteryHours(host, hourStartsMs) {
       record("battery_hours", host, hourStartsMs);

@@ -19,7 +19,7 @@ use crate::error::{CommandError, HistoryUnavailableReason};
 use crate::ipc::{
     BatteryHour, ExportRequest, HeatmapDay, HeatmapMetric, HeatmapRequest, HistoryHealth,
     HistoryPage, HistoryPoint, HistoryRequest, HistorySeries, NetworkByApp, NetworkSpan,
-    ProcessResolution, ProcessesAt, StoredProcess, TierRequest,
+    NetworkTotals, ProcessResolution, ProcessesAt, StoredProcess, TierRequest,
 };
 
 /// File name of the history database in the app data directory (v1-local-monitor.md 6.5).
@@ -267,6 +267,53 @@ impl History {
             }
             read => read,
         }
+    }
+
+    /// `query_network_totals`: bytes over `[from_ms, to_ms)` from the `net.rx_total` and
+    /// `net.tx_total` rollups, through now as `query_history` reads them. Each bucket's
+    /// span-weighted average rate (D-092) times the time it covers, cut at `now_ms`, less
+    /// any gap inside it that applies to Network; a bucket with no reading counts nothing.
+    /// The tier is the one `query_history` would pick. Blocking.
+    pub fn network_totals(
+        &self,
+        host: kelvo_schema::HostId,
+        from_ms: i64,
+        to_ms: i64,
+        now_ms: i64,
+        recent: impl Fn() -> Vec<BucketRow>,
+    ) -> Result<NetworkTotals, CommandError> {
+        if to_ms < from_ms {
+            return Err(CommandError::InvalidArgument {
+                message: format!("the range ends ({to_ms}) before it starts ({from_ms})"),
+            });
+        }
+        if to_ms - from_ms > MAX_NET_SPAN_MS {
+            return Err(CommandError::InvalidArgument {
+                message: format!(
+                    "the range is {} days long; history keeps at most {} days",
+                    (to_ms - from_ms) / Retention::DAY_MS,
+                    MAX_NET_SPAN_MS / Retention::DAY_MS
+                ),
+            });
+        }
+        let finest = Tier::S10.bucket_ms().unwrap_or(10_000);
+        let query = HistoryQuery {
+            host,
+            selectors: [NET_RX_TOTAL, NET_TX_TOTAL]
+                .into_iter()
+                .map(|m| kelvo_schema::SeriesSelector {
+                    metric: MetricId::from_static(m),
+                    labels: Labels::new(),
+                })
+                .collect(),
+            from_ms,
+            to_ms,
+            tier: TierChoice::Auto,
+            // One point per bucket of the finest tier: no merging.
+            max_points: u32::try_from((to_ms - from_ms) / finest + 2).unwrap_or(u32::MAX),
+        };
+        let read = self.history_through_now(&query, recent)?;
+        Ok(network_totals(&read, from_ms, to_ms, now_ms))
     }
 
     /// `battery_hours`: for each hour between consecutive `hour_starts` (the
@@ -533,6 +580,67 @@ pub const MAX_BATTERY_HOURS: usize = MAX_HEATMAP_DAYS * 24;
 
 const CHARGE: &str = "battery.charge";
 const CHARGING: &str = "battery.charging";
+const NET_RX_TOTAL: &str = "net.rx_total";
+const NET_TX_TOTAL: &str = "net.tx_total";
+
+/// Sums a `query_network_totals` read. The range is widened to whole buckets, as the read
+/// took them, and cut at `now_ms`. A bucket is measured where either direction has a
+/// reading, outside the gaps that apply to Network (host-wide ones and Network's own);
+/// an open gap runs to `now_ms`.
+fn network_totals(read: &HistoryResult, from_ms: i64, to_ms: i64, now_ms: i64) -> NetworkTotals {
+    let width = read.bucket_ms.max(1);
+    let from = from_ms - from_ms.rem_euclid(width);
+    let to = (to_ms + (width - to_ms.rem_euclid(width)) % width)
+        .min(now_ms)
+        .max(from);
+    let mut gaps: Vec<(i64, i64)> = read
+        .gaps
+        .iter()
+        .filter(|g| g.module.is_none_or(|m| m == kelvo_schema::Module::Network))
+        .map(|g| (g.start_ms, g.end_ms.unwrap_or(now_ms)))
+        .collect();
+    gaps.sort_unstable();
+    // Time in `[a, b)` outside every gap.
+    let measured = |a: i64, b: i64| -> i64 {
+        let mut covered = 0;
+        let mut cursor = a;
+        for &(s, e) in &gaps {
+            let (s, e) = (s.max(cursor), e.min(b));
+            if e > s {
+                covered += e - s;
+                cursor = e;
+            }
+        }
+        (b - a - covered).max(0)
+    };
+    let span = |t: i64| measured(t.max(from), (t + width).min(to));
+
+    let mut rx = 0.0_f64;
+    let mut tx = 0.0_f64;
+    let mut buckets = std::collections::BTreeSet::new();
+    for series in &read.series {
+        let sum = match series.key.metric.as_str() {
+            NET_RX_TOTAL => &mut rx,
+            NET_TX_TOTAL => &mut tx,
+            _ => continue,
+        };
+        for p in &series.points {
+            let ms = span(p.t);
+            if ms > 0 && p.avg.is_finite() {
+                *sum += f64::from(p.avg.max(0.0)) * ms as f64 / 1000.0;
+                buckets.insert(p.t);
+            }
+        }
+    }
+    let measured_ms: i64 = buckets.iter().map(|&t| span(t)).sum();
+    NetworkTotals {
+        from_ms: from,
+        to_ms: to,
+        measured_ms: u64::try_from(measured_ms).unwrap_or(0),
+        rx_bytes: rx.round() as u64,
+        tx_bytes: tx.round() as u64,
+    }
+}
 
 /// Each battery point of `result` into the hour of `cells` holding it: the latest charge
 /// (`last_t` tracks its time, `i64::MIN` while the hour has none) and whether any bucket
@@ -1209,6 +1317,91 @@ mod tests {
                 }
             })
             .collect()
+    }
+
+    /// 10 s rows of `net.rx_total` (1,000 B/s) and `net.tx_total` (100 B/s) for buckets
+    /// `buckets` after `NOW`.
+    fn net_buckets(buckets: impl Iterator<Item = i64>) -> Vec<BucketRow> {
+        let series: std::sync::Arc<[SeriesKey]> = vec![
+            SeriesKey::parse("net.rx_total").unwrap(),
+            SeriesKey::parse("net.tx_total").unwrap(),
+        ]
+        .into();
+        buckets
+            .map(|b| BucketRow {
+                host: local_record().id,
+                tier: Tier::S10,
+                bucket_ts: NOW + b * 10_000,
+                series: std::sync::Arc::clone(&series),
+                stats: vec![900.0, 1_100.0, 1_000.0, 90.0, 110.0, 100.0],
+            })
+            .collect()
+    }
+
+    #[test]
+    fn network_totals_count_measured_time_through_now() {
+        const S: i64 = 1_000;
+        let dir = temp_dir("network-totals");
+        let history = History::open(&dir);
+        let w = history.register_host(&local_record()).unwrap();
+        // Buckets 12 and 13 have no reading; 25.. are only in the engine.
+        for row in net_buckets((0..25).filter(|b| !(12..14).contains(b))) {
+            w.write_bucket(row).unwrap();
+        }
+        let host = local_record().id;
+        // Asleep over all of bucket 10 and half of 11. CPU switched off over the first
+        // buckets does not touch Network.
+        w.write_gap(
+            host,
+            kelvo_schema::Gap::new(
+                NOW + 100 * S,
+                Some(NOW + 115 * S),
+                None,
+                kelvo_schema::GapReason::Sleep,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        w.write_gap(
+            host,
+            kelvo_schema::Gap::new(
+                NOW,
+                Some(NOW + 20 * S),
+                Some(kelvo_schema::Module::Cpu),
+                kelvo_schema::GapReason::ModuleDisabled,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        w.flush().unwrap();
+        // Bucket 27 is open: now is halfway through it. 28 is past now.
+        let recent = || net_buckets(20..29);
+        let totals = history
+            .network_totals(host, NOW + 5 * S, NOW + 400 * S, NOW + 275 * S, recent)
+            .unwrap();
+        // 28 buckets to now, less 12 and 13, 10 (asleep), half of 11 and half of 27.
+        let measured = 240 * S;
+        assert_eq!(
+            totals,
+            NetworkTotals {
+                from_ms: NOW,
+                to_ms: NOW + 275 * S,
+                measured_ms: measured as u64,
+                rx_bytes: 240_000,
+                tx_bytes: 24_000,
+            },
+            "widened to the bucket, cut at now, gaps and empty buckets not counted"
+        );
+        history.close();
+
+        // Live-only: the engine's rows alone.
+        let totals = History::unavailable()
+            .network_totals(host, NOW + 200 * S, NOW + 270 * S, NOW + 275 * S, recent)
+            .unwrap();
+        assert_eq!((totals.measured_ms, totals.rx_bytes), (70_000, 70_000));
+
+        let bad = History::unavailable().network_totals(host, NOW + S, NOW, NOW, Vec::new);
+        assert!(matches!(bad, Err(CommandError::InvalidArgument { .. })));
     }
 
     #[test]

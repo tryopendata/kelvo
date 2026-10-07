@@ -21,6 +21,7 @@ import { AddressLine } from "./_components/address-line";
 import { AppsCard } from "./_components/apps-card";
 import { AppsNowCard } from "./_components/apps-now-card";
 import { SelectionSummary } from "./_components/selection-summary";
+import { TotalsStrip } from "./_components/totals-strip";
 import { interfaceRows, networkSubtitle, ofLink } from "./_lib/network";
 
 const NO_KEYS: readonly string[] = [];
@@ -90,18 +91,21 @@ export default function NetworkRoute() {
                 <h2 id="network-throughput" className="sr-only">
                   Throughput
                 </h2>
-                <StatStrip
-                  hero={{ label: "↓ Download", value: rate(net.rx) }}
-                  items={[
-                    { label: "↑ Upload", value: rate(net.tx) },
-                    {
-                      label: "Of link",
-                      value: formatPercent(ofLink(net.rx, link), {
-                        decimals: 1,
-                      }),
-                    },
-                  ]}
-                />
+                <div className="flex flex-wrap items-end justify-between gap-x-7 gap-y-3">
+                  <StatStrip
+                    hero={{ label: "↓ Download", value: rate(net.rx) }}
+                    items={[
+                      { label: "↑ Upload", value: rate(net.tx) },
+                      {
+                        label: "Of link",
+                        value: formatPercent(ofLink(net.rx, link), {
+                          decimals: 1,
+                        }),
+                      },
+                    ]}
+                  />
+                  <TotalsStrip windowMs={windowMs} />
+                </div>
                 <div className="flex flex-col gap-1.5">
                   <LiveMirrorChart
                     brush={brush}

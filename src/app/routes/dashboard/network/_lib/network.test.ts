@@ -5,6 +5,7 @@ import {
   measuredTraffic,
   networkSubtitle,
   ofLink,
+  totalsMeasured,
 } from "./network";
 
 describe("measuredTraffic", () => {
@@ -46,5 +47,25 @@ describe("network page helpers", () => {
     expect(networkSubtitle("en0", 1.2e9)).toBe("en0 · 1.2 Gb/s link");
     expect(networkSubtitle("en0", null)).toBe("en0");
     expect(networkSubtitle(null, null)).toBe("No active interface");
+  });
+});
+
+describe("totalsMeasured", () => {
+  const totals = (measured_ms: number) => ({
+    from_ms: 0,
+    to_ms: 900_000,
+    measured_ms,
+    rx_bytes: 1,
+    tx_bytes: 1,
+  });
+
+  it("is null when the whole range was measured, within a bucket's rounding", () => {
+    expect(totalsMeasured(totals(900_000))).toBeNull();
+    expect(totalsMeasured(totals(892_000))).toBeNull();
+  });
+
+  it("names the measured time when a gap took part of the range", () => {
+    expect(totalsMeasured(totals(660_000))).toBe("11 min");
+    expect(totalsMeasured(totals(0))).toBe("0 s");
   });
 });

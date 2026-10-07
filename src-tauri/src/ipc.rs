@@ -369,6 +369,29 @@ pub struct BatteryHour {
     pub charging: bool,
 }
 
+/// `query_network_totals`: the bytes the reported interfaces moved over a range, from
+/// the stored `net.rx_total` and `net.tx_total` rollups. Works without per-app network
+/// history and in the App Store edition.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, specta::Type)]
+pub struct NetworkTotals {
+    /// The range the sums cover: the request widened to whole buckets of the tier that
+    /// answered (10 s, or 1 m and 15 m for older history) and cut at now.
+    #[specta(type = JsSafeInt)]
+    pub from_ms: i64,
+    #[specta(type = JsSafeInt)]
+    pub to_ms: i64,
+    /// How much of `[from_ms, to_ms)` was measured, ms: buckets with a reading, less any
+    /// gap inside them (sleep, Kelvo not running, Network switched off).
+    #[specta(type = JsSafeInt)]
+    pub measured_ms: u64,
+    /// Bytes received over the measured time.
+    #[specta(type = JsSafeInt)]
+    pub rx_bytes: u64,
+    /// Bytes sent over the measured time.
+    #[specta(type = JsSafeInt)]
+    pub tx_bytes: u64,
+}
+
 /// The series a heatmap shows.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "snake_case")]

@@ -86,6 +86,15 @@ export const commands = {
 	 */
 	queryNetworkByApp: (host: HostId, fromMs: Millis, toMs: Millis) => typedError<NetworkByApp, CommandError>(__TAURI_INVOKE("query_network_by_app", { host, fromMs, toMs })),
 	/**
+	 *  The bytes the reported interfaces moved over `[from_ms, to_ms)`, widened to whole
+	 *  buckets and cut at now, from the `net.rx_total` and `net.tx_total` rollups through now.
+	 *  Needs neither per-app network history nor NetworkStatistics, so it answers in every
+	 *  edition; with history unavailable, the engine's last 15 minutes alone.
+	 *  `invalid_argument` when `to_ms` is before `from_ms` or the range is longer than the
+	 *  longest history retention.
+	 */
+	queryNetworkTotals: (host: HostId, fromMs: Millis, toMs: Millis) => typedError<NetworkTotals, CommandError>(__TAURI_INVOKE("query_network_totals", { host, fromMs, toMs })),
+	/**
 	 *  Which apps used energy over `[from_ms, to_ms)` (D-093), widened to whole 10 s
 	 *  buckets, from the last hour of process samples the host's hub keeps in memory: a
 	 *  range reaching further back is answered for the part inside that hour, and
@@ -1242,6 +1251,29 @@ export type NetworkSpan = {
 	 *  started, asleep, paused, Network history off).
 	 */
 	tier: Tier | null,
+};
+
+/**
+ *  `query_network_totals`: the bytes the reported interfaces moved over a range, from
+ *  the stored `net.rx_total` and `net.tx_total` rollups. Works without per-app network
+ *  history and in the App Store edition.
+ */
+export type NetworkTotals = {
+	/**
+	 *  The range the sums cover: the request widened to whole buckets of the tier that
+	 *  answered (10 s, or 1 m and 15 m for older history) and cut at now.
+	 */
+	from_ms: number,
+	to_ms: number,
+	/**
+	 *  How much of `[from_ms, to_ms)` was measured, ms: buckets with a reading, less any
+	 *  gap inside them (sleep, Kelvo not running, Network switched off).
+	 */
+	measured_ms: number,
+	/**  Bytes received over the measured time. */
+	rx_bytes: number,
+	/**  Bytes sent over the measured time. */
+	tx_bytes: number,
 };
 
 /**  MB/s or Mb/s. */

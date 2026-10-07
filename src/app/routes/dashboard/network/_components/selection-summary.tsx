@@ -1,11 +1,12 @@
-import { formatBytes, formatClockSeconds } from "@core/format";
+import { formatClockSeconds } from "@core/format";
 import { useBrushRange } from "~/stores/brush-store";
 import { useHost } from "~/stores/host-store";
 import { useNetworkByApp } from "../_hooks/use-network-by-app";
 
 /**
  * The line under the brushable chart: the hint with no
- * selection, otherwise the selected range and its interface bytes, and
+ * selection, otherwise the selected range (its bytes are in the totals
+ * above the chart), and
  * "earlier than this chart" once the range has scrolled off.
  */
 export function SelectionSummary({ windowMs }: { windowMs: number }) {
@@ -40,19 +41,6 @@ export function SelectionSummary({ windowMs }: { windowMs: number }) {
       <span className="data-mono text-foreground">
         {formatClockSeconds(to)}
       </span>
-      {data && data.measured_ms > 0 && (
-        <>
-          {" · "}
-          <span className="data-mono text-fg-subtle">
-            {formatBytes(data.iface_rx_bytes)}
-          </span>{" "}
-          down ·{" "}
-          <span className="data-mono text-fg-subtle">
-            {formatBytes(data.iface_tx_bytes)}
-          </span>{" "}
-          up
-        </>
-      )}
       {offChart && " · earlier than this chart"}
       <span className="text-fg-faint">
         {" "}

@@ -103,6 +103,7 @@ See [README](README.md) for the roadmap and [architecture.md](architecture.md) f
 | D-093 | Energy by app over the chart window from an in-memory ring; local and public IP on Network; brush selections dismiss like a d3 brush; °F by default | Accepted |
 | D-095 | Public release prep: Apache-2.0, bundle identifier com.tryopendata.kelvo, design mocks retired | Accepted |
 | D-096 | macOS checks move to a pre-push hook; hosted CI runs Linux jobs on push | Accepted |
+| D-098 | Network page totals over the chart window, from the stored interface totals | Accepted |
 
 ---
 
@@ -3109,3 +3110,22 @@ Live charts and the per-core heatmap draw from the host's in-memory ring (D-066)
 
 - The pre-launch part of a live chart has 10 s resolution and loses each bucket's min and max. The oldest stored sample covers only its own slot. The time Kelvo was not running stays a hole.
 - A v4 remote source can warm its hub the same way from synced history.
+
+## D-098: Network page totals over the chart window, from the stored interface totals
+
+Status: Accepted. Date: 2026-10-07. Network page; IPC command `query_network_totals`. Follows D-089, D-091 and D-092.
+
+### Context
+
+The Network page showed live rates and, with per-app history, bytes per app, but no total download and upload over the window the chart shows. The interface bytes `query_network_by_app` returns need NetworkStatistics and Network history, so they are absent in the App Store edition and with the setting off. The interface counters behind `net.rx_total` and `net.tx_total` need no entitlement, and those series are persisted in every edition.
+
+### Decision
+
+- `query_network_totals(host, from, to)` sums the `net.rx_total` and `net.tx_total` rollups through now (the store plus the engine's recent rows, as `query_history` reads them, on the tier `query_history` would pick). Each bucket counts its span-weighted average rate (D-092) times the time it covers, cut at now, less any host-wide or Network gap inside it; a bucket with no reading counts nothing. The range is widened to whole buckets, and `measured_ms` says how much of it was measured. It lives in the shell's `History` beside `battery_hours`.
+- The totals sit at the right of the throughput card's stat strip, as "↓ Downloaded · 15 min" and "↑ Uploaded · 15 min" at the card-figure size. The live rates stay on the left and the Download rate stays the page's hero. They cover the chart window ending at the open 10 s bucket, or the brushed range when there is one, so the selection line under the chart no longer repeats the bytes. When part of the range was not measured, each figure says how long was ("in 30 min 50 s").
+
+### Consequences
+
+- The totals show in every edition and with Network history off.
+- They come from the interface series, the Apps table's interface bytes from the per-app buckets' headers. Both read the same counters but are summed separately, so they can differ by rounding at bucket edges and by a sample whose span crosses a bucket boundary.
+- Rows written before span weighting (D-092) are count-weighted, so totals over them are approximate.

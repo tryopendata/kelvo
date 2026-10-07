@@ -20,6 +20,10 @@ const views = (calls: { command: string; args: unknown[] }[]) =>
   calls
     .filter((c) => c.command === "set_process_interest")
     .map((c) => c.args[2] as ProcessView | null);
+const totalsCalls = (calls: { command: string; args: unknown[] }[]) =>
+  calls
+    .filter((c) => c.command === "query_network_totals")
+    .map((c) => [c.args[1], c.args[2]] as [number, number]);
 const byAppCalls = (calls: { command: string; args: unknown[] }[]) =>
   calls
     .filter((c) => c.command === "query_network_by_app")
@@ -163,8 +167,12 @@ describe("Network page Apps card (D-089)", () => {
     const from = formatClockSeconds(T - 380 * S);
     const to = formatClockSeconds(T - 360 * S);
     expect(screen.getByTestId("selection-summary")).toHaveTextContent(
-      new RegExp(
-        `^${from} to ${to} · .+ down · .+ up · Click the chart or press Esc to clear$`
+      new RegExp(`^${from} to ${to} · Click the chart or press Esc to clear$`)
+    );
+    // The totals beside the live rates follow the selection.
+    await vi.waitFor(() =>
+      expect(screen.getByTestId("network-totals")).toHaveTextContent(
+        /↓ Downloaded · 20 s.+B↑ Uploaded · 20 s.+B$/
       )
     );
     expect(screen.getByTestId("selection-summary")).not.toHaveTextContent(
@@ -371,5 +379,39 @@ describe("Network page Apps card (D-089)", () => {
     expect(screen.queryByText(/Drag across the chart/)).toBeNull();
     expect(views(transport.calls)).toEqual([]);
     expect(byAppCalls(transport.calls)).toEqual([]);
+  });
+});
+
+describe("Network page totals", () => {
+  it("bytes over the chart window, ending where the open bucket starts", async () => {
+    const { transport } = renderRoute();
+    const totals = await screen.findByTestId("network-totals");
+    await vi.waitFor(() =>
+      expect(totals).toHaveTextContent(
+        /^↓ Downloaded · 5 min[\d.]+ [KMG]?B↑ Uploaded · 5 min[\d.]+ [KMG]?B$/
+      )
+    );
+    expect(totalsCalls(transport.calls)).toContainEqual([T - 300 * S, T]);
+  });
+
+  it("without per-app access (the App Store edition) the totals still show", async () => {
+    const { transport } = renderRoute(["no-process-network"]);
+    await vi.waitFor(() =>
+      expect(screen.getByTestId("network-totals")).toHaveTextContent(
+        /↓ Downloaded · 5 min[\d.]+ [KMG]?B/
+      )
+    );
+    expect(byAppCalls(transport.calls)).toEqual([]);
+  });
+
+  it("says how long it measured when a gap covers part of the window", async () => {
+    renderRoute(["sleep-gap"], "1h");
+    // The mock sleeps from 52 to 23 minutes ago, 29 of the hour's 60 minutes,
+    // and drops the two 10 s slots its edges cut through.
+    await vi.waitFor(() =>
+      expect(screen.getByTestId("network-totals")).toHaveTextContent(
+        /↓ Downloaded · 1 h[\d.]+ [KMG]?B in 30 min 50 s/
+      )
+    );
   });
 });

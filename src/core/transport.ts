@@ -36,6 +36,7 @@ import {
   type NavigateRequested,
   type NetworkAddresses,
   type NetworkByApp,
+  type NetworkTotals,
   type ProcessesAt,
   type ProcessView,
   type SensorDump,
@@ -123,6 +124,16 @@ export interface Transport {
     fromMs: Millis,
     toMs: Millis
   ): Promise<CommandResult<NetworkByApp>>;
+  /**
+   * The bytes the reported interfaces moved over `[fromMs, toMs)`, widened to
+   * whole buckets and cut at now, from the stored interface totals. Works in
+   * every edition and with Network history off.
+   */
+  queryNetworkTotals(
+    host: HostId,
+    fromMs: Millis,
+    toMs: Millis
+  ): Promise<CommandResult<NetworkTotals>>;
   /**
    * Which apps used energy over `[fromMs, toMs)` (D-093), widened to whole
    * 10 s buckets, from the last hour of process samples Rust keeps in
@@ -297,6 +308,8 @@ export function createTauriTransport(label: string): Transport {
     queryProcessesAt: (host, tMs) => commands.queryProcessesAt(host, tMs),
     queryNetworkByApp: (host, fromMs, toMs) =>
       commands.queryNetworkByApp(host, fromMs, toMs),
+    queryNetworkTotals: (host, fromMs, toMs) =>
+      commands.queryNetworkTotals(host, fromMs, toMs),
     queryEnergyByApp: (host, fromMs, toMs) =>
       commands.queryEnergyByApp(host, fromMs, toMs),
     getNetworkAddresses: (host) => commands.getNetworkAddresses(host),

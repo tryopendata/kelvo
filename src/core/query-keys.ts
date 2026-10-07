@@ -49,6 +49,9 @@ export const historyKeys = {
    */
   networkByApp: (hostId: HostId, fromMs: number, toMs: number) =>
     [...historyKeys.host(hostId), "network-by-app", fromMs, toMs] as const,
+  /** Interface bytes over `[fromMs, toMs)`. */
+  networkTotals: (hostId: HostId, fromMs: number, toMs: number) =>
+    [...historyKeys.host(hostId), "network-totals", fromMs, toMs] as const,
   /**
    * Per-app energy over `[fromMs, toMs)` (D-093). Not stored history, but
    * cleared with it, so it sits in the family a clear invalidates.

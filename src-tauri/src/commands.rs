@@ -15,8 +15,8 @@ use crate::error::CommandError;
 use crate::ipc::{
     BatteryHour, ByteCount, EnergyByApp, ExportOutcome, ExportRequest, HeatmapDay, HeatmapRequest,
     HistoryGrowth, HistoryHealth, HistoryPage, HistoryRequest, LiveMsg, Millis, NetworkAddresses,
-    NetworkByApp, ProcessView, ProcessesAt, SensorDump, SensorReading, SettingsSnapshot,
-    SubscriptionInfo, UpdateStatus, WindowAppearance,
+    NetworkByApp, NetworkTotals, ProcessView, ProcessesAt, SensorDump, SensorReading,
+    SettingsSnapshot, SubscriptionInfo, UpdateStatus, WindowAppearance,
 };
 use crate::live::{DEFAULT_BACKFILL_MS, LiveFeed, LiveRequest, LiveSink};
 use crate::process_signal::{
@@ -222,6 +222,33 @@ pub async fn query_network_by_app(
         state.history.network_by_app(host, from_ms.0, to_ms.0, || {
             entry.recent_net(from_ms.0, to_ms.0)
         })
+    })
+    .await
+}
+
+/// The bytes the reported interfaces moved over `[from_ms, to_ms)`, widened to whole
+/// buckets and cut at now, from the `net.rx_total` and `net.tx_total` rollups through now.
+/// Needs neither per-app network history nor NetworkStatistics, so it answers in every
+/// edition; with history unavailable, the engine's last 15 minutes alone.
+/// `invalid_argument` when `to_ms` is before `from_ms` or the range is longer than the
+/// longest history retention.
+#[tauri::command]
+#[specta::specta]
+pub async fn query_network_totals(
+    app: AppHandle,
+    host: HostId,
+    from_ms: Millis,
+    to_ms: Millis,
+) -> Result<NetworkTotals, CommandError> {
+    blocking(app, move |state| {
+        let entry = state.host(host)?;
+        let now_ms = kelvo_engine::wall_ms();
+        let recent_start = recent_from(from_ms.0);
+        state
+            .history
+            .network_totals(host, from_ms.0, to_ms.0, now_ms, || {
+                entry.recent_rows(host, recent_start, to_ms.0)
+            })
     })
     .await
 }
