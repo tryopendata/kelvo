@@ -16,16 +16,21 @@ export interface ReadFailure {
   lastGoodMs: number | null;
 }
 
-/** Last ring row that measured `key`, newest first. */
+/**
+ * Time of the newest row within one ring span that measured `key` (`NaN` in
+ * its column is "not measured"). Scans back without allocating: it runs as a
+ * 1 Hz selector while a series is failing.
+ */
 export function lastMeasuredMs(state: HostLive, key: string): number | null {
-  const last = state.rows.last();
-  if (!last) return null;
-  const rows = state.rows.since(last.tsMs - RING_SPAN_MS);
-  for (let i = rows.length - 1; i >= 0; i--) {
-    const row = rows[i];
-    if (!row) continue;
-    const idx = state.layouts[row.layoutNo]?.index.get(key);
-    if (idx !== undefined && row.values[idx] != null) return row.tsMs;
+  const cols = state.columns;
+  const newest = cols.lastTsMs();
+  const col = cols.column(key);
+  if (newest === null || !col) return null;
+  const fromMs = newest - RING_SPAN_MS;
+  for (let i = cols.length - 1; i >= 0; i--) {
+    const tsMs = cols.tsAt(i);
+    if (tsMs <= fromMs) break;
+    if (!Number.isNaN(col[cols.slot(i)] as number)) return tsMs;
   }
   return null;
 }

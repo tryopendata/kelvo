@@ -7,7 +7,6 @@ import type { LiveMsg, SeriesKey } from "@core/generated/bindings";
 import {
   type HostLive,
   initialHostLive,
-  RowRing,
   reduceLive,
   SeriesColumns,
   seriesWindow,
@@ -74,7 +73,6 @@ function columnTimes(s: HostLive): number[] {
   return out;
 }
 
-const rowTimes = (s: HostLive) => s.rows.since(0).map((r) => r.tsMs);
 const secs = (...t: number[]) => t.map((v) => v * 1000);
 
 describe("backfill_earlier", () => {
@@ -89,7 +87,6 @@ describe("backfill_earlier", () => {
     ]);
     const expected = secs(4, 5, 6, 7, 8, 9, 10, 11, 12, 13);
     expect(columnTimes(s)).toEqual(expected);
-    expect(rowTimes(s)).toEqual(expected);
     // Each slot holds its own row's value (cpu.total is the second).
     const col = s.columns.column("cpu.total");
     expect(col?.[s.columns.slot(0)]).toBe(4);
@@ -109,13 +106,11 @@ describe("backfill_earlier", () => {
       rowsMsg("backfill_earlier", 8000, 4),
     ]);
     expect(columnTimes(s)).toEqual(secs(8, 9, 10, 11, 12));
-    expect(rowTimes(s)).toEqual(secs(8, 9, 10, 11, 12));
   });
 
   it("keeps the newest history when the ring is full", () => {
     const small: HostLive = {
       ...initialHostLive("h1"),
-      rows: new RowRing(4),
       columns: new SeriesColumns(4),
     };
     const s = apply(
@@ -128,7 +123,6 @@ describe("backfill_earlier", () => {
       small
     );
     expect(columnTimes(s)).toEqual(secs(8, 9, 10, 11));
-    expect(rowTimes(s)).toEqual(secs(8, 9, 10, 11));
   });
 
   it("bumps rowsEpoch for prepended rows, not for appended ones", () => {
@@ -199,10 +193,9 @@ describe("clock steps (timeline)", () => {
     let s = apply([status, layout(1), ...frames(30, 101)]);
     const epoch = s.rowsEpoch;
     s = apply([frame(40_000, 1, 1)], s);
-    expect(rowTimes(s)).toEqual(
+    expect(columnTimes(s)).toEqual(
       secs(30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40)
     );
-    expect(columnTimes(s)).toEqual(rowTimes(s));
     expect(s.lastTsMs).toBe(40_000);
     expect(s.held["cpu.total"]).toBe(40);
     expect(s.rowsEpoch).toBe(epoch + 1);
@@ -215,7 +208,7 @@ describe("clock steps (timeline)", () => {
     let s = apply([status, layout(1), ...frames(1, 3600)]);
     s = apply([frame(3_599_400, 1, 1)], s);
     // 3,600 s went; 1 to 3,599 s stay, then the stepped row.
-    expect(rowTimes(s).slice(-3)).toEqual([3_598_000, 3_599_000, 3_599_400]);
+    expect(columnTimes(s).slice(-3)).toEqual([3_598_000, 3_599_000, 3_599_400]);
     expect(s.columns.length).toBe(3600);
     expect(s.columns.firstTsMs()).toBe(1000);
     expect(s.lastTsMs).toBe(3_599_400);
@@ -224,7 +217,7 @@ describe("clock steps (timeline)", () => {
   it("drops an older frame on the same timeline as a duplicate", () => {
     let s = apply([status, layout(1), frame(100_000)]);
     s = apply([frame(40_000)], s);
-    expect(rowTimes(s)).toEqual([100_000]);
+    expect(columnTimes(s)).toEqual([100_000]);
     expect(s.lastTsMs).toBe(100_000);
   });
 
@@ -237,7 +230,7 @@ describe("clock steps (timeline)", () => {
     let s = apply([status, layout(1), ...frames(90, 100)]);
     const epoch = s.rowsEpoch;
     s = apply([layout(2), rowsMsg("backfill", 99_000, 3, 2)], s);
-    expect(rowTimes(s)).toEqual(
+    expect(columnTimes(s)).toEqual(
       secs(90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101)
     );
     expect(s.rowsEpoch).toBe(epoch);
@@ -246,8 +239,7 @@ describe("clock steps (timeline)", () => {
   it("truncates at a resume backfill on a new timeline", () => {
     let s = apply([status, layout(1), ...frames(30, 100)]);
     s = apply([rowsMsg("backfill", 35_000, 2, 1, 1)], s);
-    expect(rowTimes(s)).toEqual(secs(30, 31, 32, 33, 34, 35, 36));
-    expect(columnTimes(s)).toEqual(rowTimes(s));
+    expect(columnTimes(s)).toEqual(secs(30, 31, 32, 33, 34, 35, 36));
     expect(s.lastTsMs).toBe(36_000);
   });
 });

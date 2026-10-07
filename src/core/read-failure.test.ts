@@ -1,11 +1,15 @@
-import type { LiveMsg, SeriesKey } from "@core/generated/bindings";
+import {
+  type LiveMsg,
+  RING_SPAN_MS,
+  type SeriesKey,
+} from "@core/generated/bindings";
 import {
   type HostLive,
   initialHostLive,
   reduceLive,
   seriesWindow,
 } from "./live-state";
-import { readFailure, readFailureMs } from "./read-failure";
+import { lastMeasuredMs, readFailure, readFailureMs } from "./read-failure";
 
 const SERIES: SeriesKey[] = [
   { metric: "cpu.total", labels: [] },
@@ -63,6 +67,44 @@ describe("readFailure", () => {
     ]);
     expect(readFailure(s, "thermal.hottest")).toEqual({ lastGoodMs: 1000 });
     expect(readFailure(s, "cpu.total")).toBeNull();
+  });
+
+  it("has no last good time for a series never measured", () => {
+    const s = apply([
+      ...base,
+      frame(1000, [10, null], [10, null]),
+      frame(2000, [11, null], [11, null]),
+    ]);
+    expect(readFailure(s, "thermal.hottest")).toEqual({ lastGoodMs: null });
+    expect(lastMeasuredMs(initialHostLive("h1"), "thermal.hottest")).toBeNull();
+  });
+
+  it("looks back one ring span (an hour) from the newest row, no further", () => {
+    // Measured at 1 s and 2 s, then failing every second for an hour.
+    let s = apply([...base, frame(1000, [10, 60]), frame(2000, [11, 61])]);
+    const failing = (ts: number) => frame(ts, [1, null], [1, null]);
+    const end = 2000 + RING_SPAN_MS;
+    for (let ts = 3000; ts < end; ts += 1000) s = reduceLive(s, failing(ts));
+    // 2 s is just inside the span ending at `end - 1000`.
+    expect(readFailureMs(s, "thermal.hottest")).toBe(2000);
+    // At `end` it sits exactly one span back: outside, like 1 s.
+    s = reduceLive(s, failing(end));
+    expect(readFailureMs(s, "thermal.hottest")).toBeNull();
+  });
+
+  it("finds a sample taken under an earlier layout with another index", () => {
+    const s = apply([
+      ...base,
+      frame(1000, [10, 60]),
+      {
+        kind: "layout",
+        layout_no: 2,
+        series: [SERIES[1] as SeriesKey, SERIES[0] as SeriesKey],
+        kinds: [],
+      },
+      frame(2000, [null, 11], [null, 11], 2),
+    ]);
+    expect(readFailureMs(s, "thermal.hottest")).toBe(1000);
   });
 
   it("does not report while paused, stale or for a series not in the layout", () => {
