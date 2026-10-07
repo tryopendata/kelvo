@@ -2,7 +2,7 @@ import type { HeatmapMetric } from "@core/generated/bindings";
 import { historyUnavailable } from "@core/history-state";
 import { memo, useCallback, useState } from "react";
 import { SegmentedControl } from "~/components/segmented-control";
-import { accentVars } from "~/widgets/lib/accent";
+import { Card } from "~/widgets/card";
 import { useHeatmap } from "../_hooks/use-heatmap";
 import type { LaneUnits } from "../_lib/format";
 import {
@@ -68,10 +68,12 @@ export const HeatmapCard = memo(function HeatmapCard({
   );
 
   return (
-    <section
-      aria-label="30-day heatmap"
-      className="vt-card vt-card--chart flex flex-col gap-3 p-4"
-      style={accentVars(scale.accent, "br")}
+    <Card
+      accent={scale.accent}
+      origin="br"
+      variant="chart"
+      ariaLabel="30-day heatmap"
+      className="flex flex-col gap-3 p-4"
     >
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex min-w-[220px] flex-1 flex-col gap-0.5">
@@ -124,6 +126,6 @@ export const HeatmapCard = memo(function HeatmapCard({
           ariaLabel={GRID_LABELS[metric]}
         />
       )}
-    </section>
+    </Card>
   );
 });

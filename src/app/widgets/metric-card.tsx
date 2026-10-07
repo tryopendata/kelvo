@@ -1,9 +1,10 @@
-import { type MouseEvent, useId } from "react";
+import { useId } from "react";
 import { cn } from "~/lib/utils";
+import { LinkCard } from "./card";
 import { CardNotice } from "./card-notice";
 import { InlineBar, type InlineBarProps } from "./inline-bar";
 import { Legend, type LegendItem } from "./legend";
-import { type Accent, accentVars, type Corner } from "./lib/accent";
+import type { Accent, Corner } from "./lib/accent";
 import { ProcessList, type ProcessListRow } from "./process-list";
 import { RingGauge, type RingGaugeProps } from "./ring-gauge";
 import { StreamArea, type StreamAreaProps } from "./stream-area";
@@ -101,36 +102,20 @@ export function MetricCard({
     </>
   );
 
-  const className = "vt-card flex flex-col gap-3 px-4 py-3.5";
-  const style = accentVars(accent, origin);
-
-  if (href === undefined) {
-    return (
-      <section aria-labelledby={titleId} className={className} style={style}>
-        {content}
-      </section>
-    );
-  }
-
-  const onClick = onOpen
-    ? (event: MouseEvent<HTMLAnchorElement>) => {
-        event.preventDefault();
-        onOpen(href);
-      }
-    : undefined;
-
   return (
-    <a
+    <LinkCard
+      accent={accent}
+      origin={origin}
+      labelledBy={titleId}
       href={href}
-      onClick={onClick}
-      aria-labelledby={titleId}
+      onOpen={onOpen}
       className={cn(
-        className,
-        "text-inherit no-underline outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+        "flex flex-col gap-3 px-4 py-3.5",
+        href !== undefined &&
+          "text-inherit no-underline outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
       )}
-      style={style}
     >
       {content}
-    </a>
+    </LinkCard>
   );
 }

@@ -1,9 +1,9 @@
 import { ArrowUpRight } from "lucide-react";
-import { type MouseEvent, type ReactNode, useId } from "react";
+import { type ReactNode, useId } from "react";
 import { cn } from "~/lib/utils";
-import { Card } from "./card";
+import { LinkCard } from "./card";
 import { CardNotice } from "./card-notice";
-import { type Accent, accentVars, type Corner } from "./lib/accent";
+import type { Accent, Corner } from "./lib/accent";
 import { FIELD_LABEL } from "./lib/classes";
 
 export interface ModuleCardProps {
@@ -89,44 +89,22 @@ export function ModuleCard({
       {children}
     </>
   );
-  const className = "flex flex-col gap-2 p-3";
-
-  if (href === undefined) {
-    return (
-      <Card
-        accent={accent}
-        origin={origin}
-        variant="chart"
-        labelledBy={titleId}
-        className={className}
-      >
-        {content}
-      </Card>
-    );
-  }
-
-  const onClick = onOpen
-    ? (event: MouseEvent<HTMLAnchorElement>) => {
-        event.preventDefault();
-        onOpen(href);
-      }
-    : undefined;
-
   return (
-    <a
+    <LinkCard
+      accent={accent}
+      origin={origin}
+      variant="chart"
+      labelledBy={titleId}
       href={href}
-      onClick={onClick}
-      aria-labelledby={titleId}
+      onOpen={onOpen}
       className={cn(
-        "vt-card vt-card--chart group",
-        className,
+        "flex flex-col gap-2 p-3",
         // No focus ring: `.vt-card` focus-visible already lifts the glow and
         // border, and WebKit keeps a ring on the card after it is clicked.
-        "text-inherit no-underline outline-none"
+        href !== undefined && "group text-inherit no-underline outline-none"
       )}
-      style={accentVars(accent, origin)}
     >
       {content}
-    </a>
+    </LinkCard>
   );
 }

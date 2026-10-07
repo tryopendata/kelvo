@@ -1,4 +1,4 @@
-import type { CSSProperties } from "react";
+import { Card } from "~/widgets/card";
 
 export interface MachineSpec {
   /** Field label: "Chip", "Memory", "Storage", "Battery", "Model", "Uptime". */
@@ -92,10 +92,12 @@ export function MachineHeader({
   specs,
 }: MachineHeaderProps) {
   return (
-    <section
-      aria-label="This Mac"
-      className="vt-card vt-card--chart grid grid-cols-[150px_minmax(0,1fr)] items-center gap-6 px-5 py-4"
-      style={{ "--o": "100% 0%" } as CSSProperties}
+    <Card
+      accent="cpu"
+      origin="tr"
+      variant="chart"
+      ariaLabel="This Mac"
+      className="grid grid-cols-[150px_minmax(0,1fr)] items-center gap-6 px-5 py-4"
     >
       <Illustration />
       <div className="flex min-w-0 flex-col gap-3">
@@ -126,6 +128,6 @@ export function MachineHeader({
           ))}
         </dl>
       </div>
-    </section>
+    </Card>
   );
 }

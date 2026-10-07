@@ -16,8 +16,8 @@ import {
   useState,
 } from "react";
 import { cn } from "~/lib/utils";
+import { Card } from "~/widgets/card";
 import { GapBand } from "~/widgets/gap-band";
-import { accentVars } from "~/widgets/lib/accent";
 import { type LaneData, useProcessesAt } from "../_hooks/use-timeline-data";
 import { bucketAt, meanOf, peakOf } from "../_lib/buckets";
 import { formatMetric, type LaneUnits } from "../_lib/format";
@@ -343,10 +343,11 @@ export function LanesCard({
   }
 
   return (
-    <section
-      aria-label="Stacked lanes"
-      className="vt-card vt-card--chart flex flex-col gap-1.5 px-4 pt-4 pb-3"
-      style={accentVars("cpu")}
+    <Card
+      accent="cpu"
+      variant="chart"
+      ariaLabel="Stacked lanes"
+      className="flex flex-col gap-1.5 px-4 pt-4 pb-3"
     >
       <div className="grid grid-cols-[148px_minmax(0,1fr)] gap-x-4">
         <div />
@@ -511,6 +512,6 @@ export function LanesCard({
         units={units}
         onClose={() => setTableLane(null)}
       />
-    </section>
+    </Card>
   );
 }
