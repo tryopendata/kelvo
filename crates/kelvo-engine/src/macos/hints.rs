@@ -3,36 +3,17 @@
 //! (Network module), delivered on a utility dispatch queue. A burst (a disk with several
 //! partitions) becomes several hints the engine coalesces into one re-probe.
 
-use std::ffi::{CStr, c_char, c_int, c_void};
+use std::ffi::{CStr, c_void};
 
-use core_foundation_sys::dictionary::CFDictionaryRef;
+use kelvo_collect::macos::dispatch::Queue;
 use kelvo_collect::macos::iokit::{
-    IOIteratorNext, IONotificationPortCreate, IONotificationPortDestroy,
-    IONotificationPortSetDispatchQueue, IOObjectRelease, IOServiceMatching, NotificationPort,
+    MatchEvent, MatchIterator, NotificationPort, drain_notification,
 };
 use kelvo_schema::Module;
 
-use super::dispatch::Queue;
 use crate::hints::DeviceHints;
 use crate::inbox::Inbox;
 
-type IoObject = u32;
-type MatchingCallback = extern "C" fn(*mut c_void, IoObject);
-
-#[link(name = "IOKit", kind = "framework")]
-unsafe extern "C" {
-    fn IOServiceAddMatchingNotification(
-        port: NotificationPort,
-        notification_type: *const c_char,
-        matching: CFDictionaryRef,
-        callback: MatchingCallback,
-        refcon: *mut c_void,
-        iterator: *mut IoObject,
-    ) -> c_int;
-}
-
-const FIRST_MATCH: &CStr = c"IOServiceFirstMatch";
-const TERMINATED: &CStr = c"IOServiceTerminate";
 const WATCHED: [(&CStr, Module); 2] = [
     (c"IOMedia", Module::Disk),
     (c"IONetworkInterface", Module::Network),
@@ -43,35 +24,20 @@ struct HintCtx {
     module: Module,
 }
 
-/// Releases every object in the iterator, which re-arms the notification. Returns how
-/// many there were.
-fn drain(iterator: IoObject) -> usize {
-    let mut n = 0;
-    loop {
-        // SAFETY: `iterator` is a live notification iterator; each object returned is
-        // owned and released here.
-        let obj = unsafe { IOIteratorNext(iterator) };
-        if obj == 0 {
-            return n;
-        }
-        // SAFETY: as above.
-        unsafe { IOObjectRelease(obj) };
-        n += 1;
-    }
-}
-
-extern "C" fn on_match(refcon: *mut c_void, iterator: IoObject) {
-    // SAFETY: refcon is a boxed `HintCtx` that outlives the port (see `Watch::drop`).
+extern "C" fn on_match(refcon: *mut c_void, iterator: u32) {
+    // SAFETY: refcon is a boxed `HintCtx` that outlives the port (see `Watch`).
     let ctx = unsafe { &*(refcon as *const HintCtx) };
-    if drain(iterator) > 0 {
+    // SAFETY: IOKit passes the live notification iterator.
+    if unsafe { drain_notification(iterator) } > 0 {
         ctx.inbox.hint(&[ctx.module]);
     }
 }
 
+/// Fields drop in order: the iterators (cancelling their notifications), then the port
+/// (destroyed, its queue drained so no callback is left running), then the contexts.
 struct Watch {
-    queue: Queue,
+    iterators: Vec<MatchIterator>,
     port: NotificationPort,
-    iterators: Vec<IoObject>,
     // Boxed on purpose: IOKit holds raw pointers to each context, so they must not move
     // when the vector grows.
     #[allow(clippy::vec_box)]
@@ -81,17 +47,10 @@ struct Watch {
 impl Watch {
     fn start(inbox: &Inbox) -> Option<Watch> {
         let queue = Queue::utility(c"com.tryopendata.kelvo.devices")?;
-        // SAFETY: kIOMainPortDefault (0) is always valid.
-        let port = unsafe { IONotificationPortCreate(0) };
-        if port.is_null() {
-            return None;
-        }
-        // SAFETY: valid port and queue.
-        unsafe { IONotificationPortSetDispatchQueue(port, queue.raw()) };
+        let port = NotificationPort::on_queue(queue)?;
         let mut watch = Watch {
-            queue,
-            port,
             iterators: Vec::new(),
+            port,
             _ctxs: Vec::new(),
         };
         for (class, module) in WATCHED {
@@ -101,49 +60,23 @@ impl Watch {
             });
             let refcon: *mut c_void = (&raw const *ctx).cast_mut().cast();
             watch._ctxs.push(ctx);
-            for kind in [FIRST_MATCH, TERMINATED] {
-                // SAFETY: NUL-terminated class name. The dictionary is consumed by
-                // IOServiceAddMatchingNotification below, so it is not released here.
-                let matching = unsafe { IOServiceMatching(class.as_ptr()) };
-                if matching.is_null() {
-                    continue;
-                }
-                let mut iterator: IoObject = 0;
-                // SAFETY: valid port, consumed matching dictionary, refcon kept alive in
-                // `_ctxs` until after the port is destroyed.
-                let kr = unsafe {
-                    IOServiceAddMatchingNotification(
-                        port,
-                        kind.as_ptr(),
-                        matching as CFDictionaryRef,
-                        on_match,
-                        refcon,
-                        &mut iterator,
-                    )
+            for event in [MatchEvent::FirstMatch, MatchEvent::Terminated] {
+                // SAFETY: refcon is kept alive in `_ctxs`, which drops after the port.
+                let armed = unsafe { watch.port.add_matching(event, class, on_match, refcon) };
+                let iterator = match armed {
+                    Ok(iterator) => iterator,
+                    Err(None) => continue,
+                    Err(Some(kr)) => {
+                        tracing::warn!(class = ?class, kr, "device notification not armed");
+                        continue;
+                    }
                 };
-                if kr != 0 || iterator == 0 {
-                    tracing::warn!(class = ?class, kr, "device notification not armed");
-                    continue;
-                }
                 // The existing devices: draining arms the notification; no hint.
-                drain(iterator);
+                iterator.drain();
                 watch.iterators.push(iterator);
             }
         }
         Some(watch)
-    }
-}
-
-impl Drop for Watch {
-    fn drop(&mut self) {
-        for it in self.iterators.drain(..) {
-            // SAFETY: releasing iterators we own; this cancels their notifications.
-            unsafe { IOObjectRelease(it) };
-        }
-        // SAFETY: destroying the port we created.
-        unsafe { IONotificationPortDestroy(self.port) };
-        // No callback can be left running after this; then the contexts drop.
-        self.queue.drain();
     }
 }
 
@@ -152,10 +85,6 @@ impl Drop for Watch {
 pub struct IoKitDeviceHints {
     watch: Option<Watch>,
 }
-
-// SAFETY: the raw port and iterators are touched only by `start` and `Drop` on the owning
-// thread; callbacks only read the boxed contexts, whose `Inbox` is Send + Sync.
-unsafe impl Send for IoKitDeviceHints {}
 
 impl IoKitDeviceHints {
     pub fn new() -> Self {

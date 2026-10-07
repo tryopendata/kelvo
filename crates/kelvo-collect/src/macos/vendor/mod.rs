@@ -22,7 +22,8 @@
 //! - [`iokit::IoObject`]'s handle and the matching, iterator, property and release
 //!   declarations are visible to the first-party `macos/iokit.rs`, which adds child
 //!   walks and single-property reads to the same type rather than keeping a second
-//!   IOKit wrapper.
+//!   IOKit wrapper. `IOServiceClose` moved from `smc.rs` to `iokit.rs` so the first-party
+//!   system-power registration shares the one declaration.
 //! - The chip name is read with the first-party `sysctl::string_in` (same 128-byte buffer,
 //!   not call-counted) instead of a private copy of it.
 //!

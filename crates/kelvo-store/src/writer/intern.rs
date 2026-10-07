@@ -108,15 +108,13 @@ impl State {
     pub(super) fn series_id(&mut self, host_ref: i64, key: &SeriesKey) -> Result<u32> {
         let metric = key.metric.as_str();
         let labels = key.labels.canonical();
-        let id = self.intern_id(
+        self.intern_id(
             |s| &mut s.series,
             &SERIES,
             host_ref,
             key,
             params![host_ref, metric, labels],
-            |_| true,
-        )?;
-        Ok(id.expect("admit always allows"))
+        )
     }
 
     /// The layout ID for this exact series list, minting one on first sight. Layouts are
@@ -166,15 +164,13 @@ impl State {
     }
 
     pub(super) fn proc_name_id(&mut self, host_ref: i64, name: &str) -> Result<u32> {
-        let id = self.intern_id(
+        self.intern_id(
             |s| &mut s.proc_names,
             &PROC_NAMES,
             host_ref,
             name,
             params![host_ref, name],
-            |_| true,
-        )?;
-        Ok(id.expect("admit always allows"))
+        )
     }
 
     /// The `proc_names` id of a network app, or [`OTHER_APPS`] for one with no name or
@@ -200,7 +196,7 @@ impl State {
             used.1 += 1;
             true
         };
-        let id = self.intern_id(
+        let id = self.intern_id_admitted(
             |s| &mut s.proc_names,
             &NET_NAMES,
             host_ref,
@@ -212,8 +208,8 @@ impl State {
     }
 
     /// The id of `key` in `host_ref`'s `intern` table: from `cache`, else the row
-    /// `intern.select` finds, else the row `intern.insert` adds once `admit` allows it
-    /// (both queries bound to `params`). `None` when `admit` refused.
+    /// `intern.select` finds, else the row `intern.insert` adds (both queries bound to
+    /// `params`).
     fn intern_id<K, Q>(
         &mut self,
         cache: fn(&mut State) -> &mut HashMap<i64, HashMap<K, u32>>,
@@ -221,7 +217,50 @@ impl State {
         host_ref: i64,
         key: &Q,
         params: impl Params + Copy,
+    ) -> Result<u32>
+    where
+        K: Borrow<Q> + Eq + Hash,
+        Q: ToOwned<Owned = K> + Eq + Hash + Debug + ?Sized,
+    {
+        if let Some(id) = self.intern_find(cache, intern, host_ref, key, params)? {
+            return Ok(id);
+        }
+        self.intern_insert(cache, intern, host_ref, key, params)
+    }
+
+    /// [`Self::intern_id`], adding a row only once `admit` allows it. `None` when `admit`
+    /// refused.
+    fn intern_id_admitted<K, Q>(
+        &mut self,
+        cache: fn(&mut State) -> &mut HashMap<i64, HashMap<K, u32>>,
+        intern: &Intern,
+        host_ref: i64,
+        key: &Q,
+        params: impl Params + Copy,
         admit: impl FnOnce(&mut State) -> bool,
+    ) -> Result<Option<u32>>
+    where
+        K: Borrow<Q> + Eq + Hash,
+        Q: ToOwned<Owned = K> + Eq + Hash + Debug + ?Sized,
+    {
+        if let Some(id) = self.intern_find(cache, intern, host_ref, key, params)? {
+            return Ok(Some(id));
+        }
+        if !admit(self) {
+            return Ok(None);
+        }
+        self.intern_insert(cache, intern, host_ref, key, params)
+            .map(Some)
+    }
+
+    /// The id of `key` from `cache`, else from the row `intern.select` finds.
+    fn intern_find<K, Q>(
+        &mut self,
+        cache: fn(&mut State) -> &mut HashMap<i64, HashMap<K, u32>>,
+        intern: &Intern,
+        host_ref: i64,
+        key: &Q,
+        params: impl Params,
     ) -> Result<Option<u32>>
     where
         K: Borrow<Q> + Eq + Hash,
@@ -235,16 +274,42 @@ impl State {
             .prepare_cached(intern.select)?
             .query_row(params, |r| r.get(0))
             .optional()?;
-        let id = match found {
-            Some(id) => id,
-            None => {
-                if !admit(self) {
-                    return Ok(None);
-                }
-                self.conn.prepare_cached(intern.insert)?.execute(params)?;
-                self.conn.last_insert_rowid()
-            }
-        };
+        found
+            .map(|id| self.intern_remember(cache, intern, host_ref, key, id))
+            .transpose()
+    }
+
+    /// Adds `key`'s row with `intern.insert` and returns its id.
+    fn intern_insert<K, Q>(
+        &mut self,
+        cache: fn(&mut State) -> &mut HashMap<i64, HashMap<K, u32>>,
+        intern: &Intern,
+        host_ref: i64,
+        key: &Q,
+        params: impl Params,
+    ) -> Result<u32>
+    where
+        K: Borrow<Q> + Eq + Hash,
+        Q: ToOwned<Owned = K> + Eq + Hash + Debug + ?Sized,
+    {
+        self.conn.prepare_cached(intern.insert)?.execute(params)?;
+        let id = self.conn.last_insert_rowid();
+        self.intern_remember(cache, intern, host_ref, key, id)
+    }
+
+    /// Checks a row id of `key` and caches it.
+    fn intern_remember<K, Q>(
+        &mut self,
+        cache: fn(&mut State) -> &mut HashMap<i64, HashMap<K, u32>>,
+        intern: &Intern,
+        host_ref: i64,
+        key: &Q,
+        id: i64,
+    ) -> Result<u32>
+    where
+        K: Borrow<Q> + Eq + Hash,
+        Q: ToOwned<Owned = K> + Eq + Hash + Debug + ?Sized,
+    {
         let id = to_u32(id, intern.what)?;
         if intern.reserves_zero && id == OTHER_APPS {
             // Rowids start at 1; a 0 would read back as "other apps".
@@ -257,6 +322,6 @@ impl State {
             .entry(host_ref)
             .or_default()
             .insert(key.to_owned(), id);
-        Ok(Some(id))
+        Ok(id)
     }
 }

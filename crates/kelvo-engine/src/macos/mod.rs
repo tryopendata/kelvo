@@ -1,9 +1,9 @@
 //! macOS implementations of the engine's platform seams. All of them use public APIs
 //! (libdispatch, IOKit power management and match notifications, notify(3), CoreGraphics
-//! session state, NSProcessInfo); FFI is confined to this module, each `unsafe` block
-//! with a `SAFETY:` comment.
+//! session state, NSProcessInfo). The libdispatch and IOKit declarations are collect's
+//! (`kelvo_collect::macos::{dispatch, iokit}`), used through its wrappers; the rest of the
+//! FFI is confined to this module, each `unsafe` block with a `SAFETY:` comment.
 
-mod dispatch;
 mod hints;
 mod power;
 mod ticker;

@@ -4,7 +4,8 @@
 use std::ffi::c_void;
 use std::time::Duration;
 
-use super::dispatch::{self as d, DispatchObject, Queue};
+use kelvo_collect::macos::dispatch::{Queue, TimerSource};
+
 use crate::clock::{self, ClockReading};
 use crate::inbox::Inbox;
 use crate::ticker::{Ticker, delay_to_boundary};
@@ -21,7 +22,7 @@ extern "C" fn on_timer(ctx: *mut c_void) {
 }
 
 struct Running {
-    source: DispatchObject,
+    source: TimerSource,
     ctx: Box<TimerCtx>,
 }
 
@@ -29,10 +30,6 @@ pub struct GcdTicker {
     queue: Option<Queue>,
     running: Option<Running>,
 }
-
-// SAFETY: the raw dispatch source is a thread-safe libdispatch object; the boxed context
-// is only read by the handler, which `stop` fences off before freeing it.
-unsafe impl Send for GcdTicker {}
 
 impl Default for GcdTicker {
     fn default() -> Self {
@@ -63,14 +60,6 @@ impl Ticker for GcdTicker {
             tracing::error!("cannot create the ticker queue");
             return;
         };
-        // SAFETY: the timer source type is a libdispatch constant; the queue is valid.
-        let source = unsafe {
-            d::dispatch_source_create(&raw const d::_dispatch_source_type_timer, 0, 0, queue.raw())
-        };
-        if source.is_null() {
-            tracing::error!("cannot create the ticker timer source");
-            return;
-        }
         let ctx = Box::new(TimerCtx { inbox });
         let period_ms = i64::try_from(period.as_millis()).unwrap_or(1_000).max(1);
         // First tick on the next wall-clock multiple of the period, so frames and bucket
@@ -79,19 +68,22 @@ impl Ticker for GcdTicker {
         if delay_ms == 0 {
             delay_ms = period_ms;
         }
-        // SAFETY: `source` is a valid, suspended timer source. The context pointer stays
-        // valid until `stop` cancels the source and drains the queue.
-        unsafe {
-            d::dispatch_set_context(source, (&raw const *ctx).cast_mut().cast());
-            d::dispatch_source_set_event_handler_f(source, on_timer);
-            d::dispatch_source_set_timer(
-                source,
-                d::dispatch_time(d::TIME_NOW, delay_ms.saturating_mul(1_000_000)),
+        // SAFETY: the context pointer stays valid until `stop` cancels the source and
+        // drains the queue.
+        let source = unsafe {
+            TimerSource::start(
+                queue,
+                (&raw const *ctx).cast_mut().cast(),
+                on_timer,
+                delay_ms.saturating_mul(1_000_000),
                 nanos(period),
                 nanos(leeway),
-            );
-            d::dispatch_resume(source);
-        }
+            )
+        };
+        let Some(source) = source else {
+            tracing::error!("cannot create the ticker timer source");
+            return;
+        };
         self.running = Some(Running { source, ctx });
     }
 
@@ -99,15 +91,13 @@ impl Ticker for GcdTicker {
         let Some(Running { source, ctx }) = self.running.take() else {
             return;
         };
-        // SAFETY: `source` is the live source created in `start`. Cancelling stops further
-        // handler invocations; draining the serial queue waits out one in flight; then the
-        // source and its context can go.
-        unsafe { d::dispatch_source_cancel(source) };
+        // Cancelling stops further handler invocations; draining the serial queue waits out
+        // one in flight; then the source and its context can go.
+        source.cancel();
         if let Some(q) = &self.queue {
             q.drain();
         }
-        // SAFETY: we own the reference from dispatch_source_create, and it was resumed.
-        unsafe { d::dispatch_release(source) };
+        drop(source);
         drop(ctx);
     }
 

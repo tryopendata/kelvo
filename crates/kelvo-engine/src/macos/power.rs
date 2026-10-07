@@ -28,13 +28,11 @@ use core_foundation::boolean::CFBoolean;
 use core_foundation::dictionary::CFDictionary;
 use core_foundation::string::CFString;
 use core_foundation_sys::dictionary::CFDictionaryRef;
-use kelvo_collect::macos::iokit::{
-    IONotificationPortDestroy, IONotificationPortSetDispatchQueue, NotificationPort,
-};
+use kelvo_collect::macos::dispatch::Queue;
+use kelvo_collect::macos::iokit::{SystemPower as Registration, allow_power_change};
 use kelvo_collect::macos::power_sources::Snapshot;
 use objc2_foundation::NSProcessInfo;
 
-use super::dispatch::Queue;
 use crate::clock;
 use crate::inbox::{Inbox, SleepAck};
 use crate::power::{PowerEvent, PowerSignals, PowerState};
@@ -46,27 +44,10 @@ pub const SLEEP_ACK_TIMEOUT: Duration = Duration::from_secs(10);
 /// How often the polled states are re-read.
 pub const SLOW_POLL: Duration = Duration::from_secs(2);
 
-type IoConnect = u32;
-type IoObject = u32;
-type InterestCallback = extern "C" fn(*mut c_void, IoObject, u32, *mut c_void);
-
 // iokit_common_msg(...) = sys_iokit (0xe0000000) | sub_iokit_common (0) | message.
 const MSG_CAN_SYSTEM_SLEEP: u32 = 0xe000_0270;
 const MSG_SYSTEM_WILL_SLEEP: u32 = 0xe000_0280;
 const MSG_SYSTEM_HAS_POWERED_ON: u32 = 0xe000_0300;
-
-#[link(name = "IOKit", kind = "framework")]
-unsafe extern "C" {
-    fn IORegisterForSystemPower(
-        refcon: *mut c_void,
-        port: *mut NotificationPort,
-        callback: InterestCallback,
-        notifier: *mut IoObject,
-    ) -> IoConnect;
-    fn IODeregisterForSystemPower(notifier: *mut IoObject) -> c_int;
-    fn IOAllowPowerChange(kernel_port: IoConnect, notification_id: isize) -> c_int;
-    fn IOServiceClose(connect: IoConnect) -> c_int;
-}
 
 #[link(name = "CoreGraphics", kind = "framework")]
 unsafe extern "C" {
@@ -88,26 +69,23 @@ struct PowerCtx {
     root: AtomicU32,
 }
 
-extern "C" fn on_system_power(refcon: *mut c_void, _service: IoObject, msg: u32, arg: *mut c_void) {
+extern "C" fn on_system_power(refcon: *mut c_void, _service: u32, msg: u32, arg: *mut c_void) {
     // SAFETY: refcon is the `PowerCtx` boxed in `SystemPower::register`, freed only after
-    // deregistration and a drain of the queue this callback runs on.
+    // the registration is torn down and the queue this callback runs on drained.
     let ctx = unsafe { &*(refcon as *const PowerCtx) };
+    // The connection IORegisterForSystemPower returned; `id` is the notification id the
+    // kernel passed in.
     let root = ctx.root.load(Ordering::Acquire);
     let id = arg as isize;
     match msg {
-        MSG_CAN_SYSTEM_SLEEP => {
-            // SAFETY: `root` is the connection IORegisterForSystemPower returned; `id` is
-            // the notification id the kernel passed in.
-            unsafe { IOAllowPowerChange(root, id) };
-        }
+        MSG_CAN_SYSTEM_SLEEP => allow_power_change(root, id),
         MSG_SYSTEM_WILL_SLEEP => {
             let (ack, rx) = SleepAck::new();
             ctx.inbox
                 .power(PowerEvent::WillSleep, clock::now(), Some(ack));
             // Returns early on the ack, or when the engine drops it (gone or done).
             let _ = rx.recv_timeout(SLEEP_ACK_TIMEOUT);
-            // SAFETY: as above.
-            unsafe { IOAllowPowerChange(root, id) };
+            allow_power_change(root, id);
         }
         MSG_SYSTEM_HAS_POWERED_ON => {
             ctx.inbox.power(PowerEvent::DidWake, clock::now(), None);
@@ -116,13 +94,11 @@ extern "C" fn on_system_power(refcon: *mut c_void, _service: IoObject, msg: u32,
     }
 }
 
-/// The system power registration, torn down on drop.
+/// The system power registration. Fields drop in order: the registration (torn down, its
+/// queue drained so no callback can still read `ctx`), then the context.
 struct SystemPower {
-    queue: Queue,
-    port: NotificationPort,
-    notifier: IoObject,
-    root: IoConnect,
-    ctx: Box<PowerCtx>,
+    _registration: Registration,
+    _ctx: Box<PowerCtx>,
 }
 
 impl SystemPower {
@@ -132,46 +108,21 @@ impl SystemPower {
             inbox,
             root: AtomicU32::new(0),
         });
-        let mut port: NotificationPort = std::ptr::null_mut();
-        let mut notifier: IoObject = 0;
-        // SAFETY: out-pointers are valid; the refcon outlives the registration (see Drop).
-        let root = unsafe {
-            IORegisterForSystemPower(
-                (&raw const *ctx).cast_mut().cast(),
-                &mut port,
-                on_system_power,
-                &mut notifier,
-            )
+        // SAFETY: the refcon is kept in `_ctx`, which drops after the registration.
+        let registration = unsafe {
+            Registration::register(queue, (&raw const *ctx).cast_mut().cast(), on_system_power)
         };
-        if root == 0 || port.is_null() {
+        let Some(registration) = registration else {
             tracing::warn!("IORegisterForSystemPower failed; sleep gaps rely on stall detection");
             return None;
-        }
-        ctx.root.store(root, Ordering::Release);
-        // SAFETY: `port` came from the registration; the queue is valid and retained by
-        // IOKit while set.
-        unsafe { IONotificationPortSetDispatchQueue(port, queue.raw()) };
+        };
+        // Stored before any message can arrive: delivery starts below.
+        ctx.root.store(registration.root(), Ordering::Release);
+        registration.deliver();
         Some(SystemPower {
-            queue,
-            port,
-            notifier,
-            root,
-            ctx,
+            _registration: registration,
+            _ctx: ctx,
         })
-    }
-}
-
-impl Drop for SystemPower {
-    fn drop(&mut self) {
-        // SAFETY: tearing down the registration made in `register`, in IOKit's documented
-        // order. The queue is drained afterwards so no callback can still read `ctx`.
-        unsafe {
-            IODeregisterForSystemPower(&mut self.notifier);
-            IONotificationPortDestroy(self.port);
-            IOServiceClose(self.root);
-        }
-        self.queue.drain();
-        let _ = &self.ctx;
     }
 }
 
@@ -183,10 +134,6 @@ pub struct MacPowerSignals {
     state: PowerState,
     last_slow: Option<Instant>,
 }
-
-// SAFETY: the raw IOKit port and notify token are used only from the owning thread (the
-// engine) and in Drop; IOKit callbacks touch only the boxed context, which is Sync.
-unsafe impl Send for MacPowerSignals {}
 
 impl Default for MacPowerSignals {
     fn default() -> Self {

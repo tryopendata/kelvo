@@ -1,6 +1,7 @@
 //! First-party IOKit registry helpers for the disk, battery and GPU-process collectors:
 //! child walks, registry ids and single properties on [`IoObject`], and typed reads of
-//! CF values. The registry handle itself ([`IoObject`], [`matching_services`]) is the
+//! CF values; and the engine's device-match and system-power notifications behind
+//! [`NotificationPort`] and [`SystemPower`]. The registry handle itself ([`IoObject`], [`matching_services`]) is the
 //! vendored one (`vendor/iokit.rs`), so the IOKit FFI is declared once. Only documented
 //! IOKit calls live here; private-API collectors keep their own FFI.
 
@@ -13,15 +14,28 @@ use core_foundation::number::CFNumber;
 use core_foundation::string::CFString;
 use core_foundation_sys::base::kCFAllocatorDefault;
 
-use super::vendor::iokit::IORegistryEntryCreateCFProperty;
-pub use super::vendor::iokit::{IOIteratorNext, IOObjectRelease, IOServiceMatching};
+use core_foundation_sys::dictionary::CFDictionaryRef;
+
+use super::dispatch::Queue;
+use super::vendor::iokit::{
+    IOIteratorNext, IOObjectRelease, IORegistryEntryCreateCFProperty, IOServiceClose,
+    IOServiceMatching,
+};
 pub(crate) use super::vendor::iokit::{IoObject, matching_services};
 
 type IoObjectT = u32;
 type KernReturn = i32;
+type IoConnect = u32;
 
 /// `IONotificationPortRef`.
-pub type NotificationPort = *mut c_void;
+type PortRef = *mut c_void;
+
+/// `IOServiceMatchingCallback`: `(refcon, iterator)`. Drain the iterator with
+/// [`drain_notification`] to re-arm the notification.
+pub type MatchingCallback = extern "C" fn(*mut c_void, u32);
+
+/// `IOServiceInterestCallback`: `(refcon, service, message type, message argument)`.
+pub type InterestCallback = extern "C" fn(*mut c_void, u32, u32, *mut c_void);
 
 #[link(name = "IOKit", kind = "framework")]
 unsafe extern "C" {
@@ -37,10 +51,26 @@ unsafe extern "C" {
         iterator: *mut IoObjectT,
     ) -> KernReturn;
     fn IORegistryEntryGetRegistryEntryID(entry: IoObjectT, id: *mut u64) -> KernReturn;
-    /// For the engine's device and system-power notifications.
-    pub fn IONotificationPortCreate(main_port: u32) -> NotificationPort;
-    pub fn IONotificationPortSetDispatchQueue(port: NotificationPort, queue: *mut c_void);
-    pub fn IONotificationPortDestroy(port: NotificationPort);
+    // For the engine's device and system-power notifications.
+    fn IONotificationPortCreate(main_port: u32) -> PortRef;
+    fn IONotificationPortSetDispatchQueue(port: PortRef, queue: *mut c_void);
+    fn IONotificationPortDestroy(port: PortRef);
+    fn IOServiceAddMatchingNotification(
+        port: PortRef,
+        notification_type: *const c_char,
+        matching: CFDictionaryRef,
+        callback: MatchingCallback,
+        refcon: *mut c_void,
+        iterator: *mut IoObjectT,
+    ) -> KernReturn;
+    fn IORegisterForSystemPower(
+        refcon: *mut c_void,
+        port: *mut PortRef,
+        callback: InterestCallback,
+        notifier: *mut IoObjectT,
+    ) -> IoConnect;
+    fn IODeregisterForSystemPower(notifier: *mut IoObjectT) -> KernReturn;
+    fn IOAllowPowerChange(kernel_port: IoConnect, notification_id: isize) -> KernReturn;
 }
 
 const SERVICE_PLANE: &CStr = c"IOService";
@@ -143,6 +173,218 @@ impl Iterator for Children {
         let obj = unsafe { IOIteratorNext(self.0.0) };
         (obj != 0).then_some(IoObject(obj))
     }
+}
+
+/// An IOKit notification port delivering on a dispatch queue (the engine's device hints).
+/// Drop destroys the port, then drains the queue, so no callback is still running once it
+/// is gone.
+pub struct NotificationPort {
+    port: PortRef,
+    queue: Queue,
+}
+
+// SAFETY: the port is only created, armed and destroyed by its owner; IOKit delivers
+// callbacks on `queue`, which is thread-safe.
+unsafe impl Send for NotificationPort {}
+
+/// What a matching notification fires on.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MatchEvent {
+    /// `kIOFirstMatchNotification`: a matching service appeared.
+    FirstMatch,
+    /// `kIOTerminatedNotification`: a matching service went away.
+    Terminated,
+}
+
+impl MatchEvent {
+    fn name(self) -> &'static CStr {
+        match self {
+            MatchEvent::FirstMatch => c"IOServiceFirstMatch",
+            MatchEvent::Terminated => c"IOServiceTerminate",
+        }
+    }
+}
+
+impl NotificationPort {
+    /// A port on the main port that delivers on `queue`. `None` when IOKit refuses.
+    pub fn on_queue(queue: Queue) -> Option<NotificationPort> {
+        // SAFETY: kIOMainPortDefault (0) is always valid.
+        let port = unsafe { IONotificationPortCreate(0) };
+        if port.is_null() {
+            return None;
+        }
+        // SAFETY: valid port and queue; IOKit retains the queue while it is set.
+        unsafe { IONotificationPortSetDispatchQueue(port, queue.raw()) };
+        Some(NotificationPort { port, queue })
+    }
+
+    /// Arms `callback(refcon, iterator)` for `event` on services of IOService `class`.
+    /// The returned iterator holds the services already there; drain it to arm the
+    /// notification. `Err(None)` when the matching dictionary could not be built;
+    /// `Err(Some(kr))` with IOKit's return code when the notification was not armed.
+    ///
+    /// # Safety
+    ///
+    /// `refcon` must stay valid for `callback` until this port is dropped.
+    pub unsafe fn add_matching(
+        &self,
+        event: MatchEvent,
+        class: &CStr,
+        callback: MatchingCallback,
+        refcon: *mut c_void,
+    ) -> Result<MatchIterator, Option<i32>> {
+        // SAFETY: NUL-terminated class name. The dictionary is consumed by
+        // IOServiceAddMatchingNotification below, so it is not released here.
+        let matching = unsafe { IOServiceMatching(class.as_ptr()) };
+        if matching.is_null() {
+            return Err(None);
+        }
+        let mut iterator: IoObjectT = 0;
+        // SAFETY: valid port, consumed matching dictionary; the caller keeps `refcon`
+        // alive until the port is destroyed.
+        let kr = unsafe {
+            IOServiceAddMatchingNotification(
+                self.port,
+                event.name().as_ptr(),
+                matching.cast_const(),
+                callback,
+                refcon,
+                &mut iterator,
+            )
+        };
+        if kr != 0 || iterator == 0 {
+            return Err(Some(kr));
+        }
+        Ok(MatchIterator(iterator))
+    }
+}
+
+impl Drop for NotificationPort {
+    fn drop(&mut self) {
+        // SAFETY: destroying the port we created.
+        unsafe { IONotificationPortDestroy(self.port) };
+        // No callback can be left running after this.
+        self.queue.drain();
+    }
+}
+
+/// A matching notification's iterator. Dropping it cancels the notification.
+pub struct MatchIterator(IoObjectT);
+
+impl MatchIterator {
+    /// Releases every service in the iterator, which re-arms the notification. Returns
+    /// how many there were.
+    pub fn drain(&self) -> usize {
+        // SAFETY: `self.0` is a live notification iterator we own.
+        unsafe { drain_notification(self.0) }
+    }
+}
+
+impl Drop for MatchIterator {
+    fn drop(&mut self) {
+        // SAFETY: releasing the iterator we own; this cancels its notification.
+        unsafe { IOObjectRelease(self.0) };
+    }
+}
+
+/// [`MatchIterator::drain`] for the iterator a [`MatchingCallback`] receives.
+///
+/// # Safety
+///
+/// `iterator` must be a live notification iterator, such as the one passed to the
+/// callback.
+pub unsafe fn drain_notification(iterator: u32) -> usize {
+    let mut n = 0;
+    loop {
+        // SAFETY: the caller passes a live iterator; each object returned is owned and
+        // released here.
+        let obj = unsafe { IOIteratorNext(iterator) };
+        if obj == 0 {
+            return n;
+        }
+        // SAFETY: as above.
+        unsafe { IOObjectRelease(obj) };
+        n += 1;
+    }
+}
+
+/// The system sleep and wake registration (`IORegisterForSystemPower`), its port
+/// delivering on a dispatch queue. Drop deregisters, destroys the port and closes the
+/// connection in IOKit's documented order, then drains the queue, so no callback is still
+/// running once it is gone.
+pub struct SystemPower {
+    port: PortRef,
+    notifier: IoObjectT,
+    root: IoConnect,
+    queue: Queue,
+}
+
+// SAFETY: the registration is only made and torn down by its owner; IOKit delivers
+// callbacks on `queue`, which is thread-safe.
+unsafe impl Send for SystemPower {}
+
+impl SystemPower {
+    /// Registers `callback(refcon, service, message, argument)` for system power
+    /// messages, to be delivered on `queue` once [`SystemPower::deliver`] is called.
+    /// `None` when IOKit refuses.
+    ///
+    /// # Safety
+    ///
+    /// `refcon` must stay valid for `callback` until this registration is dropped.
+    pub unsafe fn register(
+        queue: Queue,
+        refcon: *mut c_void,
+        callback: InterestCallback,
+    ) -> Option<SystemPower> {
+        let mut port: PortRef = std::ptr::null_mut();
+        let mut notifier: IoObjectT = 0;
+        // SAFETY: out-pointers are valid; the caller keeps `refcon` alive (see Drop).
+        let root = unsafe { IORegisterForSystemPower(refcon, &mut port, callback, &mut notifier) };
+        if root == 0 || port.is_null() {
+            return None;
+        }
+        Some(SystemPower {
+            port,
+            notifier,
+            root,
+            queue,
+        })
+    }
+
+    /// The root power-domain connection, for [`allow_power_change`].
+    pub fn root(&self) -> u32 {
+        self.root
+    }
+
+    /// Starts delivering messages on the queue. Callbacks can run from here on, so
+    /// anything they read through the refcon is set up first.
+    pub fn deliver(&self) {
+        // SAFETY: `self.port` came from the registration; the queue is valid and retained
+        // by IOKit while set.
+        unsafe { IONotificationPortSetDispatchQueue(self.port, self.queue.raw()) };
+    }
+}
+
+impl Drop for SystemPower {
+    fn drop(&mut self) {
+        // SAFETY: tearing down the registration made in `register`, in IOKit's documented
+        // order. The queue is drained afterwards so no callback can still read the refcon.
+        unsafe {
+            IODeregisterForSystemPower(&mut self.notifier);
+            IONotificationPortDestroy(self.port);
+            IOServiceClose(self.root);
+        }
+        self.queue.drain();
+    }
+}
+
+/// Answers a `kIOMessageCanSystemSleep` or `kIOMessageSystemWillSleep` message:
+/// `IOAllowPowerChange` on the registration's [`SystemPower::root`] with the message's
+/// notification id.
+pub fn allow_power_change(root: u32, notification_id: isize) {
+    // SAFETY: plain IOKit call with no pointers; an unknown connection or id is refused
+    // with an error code.
+    unsafe { IOAllowPowerChange(root, notification_id) };
 }
 
 /// Reads a number as i64 (integers or floats, truncated).
