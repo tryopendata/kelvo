@@ -4,8 +4,8 @@
 //! view that offers it agrees.
 
 use kelvo_engine::{UsageApp, UsageProc};
+use kelvo_store::{MetricStats, RangeStats};
 
-use crate::history::{MetricStats, RangeStats};
 use crate::ipc::{
     AppUsage, MetricStat, ProcessUsage, SeriesStats, UsageByApp, UsageKey, UsageOther, UsageTotal,
 };
