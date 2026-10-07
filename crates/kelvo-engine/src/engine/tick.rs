@@ -51,6 +51,29 @@ impl Engine {
         self.ticks += 1;
         self.update_power();
 
+        self.check_clock(t);
+        self.last_tick = Some(t);
+
+        if !self.reprobe.is_empty() {
+            let which = std::mem::take(&mut self.reprobe);
+            self.do_reprobe(&which);
+        }
+
+        let interval = self.interval_ms;
+        let t = Tick {
+            interval_ms: interval,
+            ..t
+        };
+        let n = self.layout.frame.series.len();
+        let procs = self.sample(t, n);
+        let frame = self.publish_frame(ts, interval);
+        self.persist_tick(t, &frame, procs, n);
+    }
+
+    /// Checks the time since the last tick: a wall-clock step, or a stall with no sleep
+    /// event, which gets a `sleep` gap.
+    fn check_clock(&mut self, t: Tick) {
+        let ts = t.wall_ms;
         if let Some(prev) = self.last_tick {
             let held_ns = t.continuous_ns.saturating_sub(prev.continuous_ns);
             let held_ms = i64::try_from(held_ns / 1_000_000).unwrap_or(i64::MAX);
@@ -71,20 +94,16 @@ impl Engine {
                 tracing::warn!(held_ms, "ticks stalled without a sleep event");
             }
         }
-        self.last_tick = Some(t);
+    }
 
-        if !self.reprobe.is_empty() {
-            let which = std::mem::take(&mut self.reprobe);
-            self.do_reprobe(&which);
-        }
-
+    /// Samples the collectors due on `t` into the scratch frame and the latest-value
+    /// cache, and returns the process rows with their network and GPU columns joined.
+    /// `n`: the series in the current layout.
+    fn sample(&mut self, t: Tick, n: usize) -> Vec<ProcessSample> {
+        let ts = t.wall_ms;
+        let interval = t.interval_ms;
         // Sample. Process interest counts on the ticks its period is due, so a window
         // that wants rows every 5 s does not make the collector run every tick.
-        let interval = self.interval_ms;
-        let t = Tick {
-            interval_ms: interval,
-            ..t
-        };
         let performance = self.performance().is_on();
         let detail = self.shared.detail.load(Ordering::Acquire) > 0;
         // Performance mode's slow idle periods also apply in the background (D-094).
@@ -141,7 +160,6 @@ impl Engine {
         // collector comes after it in the slot order.
         let mut processes_sampled = false;
         let menu_bar = &self.settings.menu_bar;
-        let n = self.layout.frame.series.len();
         self.scratch.clear();
         self.scratch.resize(n, f32::NAN);
         self.span_ms.resize(n, 0);
@@ -248,7 +266,7 @@ impl Engine {
             self.primary_iface = primary.clone();
             self.publish_status();
         }
-        let procs = if self.buf.processes().is_empty() {
+        if self.buf.processes().is_empty() {
             Vec::new()
         } else {
             let mut procs = self.buf.take_processes();
@@ -272,8 +290,12 @@ impl Engine {
                 }
             }
             procs
-        };
+        }
+    }
 
+    /// Builds this tick's frame from the scratch values and the held-value cache, and
+    /// publishes it.
+    fn publish_frame(&mut self, ts: i64, interval: u32) -> Arc<LiveFrame> {
         // One allocation each for the raw values, the held values and the frame: the
         // frame is shared with the hub's ring, the bus and every subscriber.
         let values: Arc<[f32]> = Arc::from(self.scratch.as_slice());
@@ -321,7 +343,13 @@ impl Engine {
             holds: Arc::clone(&self.holds),
         });
         self.sink.live.publish(BusMsg::Frame(Arc::clone(&frame)));
+        frame
+    }
 
+    /// Feeds the frame to the rollups and the store, runs the detectors and publishes
+    /// the process rows. `n`: the series in the current layout.
+    fn persist_tick(&mut self, t: Tick, frame: &LiveFrame, procs: Vec<ProcessSample>, n: usize) {
+        let ts = t.wall_ms;
         // Rollups, unless the wall clock stepped back over buckets already written.
         if let Some(from) = self.persist_from {
             // A discard the store has not confirmed keeps the hold: persisting now would
