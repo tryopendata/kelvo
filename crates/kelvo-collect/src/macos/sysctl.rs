@@ -30,7 +30,8 @@ fn read_pod<T: Copy>(name: &CStr) -> Option<T> {
 }
 
 /// An integer sysctl. Accepts 4- and 8-byte values (the kernel is not consistent).
-pub(crate) fn int(name: &CStr) -> Option<i64> {
+/// Public, like [`string`], for the app shell's host facts.
+pub fn int(name: &CStr) -> Option<i64> {
     let mut buf = [0u8; 8];
     let mut len = buf.len();
     crate::calls::count(crate::calls::Api::Kernel);
@@ -132,6 +133,11 @@ pub(crate) fn mib_into(mib: &mut [c_int], buf: &mut [u8]) -> Option<usize> {
 /// `vm.swapusage`.
 pub(crate) fn swap_usage() -> Option<libc::xsw_usage> {
     read_pod::<libc::xsw_usage>(c"vm.swapusage")
+}
+
+/// `kern.boottime`, for the app shell's host facts.
+pub fn boot_time() -> Option<libc::timeval> {
+    read_pod::<libc::timeval>(c"kern.boottime")
 }
 
 /// Multiplier from Mach absolute time units to nanoseconds (1.0 on Intel, 125/3 on

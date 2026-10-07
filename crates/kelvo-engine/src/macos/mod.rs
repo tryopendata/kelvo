@@ -15,6 +15,8 @@ pub use ticker::GcdTicker;
 /// Host facts the collectors read, for the shell's `HostInfo` (D-092).
 pub use kelvo_collect::macos::disk::boot_mounts;
 pub use kelvo_collect::macos::gpu_dvfs_mhz;
+/// The sysctl reads behind the shell's host record (`string`, `int`, `boot_time`).
+pub use kelvo_collect::macos::sysctl;
 
 /// Moves the calling thread to the utility QoS class (architecture.md, Engine).
 pub fn set_current_thread_utility_qos() {
