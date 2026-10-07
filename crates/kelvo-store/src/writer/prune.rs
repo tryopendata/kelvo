@@ -95,39 +95,15 @@ impl State {
             self.mark_pruned(host_ref, Tier::M1, a.max(b).max(c), history_cut)?;
             self.mark_pruned(host_ref, Tier::M15, d, history_cut)?;
 
-            let minutes = self.roll_down(
-                host_ref,
-                "tier_1m",
-                "bucket_ts",
-                Tier::M15,
-                roll_cut,
-                ROLL_DOWN_MINUTES_MS,
-                |s, start, end| s.roll_down_minutes(host_ref, start, end),
-            )?;
+            let minutes = self.roll_minutes::<StatsFold>(host_ref, roll_cut)?;
             report.m15_written += minutes.written;
             report.m1_rolled += minutes.rolled;
             self.mark(host_ref, db::M1_ROLLED, minutes.max_seq, roll_cut)?;
 
-            let tops = self.roll_down(
-                host_ref,
-                "proc_top_1m",
-                "bucket_ts",
-                Tier::M15,
-                roll_cut,
-                ROLL_DOWN_MINUTES_MS,
-                |s, start, end| s.roll_down_top_minutes(host_ref, start, end),
-            )?;
+            let tops = self.roll_minutes::<TopFold>(host_ref, roll_cut)?;
             report.proc_top_rolled += tops.rolled;
 
-            let nets = self.roll_down(
-                host_ref,
-                "proc_net_1m",
-                "bucket_ts",
-                Tier::M15,
-                roll_cut,
-                ROLL_DOWN_MINUTES_MS,
-                |s, start, end| s.roll_down_net_minutes(host_ref, start, end),
-            )?;
+            let nets = self.roll_minutes::<NetFold>(host_ref, roll_cut)?;
             report.net_rolled += nets.rolled;
         }
         self.incremental_vacuum()?;
@@ -242,13 +218,7 @@ impl State {
         loop {
             let (n, max) = self.apply(|s| {
                 let mut stmt = s.conn.prepare_cached(&sql)?;
-                let mut rows = stmt.query(params![host_ref, cutoff])?;
-                let (mut n, mut max) = (0u64, None::<i64>);
-                while let Some(r) = rows.next()? {
-                    n += 1;
-                    max = max.max(Some(r.get(0)?));
-                }
-                Ok((n, max))
+                count_returning_seq(stmt.query(params![host_ref, cutoff])?)
             })?;
             self.commit()?;
             total += n;
@@ -360,168 +330,75 @@ impl State {
         })
     }
 
-    /// Rolls the `tier_1m` rows in `[start, end)` (15-minute boundaries) into `tier_15m`,
-    /// one row per 15-minute bucket and layout ([`StatsFold`]), and deletes them. A bucket
-    /// that already has a row for the layout keeps it: buckets are rolled whole, so a
-    /// second fold could only come from minutes that arrived after the first one, and
-    /// would replace a full bucket with a fraction of it. A row whose length does not fit
-    /// its layout is dropped with a warning rather than stopping every later prune.
-    fn roll_down_minutes(&mut self, host_ref: i64, start: i64, end: i64) -> Result<Rolled> {
+    /// Rolls `F::SRC` minutes older than `cutoff` into `F::DST`, a day of them per
+    /// transaction ([`State::roll_down`], [`State::roll_into`]).
+    fn roll_minutes<F: Fold>(&mut self, host_ref: i64, cutoff: i64) -> Result<Rolled> {
+        self.roll_down(
+            host_ref,
+            F::SRC,
+            "bucket_ts",
+            Tier::M15,
+            cutoff,
+            ROLL_DOWN_MINUTES_MS,
+            |s, start, end| s.roll_into::<F>(host_ref, start, end),
+        )
+    }
+
+    /// Rolls the `F::SRC` minute rows in `[start, end)` (15-minute boundaries) into
+    /// `F::DST`, one row per 15-minute bucket (and layout, for the tier tables), and
+    /// deletes them. A bucket that already has a row keeps it: buckets are rolled whole,
+    /// so a second fold could only come from minutes that arrived after the first one,
+    /// and would replace a full bucket with a fraction of it. A row that cannot be folded
+    /// is dropped with a warning rather than stopping every later prune.
+    fn roll_into<F: Fold>(&mut self, host_ref: i64, start: i64, end: i64) -> Result<Rolled> {
+        let layout_col = if F::BY_LAYOUT { "layout_id" } else { "0" };
         let rows: Vec<(i64, u32, Vec<u8>)> = self
             .conn
-            .prepare_cached(
-                "SELECT bucket_ts, layout_id, blob FROM tier_1m
+            .prepare_cached(&format!(
+                "SELECT bucket_ts, {layout_col}, blob FROM {src}
                  WHERE host_id = ?1 AND bucket_ts >= ?2 AND bucket_ts < ?3 ORDER BY bucket_ts",
-            )?
+                src = F::SRC
+            ))?
             .query_map(params![host_ref, start, end], |r| {
                 Ok((r.get(0)?, r.get(1)?, r.get(2)?))
             })?
             .collect::<rusqlite::Result<_>>()?;
-        let mut folds: BTreeMap<(i64, u32), StatsFold> = BTreeMap::new();
+        let mut folds: BTreeMap<(i64, u32), Option<F>> = BTreeMap::new();
         for (ts, layout, b) in &rows {
-            let stats = match blob::unpack_f32s(b) {
-                Ok(v) if v.len().is_multiple_of(3) => v,
-                _ => {
-                    tracing::warn!(ts, layout, "store: malformed minute row not rolled down");
-                    continue;
-                }
-            };
             let bucket = Tier::M15.bucket_start(*ts).unwrap_or(*ts);
-            let fold = folds
-                .entry((bucket, *layout))
-                .or_insert_with(|| StatsFold::new(stats.len() / 3));
-            if !fold.add(&stats) {
-                tracing::warn!(
-                    ts,
-                    layout,
-                    "store: minute row of another width not rolled down"
-                );
-            }
+            F::fold_row(folds.entry((bucket, *layout)).or_default(), *ts, *layout, b);
         }
+        let dst = F::DST;
         let mut written = 0;
         for ((bucket, layout), fold) in folds {
+            let Some(fold) = fold else {
+                continue;
+            };
+            let blob = fold.into_blob();
             let seq = self.alloc_seq();
-            let n = self
-                .conn
-                .prepare_cached(
-                    "INSERT INTO tier_15m (host_id, bucket_ts, layout_id, seq, blob)
-                     VALUES (?1, ?2, ?3, ?4, ?5)
-                     ON CONFLICT (host_id, bucket_ts, layout_id) DO NOTHING",
-                )?
-                .execute(params![
-                    host_ref,
-                    bucket,
-                    layout,
-                    seq,
-                    blob::pack_f32s(&fold.finish())
-                ])?;
+            let n = if F::BY_LAYOUT {
+                self.conn
+                    .prepare_cached(&format!(
+                        "INSERT INTO {dst} (host_id, bucket_ts, layout_id, seq, blob)
+                         VALUES (?1, ?2, ?3, ?4, ?5)
+                         ON CONFLICT (host_id, bucket_ts, layout_id) DO NOTHING"
+                    ))?
+                    .execute(params![host_ref, bucket, layout, seq, blob])?
+            } else {
+                self.conn
+                    .prepare_cached(&format!(
+                        "INSERT INTO {dst} (host_id, bucket_ts, seq, blob) VALUES (?1, ?2, ?3, ?4)
+                         ON CONFLICT (host_id, bucket_ts) DO NOTHING"
+                    ))?
+                    .execute(params![host_ref, bucket, seq, blob])?
+            };
             if n == 0 {
                 self.unalloc_seq();
             }
             written += n as u64;
         }
         let (rolled, max_seq) =
-            self.delete_span_returning_seq("tier_1m", "bucket_ts", host_ref, start, end)?;
-        Ok(Rolled {
-            written,
-            rolled,
-            max_seq,
-        })
-    }
-
-    /// Rolls the `proc_top_1m` rows in `[start, end)` (15-minute boundaries) into
-    /// `proc_top_15m`, the top 5 by mean CPU over the minutes present, and deletes them. An
-    /// existing row is kept, as in [`State::roll_down_minutes`].
-    fn roll_down_top_minutes(&mut self, host_ref: i64, start: i64, end: i64) -> Result<Rolled> {
-        let rows: Vec<(i64, Vec<u8>)> = self
-            .conn
-            .prepare_cached(
-                "SELECT bucket_ts, blob FROM proc_top_1m
-                 WHERE host_id = ?1 AND bucket_ts >= ?2 AND bucket_ts < ?3 ORDER BY bucket_ts",
-            )?
-            .query_map(params![host_ref, start, end], |r| {
-                Ok((r.get(0)?, r.get(1)?))
-            })?
-            .collect::<rusqlite::Result<_>>()?;
-        let mut groups: BTreeMap<i64, Vec<Vec<PackedProc>>> = BTreeMap::new();
-        for (ts, b) in &rows {
-            let bucket = Tier::M15.bucket_start(*ts).unwrap_or(*ts);
-            match blob::unpack_procs(b) {
-                Ok(procs) => groups.entry(bucket).or_default().push(procs),
-                Err(e) => tracing::warn!(ts, "store: process minute not rolled down: {e}"),
-            }
-        }
-        let mut written = 0;
-        for (bucket, group) in groups {
-            let seq = self.alloc_seq();
-            let n = self
-                .conn
-                .prepare_cached(
-                    "INSERT INTO proc_top_15m (host_id, bucket_ts, seq, blob) VALUES (?1, ?2, ?3, ?4)
-                     ON CONFLICT (host_id, bucket_ts) DO NOTHING",
-                )?
-                .execute(params![
-                    host_ref,
-                    bucket,
-                    seq,
-                    blob::pack_procs(&top_of_group(&group))
-                ])?;
-            if n == 0 {
-                self.unalloc_seq();
-            }
-            written += n as u64;
-        }
-        let (rolled, max_seq) =
-            self.delete_span_returning_seq("proc_top_1m", "bucket_ts", host_ref, start, end)?;
-        Ok(Rolled {
-            written,
-            rolled,
-            max_seq,
-        })
-    }
-
-    /// Rolls the `proc_net_1m` rows in `[start, end)` (15-minute boundaries) into
-    /// `proc_net_15m` by exact sums ([`NetFold`]) and deletes them. An existing row is
-    /// kept, as in [`State::roll_down_minutes`]; a malformed row is dropped with a warning.
-    fn roll_down_net_minutes(&mut self, host_ref: i64, start: i64, end: i64) -> Result<Rolled> {
-        let rows: Vec<(i64, Vec<u8>)> = self
-            .conn
-            .prepare_cached(
-                "SELECT bucket_ts, blob FROM proc_net_1m
-                 WHERE host_id = ?1 AND bucket_ts >= ?2 AND bucket_ts < ?3 ORDER BY bucket_ts",
-            )?
-            .query_map(params![host_ref, start, end], |r| {
-                Ok((r.get(0)?, r.get(1)?))
-            })?
-            .collect::<rusqlite::Result<_>>()?;
-        let mut folds: BTreeMap<i64, NetFold> = BTreeMap::new();
-        for (ts, b) in &rows {
-            match blob::unpack_net(b) {
-                Ok((header, apps)) => folds
-                    .entry(Tier::M15.bucket_start(*ts).unwrap_or(*ts))
-                    .or_default()
-                    .add(&header, &apps),
-                Err(e) => tracing::warn!(ts, "store: network minute not rolled down: {e}"),
-            }
-        }
-        let mut written = 0;
-        for (bucket, fold) in folds {
-            let (header, apps) = fold.finish();
-            let seq = self.alloc_seq();
-            let n = self
-                .conn
-                .prepare_cached(
-                    "INSERT INTO proc_net_15m (host_id, bucket_ts, seq, blob) VALUES (?1, ?2, ?3, ?4)
-                     ON CONFLICT (host_id, bucket_ts) DO NOTHING",
-                )?
-                .execute(params![host_ref, bucket, seq, blob::pack_net(&header, &apps)])?;
-            if n == 0 {
-                self.unalloc_seq();
-            }
-            written += n as u64;
-        }
-        let (rolled, max_seq) =
-            self.delete_span_returning_seq("proc_net_1m", "bucket_ts", host_ref, start, end)?;
+            self.delete_span_returning_seq(F::SRC, "bucket_ts", host_ref, start, end)?;
         Ok(Rolled {
             written,
             rolled,
@@ -543,13 +420,105 @@ impl State {
             "DELETE FROM {table} WHERE host_id = ?1 AND {ts_col} >= ?2 AND {ts_col} < ?3
              RETURNING seq"
         ))?;
-        let mut rows = stmt.query(params![host_ref, start, end])?;
-        let (mut n, mut max) = (0u64, None::<i64>);
-        while let Some(r) = rows.next()? {
-            n += 1;
-            max = max.max(Some(r.get(0)?));
+        count_returning_seq(stmt.query(params![host_ref, start, end])?)
+    }
+}
+
+/// Steps a `DELETE ... RETURNING seq` to its end: how many rows went and the highest
+/// `seq` among them.
+fn count_returning_seq(mut rows: rusqlite::Rows<'_>) -> Result<(u64, Option<i64>)> {
+    let (mut n, mut max) = (0u64, None::<i64>);
+    while let Some(r) = rows.next()? {
+        n += 1;
+        max = max.max(Some(r.get(0)?));
+    }
+    Ok((n, max))
+}
+
+/// How one kind of minute row folds into its 15-minute row (D-076, D-089), for
+/// [`State::roll_into`].
+trait Fold: Sized {
+    /// The minute table rolled from.
+    const SRC: &'static str;
+    /// The 15-minute table rolled into.
+    const DST: &'static str;
+    /// Rows are keyed by layout as well as bucket (the tier tables).
+    const BY_LAYOUT: bool;
+    /// Adds one minute row to its bucket's fold in `slot`, starting the fold on the first
+    /// row that can be folded. Logs and skips a row that cannot.
+    fn fold_row(slot: &mut Option<Self>, ts: i64, layout: u32, blob: &[u8]);
+    /// The 15-minute row's blob.
+    fn into_blob(self) -> Vec<u8>;
+}
+
+/// `tier_1m` into `tier_15m`: min of mins, max of maxes, mean of averages per series
+/// ([`StatsFold`]). A row whose length does not fit its layout is dropped.
+impl Fold for StatsFold {
+    const SRC: &'static str = "tier_1m";
+    const DST: &'static str = "tier_15m";
+    const BY_LAYOUT: bool = true;
+
+    fn fold_row(slot: &mut Option<Self>, ts: i64, layout: u32, blob: &[u8]) {
+        let stats = match blob::unpack_f32s(blob) {
+            Ok(v) if v.len().is_multiple_of(3) => v,
+            _ => {
+                tracing::warn!(ts, layout, "store: malformed minute row not rolled down");
+                return;
+            }
+        };
+        let fold = slot.get_or_insert_with(|| StatsFold::new(stats.len() / 3));
+        if !fold.add(&stats) {
+            tracing::warn!(
+                ts,
+                layout,
+                "store: minute row of another width not rolled down"
+            );
         }
-        Ok((n, max))
+    }
+
+    fn into_blob(self) -> Vec<u8> {
+        blob::pack_f32s(&self.finish())
+    }
+}
+
+/// `proc_top_1m` into `proc_top_15m`: the top 5 by mean CPU over the minutes present
+/// ([`top_of_group`]).
+#[derive(Default)]
+struct TopFold(Vec<Vec<PackedProc>>);
+
+impl Fold for TopFold {
+    const SRC: &'static str = "proc_top_1m";
+    const DST: &'static str = "proc_top_15m";
+    const BY_LAYOUT: bool = false;
+
+    fn fold_row(slot: &mut Option<Self>, ts: i64, _layout: u32, blob: &[u8]) {
+        match blob::unpack_procs(blob) {
+            Ok(procs) => slot.get_or_insert_default().0.push(procs),
+            Err(e) => tracing::warn!(ts, "store: process minute not rolled down: {e}"),
+        }
+    }
+
+    fn into_blob(self) -> Vec<u8> {
+        blob::pack_procs(&top_of_group(&self.0))
+    }
+}
+
+/// `proc_net_1m` into `proc_net_15m` by exact sums ([`NetFold`]).
+impl Fold for NetFold {
+    const SRC: &'static str = "proc_net_1m";
+    const DST: &'static str = "proc_net_15m";
+    const BY_LAYOUT: bool = false;
+
+    fn fold_row(slot: &mut Option<Self>, ts: i64, _layout: u32, blob: &[u8]) {
+        match blob::unpack_net(blob) {
+            Ok((header, apps)) => slot.get_or_insert_default().add(&header, &apps),
+            Err(e) => tracing::warn!(ts, "store: network minute not rolled down: {e}"),
+        }
+    }
+
+    fn into_blob(self) -> Vec<u8> {
+        let (header, apps) = self.finish();
+        blob::pack_net(&header, &apps)
     }
 }
 
