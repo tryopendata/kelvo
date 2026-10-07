@@ -1,9 +1,9 @@
 //! macOS pieces of the shell: the local host record, the login item, and the Reduce
 //! Transparency setting. Every `unsafe` block here has a `SAFETY:` comment.
 //!
-//! The host record reads a handful of public sysctls. It arguably belongs in
-//! `kelvo-collect`, which reads the OS; it lives here until that crate grows a host-info
-//! API, because the shell may not depend on `kelvo-collect` (`.claude/rules/rust.md`).
+//! The host record reads a handful of public sysctls through `kelvo-collect`'s
+//! wrappers, re-exported by the engine because the shell may not depend on
+//! `kelvo-collect` (`.claude/rules/rust.md`).
 
 use std::ffi::{CStr, CString, c_void};
 use std::ptr::NonNull;
@@ -11,63 +11,15 @@ use std::ptr::NonNull;
 use block2::RcBlock;
 use core_foundation::base::TCFType;
 use core_foundation::string::{CFString, CFStringRef};
+use kelvo_engine::macos::sysctl;
 use kelvo_schema::{ClusterInfo, CoreKind, HostId, HostInfo, HostRecord, OsKind};
 use objc2_app_kit::{NSWorkspace, NSWorkspaceAccessibilityDisplayOptionsDidChangeNotification};
 use objc2_foundation::NSNotification;
 use smappservice_rs::{AppService, ServiceManagementError, ServiceStatus, ServiceType};
 
+/// A string sysctl, trimmed.
 fn sysctl_string(name: &CStr) -> Option<String> {
-    let mut len: libc::size_t = 0;
-    // SAFETY: `name` is NUL-terminated; a null buffer asks only for the length.
-    let rc = unsafe {
-        libc::sysctlbyname(
-            name.as_ptr(),
-            std::ptr::null_mut(),
-            &mut len,
-            std::ptr::null_mut(),
-            0,
-        )
-    };
-    if rc != 0 || len == 0 {
-        return None;
-    }
-    let mut buf = vec![0u8; len];
-    // SAFETY: `buf` has `len` writable bytes and `len` tells sysctl so.
-    let rc = unsafe {
-        libc::sysctlbyname(
-            name.as_ptr(),
-            buf.as_mut_ptr().cast(),
-            &mut len,
-            std::ptr::null_mut(),
-            0,
-        )
-    };
-    if rc != 0 {
-        return None;
-    }
-    buf.truncate(len);
-    CStr::from_bytes_until_nul(&buf)
-        .ok()
-        .map(|s| s.to_string_lossy().trim().to_owned())
-}
-
-/// Reads a fixed-size sysctl value of type `T`.
-fn sysctl_value<T: Copy + Default>(name: &CStr) -> Option<T> {
-    let mut out = T::default();
-    let mut len = std::mem::size_of::<T>();
-    // SAFETY: `out` is a valid `T` with `len` bytes; sysctl writes at most `len` bytes and
-    // reports how many. A short write is rejected below. `T` is a plain integer or C
-    // struct, valid for any bit pattern.
-    let rc = unsafe {
-        libc::sysctlbyname(
-            name.as_ptr(),
-            (&raw mut out).cast::<c_void>(),
-            &mut len,
-            std::ptr::null_mut(),
-            0,
-        )
-    };
-    (rc == 0 && len == std::mem::size_of::<T>()).then_some(out)
+    sysctl::string(name).map(|s| s.trim().to_owned())
 }
 
 #[link(name = "SystemConfiguration", kind = "framework")]
@@ -91,7 +43,7 @@ fn computer_name() -> Option<String> {
 /// the CPU collector uses (`P0`, `E0`). DVFS tables come from IOReport and are not read
 /// here.
 fn cpu_topology() -> Vec<ClusterInfo> {
-    let levels = sysctl_value::<i32>(c"hw.nperflevels").unwrap_or(0);
+    let levels = sysctl::int(c"hw.nperflevels").unwrap_or(0);
     let mut out = Vec::new();
     for i in (0..levels).rev() {
         let (Ok(name_key), Ok(count_key)) = (
@@ -100,8 +52,7 @@ fn cpu_topology() -> Vec<ClusterInfo> {
         ) else {
             continue;
         };
-        let (Some(name), Some(count)) = (sysctl_string(&name_key), sysctl_value::<i32>(&count_key))
-        else {
+        let (Some(name), Some(count)) = (sysctl_string(&name_key), sysctl::int(&count_key)) else {
             continue;
         };
         let (prefix, kind) = match name.as_str() {
@@ -123,7 +74,7 @@ fn cpu_topology() -> Vec<ClusterInfo> {
 /// corrected from the first capabilities (a sensors module reporting `unknown_chip`).
 pub fn local_host_record(id: HostId) -> HostRecord {
     let chip = sysctl_string(c"machdep.cpu.brand_string");
-    let boot_time_ms = sysctl_value::<libc::timeval>(c"kern.boottime")
+    let boot_time_ms = sysctl::boot_time()
         .map(|tv| tv.tv_sec * 1000 + i64::from(tv.tv_usec) / 1000)
         .unwrap_or(0);
     let model = sysctl_string(c"hw.model");
@@ -140,7 +91,9 @@ pub fn local_host_record(id: HostId) -> HostRecord {
             chip_known: chip.as_deref().is_some_and(|c| c.starts_with("Apple M")),
             chip,
             cpu_topology: cpu_topology(),
-            mem_total_bytes: sysctl_value::<u64>(c"hw.memsize").unwrap_or(0),
+            mem_total_bytes: sysctl::int(c"hw.memsize")
+                .and_then(|b| u64::try_from(b).ok())
+                .unwrap_or(0),
             boot_time_ms,
             gpu_dvfs_mhz: kelvo_engine::macos::gpu_dvfs_mhz(),
             boot_mounts: kelvo_engine::macos::boot_mounts(),
@@ -257,18 +210,6 @@ mod tests {
     }
 
     fn is_virtual_machine() -> bool {
-        let mut vm: libc::c_int = 0;
-        let mut len = std::mem::size_of::<libc::c_int>();
-        // SAFETY: a NUL-terminated name and an int-sized output buffer we own.
-        let rc = unsafe {
-            libc::sysctlbyname(
-                c"kern.hv_vmm_present".as_ptr(),
-                (&raw mut vm).cast(),
-                &raw mut len,
-                std::ptr::null_mut(),
-                0,
-            )
-        };
-        rc == 0 && vm == 1
+        sysctl::int(c"kern.hv_vmm_present") == Some(1)
     }
 }

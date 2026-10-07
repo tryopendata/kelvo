@@ -4,7 +4,6 @@
 
 #![allow(dead_code, clippy::unwrap_used)]
 
-use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -26,24 +25,14 @@ use uuid::Uuid;
 /// 2026-10-05T00:00:00Z, the fake clock's start; a minute boundary.
 pub const T0: i64 = 1_791_158_400_000;
 
-pub struct TempDir(pub PathBuf);
+pub use tempfile::TempDir;
 
-impl TempDir {
-    pub fn new(name: &str) -> Self {
-        let dir = std::env::temp_dir().join(format!(
-            "kelvo-engine-it-{name}-{}-{}",
-            std::process::id(),
-            Uuid::new_v4().simple()
-        ));
-        std::fs::create_dir_all(&dir).unwrap();
-        Self(dir)
-    }
-}
-
-impl Drop for TempDir {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.0);
-    }
+/// A fresh, empty directory under the system temp dir, removed on drop.
+pub fn temp_dir(name: &str) -> TempDir {
+    tempfile::Builder::new()
+        .prefix(&format!("kelvo-engine-it-{name}-"))
+        .tempdir()
+        .unwrap()
 }
 
 pub fn host_record() -> HostRecord {
@@ -458,7 +447,7 @@ impl Harness {
         bus: Bus,
         prune_batch: Option<u64>,
     ) -> Self {
-        let dir = TempDir::new(name);
+        let dir = temp_dir(name);
         let record = host_record();
         let store = prune_batch.map(|batch| {
             let store = open_store_with(&dir, batch);
@@ -558,7 +547,7 @@ pub fn open_store(dir: &TempDir) -> Store {
 
 /// [`open_store`] pruning `prune_batch` rows per transaction.
 pub fn open_store_with(dir: &TempDir, prune_batch: u64) -> Store {
-    let mut cfg = StoreConfig::new(dir.0.join("history.sqlite"));
+    let mut cfg = StoreConfig::new(dir.path().join("history.sqlite"));
     cfg.commit_interval = Duration::from_secs(3600);
     cfg.prune_batch = prune_batch;
     Store::open(cfg).unwrap()

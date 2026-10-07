@@ -47,6 +47,7 @@ kelvo-store = { workspace = true, features = ["write-stats"] }
 # Reads row counts and payload sizes for the store write-volume gate.
 rusqlite.workspace = true
 serde_json.workspace = true
+tempfile.workspace = true
 
 [lints]
 workspace = true

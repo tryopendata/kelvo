@@ -9,7 +9,9 @@
 //!   reads them once per tick through [`PowerSignals::poll`], and implementations keep
 //!   that cheap (change notifications or rate-limited reads).
 
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex};
+
+use kelvo_schema::lock::LockExt;
 
 use crate::clock::ClockReading;
 use crate::inbox::{Inbox, SleepAck};
@@ -81,37 +83,33 @@ impl FakePowerSignals {
     }
 }
 
-fn lock(m: &Mutex<FakePowerState>) -> MutexGuard<'_, FakePowerState> {
-    m.lock().unwrap_or_else(|e| e.into_inner())
-}
-
 impl PowerSignals for FakePowerSignals {
     fn start(&mut self, inbox: Inbox) {
-        lock(&self.shared).inbox = Some(inbox);
+        self.shared.lock_ok().inbox = Some(inbox);
     }
 
     fn poll(&mut self) -> PowerState {
-        lock(&self.shared).state
+        self.shared.lock_ok().state
     }
 }
 
 impl FakePower {
     pub fn set(&self, f: impl FnOnce(&mut PowerState)) {
-        f(&mut lock(&self.shared).state);
+        f(&mut self.shared.lock_ok().state);
     }
 
     /// Sends `WillSleep` stamped `at`. Returns the receiver the engine's ack arrives on
     /// (or disconnects, if the engine dropped it).
     pub fn will_sleep(&self, at: ClockReading) -> crossbeam_channel::Receiver<()> {
         let (ack, rx) = SleepAck::new();
-        if let Some(inbox) = &lock(&self.shared).inbox {
+        if let Some(inbox) = &self.shared.lock_ok().inbox {
             inbox.power(PowerEvent::WillSleep, at, Some(ack));
         }
         rx
     }
 
     pub fn did_wake(&self, at: ClockReading) {
-        if let Some(inbox) = &lock(&self.shared).inbox {
+        if let Some(inbox) = &self.shared.lock_ok().inbox {
             inbox.power(PowerEvent::DidWake, at, None);
         }
     }

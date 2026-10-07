@@ -29,9 +29,10 @@ pub mod thermal_state;
 mod vendor;
 
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard};
 
 pub use iokit::platform_uuid;
+use kelvo_schema::lock::LockExt;
 
 use crate::Collector;
 use crate::calib::{Calibrator, NoScaleStore, ScaleStore};
@@ -107,12 +108,6 @@ impl std::fmt::Debug for CpuPowerSource {
     }
 }
 
-fn relock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
-    // A poisoned lock still holds usable state: plain values updated in single
-    // assignments.
-    m.lock().unwrap_or_else(PoisonError::into_inner)
-}
-
 impl CpuPowerSource {
     /// A source whose learned scales persist through `store`.
     pub fn new(store: Arc<dyn ScaleStore>) -> Self {
@@ -135,13 +130,13 @@ impl CpuPowerSource {
 
     /// The shared calibrator.
     pub(crate) fn calib(&self) -> MutexGuard<'_, Calibrator> {
-        relock(&self.0.calib)
+        self.0.calib.lock_ok()
     }
 
     /// Records `chip` as the store key and, unless a window already closed this session,
     /// seeds the calibrator with the scale stored for it, else with `default`.
     pub(crate) fn seed(&self, chip: &str, default: Option<f64>) {
-        *relock(&self.0.chip) = Some(chip.to_owned());
+        *self.0.chip.lock_ok() = Some(chip.to_owned());
         let stored = self
             .0
             .store
@@ -163,7 +158,7 @@ impl CpuPowerSource {
         let Some(scale) = scale else {
             return;
         };
-        let chip = relock(&self.0.chip).clone();
+        let chip = self.0.chip.lock_ok().clone();
         if let Some(chip) = chip {
             self.0.store.save(&chip, scale);
         }
@@ -216,11 +211,11 @@ mod tests {
 
     impl ScaleStore for MemStore {
         fn load(&self, chip: &str) -> Option<f64> {
-            relock(&self.0).get(chip).copied()
+            self.0.lock_ok().get(chip).copied()
         }
 
         fn save(&self, chip: &str, scale: f64) {
-            relock(&self.0).insert(chip.to_owned(), scale);
+            self.0.lock_ok().insert(chip.to_owned(), scale);
         }
     }
 
@@ -312,6 +307,6 @@ mod tests {
         let src = CpuPowerSource::new(store.clone());
         run(&src, 0, 600, 6.0, 8.0);
         assert!(src.calib().scale().is_some());
-        assert!(relock(&store.0).is_empty());
+        assert!(store.0.lock_ok().is_empty());
     }
 }

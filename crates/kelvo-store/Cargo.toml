@@ -32,6 +32,7 @@ serde_json.workspace = true
 anyhow.workspace = true
 # The write-failure test makes COMMIT fail with a commit hook.
 rusqlite = { workspace = true, features = ["hooks"] }
+tempfile.workspace = true
 
 [lints]
 workspace = true

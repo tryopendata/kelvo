@@ -86,7 +86,7 @@ fn measure_as(
     name: &str,
     spans: &[(u128, i64, i64, bool)],
 ) -> (TempDir, Store, Option<HistoryGrowth>) {
-    let dir = TempDir::new(name);
+    let dir = temp_dir(name);
     let store = open(&dir, "history.sqlite");
     let w = store.writer();
     for &(n, from, span, tens) in spans {

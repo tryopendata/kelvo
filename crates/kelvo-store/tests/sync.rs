@@ -292,7 +292,7 @@ fn fill(agent: &Store, h: &HostRecord, start: i64, minutes: i64) {
 
 #[test]
 fn agent_syncs_into_controller() {
-    let dir = TempDir::new("sync");
+    let dir = temp_dir("sync");
     let record = host(1);
     let agent = open(&dir, "agent.sqlite");
     let controller = open(&dir, "controller.sqlite");
@@ -465,7 +465,7 @@ fn agent_syncs_into_controller() {
 
 #[test]
 fn gaps_for_unknown_modules_are_skipped_on_ingest() {
-    let dir = TempDir::new("sync-unknown");
+    let dir = temp_dir("sync-unknown");
     let controller = open(&dir, "controller.sqlite");
     let record = host(5);
     controller.writer().upsert_host(record.clone()).unwrap();
@@ -521,7 +521,7 @@ fn gaps_for_unknown_modules_are_skipped_on_ingest() {
 /// resyncs from the start and the event arrives. Nothing is lost or duplicated.
 #[test]
 fn row_kinds_travel_only_when_negotiated() {
-    let dir = TempDir::new("sync-kinds");
+    let dir = temp_dir("sync-kinds");
     let record = host(1);
     let agent = open(&dir, "agent.sqlite");
     let controller = open(&dir, "controller.sqlite");
@@ -598,7 +598,7 @@ fn row_kinds_travel_only_when_negotiated() {
 /// fresh cursor reads whatever minutes exist, as after an ordinary prune.)
 #[test]
 fn rolled_down_minutes_sync_as_their_own_kind() {
-    let dir = TempDir::new("sync-m15");
+    let dir = temp_dir("sync-m15");
     let record = host(1);
     let agent = open(&dir, "agent.sqlite");
     let new_ctl = open(&dir, "new.sqlite");

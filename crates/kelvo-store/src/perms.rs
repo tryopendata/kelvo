@@ -85,10 +85,10 @@ mod tests {
     #[test]
     fn new_dirs_and_files_are_owner_only() {
         let base = crate::test_dir("perms-new");
-        let dir = base.join("a").join("b");
+        let dir = base.path().join("a").join("b");
         create_private_dir(&dir).unwrap();
         assert_eq!(mode(&dir), 0o700);
-        assert_eq!(mode(&base.join("a")), 0o700, "created parents too");
+        assert_eq!(mode(&base.path().join("a")), 0o700, "created parents too");
 
         write_private(&dir.join("w"), b"x").unwrap();
         assert_eq!(mode(&dir.join("w")), 0o600);
@@ -99,7 +99,7 @@ mod tests {
     #[test]
     fn looser_existing_ones_are_tightened_and_tighter_ones_kept() {
         let base = crate::test_dir("perms-existing");
-        let dir = base.join("d");
+        let dir = base.path().join("d");
         std::fs::create_dir(&dir).unwrap();
         std::fs::set_permissions(&dir, Permissions::from_mode(0o755)).unwrap();
         create_private_dir(&dir).unwrap();
@@ -141,7 +141,8 @@ mod tests {
 
     #[test]
     fn a_new_store_is_owner_only() {
-        let db = crate::test_dir("perms-store").join("history.sqlite");
+        let dir = crate::test_dir("perms-store");
+        let db = dir.path().join("history.sqlite");
         let store = crate::Store::open(crate::StoreConfig::new(&db)).unwrap();
         store.writer().flush().unwrap();
         for f in store_files(&db) {
@@ -153,7 +154,8 @@ mod tests {
 
     #[test]
     fn an_existing_store_is_tightened_on_open() {
-        let db = crate::test_dir("perms-store-old").join("history.sqlite");
+        let dir = crate::test_dir("perms-store-old");
+        let db = dir.path().join("history.sqlite");
         let store = crate::Store::open(crate::StoreConfig::new(&db)).unwrap();
         store.writer().flush().unwrap();
         // As files from before D-074 were: 0644, with the WAL and shm still there.

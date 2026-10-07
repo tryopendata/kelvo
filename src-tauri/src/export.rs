@@ -103,7 +103,6 @@ pub fn write_csv(
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
     use std::sync::Arc;
 
     use kelvo_schema::{
@@ -117,14 +116,11 @@ mod tests {
     const T0: i64 = 1_788_220_800_000;
     const MIN: i64 = 60_000;
 
-    fn temp_dir(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!(
-            "kelvo-shell-{name}-{}-{}",
-            std::process::id(),
-            uuid::Uuid::new_v4().simple()
-        ));
-        std::fs::create_dir_all(&dir).unwrap();
-        dir
+    fn temp_dir(name: &str) -> tempfile::TempDir {
+        tempfile::Builder::new()
+            .prefix(&format!("kelvo-shell-{name}-"))
+            .tempdir()
+            .unwrap()
     }
 
     fn record() -> HostRecord {
@@ -189,8 +185,9 @@ mod tests {
 
     #[test]
     fn writes_the_file_with_uncommitted_minutes_and_reports_what_it_wrote() {
-        let dir = temp_dir("export");
-        let (history, query) = history(&dir);
+        let tmp = temp_dir("export");
+        let dir = tmp.path();
+        let (history, query) = history(dir);
         let path = dir.join("out.csv");
         std::fs::write(&path, "an older file").unwrap();
         let outcome = write_csv(&history, &query, &path).unwrap();
@@ -227,7 +224,7 @@ mod tests {
             )
         );
         assert_eq!(lines.len(), 12);
-        assert_eq!(temp_files(&dir), Vec::<String>::new());
+        assert_eq!(temp_files(dir), Vec::<String>::new());
         history.close();
     }
 
@@ -242,21 +239,23 @@ mod tests {
 
     #[test]
     fn a_file_name_at_the_length_limit_exports() {
-        let dir = temp_dir("export-long-name");
-        let (history, query) = history(&dir);
+        let tmp = temp_dir("export-long-name");
+        let dir = tmp.path();
+        let (history, query) = history(dir);
         // 255 bytes, the most a macOS (APFS) or Linux file name can hold.
         let path = dir.join(format!("{}.csv", "k".repeat(251)));
         let outcome = write_csv(&history, &query, &path).unwrap();
         assert!(matches!(outcome, ExportOutcome::Saved { rows: 10, .. }));
         assert!(path.exists());
-        assert_eq!(temp_files(&dir), Vec::<String>::new());
+        assert_eq!(temp_files(dir), Vec::<String>::new());
         history.close();
     }
 
     #[test]
     fn a_failed_export_leaves_the_old_file_and_no_temporary_one() {
-        let dir = temp_dir("export-fails");
-        let (history, query) = history(&dir);
+        let tmp = temp_dir("export-fails");
+        let dir = tmp.path();
+        let (history, query) = history(dir);
         // A directory that does not exist: the file cannot be created.
         let missing = dir.join("gone").join("out.csv");
         let err = write_csv(&history, &query, &missing).unwrap_err();
@@ -281,7 +280,7 @@ mod tests {
             "the user's older export"
         );
         assert_eq!(
-            temp_files(&dir),
+            temp_files(dir),
             Vec::<String>::new(),
             "the temporary file is removed"
         );

@@ -2,6 +2,8 @@
 //! host identity, capabilities, alert-rule data, settings and the typed `Snapshot` view.
 //!
 //! Pure data. No I/O, no tokio, no OS APIs; every other crate depends on this one.
+//! The one item that is not data is [`lock`], a std-only poison-recovering lock helper
+//! kept here because every crate can reach it.
 //!
 //! # Map for downstream crates
 //!
@@ -10,7 +12,7 @@
 //! | Identify a series | [`SeriesKey`] = [`MetricId`] + [`Labels`]; `Display`/[`SeriesKey::parse`] for text, [`Labels::canonical`] for the store's `series.labels` column |
 //! | Know what a metric is | [`Catalog::builtin`], [`Catalog::validate`], [`MetricDef`] (`persisted` decides tier storage) |
 //! | Identify a host | [`HostId`] (UUID), [`HostRecord`] (controller side, with `is_local`), [`HostIdentity`] (on the wire), [`HostInfo`] |
-//! | Tiers and sync | [`Tier`] (`bucket_ms`, `bucket_start`, `PERSISTED`), [`Cursor`] (`epoch` + `seq`), [`SyncRowKind`]/[`SyncKinds`] (row kinds gated on negotiated features) |
+//! | Tiers and sync | [`Tier`] (`bucket_ms`, `bucket_start`/`bucket_end`, `PERSISTED`), [`floor_to`]/[`ceil_to`], [`Cursor`] (`epoch` + `seq`), [`SyncRowKind`]/[`SyncKinds`] (row kinds gated on negotiated features) |
 //! | Gaps | [`Gap`], [`GapReason`] (`as_str`/`parse` give the `gaps.reason` text), nullable [`Gap::module`] set only for `module_disabled`, [`Module::as_str`] for `gaps.module` |
 //! | Capabilities | [`Capabilities`], [`ModuleCap`], [`UnsupportedReason`], [`Entitlement`] |
 //! | Settings | [`Settings`] with [`Settings::validate`] |
@@ -44,6 +46,7 @@ mod compat;
 mod event;
 mod history;
 mod host;
+pub mod lock;
 mod series;
 pub mod settings;
 mod snapshot;
@@ -53,7 +56,9 @@ pub use caps::{Capabilities, Entitlement, ModuleCap, UnsupportedReason};
 pub use catalog::{CATALOG, Catalog, CatalogError, MetricDef, MetricKind, Module, Unit};
 pub use codes::{CpuPowerCalibration, MetricCode, PressureLevel, metric_codes};
 pub use event::{AlertCause, DetectorThresholds, Event, EventDetail, PowerComponent};
-pub use history::{Cursor, Gap, GapError, GapReason, SyncKinds, SyncRowKind, Tier};
+pub use history::{
+    Cursor, Gap, GapError, GapReason, SyncKinds, SyncRowKind, Tier, ceil_to, floor_to,
+};
 pub use host::{ClusterInfo, CoreKind, HostId, HostIdentity, HostInfo, HostRecord, OsKind};
 pub use series::{Labels, MetricId, SeriesKey, SeriesParseError, SeriesSelector};
 pub use settings::{AlertSettings, PerformanceReason, PowerSource, Settings, SettingsError};

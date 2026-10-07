@@ -141,8 +141,8 @@ fn fill(n: usize, retention: Retention) -> Measured {
 /// [`fill`], then `inspect` on the filled store (with the host) before it closes.
 fn fill_with(n: usize, retention: Retention, inspect: impl FnOnce(&Store, HostId)) -> Measured {
     let started = Instant::now();
-    let dir = TempDir::new(&format!("fill-{n}-{}", retention.max_bytes));
-    let path = dir.file("history.sqlite");
+    let dir = temp_dir(&format!("fill-{n}-{}", retention.max_bytes));
+    let path = dir.path().join("history.sqlite");
     let store = Store::open(StoreConfig::new(&path)).unwrap();
     let w = store.writer();
     let h = host(1);
@@ -209,7 +209,7 @@ fn fill_with(n: usize, retention: Retention, inspect: impl FnOnce(&Store, HostId
         bytes: 0,
         max_after_prune,
         last_trim,
-        wal_before_close: std::fs::metadata(dir.file("history.sqlite-wal"))
+        wal_before_close: std::fs::metadata(dir.path().join("history.sqlite-wal"))
             .map(|m| m.len())
             .unwrap_or(0),
         m1_rows: count(&db, "SELECT count(*) FROM tier_1m"),
@@ -388,8 +388,8 @@ fn thirty_day_reads_meet_the_budget() {
         assert_eq!(hours.iter().filter(|v| v.is_some()).count(), 30 * 24);
 
         // Every series, 30 days, to a file.
-        let dir = TempDir::new("export-perf");
-        let path = dir.file("export.csv");
+        let dir = temp_dir("export-perf");
+        let path = dir.path().join("export.csv");
         let started = Instant::now();
         let mut out = std::io::BufWriter::new(std::fs::File::create(&path).unwrap());
         let summary = store

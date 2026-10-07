@@ -25,10 +25,11 @@ use std::collections::VecDeque;
 use std::sync::Arc;
 
 use kelvo_collect::{IfaceNet, Interval, ProcessNet};
+use kelvo_schema::{Tier, floor_to};
 use kelvo_store::{NetApp, NetBucket};
 
 /// Bucket width, ms: the S10 tier's.
-pub const NET_BUCKET_MS: i64 = 10_000;
+pub const NET_BUCKET_MS: i64 = Tier::S10.bucket_ms().expect("S10 has a bucket width");
 const NS_PER_MS: i128 = 1_000_000;
 const BUCKET_NS: i128 = NET_BUCKET_MS as i128 * NS_PER_MS;
 
@@ -362,10 +363,8 @@ impl NetAppAcc {
     /// closed or written, or with none, the start of the bucket the last restart is in
     /// (nothing is counted before the restart). `None` before any restart.
     pub fn final_to(&self) -> Option<i64> {
-        self.closed_to_ms.or_else(|| {
-            self.restart_wall_ms
-                .map(|w| w.div_euclid(NET_BUCKET_MS) * NET_BUCKET_MS)
-        })
+        self.closed_to_ms
+            .or_else(|| self.restart_wall_ms.map(|w| floor_to(w, NET_BUCKET_MS)))
     }
 
     /// Drops the open buckets and forgets the timeline (a clock step, another store).
@@ -456,7 +455,7 @@ impl NetRing {
             self.closed.pop_back();
         }
         self.open_len = 0;
-        let floor = ts_ms.div_euclid(NET_BUCKET_MS) * NET_BUCKET_MS;
+        let floor = floor_to(ts_ms, NET_BUCKET_MS);
         self.final_to_ms = self.final_to_ms.map(|f| f.min(floor));
     }
 

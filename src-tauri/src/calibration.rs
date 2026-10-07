@@ -13,9 +13,10 @@
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, PoisonError};
+use std::sync::Mutex;
 
 use kelvo_engine::ScaleStore;
+use kelvo_schema::lock::LockExt;
 use serde::{Deserialize, Serialize};
 
 /// The file name in the app data directory.
@@ -70,7 +71,7 @@ impl FileScaleStore {
 
 impl ScaleStore for FileScaleStore {
     fn load(&self, chip: &str) -> Option<f64> {
-        let contents = self.contents.lock().unwrap_or_else(PoisonError::into_inner);
+        let contents = self.contents.lock_ok();
         contents.cpu_power_scale.get(chip).copied()
     }
 
@@ -78,7 +79,7 @@ impl ScaleStore for FileScaleStore {
         if !scale.is_finite() {
             return;
         }
-        let mut contents = self.contents.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut contents = self.contents.lock_ok();
         contents.cpu_power_scale.insert(chip.to_owned(), scale);
         match self.write(&contents) {
             Ok(()) => tracing::debug!(chip, scale, "saved the CPU power calibration"),
@@ -91,38 +92,39 @@ impl ScaleStore for FileScaleStore {
 mod tests {
     use super::*;
 
-    fn temp_dir() -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("kelvo-calib-{}", uuid::Uuid::new_v4()));
-        std::fs::create_dir_all(&dir).unwrap();
-        dir
+    fn temp_dir() -> tempfile::TempDir {
+        tempfile::Builder::new()
+            .prefix("kelvo-calib-")
+            .tempdir()
+            .unwrap()
     }
 
     #[test]
     fn a_saved_scale_is_there_after_a_restart() {
-        let dir = temp_dir();
-        let first = FileScaleStore::open(&dir);
+        let tmp = temp_dir();
+        let dir = tmp.path();
+        let first = FileScaleStore::open(dir);
         assert_eq!(first.load("Apple M3 Max"), None);
         first.save("Apple M3 Max", 1.31);
         first.save("Apple M4 Pro", 1.1);
         first.save("Apple M3 Max", 1.29);
         drop(first);
 
-        let second = FileScaleStore::open(&dir);
+        let second = FileScaleStore::open(dir);
         assert_eq!(second.load("Apple M3 Max"), Some(1.29));
         assert_eq!(second.load("Apple M4 Pro"), Some(1.1));
         assert!(!dir.join("power-calibration.json.tmp").exists());
-        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]
     fn a_missing_or_corrupt_file_starts_empty_and_is_replaced_on_save() {
-        let dir = temp_dir();
+        let tmp = temp_dir();
+        let dir = tmp.path();
         std::fs::write(dir.join(FILE_NAME), b"{ not json").unwrap();
-        let store = FileScaleStore::open(&dir);
+        let store = FileScaleStore::open(dir);
         assert_eq!(store.load("Apple M3 Max"), None);
         store.save("Apple M3 Max", 1.3);
-        assert_eq!(FileScaleStore::open(&dir).load("Apple M3 Max"), Some(1.3));
-        std::fs::remove_dir_all(dir).unwrap();
+        assert_eq!(FileScaleStore::open(dir).load("Apple M3 Max"), Some(1.3));
     }
 
     /// D-074: owner-only when written, and an older looser file is tightened on open.
@@ -130,23 +132,23 @@ mod tests {
     fn the_file_is_owner_only() {
         use std::os::unix::fs::PermissionsExt;
         let mode = |p: &Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
-        let dir = temp_dir();
+        let tmp = temp_dir();
+        let dir = tmp.path();
         let path = dir.join(FILE_NAME);
-        FileScaleStore::open(&dir).save("Apple M3 Max", 1.3);
+        FileScaleStore::open(dir).save("Apple M3 Max", 1.3);
         assert_eq!(mode(&path), 0o600);
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
-        drop(FileScaleStore::open(&dir));
+        drop(FileScaleStore::open(dir));
         assert_eq!(mode(&path), 0o600);
-        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]
     fn non_finite_scales_are_not_saved() {
-        let dir = temp_dir();
-        let store = FileScaleStore::open(&dir);
+        let tmp = temp_dir();
+        let dir = tmp.path();
+        let store = FileScaleStore::open(dir);
         store.save("Apple M3 Max", f64::NAN);
         assert_eq!(store.load("Apple M3 Max"), None);
         assert!(!dir.join(FILE_NAME).exists());
-        std::fs::remove_dir_all(dir).unwrap();
     }
 }

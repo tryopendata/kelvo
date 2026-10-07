@@ -28,7 +28,7 @@ fn sel(metric: &'static str) -> SeriesSelector {
 
 #[test]
 fn host_upsert_is_keyed_by_uuid() {
-    let dir = TempDir::new("hosts");
+    let dir = temp_dir("hosts");
     let store = open(&dir, "h.sqlite");
     let w = store.writer();
     let mut h = host(1);
@@ -43,7 +43,7 @@ fn host_upsert_is_keyed_by_uuid() {
 
 #[test]
 fn writes_for_an_unknown_host_fail() {
-    let dir = TempDir::new("unknown-host");
+    let dir = temp_dir("unknown-host");
     let store = open(&dir, "h.sqlite");
     let err = store
         .writer()
@@ -54,7 +54,7 @@ fn writes_for_an_unknown_host_fail() {
 
 #[test]
 fn interning_and_layout_dedupe() {
-    let dir = TempDir::new("intern");
+    let dir = temp_dir("intern");
     let store = open(&dir, "h.sqlite");
     let w = store.writer();
     let h = host(1);
@@ -84,7 +84,7 @@ fn interning_and_layout_dedupe() {
 
 #[test]
 fn bad_rows_are_rejected_before_queueing() {
-    let dir = TempDir::new("bad-rows");
+    let dir = temp_dir("bad-rows");
     let store = open(&dir, "h.sqlite");
     let w = store.writer();
     let h = host(1);
@@ -107,7 +107,7 @@ fn bad_rows_are_rejected_before_queueing() {
 
 #[test]
 fn seq_is_monotonic_and_replaying_a_batch_changes_nothing() {
-    let dir = TempDir::new("replay");
+    let dir = temp_dir("replay");
     let store = open(&dir, "h.sqlite");
     let w = store.writer();
     let h = host(1);
@@ -160,7 +160,7 @@ fn seq_is_monotonic_and_replaying_a_batch_changes_nothing() {
 
 #[test]
 fn writer_batches_until_flush_or_interval() {
-    let dir = TempDir::new("batch");
+    let dir = temp_dir("batch");
     let store = open(&dir, "h.sqlite");
     let w = store.writer();
     let h = host(1);
@@ -178,7 +178,7 @@ fn writer_batches_until_flush_or_interval() {
     drop(store);
 
     // With a short interval the batch commits on its own.
-    let mut cfg = StoreConfig::new(dir.file("interval.sqlite"));
+    let mut cfg = StoreConfig::new(dir.path().join("interval.sqlite"));
     cfg.commit_interval = Duration::from_millis(50);
     let store = kelvo_store::Store::open(cfg).unwrap();
     let w = store.writer();
@@ -196,7 +196,7 @@ fn writer_batches_until_flush_or_interval() {
 /// 5-minute batch commit; the reader decodes it whole and skips what it cannot read.
 #[test]
 fn events_commit_soon_and_read_back_in_range() {
-    let dir = TempDir::new("events");
+    let dir = temp_dir("events");
     let store = open(&dir, "h.sqlite");
     let w = store.writer();
     let h = host(1);
@@ -262,8 +262,8 @@ fn events_commit_soon_and_read_back_in_range() {
 
 #[test]
 fn close_commits_and_checkpoints() {
-    let dir = TempDir::new("close");
-    let path = dir.file("h.sqlite");
+    let dir = temp_dir("close");
+    let path = dir.path().join("h.sqlite");
     let store = open(&dir, "h.sqlite");
     let w = store.writer();
     let h = host(1);
@@ -272,7 +272,7 @@ fn close_commits_and_checkpoints() {
         .unwrap();
     store.close().unwrap();
     assert!(matches!(w.flush(), Err(StoreError::WriterGone)));
-    let wal = std::fs::metadata(dir.file("h.sqlite-wal"))
+    let wal = std::fs::metadata(dir.path().join("h.sqlite-wal"))
         .map(|m| m.len())
         .unwrap_or(0);
     assert_eq!(wal, 0, "WAL truncated on close");
@@ -283,7 +283,7 @@ fn close_commits_and_checkpoints() {
 
 #[test]
 fn gaps_open_close_and_module_scope() {
-    let dir = TempDir::new("gaps");
+    let dir = temp_dir("gaps");
     let store = open(&dir, "h.sqlite");
     let w = store.writer();
     let h = host(1);
@@ -312,7 +312,7 @@ fn gaps_open_close_and_module_scope() {
 
 #[test]
 fn startup_closes_open_gaps_and_writes_app_not_running() {
-    let dir = TempDir::new("startup");
+    let dir = temp_dir("startup");
     let h = host(1);
     let l = layout(&["cpu.total"]);
     {
@@ -360,7 +360,7 @@ fn startup_closes_open_gaps_and_writes_app_not_running() {
 
 #[test]
 fn history_across_layouts_merges_to_max_points_and_skips_nan() {
-    let dir = TempDir::new("history");
+    let dir = temp_dir("history");
     let store = open(&dir, "h.sqlite");
     let w = store.writer();
     let h = host(1);
@@ -454,7 +454,7 @@ fn history_across_layouts_merges_to_max_points_and_skips_nan() {
 
 #[test]
 fn auto_tier_prefers_s10_until_it_is_pruned_past_the_range() {
-    let dir = TempDir::new("auto-tier");
+    let dir = temp_dir("auto-tier");
     let store = open(&dir, "h.sqlite");
     let w = store.writer();
     let h = host(1);
@@ -503,7 +503,7 @@ fn proc(name: &str, pid: i32, cpu: f32) -> ProcRow {
 
 #[test]
 fn processes_snapshot_then_roll_down_to_top_five() {
-    let dir = TempDir::new("procs");
+    let dir = temp_dir("procs");
     let store = open(&dir, "h.sqlite");
     let w = store.writer();
     let h = host(1);
@@ -553,7 +553,7 @@ fn processes_snapshot_then_roll_down_to_top_five() {
 /// finds the nearer one.
 #[test]
 fn processes_at_finds_a_snapshot_between_thirty_second_ones() {
-    let dir = TempDir::new("procs-30s");
+    let dir = temp_dir("procs-30s");
     let store = open(&dir, "h.sqlite");
     let w = store.writer();
     let h = host(1);
@@ -578,7 +578,7 @@ fn processes_at_finds_a_snapshot_between_thirty_second_ones() {
 
 #[test]
 fn cursor_reads_page_in_seq_order_with_gaps_and_events_on_m1() {
-    let dir = TempDir::new("cursor");
+    let dir = temp_dir("cursor");
     let store = open(&dir, "h.sqlite");
     let w = store.writer();
     let h = host(1);
@@ -678,7 +678,7 @@ fn cursor_reads_page_in_seq_order_with_gaps_and_events_on_m1() {
 
 #[test]
 fn pruning_deletes_by_retention_and_truncates_old_cursors() {
-    let dir = TempDir::new("prune");
+    let dir = temp_dir("prune");
     let store = open(&dir, "h.sqlite");
     let w = store.writer();
     let h = host(1);
@@ -773,7 +773,7 @@ fn pruning_deletes_by_retention_and_truncates_old_cursors() {
 
 #[test]
 fn incremental_vacuum_returns_space_and_size_counts_the_wal() {
-    let dir = TempDir::new("vacuum");
+    let dir = temp_dir("vacuum");
     let store = open(&dir, "h.sqlite");
     let w = store.writer();
     let h = host(1);
@@ -787,7 +787,9 @@ fn incremental_vacuum_returns_space_and_size_counts_the_wal() {
             .unwrap();
     }
     w.flush().unwrap();
-    let wal = std::fs::metadata(dir.file("h.sqlite-wal")).unwrap().len();
+    let wal = std::fs::metadata(dir.path().join("h.sqlite-wal"))
+        .unwrap()
+        .len();
     assert!(wal > 0);
     let full = store.size_on_disk().unwrap();
     let db_only = std::fs::metadata(store.path()).unwrap().len();
@@ -802,13 +804,13 @@ fn incremental_vacuum_returns_space_and_size_counts_the_wal() {
         "incremental_vacuum released the free pages"
     );
     store.close().unwrap();
-    let after = kelvo_store::size_on_disk(&dir.file("h.sqlite")).unwrap();
+    let after = kelvo_store::size_on_disk(&dir.path().join("h.sqlite")).unwrap();
     assert!(after < db_only / 4, "{after} vs {db_only}");
 }
 
 #[test]
 fn clear_host_removes_history_and_truncates_cursors() {
-    let dir = TempDir::new("clear");
+    let dir = temp_dir("clear");
     let store = open(&dir, "h.sqlite");
     let w = store.writer();
     let (a, b) = (host(1), host(2));
@@ -857,7 +859,7 @@ fn clear_host_removes_history_and_truncates_cursors() {
 
 #[test]
 fn unknown_gap_text_from_a_newer_build_reads_as_unknown() {
-    let dir = TempDir::new("gap-text");
+    let dir = temp_dir("gap-text");
     let store = open(&dir, "h.sqlite");
     let w = store.writer();
     let h = host(1);
@@ -865,7 +867,7 @@ fn unknown_gap_text_from_a_newer_build_reads_as_unknown() {
     w.flush().unwrap();
     store.close().unwrap();
     // A newer build wrote reasons and modules this one has never heard of.
-    let conn = rusqlite::Connection::open(dir.file("h.sqlite")).unwrap();
+    let conn = rusqlite::Connection::open(dir.path().join("h.sqlite")).unwrap();
     conn.execute_batch(
         "INSERT INTO gaps (host_id, start_ts, end_ts, module, reason, seq) VALUES
            (1, 10, 20, NULL, 'lid_closed', 100),
@@ -886,11 +888,11 @@ fn unknown_gap_text_from_a_newer_build_reads_as_unknown() {
 /// of a second writer; once the first closes, the file opens again.
 #[test]
 fn a_second_store_on_the_same_file_is_locked_out() {
-    let dir = TempDir::new("locked");
+    let dir = temp_dir("locked");
     let first = open(&dir, "h.sqlite");
-    let err = Store::open(StoreConfig::new(dir.file("h.sqlite"))).err();
+    let err = Store::open(StoreConfig::new(dir.path().join("h.sqlite"))).err();
     assert!(
-        matches!(&err, Some(StoreError::Locked { path }) if *path == dir.file("h.sqlite")),
+        matches!(&err, Some(StoreError::Locked { path }) if *path == dir.path().join("h.sqlite")),
         "{err:?}"
     );
     // A different file is not affected.
@@ -901,8 +903,8 @@ fn a_second_store_on_the_same_file_is_locked_out() {
 
 #[test]
 fn move_aside_starts_a_fresh_database_and_keeps_the_old_one() {
-    let dir = TempDir::new("move-aside");
-    let path = dir.file("history.sqlite");
+    let dir = temp_dir("move-aside");
+    let path = dir.path().join("history.sqlite");
     let store = open(&dir, "history.sqlite");
     store.writer().upsert_host(host(1)).unwrap();
     let epoch = store.epoch();
@@ -914,7 +916,7 @@ fn move_aside_starts_a_fresh_database_and_keeps_the_old_one() {
     store.close().unwrap();
 
     let moved = kelvo_store::move_aside(&path, T0).unwrap().unwrap();
-    assert_eq!(moved, dir.file(&format!("history-reset-{T0}.sqlite")));
+    assert_eq!(moved, dir.path().join(format!("history-reset-{T0}.sqlite")));
     assert!(moved.exists() && !path.exists());
     let fresh = open(&dir, "history.sqlite");
     assert_ne!(fresh.epoch(), epoch, "a new file, a new epoch");
@@ -922,7 +924,7 @@ fn move_aside_starts_a_fresh_database_and_keeps_the_old_one() {
     fresh.close().unwrap();
     // Nothing to move is not an error.
     assert_eq!(
-        kelvo_store::move_aside(&dir.file("missing.sqlite"), T0).unwrap(),
+        kelvo_store::move_aside(&dir.path().join("missing.sqlite"), T0).unwrap(),
         None
     );
 }
@@ -932,7 +934,7 @@ fn move_aside_starts_a_fresh_database_and_keeps_the_old_one() {
 /// one instead of failing.
 #[test]
 fn one_local_host_and_the_newest_wins() {
-    let dir = TempDir::new("one-local");
+    let dir = temp_dir("one-local");
     let store = open(&dir, "h.sqlite");
     let w = store.writer();
     let a = host(1);
@@ -953,7 +955,7 @@ fn one_local_host_and_the_newest_wins() {
 /// original, v4) is refused, not merged into the local host and not demoting it.
 #[test]
 fn a_remote_host_cannot_take_the_local_hosts_uuid() {
-    let dir = TempDir::new("host-conflict");
+    let dir = temp_dir("host-conflict");
     let store = open(&dir, "h.sqlite");
     let w = store.writer();
     let local = host(1);
@@ -985,8 +987,8 @@ fn a_remote_host_cannot_take_the_local_hosts_uuid() {
 fn shutdown_ends_a_long_prune_early() {
     const BATCH: u64 = 7;
     const OLD: i64 = 21_000;
-    let dir = TempDir::new("prune-shutdown");
-    let mut cfg = StoreConfig::new(dir.file("h.sqlite"));
+    let dir = temp_dir("prune-shutdown");
+    let mut cfg = StoreConfig::new(dir.path().join("h.sqlite"));
     cfg.prune_batch = BATCH;
     let store = Store::open(cfg).unwrap();
     let h = host(1);
@@ -1039,7 +1041,7 @@ fn shutdown_ends_a_long_prune_early() {
 /// began before `from` and ended after it is cut at `from`.
 #[test]
 fn discard_from_drops_rows_of_a_wrong_clock() {
-    let dir = TempDir::new("discard");
+    let dir = temp_dir("discard");
     let store = open(&dir, "h.sqlite");
     let w = store.writer();
     let (a, b) = (host(1), host(2));

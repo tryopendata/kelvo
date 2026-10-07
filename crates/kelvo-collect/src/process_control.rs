@@ -13,6 +13,8 @@
 
 use std::sync::{Arc, Mutex, OnceLock};
 
+use kelvo_schema::lock::LockExt;
+
 /// What to ask of the process.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum StopKind {
@@ -100,7 +102,7 @@ impl OwnProcessList {
     /// allocates only when its members changed.
     pub fn record(&self, listed_at_us: i64, pids: &mut [i32]) {
         pids.sort_unstable();
-        let mut own = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        let mut own = self.0.lock_ok();
         if *own.pids != *pids {
             own.pids = Arc::from(&*pids);
         }
@@ -109,7 +111,7 @@ impl OwnProcessList {
 
     /// The list as last recorded; empty before the first record.
     pub fn get(&self) -> OwnProcesses {
-        self.0.lock().unwrap_or_else(|e| e.into_inner()).clone()
+        self.0.lock_ok().clone()
     }
 }
 

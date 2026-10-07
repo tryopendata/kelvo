@@ -206,14 +206,11 @@ mod tests {
 
     use super::*;
 
-    fn temp_dir(name: &str) -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join(format!(
-            "kelvo-engine-{name}-{}-{}",
-            std::process::id(),
-            Uuid::new_v4().simple()
-        ));
-        std::fs::create_dir_all(&dir).unwrap();
-        dir
+    fn temp_dir(name: &str) -> tempfile::TempDir {
+        tempfile::Builder::new()
+            .prefix(&format!("kelvo-engine-{name}-"))
+            .tempdir()
+            .unwrap()
     }
 
     fn record(id: HostId, is_local: bool) -> HostRecord {
@@ -257,48 +254,52 @@ mod tests {
 
     #[test]
     fn first_run_creates_and_later_runs_read_the_same_id() {
-        let dir = temp_dir("id-first");
-        let (a, src) = load(&dir, None);
+        let tmp = temp_dir("id-first");
+        let dir = tmp.path();
+        let (a, src) = load(dir, None);
         assert_eq!(src, IdSource::Created);
         let text = std::fs::read_to_string(dir.join(HOST_ID_FILE)).unwrap();
         assert_eq!(text, format!("{a}\nmachine=a-{a}\n"));
 
-        let (b, src) = load(&dir, None);
+        let (b, src) = load(dir, None);
         assert_eq!((b, src), (a, IdSource::File));
         // The file wins over the store.
         let other = record(HostId(Uuid::new_v4()), true);
-        assert_eq!(load(&dir, Some(&other)), (a, IdSource::File));
+        assert_eq!(load(dir, Some(&other)), (a, IdSource::File));
     }
 
     #[test]
     fn missing_file_reuses_the_stores_local_host() {
-        let dir = temp_dir("id-recover");
+        let tmp = temp_dir("id-recover");
+        let dir = tmp.path();
         let local = HostId(Uuid::new_v4());
         assert_eq!(
-            load(&dir, Some(&record(local, true))),
+            load(dir, Some(&record(local, true))),
             (local, IdSource::Store)
         );
-        assert_eq!(load(&dir, None), (local, IdSource::File));
+        assert_eq!(load(dir, None), (local, IdSource::File));
     }
 
     #[test]
     fn corrupt_file_is_replaced() {
-        let dir = temp_dir("id-corrupt");
+        let tmp = temp_dir("id-corrupt");
+        let dir = tmp.path();
         std::fs::write(dir.join(HOST_ID_FILE), "not a uuid").unwrap();
         let local = HostId(Uuid::new_v4());
         assert_eq!(
-            load(&dir, Some(&record(local, true))),
+            load(dir, Some(&record(local, true))),
             (local, IdSource::Store)
         );
         std::fs::write(dir.join(HOST_ID_FILE), "").unwrap();
-        let (id, src) = load(&dir, None);
+        let (id, src) = load(dir, None);
         assert_eq!(src, IdSource::Created);
         assert_ne!(id, local);
     }
 
     #[test]
     fn creates_the_directory() {
-        let dir = temp_dir("id-mkdir").join("nested");
+        let tmp = temp_dir("id-mkdir");
+        let dir = tmp.path().join("nested");
         let (id, _) = load(&dir, None);
         assert_eq!(load(&dir, None), (id, IdSource::File));
     }
@@ -308,30 +309,32 @@ mod tests {
     /// store's local host is not reused either.
     #[test]
     fn an_id_from_another_mac_is_replaced() {
-        let dir = temp_dir("id-cloned");
-        let original = load_or_create(&dir, None, mac_a).id;
+        let tmp = temp_dir("id-cloned");
+        let dir = tmp.path();
+        let original = load_or_create(dir, None, mac_a).id;
         let copied_store = record(original, true);
 
-        let on_b = load_or_create(&dir, Some(&copied_store), mac_b);
+        let on_b = load_or_create(dir, Some(&copied_store), mac_b);
         assert_eq!(on_b.source, IdSource::Cloned);
         assert!(on_b.persisted);
         assert_ne!(on_b.id, original);
         // From then on Mac b reads its own id.
-        let again = load_or_create(&dir, Some(&copied_store), mac_b);
+        let again = load_or_create(dir, Some(&copied_store), mac_b);
         assert_eq!((again.id, again.source), (on_b.id, IdSource::File));
     }
 
     #[test]
     fn a_file_without_a_binding_is_trusted_and_bound() {
-        let dir = temp_dir("id-unbound");
+        let tmp = temp_dir("id-unbound");
+        let dir = tmp.path();
         let id = HostId(Uuid::new_v4());
         std::fs::write(dir.join(HOST_ID_FILE), format!("{id}\n")).unwrap();
-        assert_eq!(load(&dir, None), (id, IdSource::File));
+        assert_eq!(load(dir, None), (id, IdSource::File));
         let text = std::fs::read_to_string(dir.join(HOST_ID_FILE)).unwrap();
         assert_eq!(text, format!("{id}\nmachine=a-{id}\n"));
 
         // Where the hardware UUID cannot be read, the file is trusted as it is.
-        let l = load_or_create(&dir, None, unknown_mac);
+        let l = load_or_create(dir, None, unknown_mac);
         assert_eq!((l.id, l.source, l.persisted), (id, IdSource::File, true));
     }
 
@@ -339,7 +342,8 @@ mod tests {
     /// stops the launch: the id lives in memory for this run.
     #[test]
     fn an_id_that_cannot_be_saved_is_kept_in_memory() {
-        let parent = temp_dir("id-unwritable");
+        let tmp = temp_dir("id-unwritable");
+        let parent = tmp.path();
         // A path under a regular file: reading and creating both fail, whoever runs this.
         std::fs::write(parent.join("file"), "").unwrap();
         let dir = parent.join("file").join("data");

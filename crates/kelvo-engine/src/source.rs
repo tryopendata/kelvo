@@ -7,6 +7,7 @@
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
+use kelvo_schema::lock::LockExt;
 use kelvo_schema::{Capabilities, Event, HostRecord, Settings};
 use kelvo_store::Writer;
 
@@ -198,7 +199,7 @@ impl LocalSource {
     /// Recent stored alert events (the last [`crate::detect::alert_history_ms`]), so the
     /// engine's alert cooldowns survive a restart. Takes effect when the source starts.
     pub fn seed_alert_history(&self, events: Vec<Event>) {
-        *self.alert_history.lock().unwrap_or_else(|e| e.into_inner()) = events;
+        *self.alert_history.lock_ok() = events;
     }
 
     /// The running engine's control handle, once started.
@@ -222,13 +223,11 @@ impl Source for LocalSource {
     fn start(self: Arc<Self>, sink: SourceSink) -> Result<SourceHandle, SourceError> {
         let parts = self
             .parts
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
+            .lock_ok()
             .take()
             .ok_or(SourceError::AlreadyStarted)?;
         let mut engine = Engine::new(self.record.id, parts, sink, &self.settings);
-        let history =
-            std::mem::take(&mut *self.alert_history.lock().unwrap_or_else(|e| e.into_inner()));
+        let history = std::mem::take(&mut *self.alert_history.lock_ok());
         engine.seed_alert_history(&history);
         let control = engine.control();
         // Before the first tick, so a user who turned it off never opens a session.

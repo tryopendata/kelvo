@@ -79,3 +79,4 @@ tokio = { workspace = true, features = ["rt", "macros", "time", "test-util"] }
 # Dumps rendered tray images for visual review (`tray::render` ignored test).
 # Already in the lock through tray-icon.
 png = "0.17.16"
+tempfile.workspace = true

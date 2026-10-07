@@ -67,10 +67,11 @@ use std::collections::HashMap;
 use std::ffi::CStr;
 use std::time::Duration;
 
+use kelvo_schema::lock::LockExt;
 use kelvo_schema::{Entitlement, Module, UnsupportedReason};
 
 use self::ffi::{Session, api};
-use self::ledger::{Breaker, PID_ROOM, SettleMap, relock};
+use self::ledger::{Breaker, PID_ROOM, SettleMap};
 use super::{libproc, network};
 use crate::{
     Cadence, CollectError, Collector, CollectorId, Every, Interest, Interval, Probe, ProcessNet,
@@ -196,7 +197,7 @@ impl Collector for NetPerProcess {
         // Flows that were open before the manager report pid 0 until described; the
         // first sample describes everything, later ones only while an owner is unknown.
         let queried = session.query(false).and_then(|()| {
-            let unresolved = relock(&session.ledger).unresolved() > 0;
+            let unresolved = session.ledger.lock_ok().unresolved() > 0;
             if (unresolved || self.last_ns.is_none()) && self.describe.due(tick) {
                 session.query(true)
             } else {
@@ -212,7 +213,7 @@ impl Collector for NetPerProcess {
             return Err(e);
         }
         self.breaker.succeeded();
-        let measured = relock(&session.ledger).settle(&mut self.bytes);
+        let measured = session.ledger.lock_ok().settle(&mut self.bytes);
         let prev = self.last_ns.replace(tick.continuous_ns);
         let (true, Some(prev)) = (measured, prev) else {
             return Ok(());

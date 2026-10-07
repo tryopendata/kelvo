@@ -2,7 +2,7 @@
 //! ([`Names`]), and the failure [`Breaker`].
 
 use std::collections::{HashMap, HashSet};
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use super::{BACKOFF, FAIL_LIMIT};
@@ -426,10 +426,4 @@ impl Breaker {
         self.failures = 0;
         self.until_ns = None;
     }
-}
-
-pub(super) fn relock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
-    // The ledger holds plain counters updated in single steps; a panic elsewhere while
-    // holding it leaves it usable.
-    m.lock().unwrap_or_else(PoisonError::into_inner)
 }

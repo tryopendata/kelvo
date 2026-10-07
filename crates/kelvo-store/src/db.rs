@@ -474,7 +474,7 @@ mod tests {
     #[test]
     fn fresh_database_gets_pragmas_schema_and_meta() {
         let dir = crate::test_dir("db-fresh");
-        let path = dir.join("h.sqlite");
+        let path = dir.path().join("h.sqlite");
         let (conn, epoch) = open_writer(&path, 42).unwrap();
         let get = |sql: &str| -> i64 { conn.query_row(sql, [], |r| r.get(0)).unwrap() };
         assert_eq!(get("PRAGMA auto_vacuum"), 2, "INCREMENTAL");
@@ -504,7 +504,7 @@ mod tests {
     #[test]
     fn newer_schema_is_refused() {
         let dir = crate::test_dir("db-newer");
-        let path = dir.join("h.sqlite");
+        let path = dir.path().join("h.sqlite");
         drop(open_writer(&path, 0).unwrap());
         let conn = Connection::open(&path).unwrap();
         conn.execute_batch("PRAGMA user_version = 99").unwrap();
@@ -518,7 +518,7 @@ mod tests {
     #[test]
     fn v1_databases_keep_their_newest_local_host() {
         let dir = crate::test_dir("db-v1-locals");
-        let path = dir.join("h.sqlite");
+        let path = dir.path().join("h.sqlite");
         drop(open_writer(&path, 0).unwrap());
         // Turn it back into a v1 file that two install identities both marked local.
         let conn = Connection::open(&path).unwrap();
@@ -560,7 +560,7 @@ mod tests {
     #[test]
     fn v2_databases_gain_the_15_minute_tables() {
         let dir = crate::test_dir("db-v2-m15");
-        let path = dir.join("h.sqlite");
+        let path = dir.path().join("h.sqlite");
         drop(open_writer(&path, 0).unwrap());
         let conn = Connection::open(&path).unwrap();
         conn.execute_batch(
@@ -613,7 +613,7 @@ mod tests {
     #[test]
     fn v3_databases_gain_the_network_tables() {
         let dir = crate::test_dir("db-v3-net");
-        let path = dir.join("h.sqlite");
+        let path = dir.path().join("h.sqlite");
         drop(open_writer(&path, 0).unwrap());
         let conn = Connection::open(&path).unwrap();
         conn.execute_batch(
@@ -677,7 +677,7 @@ mod tests {
     #[test]
     fn every_host_table_is_history_or_excluded() {
         let dir = crate::test_dir("db-history-tables");
-        let (conn, _) = open_writer(&dir.join("h.sqlite"), 0).unwrap();
+        let (conn, _) = open_writer(&dir.path().join("h.sqlite"), 0).unwrap();
         let with_host: Vec<String> = conn
             .prepare(
                 "SELECT m.name FROM sqlite_master m
@@ -714,7 +714,7 @@ mod tests {
     #[test]
     fn at_most_one_local_host() {
         let dir = crate::test_dir("db-one-local");
-        let (conn, _) = open_writer(&dir.join("h.sqlite"), 0).unwrap();
+        let (conn, _) = open_writer(&dir.path().join("h.sqlite"), 0).unwrap();
         let insert = |uuid: &str, local: bool| {
             conn.execute(
                 "INSERT INTO hosts (uuid, is_local, name, info, created_ms) VALUES (?1, ?2, 'h', x'', 0)",
@@ -731,7 +731,7 @@ mod tests {
     #[test]
     fn gaps_module_is_nullable_and_reason_free_text() {
         let dir = crate::test_dir("db-gaps");
-        let (conn, _) = open_writer(&dir.join("h.sqlite"), 0).unwrap();
+        let (conn, _) = open_writer(&dir.path().join("h.sqlite"), 0).unwrap();
         conn.execute(
             "INSERT INTO hosts (uuid, is_local, name, info, created_ms) VALUES ('h', 1, 'h', x'', 0)",
             [],

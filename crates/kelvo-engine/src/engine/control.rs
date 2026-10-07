@@ -2,9 +2,10 @@
 //! and [`EngineHandle`], and the status the engine publishes.
 
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 
+use kelvo_schema::lock::LockExt;
 use kelvo_schema::{Capabilities, HostId, Module, PowerSource, Settings};
 use kelvo_store::Writer;
 
@@ -49,12 +50,6 @@ fn count_interest(n: &AtomicU32, interested: bool) -> u32 {
         })
         .unwrap_or_else(|v| v)
     }
-}
-
-pub(super) fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
-    // The engine never panics while holding these locks (no unwrap in non-test code);
-    // if a reader did, the data is still valid to read.
-    m.lock().unwrap_or_else(|e| e.into_inner())
 }
 
 /// A cloneable handle for controlling and reading a running engine.
@@ -191,11 +186,11 @@ impl EngineControl {
     }
 
     pub fn capabilities(&self) -> Arc<Capabilities> {
-        Arc::clone(&lock(&self.shared.caps))
+        Arc::clone(&self.shared.caps.lock_ok())
     }
 
     pub fn status(&self) -> EngineStatus {
-        lock(&self.shared.status).clone()
+        self.shared.status.lock_ok().clone()
     }
 
     /// Asks the engine to stop. [`EngineHandle`] also waits for it.
@@ -260,7 +255,7 @@ impl Engine {
 
     pub(super) fn publish_status(&self) {
         let status = self.status_now();
-        let mut cur = lock(&self.shared.status);
+        let mut cur = self.shared.status.lock_ok();
         if *cur != status {
             *cur = status.clone();
             drop(cur);
@@ -270,7 +265,7 @@ impl Engine {
 
     pub(super) fn force_publish_status(&self) {
         let status = self.status_now();
-        *lock(&self.shared.status) = status.clone();
+        *self.shared.status.lock_ok() = status.clone();
         self.sink.live.publish(BusMsg::Status(status));
     }
 }

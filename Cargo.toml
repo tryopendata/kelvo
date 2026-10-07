@@ -29,6 +29,8 @@ thiserror = "2.0.21"
 tracing = "0.1.44"
 anyhow = "1.0.104"
 rustix = { version = "1.1.5", features = ["fs"] }
+# Test temp dirs only (dev-dependency). The version already in Cargo.lock.
+tempfile = "3.27.0"
 
 # tauri-specta 2.x is still a release candidate (D-031). Exact pins: an RC
 # bump can change the API or the generated output.

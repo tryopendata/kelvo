@@ -68,7 +68,7 @@ fn minutes_only() -> Retention {
 
 #[test]
 fn cap_trims_oldest_history_and_truncates_cursors_behind_it() {
-    let dir = TempDir::new("cap");
+    let dir = temp_dir("cap");
     let store = open(&dir, "h.sqlite");
     let w = store.writer();
     let h = host(1);
@@ -180,7 +180,7 @@ fn cap_trims_oldest_history_and_truncates_cursors_behind_it() {
 /// tiers' pruned marks.
 #[test]
 fn cap_trims_through_the_15_minute_tier_into_minutes() {
-    let dir = TempDir::new("cap-m15");
+    let dir = temp_dir("cap-m15");
     let store = open(&dir, "h.sqlite");
     let w = store.writer();
     let h = host(1);
@@ -241,7 +241,7 @@ fn cap_trims_through_the_15_minute_tier_into_minutes() {
 
 #[test]
 fn cap_never_trims_the_last_day() {
-    let dir = TempDir::new("cap-floor");
+    let dir = temp_dir("cap-floor");
     let store = open(&dir, "h.sqlite");
     let w = store.writer();
     let h = host(1);
@@ -267,7 +267,7 @@ fn cap_never_trims_the_last_day() {
 
 #[test]
 fn prune_checkpoints_so_the_file_shrinks_right_away() {
-    let dir = TempDir::new("shrink");
+    let dir = temp_dir("shrink");
     let store = open(&dir, "h.sqlite");
     let w = store.writer();
     let h = host(1);
@@ -282,7 +282,7 @@ fn prune_checkpoints_so_the_file_shrinks_right_away() {
     assert_eq!(report.m1_rows, 3_000);
     let after = store.size_on_disk().unwrap();
     assert_eq!(report.size_bytes, after);
-    let wal = std::fs::metadata(dir.file("h.sqlite-wal")).map_or(0, |m| m.len());
+    let wal = std::fs::metadata(dir.path().join("h.sqlite-wal")).map_or(0, |m| m.len());
     assert_eq!(wal, 0, "WAL truncated by the checkpoint");
     assert!(
         after < before / 4,
@@ -307,7 +307,7 @@ impl FreeSpace for FakeSpace {
 
 #[test]
 fn low_disk_pauses_s10_keeps_m1_and_resumes_with_hysteresis() {
-    let dir = TempDir::new("low-disk");
+    let dir = temp_dir("low-disk");
     let store = open(&dir, "h.sqlite");
     let w = store.writer();
     let h = host(1);
@@ -380,8 +380,8 @@ fn low_disk_pauses_s10_keeps_m1_and_resumes_with_hysteresis() {
 
 #[test]
 fn a_run_that_ended_paused_starts_unpaused_with_the_hole_closed() {
-    let dir = TempDir::new("low-disk-reopen");
-    let path = dir.file("h.sqlite");
+    let dir = temp_dir("low-disk-reopen");
+    let path = dir.path().join("h.sqlite");
     let h = host(1);
     {
         let store = open(&dir, "h.sqlite");

@@ -30,6 +30,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 use anyhow::Context;
 use kelvo_engine::{BusMsg, EngineParts, HousekeepingHandle, LocalSource, identity, retention_for};
+use kelvo_schema::lock::LockExt;
 use kelvo_schema::settings::Appearance;
 use kelvo_schema::{
     HostId, HostRecord, Labels, Module, ModuleCap, PerformanceReason, SeriesSelector, Settings,
@@ -229,7 +230,7 @@ impl AppState {
     }
 
     fn appearance_lock(&self) -> MutexGuard<'_, WindowAppearance> {
-        self.appearance.lock().unwrap_or_else(|e| e.into_inner())
+        self.appearance.lock_ok()
     }
 
     pub fn appearance(&self) -> WindowAppearance {

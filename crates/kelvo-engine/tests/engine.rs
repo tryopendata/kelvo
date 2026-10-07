@@ -1461,10 +1461,11 @@ fn local_source_starts_with_the_network_history_setting() {
 
 #[test]
 fn local_source_runs_the_engine_on_its_own_thread() {
-    let dir = TempDir::new("local-source");
-    let store =
-        kelvo_store::Store::open(kelvo_store::StoreConfig::new(dir.0.join("history.sqlite")))
-            .unwrap();
+    let dir = temp_dir("local-source");
+    let store = kelvo_store::Store::open(kelvo_store::StoreConfig::new(
+        dir.path().join("history.sqlite"),
+    ))
+    .unwrap();
     // The app shell registers the host; the source only writes history (D-064).
     store.writer().upsert_host(host_record()).unwrap();
     let (ticker, clock) = kelvo_engine::FakeTicker::new();
@@ -2126,7 +2127,7 @@ fn the_flush_before_sleep_does_not_wait_for_a_long_prune() {
     drop(h.reader()); // commits the layout and the first rows
 
     // 10 s rows from long ago, written straight into the file.
-    let conn = rusqlite::Connection::open(h.dir.0.join("history.sqlite")).unwrap();
+    let conn = rusqlite::Connection::open(h.dir.path().join("history.sqlite")).unwrap();
     conn.busy_timeout(Duration::from_secs(5)).unwrap();
     conn.execute(
         "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < ?2)
@@ -2214,7 +2215,7 @@ fn swapping_the_store_closes_gaps_in_the_old_and_reopens_them_in_the_new() {
     );
 
     // A fresh file, as after a reset.
-    let dir = TempDir::new("swap-store-new");
+    let dir = temp_dir("swap-store-new");
     let fresh = open_store(&dir);
     fresh.writer().upsert_host(host_record()).unwrap();
     h.clock.advance(Duration::from_secs(5));
@@ -2532,7 +2533,7 @@ fn a_new_store_is_not_held_by_an_earlier_clock_step() {
         "a short step holds until the newest bucket written"
     );
 
-    let dir = TempDir::new("clock-back-swap-new");
+    let dir = temp_dir("clock-back-swap-new");
     let fresh = open_store(&dir);
     fresh.writer().upsert_host(host_record()).unwrap();
     let done = h.ctl.set_store(Some(fresh.writer()));

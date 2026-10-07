@@ -675,12 +675,12 @@ fn log_queued(what: &str, res: Result<()>) {
 mod tests {
     use super::*;
     /// A writer state on its own file whose COMMIT fails while the returned flag is set,
-    /// with one host registered.
-    fn failing_state(name: &str) -> (State, Arc<AtomicBool>, HostId) {
+    /// with one host registered. The directory goes when the returned `TempDir` drops.
+    fn failing_state(name: &str) -> (tempfile::TempDir, State, Arc<AtomicBool>, HostId) {
         use kelvo_schema::{ClusterInfo, CoreKind, HostInfo, OsKind};
 
         let dir = crate::test_dir(name);
-        let path = dir.join("h.sqlite");
+        let path = dir.path().join("h.sqlite");
         let (conn, _) = db::open_writer(&path, 0).unwrap();
         let fail = Arc::new(AtomicBool::new(false));
         let hook = Arc::clone(&fail);
@@ -714,7 +714,7 @@ mod tests {
         let (tx, rx) = mpsc::sync_channel(1);
         s.handle(Op::UpsertHost(record, tx));
         rx.recv().unwrap().unwrap();
-        (s, fail, host)
+        (dir, s, fail, host)
     }
 
     fn flush(s: &mut State) -> Result<()> {
@@ -741,7 +741,7 @@ mod tests {
     /// gap there instead of a line drawn across it.
     #[test]
     fn a_failed_commit_is_recorded_as_a_write_failed_gap() {
-        let (mut s, fail, host) = failing_state("write-failed");
+        let (_dir, mut s, fail, host) = failing_state("write-failed");
 
         let series: Arc<[SeriesKey]> = Arc::from(vec![SeriesKey::parse("cpu.total").unwrap()]);
         let bucket = |ts: i64| {
@@ -819,7 +819,7 @@ mod tests {
     /// clock's rows are gone from the file when the call returns.
     #[test]
     fn discard_from_commits_before_it_returns() {
-        let (mut s, _fail, host) = failing_state("discard-commits");
+        let (_dir, mut s, _fail, host) = failing_state("discard-commits");
         for i in 0..3 {
             s.handle(m1_bucket(host, T + i * 10 * MIN));
         }
@@ -831,7 +831,7 @@ mod tests {
     /// the rows, and the `write_failed` gap over the lost batch stops at the cut.
     #[test]
     fn a_discard_that_fails_to_commit_is_reported_and_can_be_retried() {
-        let (mut s, fail, host) = failing_state("discard-fails");
+        let (_dir, mut s, fail, host) = failing_state("discard-fails");
         s.handle(m1_bucket(host, T));
         flush(&mut s).unwrap();
         s.handle(m1_bucket(host, T + 10 * MIN));
@@ -856,7 +856,7 @@ mod tests {
     /// carries the start the engine knows, so the gap is still recorded.
     #[test]
     fn a_sleep_gap_whose_open_was_lost_is_written_on_close() {
-        let (mut s, fail, host) = failing_state("lost-open-gap");
+        let (_dir, mut s, fail, host) = failing_state("lost-open-gap");
         fail.store(true, Ordering::SeqCst);
         s.handle(Op::OpenGap(
             host,
