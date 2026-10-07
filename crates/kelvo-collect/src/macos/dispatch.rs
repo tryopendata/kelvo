@@ -98,8 +98,12 @@ impl Drop for Queue {
     }
 }
 
-/// A running `DispatchSource` timer, released on drop. Cancel it and drain its queue
-/// before freeing the handler's context.
+/// A running `DispatchSource` timer, cancelled and released on drop.
+///
+/// Teardown order matters: cancel the source ([`TimerSource::cancel`]), drain its queue
+/// ([`Queue::drain`]), then free the handler's context. Dropping cancels too, but a drop
+/// alone does not wait out a handler already running, so the context must not be freed
+/// until the queue has been drained.
 pub struct TimerSource(DispatchObject);
 
 // SAFETY: dispatch sources are thread-safe reference-counted objects; cancel and release
@@ -157,7 +161,12 @@ impl TimerSource {
 impl Drop for TimerSource {
     fn drop(&mut self) {
         // SAFETY: we own the reference from dispatch_source_create, and it was resumed in
-        // `start`, so releasing it is allowed.
-        unsafe { dispatch_release(self.0) };
+        // `start`, so releasing it is allowed. Cancelling first stops further handler
+        // calls even when the owner skipped `cancel`; cancel is idempotent, so an earlier
+        // explicit cancel is fine.
+        unsafe {
+            dispatch_source_cancel(self.0);
+            dispatch_release(self.0);
+        }
     }
 }
