@@ -23,7 +23,7 @@ commands, events and `kelvo-schema` types. Rust is the single source of truth.
 - A PreToolUse hook blocks direct writes to these files, and `pre-bash.sh` blocks shell writes
 
 Regenerate with `make bindings` (exports via the specta builder in a debug build of
-`src-tauri`). CI checks freshness by regenerating and diffing against the committed files.
+`src-tauri`). `make bindings-check` (run by the pre-push hook) checks freshness by regenerating and diffing against the committed files.
 
 ## Fresh bindings are NOT the check
 

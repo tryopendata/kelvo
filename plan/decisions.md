@@ -102,6 +102,7 @@ See [README](README.md) for the roadmap and [architecture.md](architecture.md) f
 | D-092 | Rust publishes the remaining data facts: engine constants, process refusal, totals, host facts and span-weighted history | Accepted |
 | D-093 | Energy by app over the chart window from an in-memory ring; local and public IP on Network; brush selections dismiss like a d3 brush; °F by default | Accepted |
 | D-095 | Public release prep: Apache-2.0, bundle identifier com.tryopendata.kelvo, design mocks retired | Accepted |
+| D-096 | macOS checks move to a pre-push hook; hosted CI runs Linux jobs on push | Accepted |
 
 ---
 
@@ -3062,3 +3063,29 @@ The repo is about to go public. It had no license, the bundle identifier still n
 ### Revisit when
 
 - A screen needs a new visual direction that design-system.md does not cover: write it into design-system.md first.
+
+## D-096: macOS checks move to a pre-push hook; hosted CI runs Linux jobs on push
+
+Status: Accepted. Date: 2026-10-07. CI, developer hooks.
+
+### Context
+
+Every push ran two hosted macOS jobs of about 12 minutes each (`macos-26` and the `xcode-27` preview). On a private repo macOS minutes bill at 10x, so each run cost about 240 of the Free plan's 2,000 monthly minutes. Sixteen runs in three days used the whole allowance (194 macOS and 103 Linux minutes, 2,043 billed), and GitHub stopped starting jobs. The org has one self-hosted Mac (m4-mini), but it is registered to another repo, runs that repo's CI one job at a time, and a self-hosted runner on a public repo runs fork PRs' code on that machine.
+
+### Decision
+
+1. **A pre-push hook runs the macOS checks**: `make check bindings-check e2e-perf` (fmt, clippy, the appstore edition, `cargo test --workspace` with the engine perf gates, Biome, typecheck, Vitest, the bindings freshness diff, and the Playwright frontend perf gates). It is a `pre-push` stage hook in `.pre-commit-config.yaml`, not a second hook manager, and it skips pushes that touch no code or manifests. `make hooks` installs it.
+2. **Push and pull_request run Linux jobs only**: a new `frontend` job (Biome, typecheck, Vitest, Playwright functional specs on the mock transport), the portable crates, and the dependency audit.
+3. **The macos job stays in the workflow but runs only on a manual dispatch**, for release checks and anything the hook cannot see (the Tauri debug build and `make check-deps`).
+4. **The Playwright perf gates run only on macOS.** Their budgets are macOS Chromium numbers. In a Linux container on 2026-10-07 every functional spec passed (215) while the perf gates failed or flaked (5 of 8), so they say nothing on Linux.
+
+### Consequences
+
+- Nothing checks the macOS-only code (collectors, src-tauri, the bindings) for a contributor who skips the hook (`--no-verify`) or has not installed it, or for an outside PR, until someone dispatches the macos job.
+- A push of code takes several minutes longer on the developer's Mac.
+- The Tauri build and the runtime dependency check (D-058) no longer run on every push.
+
+### Revisit when
+
+- The repo is public: hosted runners are then free, and running the macos job on push and pull_request again (or at least on pull_request) restores the PR check at no cost.
+- Outside contributions start: a PR check that does not depend on the author's hooks matters more than it does with one developer.

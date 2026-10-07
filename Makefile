@@ -1,4 +1,4 @@
-.PHONY: help install dev dev-web build test test-e2e test-fill test-read-perf lint format fix typecheck check rust-fmt rust-check rust-test rust-linux-check appstore-check check-deps deny perf bench bench-perf-mode bench-vs-stats bindings hooks clean stub-dist
+.PHONY: help install dev dev-web build test test-e2e test-fill test-read-perf lint format fix typecheck check rust-fmt rust-check rust-test rust-linux-check appstore-check check-deps deny perf bench bench-perf-mode bench-vs-stats bindings bindings-check e2e-perf hooks clean stub-dist
 
 LINUX_CRATES := -p kelvo-schema -p kelvo-proto -p kelvo-store -p kelvo-engine -p kelvo-collect
 
@@ -23,7 +23,9 @@ help:
 	@echo "  make format        Biome (format + safe fixes) + cargo fmt"
 	@echo "  make fix           Auto-fix formatting and lint issues"
 	@echo "  make typecheck     tsc + cargo check"
-	@echo "  make check         Everything CI runs (format check, lint, typecheck, test)"
+	@echo "  make check         Format check, lint, typecheck, tests, frontend + Rust (the pre-push hook runs this)"
+	@echo "  make bindings-check  Regenerate the bindings and fail if they differ from the commit"
+	@echo "  make e2e-perf      Playwright frontend perf gates (perf-budget.json frontend; macOS budgets)"
 	@echo "  make rust-check    cargo fmt --check + clippy -D warnings"
 	@echo "  make rust-linux-check  cargo check the portable crates for x86_64-unknown-linux-gnu"
 	@echo "  make appstore-check    cargo check + clippy the sandboxed App Store edition (--features appstore)"
@@ -36,10 +38,10 @@ help:
 
 install:
 	bun install
-	uvx pre-commit install --install-hooks -t pre-commit -t commit-msg
+	uvx pre-commit install --install-hooks -t pre-commit -t commit-msg -t pre-push
 
 hooks:
-	uvx pre-commit install --install-hooks -t pre-commit -t commit-msg
+	uvx pre-commit install --install-hooks -t pre-commit -t commit-msg -t pre-push
 
 dev:
 	bun run tauri dev
@@ -141,9 +143,23 @@ stub-dist:
 	@mkdir -p dist
 
 # Writes src/core/generated/bindings.ts from the tauri-specta builder in a debug
-# build of the app shell, without launching the app. CI diffs the result.
+# build of the app shell, without launching the app. The pre-push hook diffs the result.
 bindings: stub-dist
 	cargo run --quiet -p kelvo --example export_bindings
+
+# Main-thread and long-task budgets (perf-budget.json `frontend`), measured on macOS
+# Chromium, so they run in the pre-push hook rather than on Linux CI (D-096).
+e2e-perf:
+	bunx playwright test tests/e2e/perf-gate.spec.ts --project=chromium
+
+# Fails if src/core/generated differs from the commit after regenerating, including
+# new untracked files.
+bindings-check: bindings
+	@if [ -n "$$(git status --porcelain -- src/core/generated)" ]; then \
+		git status --porcelain -- src/core/generated; \
+		echo "bindings-check: src/core/generated is stale. Run 'make bindings' and commit the result."; \
+		exit 1; \
+	fi
 
 clean:
 	rm -rf dist coverage playwright-report test-results

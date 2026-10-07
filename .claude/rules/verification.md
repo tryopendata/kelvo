@@ -77,14 +77,14 @@ After a measured improvement, lower the baseline to the new number.
 
 The product budget (0.5%) covers the backgrounded app only: menu bar items, no popover,
 dashboard or onboarding window, the `tray` scenario. Visible UI has no product target; it
-has regression guards (D-088): `perf-gate.spec.ts` blocks in CI, and `make bench` prints
+has regression guards (D-088): `perf-gate.spec.ts` blocks in the pre-push hook (`make e2e-perf`, D-096), and `make bench` prints
 the visible scenarios against `coalition.visible`, advisory until promoted to blocking.
 
 | Gate | Run it | Budget section |
 | ---- | ------ | -------------- |
 | Allocations per tick (engine core, each collector), OS calls per tick by API family (tray-only holds the background's 2 s tick and slower cadences, D-094), store rows and bytes per hour | `cargo test -p kelvo-engine --test perf_gates -- --nocapture` (part of `cargo test` on macOS) | `engine.allocsPerTick`, `engine.callsPerTick`, `engine.store` |
 | Samples per Supported collector; on Apple Silicon the IOReport, SMC and HID collectors must be Supported (VMs and other hosts print `[perf] skipped: no hardware`, a CI notice) | same test | none (cadence-derived) |
-| Release engine CPU, 120 s tray-only with the 1 s setting (a 2 s background tick, D-094), plus a 30 s interval run for comparison; prints per-collector thread CPU and the engine's share of the whole-app target | `make perf` (blocking locally, advisory in CI) | `engine.perf` |
+| Release engine CPU, 120 s tray-only with the 1 s setting (a 2 s background tick, D-094), plus a 30 s interval run for comparison; prints per-collector thread CPU and the engine's share of the whole-app target | `make perf` (blocking locally, advisory in the manual macOS CI job) | `engine.perf` |
 | Whole-app CPU and footprint (app + WebKit helpers): tray against the product budget | `make bench` (local only, hands off the machine) | `coalition.target`, `coalition.baseline` |
 | Whole-app CPU with UI visible: popover, Overview, Processes (advisory) | same run | `coalition.visible` |
 | Performance mode saving: off/on in parallel pairs, tray on AC, tray backed off, Overview | `make bench-perf-mode` (local only, on AC, hands off) | `coalition.performanceMode` |

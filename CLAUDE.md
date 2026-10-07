@@ -74,7 +74,7 @@ Skill: `frontend-design-slop` before adding headers, card grids, badges or stat 
 - **bun** (frontend package manager and runner)
 - **Rust stable** with `rustfmt` and `clippy` (`rustup component add rustfmt clippy`)
 - **Xcode Command Line Tools** (macOS SDK for the collectors)
-- **pre-commit** (via `uvx pre-commit` or `brew install pre-commit`), then `pre-commit install`
+- **pre-commit** (via `uvx pre-commit` or `brew install pre-commit`), then `make hooks`. The pre-push hook runs the macOS checks hosted CI skips (D-096)
 
 ## Debugging Budget
 
@@ -98,7 +98,7 @@ bun run format             # Biome format + import/class sorting + safe fixes
 bun run test               # Vitest (scope with: bun run test -- <path>)
 bun run test:e2e           # Playwright against the dev server + mock transport
 bun run check              # biome check + typecheck + test
-make check                 # Everything CI runs, frontend + Rust
+make check                 # Frontend + Rust: what the pre-push hook runs, with bindings-check and e2e-perf
 make rust-check            # cargo fmt --check + clippy -D warnings
 make bindings              # Regenerate src/core/generated/ from Rust
 ```

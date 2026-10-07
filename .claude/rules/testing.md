@@ -24,7 +24,7 @@ bun run test           # Vitest
 bun run test:e2e       # Playwright (browser + mock transport)
 cargo test --workspace # Rust
 make test              # Both
-make check             # Everything CI runs: format check, lint, typecheck, tests
+make check             # Format check, lint, typecheck, tests; the pre-push hook runs it
 ```
 
 ## Scoped test runs are the default

@@ -17,10 +17,65 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
-# Hosted runners are free for public repositories. Runner choice: D-032.
+# Runner choice: D-032. macOS minutes bill at 10x on a private repo, so the macOS
+# checks run in the pre-push hook (`make check bindings-check`, D-096) and the
+# macos job below only on a manual dispatch. Push and pull_request run the Linux
+# jobs: the frontend suite, the portable crates, and the dependency audit.
 jobs:
   # ---------------------------------------------------------------------------
-  # macOS: everything, on both supported majors (D-028).
+  # Frontend: Biome, typecheck, Vitest and Playwright against the mock transport.
+  # None of it needs macOS or the Rust build; the generated bindings are
+  # committed. The Playwright perf gates are skipped here: their budgets are
+  # macOS Chromium numbers, so the pre-push hook runs them (`make e2e-perf`, D-096).
+  # ---------------------------------------------------------------------------
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: "1.4.2"
+
+      # After setup-bun so real node outranks ~/.bun/bin in PATH (see the macos job).
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+
+      - name: Cache bun dependencies
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.bun/install/cache
+          key: bun-linux-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            bun-linux-
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: bun run check
+        run: bun run check
+
+      - name: Install Playwright browsers
+        run: bunx playwright install --with-deps chromium webkit
+
+      - name: Playwright
+        run: bunx playwright test --pass-with-no-tests --grep-invert "performance gate"
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: playwright-report-linux
+          path: playwright-report/
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # macOS: everything, on both supported majors (D-028). Manual dispatch only
+  # (D-096); the pre-push hook runs the same checks on the developer's Mac.
   #   macos-26  GA arm64 image.
   #   xcode-27  GitHub's preview image; its base OS is macOS 27 since
   #             2026-09-16. There is no `macos-27` label yet. Preview capacity
@@ -29,6 +84,7 @@ jobs:
   # ---------------------------------------------------------------------------
   macos:
     name: macos (${{ matrix.runner }})
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
     continue-on-error: ${{ matrix.preview }}

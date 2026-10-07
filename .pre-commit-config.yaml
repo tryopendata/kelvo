@@ -1,4 +1,5 @@
-# Install once per clone: `uvx pre-commit install --install-hooks -t pre-commit -t commit-msg`
+# Install once per clone: `make hooks`, or
+# `uvx pre-commit install --install-hooks -t pre-commit -t commit-msg -t pre-push`
 # (or `pre-commit install ...` if pre-commit is on PATH).
 
 # Without this, every hook with no `stages:` also runs at the commit-msg stage,
@@ -74,3 +75,19 @@ repos:
         language: system
         files: (\.rs|Cargo\.toml|Cargo\.lock|clippy\.toml)$
         pass_filenames: false
+
+  # The macOS checks hosted CI no longer runs on every push (D-096): the whole
+  # `make check` (fmt, clippy, the appstore edition, cargo test with the engine
+  # perf gates, Biome, typecheck, Vitest), the bindings freshness check and the
+  # Playwright frontend perf gates, whose budgets are macOS numbers. Only
+  # when the pushed commits touch code or manifests; docs-only pushes skip it.
+  - repo: local
+    hooks:
+      - id: macos-check
+        name: make check bindings-check e2e-perf (macOS)
+        entry: make check bindings-check e2e-perf
+        language: system
+        stages: [pre-push]
+        files: (\.(rs|ts|tsx|js|mjs|css|json|jsonc|toml|lock|html)$|^Makefile$|^clippy\.toml$|^perf-budget\.json$)
+        pass_filenames: false
+        require_serial: true

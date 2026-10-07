@@ -39,8 +39,8 @@ Adding a dependency edge not in this list is a design change. Raise it, don't ad
 Zero runtime dependencies (D-058): the app links only `/System/Library/` frameworks and
 `/usr/lib/` libraries. A crate with a C library must use its bundled or vendored build
 (like `rusqlite`'s `bundled`); never require a Homebrew or system install. Dev-only tools
-(macmon for the accuracy script) stay optional. `make check-deps` and CI enforce this on
-the built binary.
+(macmon for the accuracy script) stay optional. `make check-deps` enforces this on
+the built binary (locally, and in the manual macOS CI job).
 
 ## Error handling
 
@@ -82,7 +82,7 @@ macOS API are isolated:
 ## Lints and formatting
 
 - `cargo fmt --all` (config in `rustfmt.toml`). The format-on-write hook runs it on edited files.
-- `cargo clippy --workspace --all-targets -- -D warnings`. Warnings fail CI. Fix them; don't
+- `cargo clippy --workspace --all-targets -- -D warnings`. Warnings fail the pre-commit hook. Fix them; don't
   `#[allow]` without a comment saying why.
 
 ## Data model rules
