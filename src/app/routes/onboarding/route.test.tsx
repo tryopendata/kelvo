@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import { renderWithProviders } from "../../../../tests/test-utils";
 import OnboardingRoute from "./route";
 
@@ -16,6 +16,26 @@ describe("Onboarding menu bar style", () => {
     expect(
       screen.getByText("Separate items you can reorder with ⌘-drag.")
     ).toBeInTheDocument();
+  });
+
+  it("is one tab stop, and the arrow keys move the selection", async () => {
+    const { user } = renderWithProviders(<OnboardingRoute />);
+    const group = await screen.findByRole("radiogroup", {
+      name: "Menu bar style",
+    });
+    const cards = within(group).getAllByRole("radio");
+    const [combined, graphs] = cards;
+    expect(combined).toHaveAttribute("aria-checked", "true");
+    act(() => combined?.focus());
+    expect(cards.map((r) => r.tabIndex)).toEqual([0, -1, -1]);
+    // Held down: Radix moves focus on a timer and checks the radio it lands
+    // on only while the arrow key is still pressed, as in a browser.
+    await user.keyboard("{ArrowDown>}");
+    await waitFor(() => expect(graphs).toHaveAttribute("aria-checked", "true"));
+    await user.keyboard("{/ArrowDown}");
+    expect(graphs).toHaveFocus();
+    expect(combined).toHaveAttribute("aria-checked", "false");
+    expect(cards.map((r) => r.tabIndex)).toEqual([-1, 0, -1]);
   });
 
   it("Graph per module gives CPU, memory and network their own graph items", async () => {
