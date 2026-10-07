@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="Kelvo">
+<defs><linearGradient id="k" x1="0" y1="100" x2="0" y2="924" gradientUnits="userSpaceOnUse"><stop stop-color="#27272a"/><stop offset="1" stop-color="#09090b"/></linearGradient></defs>
+<rect x="100" y="100" width="824" height="824" rx="185" fill="url(#k)"/>
+<rect x="102" y="102" width="820" height="820" rx="183" fill="none" stroke="#fff" stroke-opacity=".1" stroke-width="4"/>
+<g fill="#22d3ee">
+  <rect x="279.5" y="279.5" width="93" height="93" rx="23.25" fill-opacity="0.44"/>
+  <rect x="403.5" y="279.5" width="93" height="93" rx="23.25" fill-opacity="0.54"/>
+  <rect x="527.5" y="279.5" width="93" height="93" rx="23.25" fill-opacity="0.47"/>
+  <rect x="651.5" y="279.5" width="93" height="93" rx="23.25" fill-opacity="0.65"/>
+  <rect x="279.5" y="403.5" width="93" height="93" rx="23.25" fill-opacity="0.61"/>
+  <rect x="403.5" y="403.5" width="93" height="93" rx="23.25" fill-opacity="0.44"/>
+  <rect x="527.5" y="403.5" width="93" height="93" rx="23.25" fill-opacity="0.72"/>
+  <rect x="651.5" y="403.5" width="93" height="93" rx="23.25" fill-opacity="0.51"/>
+  <rect x="279.5" y="527.5" width="93" height="93" rx="23.25" fill-opacity="0.51"/>
+  <rect x="403.5" y="527.5" width="93" height="93" rx="23.25" fill-opacity="0.79"/>
+  <rect x="527.5" y="527.5" width="93" height="93" rx="23.25" fill-opacity="0.58"/>
+  <rect x="651.5" y="527.5" width="93" height="93" rx="23.25" fill-opacity="0.86"/>
+  <rect x="279.5" y="651.5" width="93" height="93" rx="23.25" fill-opacity="0.69"/>
+  <rect x="403.5" y="651.5" width="93" height="93" rx="23.25" fill-opacity="0.54"/>
+  <rect x="527.5" y="651.5" width="93" height="93" rx="23.25" fill-opacity="0.9"/>
+  <rect x="651.5" y="651.5" width="93" height="93" rx="23.25"/>
+</g>
+</svg>

@@ -74,6 +74,12 @@ Status values: Not started, In progress, Blocked (say on what), Done (with the v
 
 ## Log
 
+### 2026-10-07 (brand)
+
+Logo and app icon. The mark is a 4 x 4 slice of the history heatmap in the CPU accent, the newest cell solid. `brand/` holds the pack: `kelvo-icon` and `kelvo-logo` (mark plus an outlined Inter SemiBold wordmark), each with a `-dark` variant whose faint cells lift 20%, and `kelvo-app-icon.svg`, the source for `bun run tauri icon` (ink tile, 1024 canvas on Apple's 824 grid). `src-tauri/icons/` is regenerated from it, keeping only the macOS set; the Windows `.ico` and Store logos are gone from the repo and `bundle.icon`. In the UI, `KelvoMark` sits beside the popover title and above the onboarding title. The dashboard sidebar has none: its top strip belongs to the traffic lights and its footer to sampling status.
+
+Verified: typecheck, Biome, the popover, onboarding and component Vitest files (71 tests), and screenshots of the popover and onboarding in both themes on the dev server.
+
 ### 2026-10-07
 
 Performance plan, phases 0 and 1 (D-094). Phase 0 hardened the bench harness: caffeinate in every bench script, `coalition` and `dump --perf` fail a run the Mac slept through, `KELVO_BENCH_DEFAULTS` and `KELVO_BENCH_MENU_BAR` apply settings in memory, the tray logs its frame counters around the measured window, and the bench scripts refuse a closed lid and a run with no tray frames. Phase 1: with no window showing detail the engine ticks at 2 s, temperatures run every 10 s and processes every 30 s, and the menu bar redraws every 4 s (2 s with a window open). `EngineStatus.backgrounded` carries it; detail interest crossing zero re-chooses the tick before a window resumes, so a window never sees the 2 s status, and an open on a stale frame samples at once. Sampling-plan facts, the Performance mode copy and the mock follow. `perf.sh` checks ticks against the tick `dump` reports; `bench-perf-mode` runs only `overview` by default.
