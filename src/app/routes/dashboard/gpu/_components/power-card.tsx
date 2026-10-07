@@ -1,11 +1,10 @@
 import { formatWatts } from "@core/format";
 import { windowWords } from "@core/live-window";
-import { useId } from "react";
+import { SectionCard } from "~/components/section-card";
 import { useGapBands } from "~/hooks/use-gap-bands";
 import { useNiceCeiling } from "~/hooks/use-nice-ceiling";
 import { useHeld } from "~/hooks/use-ring";
 import { useWindowSeries } from "~/hooks/use-window-series";
-import { Card } from "~/widgets/card";
 import { ceilingAxis, windowTicks } from "~/widgets/lib/chart-labels";
 import { StreamArea } from "~/widgets/stream-area";
 
@@ -15,7 +14,6 @@ const KEY = "power.gpu";
  * GPU power over the chart window (D-091) on an autoscaled ceiling.
  */
 export function PowerCard({ windowMs }: { windowMs: number }) {
-  const titleId = useId();
   const span = `last ${windowWords(windowMs)}`;
   const now = useHeld([KEY])[KEY] ?? null;
   const series = useWindowSeries([KEY], windowMs);
@@ -24,19 +22,14 @@ export function PowerCard({ windowMs }: { windowMs: number }) {
   const ceiling = useNiceCeiling(values, series.tEndMs, 1, windowMs);
 
   return (
-    <Card
+    <SectionCard
       accent="gpu"
-      variant="chart"
       origin="tr"
-      labelledBy={titleId}
-      className="flex flex-col gap-3 p-4"
+      title={`Power, ${span}`}
+      aside={<span className="data-mono text-[13px]">{formatWatts(now)}</span>}
+      headerAlign="baseline"
+      className="gap-3"
     >
-      <div className="flex items-baseline gap-3">
-        <h2 id={titleId} className="m-0 flex-1 font-[590] text-[14px]">
-          Power, {span}
-        </h2>
-        <span className="data-mono text-[13px]">{formatWatts(now)}</span>
-      </div>
       <StreamArea
         gaps={gaps}
         series={[{ key: KEY, values, step: 1 }]}
@@ -49,6 +42,6 @@ export function PowerCard({ windowMs }: { windowMs: number }) {
         {...ceilingAxis(ceiling, `${ceiling}W`)}
         xTicks={windowTicks(windowMs, 3)}
       />
-    </Card>
+    </SectionCard>
   );
 }

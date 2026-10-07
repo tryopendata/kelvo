@@ -1,4 +1,4 @@
-import { clamp01 } from "@core/chart-math";
+import { ratio } from "@core/chart-math";
 import {
   type ByteUnits,
   fixed,
@@ -10,9 +10,11 @@ import {
 import type { LiveProcess } from "@core/generated/bindings";
 import { observeElementRect, useVirtualizer } from "@tanstack/react-virtual";
 import { type ReactNode, useMemo, useRef, useState } from "react";
+import { type ColumnDef, SortHeader } from "~/components/sort-header";
 import { ContextMenu, ContextMenuTrigger } from "~/components/ui/context-menu";
 import { cn } from "~/lib/utils";
 import { InitialChip } from "~/widgets/initial-chip";
+import { MeterTrack } from "~/widgets/meter-track";
 
 export type ProcessColumn =
   | "name"
@@ -80,68 +82,6 @@ export interface ProcessTableProps {
 /** Row height in px: 12 px text plus 7 px padding top and bottom, plus a hairline. */
 const ROW_H = 29;
 
-const LABELS: Record<ProcessColumn, string> = {
-  name: "Process",
-  pid: "PID",
-  port: "Port",
-  cpu: "% CPU",
-  mem: "Memory",
-  compressed: "Compressed",
-  threads: "Threads",
-  wakeups: "Idle wake-ups",
-  energy: "Energy",
-  diskRead: "Disk read",
-  diskWrite: "Disk write",
-  diskTotal: "Disk total",
-  netRx: "Down",
-  netTx: "Up",
-  netTotal: "Net total",
-  gpu: "% GPU",
-  user: "User",
-};
-
-const TEXT_COLUMNS: ReadonlySet<ProcessColumn> = new Set(["name", "user"]);
-
-function sortValue(p: LiveProcess, by: ProcessColumn): number | string | null {
-  switch (by) {
-    case "name":
-      return p.name.toLowerCase();
-    case "user":
-      return p.user;
-    case "pid":
-      return p.pid;
-    case "port":
-      // The lowest port; a process listening on none sorts with the unread.
-      return p.ports?.[0] ?? null;
-    case "cpu":
-      return p.cpu_pct;
-    case "mem":
-      return p.mem_bytes;
-    case "compressed":
-      return p.compressed_bytes;
-    case "threads":
-      return p.threads;
-    case "wakeups":
-      return p.idle_wakeups_per_s;
-    case "energy":
-      return p.energy;
-    case "diskRead":
-      return p.disk_read_bps;
-    case "diskWrite":
-      return p.disk_write_bps;
-    case "diskTotal":
-      return diskTotal(p);
-    case "netRx":
-      return p.net_rx_bps;
-    case "netTx":
-      return p.net_tx_bps;
-    case "netTotal":
-      return netTotal(p);
-    case "gpu":
-      return p.gpu_pct;
-  }
-}
-
 /**
  * Read plus write, bytes per second, as Rust ranks `disk_total`
  * (`procview.rs`); null when either is not a number.
@@ -195,8 +135,9 @@ export function sortProcesses(
 ): LiveProcess[] {
   const sign = dir === "asc" ? 1 : -1;
   return [...rows].sort((a, b) => {
-    const va = sortValue(a, by);
-    const vb = sortValue(b, by);
+    const value = COLUMNS[by].sortValue;
+    const va = value(a);
+    const vb = value(b);
     if (va == null && vb == null) return a.pid - b.pid;
     if (va == null) return 1;
     if (vb == null) return -1;
@@ -227,133 +168,174 @@ function num(v: number | null, decimals = 0): string {
   return decimals === 0 ? grouped.format(v) : fixed(v, decimals);
 }
 
-function Cell({
-  p,
-  col,
-  cpuBarMaxPct,
-  memUnits,
-  rateUnits,
-}: {
-  p: LiveProcess;
-  col: ProcessColumn;
+/** What a process cell reads besides its row. */
+interface CellCtx {
   cpuBarMaxPct: number;
   memUnits: ByteUnits;
   rateUnits: RateUnits;
-}) {
-  switch (col) {
-    case "name":
-      return (
-        <span className="inline-flex max-w-64 items-center gap-2 text-foreground">
-          <InitialChip text={p.name} />
-          <span className="truncate">{p.name}</span>
-        </span>
-      );
-    case "pid":
-      return <span className="data-mono text-muted-foreground">{p.pid}</span>;
-    case "port":
-      return (
-        <span
-          className="data-mono text-muted-foreground"
-          title={
-            p.ports && p.ports.length > PORTS_SHOWN
-              ? p.ports.join(", ")
-              : undefined
-          }
-        >
-          {portsText(p.ports)}
-        </span>
-      );
-    case "cpu": {
-      const frac = p.cpu_pct == null ? 0 : clamp01(p.cpu_pct / cpuBarMaxPct);
-      return (
-        <span className="inline-flex items-center gap-2">
-          <span className="inline-block h-1 w-12 overflow-hidden rounded-full bg-track">
-            <span
-              className="block h-full origin-left bg-cpu"
-              style={{ transform: `scaleX(${frac})` }}
-            />
-          </span>
-          <span className="data-mono inline-block w-10 text-right text-foreground">
-            {num(p.cpu_pct, 1)}
-          </span>
-        </span>
-      );
-    }
-    case "mem":
-      return (
-        <span className="data-mono">
-          {formatBytes(p.mem_bytes, { units: memUnits })}
-        </span>
-      );
-    case "compressed":
-      return (
-        <span className="data-mono">
-          {formatBytes(p.compressed_bytes, { units: memUnits })}
-        </span>
-      );
-    case "threads":
-      return <span className="data-mono">{num(p.threads)}</span>;
-    case "wakeups":
-      return <span className="data-mono">{num(p.idle_wakeups_per_s)}</span>;
-    case "energy":
-      return <span className="data-mono">{num(p.energy, 1)}</span>;
-    case "diskRead":
-      return (
-        <span className="data-mono">
-          {formatRate(p.disk_read_bps, { units: rateUnits })}
-        </span>
-      );
-    case "diskWrite":
-      return (
-        <span className="data-mono">
-          {formatRate(p.disk_write_bps, { units: rateUnits })}
-        </span>
-      );
-    case "diskTotal":
-      return (
-        <span className="data-mono text-foreground">
-          {formatRate(diskTotal(p), { units: rateUnits })}
-        </span>
-      );
-    case "netRx":
-      return (
-        <span className="data-mono">
-          {formatRate(p.net_rx_bps, { units: rateUnits })}
-        </span>
-      );
-    case "netTx":
-      return (
-        <span className="data-mono">
-          {formatRate(p.net_tx_bps, { units: rateUnits })}
-        </span>
-      );
-    case "netTotal":
-      return (
-        <span className="data-mono text-foreground">
-          {formatRate(netTotal(p), { units: rateUnits })}
-        </span>
-      );
-    case "gpu": {
-      // Percent of the whole GPU (D-085), so the bar is out of 100.
-      const frac = p.gpu_pct == null ? 0 : clamp01(p.gpu_pct / 100);
-      return (
-        <span className="inline-flex items-center gap-2">
-          <span className="inline-block h-1 w-12 overflow-hidden rounded-full bg-track">
-            <span
-              className="block h-full origin-left bg-gpu"
-              style={{ transform: `scaleX(${frac})` }}
-            />
-          </span>
-          <span className="data-mono inline-block w-10 text-right text-foreground">
-            {num(p.gpu_pct, 1)}
-          </span>
-        </span>
-      );
-    }
-    case "user":
-      return <span className="data-mono text-muted-foreground">{p.user}</span>;
-  }
 }
+
+const mono = (text: string, className?: string) => (
+  <span className={cn("data-mono", className)}>{text}</span>
+);
+
+/** A percent with an inline bar in the module color, the bar full at `max`. */
+function PercentBar({
+  pct,
+  max,
+  fill,
+}: {
+  pct: number | null;
+  max: number;
+  fill: string;
+}) {
+  return (
+    <span className="inline-flex items-center gap-2">
+      <MeterTrack
+        fraction={ratio(pct, max)}
+        fill={fill}
+        className="inline-block w-12"
+      />
+      <span className="data-mono inline-block w-10 text-right text-foreground">
+        {num(pct, 1)}
+      </span>
+    </span>
+  );
+}
+
+const COLUMNS: Record<ProcessColumn, ColumnDef<LiveProcess, CellCtx>> = {
+  name: {
+    label: "Process",
+    align: "left",
+    sortValue: (p) => p.name.toLowerCase(),
+    cell: (p) => (
+      <span className="inline-flex max-w-64 items-center gap-2 text-foreground">
+        <InitialChip text={p.name} />
+        <span className="truncate">{p.name}</span>
+      </span>
+    ),
+  },
+  pid: {
+    label: "PID",
+    align: "right",
+    sortValue: (p) => p.pid,
+    cell: (p) => mono(String(p.pid), "text-muted-foreground"),
+  },
+  port: {
+    label: "Port",
+    align: "right",
+    // The lowest port; a process listening on none sorts with the unread.
+    sortValue: (p) => p.ports?.[0] ?? null,
+    cell: (p) => (
+      <span
+        className="data-mono text-muted-foreground"
+        title={
+          p.ports && p.ports.length > PORTS_SHOWN
+            ? p.ports.join(", ")
+            : undefined
+        }
+      >
+        {portsText(p.ports)}
+      </span>
+    ),
+  },
+  cpu: {
+    label: "% CPU",
+    align: "right",
+    sortValue: (p) => p.cpu_pct,
+    cell: (p, c) => (
+      <PercentBar
+        pct={p.cpu_pct}
+        max={c.cpuBarMaxPct}
+        fill="var(--color-cpu)"
+      />
+    ),
+  },
+  mem: {
+    label: "Memory",
+    align: "right",
+    sortValue: (p) => p.mem_bytes,
+    cell: (p, c) => mono(formatBytes(p.mem_bytes, { units: c.memUnits })),
+  },
+  compressed: {
+    label: "Compressed",
+    align: "right",
+    sortValue: (p) => p.compressed_bytes,
+    cell: (p, c) =>
+      mono(formatBytes(p.compressed_bytes, { units: c.memUnits })),
+  },
+  threads: {
+    label: "Threads",
+    align: "right",
+    sortValue: (p) => p.threads,
+    cell: (p) => mono(num(p.threads)),
+  },
+  wakeups: {
+    label: "Idle wake-ups",
+    align: "right",
+    sortValue: (p) => p.idle_wakeups_per_s,
+    cell: (p) => mono(num(p.idle_wakeups_per_s)),
+  },
+  energy: {
+    label: "Energy",
+    align: "right",
+    sortValue: (p) => p.energy,
+    cell: (p) => mono(num(p.energy, 1)),
+  },
+  diskRead: {
+    label: "Disk read",
+    align: "right",
+    sortValue: (p) => p.disk_read_bps,
+    cell: (p, c) => mono(formatRate(p.disk_read_bps, { units: c.rateUnits })),
+  },
+  diskWrite: {
+    label: "Disk write",
+    align: "right",
+    sortValue: (p) => p.disk_write_bps,
+    cell: (p, c) => mono(formatRate(p.disk_write_bps, { units: c.rateUnits })),
+  },
+  diskTotal: {
+    label: "Disk total",
+    align: "right",
+    sortValue: diskTotal,
+    cell: (p, c) =>
+      mono(formatRate(diskTotal(p), { units: c.rateUnits }), "text-foreground"),
+  },
+  netRx: {
+    label: "Down",
+    align: "right",
+    sortValue: (p) => p.net_rx_bps,
+    cell: (p, c) => mono(formatRate(p.net_rx_bps, { units: c.rateUnits })),
+  },
+  netTx: {
+    label: "Up",
+    align: "right",
+    sortValue: (p) => p.net_tx_bps,
+    cell: (p, c) => mono(formatRate(p.net_tx_bps, { units: c.rateUnits })),
+  },
+  netTotal: {
+    label: "Net total",
+    align: "right",
+    sortValue: netTotal,
+    cell: (p, c) =>
+      mono(formatRate(netTotal(p), { units: c.rateUnits }), "text-foreground"),
+  },
+  gpu: {
+    label: "% GPU",
+    align: "right",
+    sortValue: (p) => p.gpu_pct,
+    // Percent of the whole GPU (D-085), so the bar is out of 100.
+    cell: (p) => (
+      <PercentBar pct={p.gpu_pct} max={100} fill="var(--color-gpu)" />
+    ),
+  },
+  user: {
+    label: "User",
+    align: "left",
+    sortValue: (p) => p.user,
+    cell: (p) => mono(p.user, "text-muted-foreground"),
+  },
+};
 
 /**
  * Sortable, virtualized process table (the CPU page's "Top processes"; full
@@ -410,11 +392,8 @@ export function ProcessTable({
   const padBottom =
     virtualizer.getTotalSize() - (items[items.length - 1]?.end ?? 0);
 
-  const clickHeader = (col: ProcessColumn) => {
-    const next: ProcessSort =
-      sort.by === col
-        ? { by: col, dir: sort.dir === "asc" ? "desc" : "asc" }
-        : { by: col, dir: TEXT_COLUMNS.has(col) ? "asc" : "desc" };
+  const ctx: CellCtx = { cpuBarMaxPct, memUnits, rateUnits };
+  const sortBy = (next: ProcessSort) => {
     // A sort the user asked for applies at once, then holds while hovering.
     if (frozenKeys) setFrozenKeys(sortProcesses(rows, next).map(processKey));
     onSort(next);
@@ -446,39 +425,18 @@ export function ProcessTable({
         <thead className="sticky top-0 z-10 bg-card">
           <tr>
             {columns.map((col) => {
-              const active = sort.by === col;
-              const right = !TEXT_COLUMNS.has(col);
+              const { label, align } = COLUMNS[col];
               return (
-                <th
+                <SortHeader
                   key={col}
-                  scope="col"
-                  aria-sort={
-                    active
-                      ? sort.dir === "asc"
-                        ? "ascending"
-                        : "descending"
-                      : undefined
-                  }
-                  className={cn(
-                    "whitespace-nowrap border-border border-b p-0 font-normal",
-                    right ? "text-right" : "text-left"
-                  )}
-                >
-                  <button
-                    type="button"
-                    onClick={() => clickHeader(col)}
-                    className={cn(
-                      "data-mono w-full px-3 py-2 text-[10px] uppercase tracking-[.08em] outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                      right ? "text-right" : "text-left",
-                      active
-                        ? "text-foreground"
-                        : "text-muted-foreground hover:text-foreground"
-                    )}
-                  >
-                    {LABELS[col]}
-                    {active && (sort.dir === "asc" ? " ↑" : " ↓")}
-                  </button>
-                </th>
+                  by={col}
+                  label={label}
+                  align={align}
+                  sort={sort}
+                  onSort={sortBy}
+                  firstDir={align === "left" ? "asc" : "desc"}
+                  className="h-auto whitespace-nowrap border-border border-b"
+                />
               );
             })}
             {rowAction && (
@@ -514,16 +472,10 @@ export function ProcessTable({
                     key={col}
                     className={cn(
                       "whitespace-nowrap px-3 py-0 font-normal text-fg-subtle",
-                      !TEXT_COLUMNS.has(col) && "text-right"
+                      COLUMNS[col].align === "right" && "text-right"
                     )}
                   >
-                    <Cell
-                      p={p}
-                      col={col}
-                      cpuBarMaxPct={cpuBarMaxPct}
-                      memUnits={memUnits}
-                      rateUnits={rateUnits}
-                    />
+                    {COLUMNS[col].cell(p, ctx)}
                   </td>
                 ))}
                 {rowAction && (

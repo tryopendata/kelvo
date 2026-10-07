@@ -2,6 +2,7 @@ import { formatRate } from "@core/format";
 import { useMemo } from "react";
 import { Link } from "react-router";
 import { AppsNote, AppsShell } from "~/components/app-table";
+import { SortHeader } from "~/components/sort-header";
 import {
   Table,
   TableBody,
@@ -60,12 +61,7 @@ export function AppsNowCard() {
         <TableHeader>
           <TableRow className="hover:bg-transparent">
             <TableHead>App</TableHead>
-            <TableHead
-              aria-sort="descending"
-              className="text-right text-foreground"
-            >
-              Now ↓
-            </TableHead>
+            <SortHeader ranked label="Now" />
           </TableRow>
         </TableHeader>
         <TableBody>

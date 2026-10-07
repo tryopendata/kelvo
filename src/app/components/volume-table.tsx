@@ -1,4 +1,4 @@
-import { clamp01 } from "@core/chart-math";
+import { ratio } from "@core/chart-math";
 import { type ByteUnits, formatBytes } from "@core/format";
 import {
   Table,
@@ -8,6 +8,7 @@ import {
   TableHeader,
   TableRow,
 } from "~/components/ui/table";
+import { MeterTrack } from "~/widgets/meter-track";
 
 export interface VolumeRow {
   /** `vol` label value and row key. */
@@ -46,10 +47,7 @@ export function VolumeTable({ rows, units }: VolumeTableProps) {
       </TableHeader>
       <TableBody>
         {rows.map((r) => {
-          const frac =
-            r.usedBytes != null && r.totalBytes
-              ? clamp01(r.usedBytes / r.totalBytes)
-              : null;
+          const frac = ratio(r.usedBytes, r.totalBytes);
           return (
             <TableRow key={r.id} className="text-[12px]">
               <TableCell className="text-foreground">
@@ -70,14 +68,7 @@ export function VolumeTable({ rows, units }: VolumeTableProps) {
                 {formatBytes(r.totalBytes, { units })}
               </TableCell>
               <TableCell>
-                <span className="block h-1 overflow-hidden rounded-full bg-track">
-                  {frac != null && (
-                    <span
-                      className="block h-full origin-left rounded-full bg-disk"
-                      style={{ transform: `scaleX(${frac})` }}
-                    />
-                  )}
-                </span>
+                <MeterTrack fraction={frac} fill="var(--color-disk)" />
               </TableCell>
             </TableRow>
           );

@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { type ReactNode, useId } from "react";
 
 export interface SettingsRowProps {
   label: string;
@@ -34,5 +34,32 @@ export function SettingsRow({
       </div>
       {children}
     </div>
+  );
+}
+
+/**
+ * A settings section: a sentence-case title over a bordered panel of
+ * `SettingsRow`s. `after` sits under the panel (a note, history notices).
+ */
+export function SettingsPanel({
+  title,
+  after,
+  children,
+}: {
+  title: string;
+  after?: ReactNode;
+  children?: ReactNode;
+}) {
+  const titleId = useId();
+  return (
+    <section aria-labelledby={titleId} className="flex flex-col gap-2.5">
+      <h2 id={titleId} className="font-[590] text-[14px]">
+        {title}
+      </h2>
+      <div className="overflow-hidden rounded-card border border-border bg-card">
+        {children}
+      </div>
+      {after}
+    </section>
   );
 }

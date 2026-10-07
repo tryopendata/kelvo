@@ -1,9 +1,10 @@
-import { clamp01 } from "@core/chart-math";
 import {
   formatTemperature,
   type TemperatureUnits,
   temperatureParts,
 } from "@core/format";
+import { FIELD_LABEL } from "~/widgets/lib/classes";
+import { MeterTrack } from "~/widgets/meter-track";
 
 export interface ZoneRow {
   /** Sensor key, also the row key ("PMU tdie4"). */
@@ -37,9 +38,8 @@ export interface ZoneTableProps {
 const LO = 20;
 const HI = 110;
 
-function barFraction(c: number | null): number {
-  if (c == null || !Number.isFinite(c)) return 0;
-  return clamp01((c - LO) / (HI - LO));
+function barFraction(c: number | null): number | null {
+  return c == null ? null : (c - LO) / (HI - LO);
 }
 
 function range(
@@ -52,9 +52,6 @@ function range(
   const hi = temperatureParts(max, { units }).value;
   return `${lo}–${hi}`;
 }
-
-const head =
-  "data-mono font-normal text-[10px] text-muted-foreground uppercase tracking-[.08em]";
 
 /**
  * Body rows are 24 px and the header 22 px; the table scrolls past ten and a
@@ -96,13 +93,17 @@ export function ZoneTable({ rows, extras, units, rangeLabel }: ZoneTableProps) {
           </colgroup>
           <thead className="sticky top-0 z-10 bg-card">
             <tr style={{ height: HEAD_PX }}>
-              <th className={`${head} pb-1.5 text-left`}>Zone</th>
-              <th className={`${head} pb-1.5 pl-2.5 text-left`}>Sensor</th>
+              <th className={`${FIELD_LABEL} pb-1.5 text-left`}>Zone</th>
+              <th className={`${FIELD_LABEL} pb-1.5 pl-2.5 text-left`}>
+                Sensor
+              </th>
               <th className="pb-1.5">
                 <span className="sr-only">Range bar</span>
               </th>
-              <th className={`${head} pb-1.5 text-right`}>Now</th>
-              <th className={`${head} pb-1.5 text-right`}>{rangeLabel}</th>
+              <th className={`${FIELD_LABEL} pb-1.5 text-right`}>Now</th>
+              <th className={`${FIELD_LABEL} pb-1.5 text-right`}>
+                {rangeLabel}
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -115,12 +116,11 @@ export function ZoneTable({ rows, extras, units, rangeLabel }: ZoneTableProps) {
                   {r.key}
                 </td>
                 <td className="px-2.5 py-[3px]">
-                  <span className="block h-1 overflow-hidden rounded-full bg-track">
-                    <span
-                      className="block h-full origin-left rounded-full bg-temp transition-transform duration-(--motion-tick) ease-tick"
-                      style={{ transform: `scaleX(${barFraction(r.now)})` }}
-                    />
-                  </span>
+                  <MeterTrack
+                    fraction={barFraction(r.now)}
+                    fill="var(--color-temp)"
+                    transition
+                  />
                 </td>
                 <td className="data-mono py-[3px] text-right text-foreground">
                   {formatTemperature(r.now, { units })}

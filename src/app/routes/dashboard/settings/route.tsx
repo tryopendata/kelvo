@@ -5,7 +5,7 @@ import type {
   TemperatureUnit,
 } from "@core/generated/bindings";
 import { SegmentedControl } from "~/components/segmented-control";
-import { SettingsRow } from "~/components/settings-row";
+import { SettingsPanel, SettingsRow } from "~/components/settings-row";
 import { useWriteSettings } from "~/hooks/use-write-settings";
 import { useSettings } from "~/stores/settings-store";
 import { AlertsPanel } from "./_components/alerts-panel";
@@ -29,37 +29,32 @@ const MEMORY = [
 function UnitsPanel({ units }: { units: Settings["units"] }) {
   const write = useWriteSettings();
   return (
-    <section aria-labelledby="settings-units" className="flex flex-col gap-2.5">
-      <h2 id="settings-units" className="font-[590] text-[14px]">
-        Units
-      </h2>
-      <div className="overflow-hidden rounded-card border border-border bg-card">
-        <SettingsRow label="Temperature">
-          <SegmentedControl
-            ariaLabel="Temperature unit"
-            options={TEMPERATURE}
-            value={units.temperature}
-            onChange={(temperature) => write({ units: { temperature } })}
-          />
-        </SettingsRow>
-        <SettingsRow label="Network rate">
-          <SegmentedControl
-            ariaLabel="Network unit"
-            options={NETWORK}
-            value={units.network}
-            onChange={(network) => write({ units: { network } })}
-          />
-        </SettingsRow>
-        <SettingsRow label="Memory">
-          <SegmentedControl
-            ariaLabel="Memory base"
-            options={MEMORY}
-            value={units.memory}
-            onChange={(memory) => write({ units: { memory } })}
-          />
-        </SettingsRow>
-      </div>
-    </section>
+    <SettingsPanel title="Units">
+      <SettingsRow label="Temperature">
+        <SegmentedControl
+          ariaLabel="Temperature unit"
+          options={TEMPERATURE}
+          value={units.temperature}
+          onChange={(temperature) => write({ units: { temperature } })}
+        />
+      </SettingsRow>
+      <SettingsRow label="Network rate">
+        <SegmentedControl
+          ariaLabel="Network unit"
+          options={NETWORK}
+          value={units.network}
+          onChange={(network) => write({ units: { network } })}
+        />
+      </SettingsRow>
+      <SettingsRow label="Memory">
+        <SegmentedControl
+          ariaLabel="Memory base"
+          options={MEMORY}
+          value={units.memory}
+          onChange={(memory) => write({ units: { memory } })}
+        />
+      </SettingsRow>
+    </SettingsPanel>
   );
 }
 

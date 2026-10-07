@@ -1,17 +1,16 @@
 import { formatGhz, formatPercent, formatWatts } from "@core/format";
 import { windowWords } from "@core/live-window";
-import { useId } from "react";
 import { useAreaBrush } from "~/components/area-brush";
 import { brushScopeProps } from "~/components/brush-overlay";
 import {
   type RangeTotal,
   RangeTotalsStrip,
 } from "~/components/range-totals-strip";
+import { SectionCard } from "~/components/section-card";
 import { SelectionSummary } from "~/components/selection-summary";
 import { useGapBands } from "~/hooks/use-gap-bands";
 import { useHeld } from "~/hooks/use-ring";
 import { useWindowSeries } from "~/hooks/use-window-series";
-import { Card } from "~/widgets/card";
 import {
   PERCENT_GRID,
   PERCENT_Y_TICKS,
@@ -39,7 +38,6 @@ const TOTALS: readonly RangeTotal[] = [
  * beside the live strip, and the apps table, follow the selection.
  */
 export function UsageCard({ windowMs }: { windowMs: number }) {
-  const titleId = useId();
   const v = useHeld(HELD);
   const series = useWindowSeries(CHART, windowMs, { brush: true });
   const brush = useAreaBrush(series, HEIGHT);
@@ -48,15 +46,7 @@ export function UsageCard({ windowMs }: { windowMs: number }) {
 
   return (
     <div {...brushScopeProps} className="contents">
-      <Card
-        accent="gpu"
-        variant="chart"
-        labelledBy={titleId}
-        className="flex flex-col gap-3.5 p-4"
-      >
-        <h2 id={titleId} className="sr-only">
-          GPU utilization
-        </h2>
+      <SectionCard accent="gpu" title="GPU utilization" hiddenTitle>
         <div className="flex flex-wrap items-end justify-between gap-x-7 gap-y-3">
           <StatStrip
             hero={{ label: "Utilization", value: formatPercent(util) }}
@@ -100,7 +90,7 @@ export function UsageCard({ windowMs }: { windowMs: number }) {
           />
           <SelectionSummary windowMs={windowMs} inset={32} />
         </div>
-      </Card>
+      </SectionCard>
     </div>
   );
 }

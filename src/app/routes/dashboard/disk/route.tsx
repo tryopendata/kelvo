@@ -25,7 +25,6 @@ import { useHostRecord } from "~/hooks/use-host-record";
 import { useHeld, useLayout } from "~/hooks/use-ring";
 import { BrushProvider } from "~/stores/brush-store";
 import { useDisk } from "~/stores/live-selectors";
-import { Card } from "~/widgets/card";
 import { StatStrip } from "~/widgets/stat-strip";
 import { diskSubtitle, volumeRows } from "./_lib/disk";
 
@@ -121,15 +120,12 @@ export default function DiskRoute() {
         {windowMs !== null && (
           <>
             <div {...brushScopeProps} className="contents">
-              <Card
+              <SectionCard
                 accent="disk"
-                variant="chart"
-                labelledBy="disk-throughput"
-                className="flex flex-col gap-4 p-4"
+                title="Throughput"
+                hiddenTitle
+                className="gap-4"
               >
-                <h2 id="disk-throughput" className="sr-only">
-                  Throughput
-                </h2>
                 <div className="flex flex-wrap items-end justify-between gap-x-7 gap-y-3">
                   <StatStrip
                     hero={{ label: "Read", value: rate(disk.read) }}
@@ -158,7 +154,7 @@ export default function DiskRoute() {
                   />
                   <SelectionSummary windowMs={windowMs} />
                 </div>
-              </Card>
+              </SectionCard>
             </div>
             <SectionCard
               accent="disk"

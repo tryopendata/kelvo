@@ -1,17 +1,16 @@
 import { fixed, formatPercent, MISSING } from "@core/format";
 import { windowWords } from "@core/live-window";
-import { useId } from "react";
 import { useAreaBrush } from "~/components/area-brush";
 import { brushScopeProps } from "~/components/brush-overlay";
 import {
   type RangeTotal,
   RangeTotalsStrip,
 } from "~/components/range-totals-strip";
+import { SectionCard } from "~/components/section-card";
 import { SelectionSummary } from "~/components/selection-summary";
 import { useGapBands } from "~/hooks/use-gap-bands";
 import { useHeld } from "~/hooks/use-ring";
 import { useWindowSeries } from "~/hooks/use-window-series";
-import { Card } from "~/widgets/card";
 import {
   PERCENT_GRID,
   PERCENT_Y_TICKS,
@@ -43,7 +42,6 @@ const load = (v: number | null | undefined) =>
  * peak beside the live strip, and the apps table below, follow the selection.
  */
 export function TotalCard({ windowMs }: { windowMs: number }) {
-  const titleId = useId();
   const v = useHeld(HELD);
   const total = v["cpu.total"] ?? null;
   const series = useWindowSeries(CHART, windowMs, { brush: true });
@@ -53,15 +51,12 @@ export function TotalCard({ windowMs }: { windowMs: number }) {
 
   return (
     <div {...brushScopeProps} className="contents">
-      <Card
+      <SectionCard
         accent="cpu"
-        variant="chart"
-        labelledBy={titleId}
-        className="col-span-2 flex flex-col gap-3.5 p-4"
+        title="CPU total"
+        hiddenTitle
+        className="col-span-2"
       >
-        <h2 id={titleId} className="sr-only">
-          CPU total
-        </h2>
         <div className="flex flex-wrap items-end justify-between gap-x-7 gap-y-3">
           <StatStrip
             hero={{ label: "Total", value: formatPercent(total) }}
@@ -124,7 +119,7 @@ export function TotalCard({ windowMs }: { windowMs: number }) {
           />
           <SelectionSummary windowMs={windowMs} inset={32} />
         </div>
-      </Card>
+      </SectionCard>
     </div>
   );
 }

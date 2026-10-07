@@ -2,9 +2,7 @@ import { BRUSH_STEP_MS, type TimeRange } from "@core/brush";
 import type { NetworkByApp } from "@core/generated/bindings";
 import { historyKeys } from "@core/query-keys";
 import { unwrap } from "@core/transport";
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { useTransport } from "~/lib/transport-context";
-import { useHostId } from "~/stores/host-store";
+import { type RangePoll, useRangeQuery } from "~/lib/range-query";
 
 /**
  * An answer is final once every bucket in it is complete: both the per-app
@@ -25,36 +23,19 @@ export function useNetworkByApp(
   range: TimeRange | null,
   {
     keepPrevious = false,
-    pollMs = () => BRUSH_STEP_MS,
+    pollMs,
   }: {
     keepPrevious?: boolean;
-    /** `reads` counts answers under the current key. */
-    pollMs?: (data: NetworkByApp | undefined, reads: number) => number;
+    pollMs?: RangePoll<NetworkByApp>;
   } = {}
 ) {
-  const transport = useTransport();
-  const hostId = useHostId();
-  return useQuery({
-    queryKey: historyKeys.networkByApp(
-      hostId,
-      range?.fromMs ?? 0,
-      range?.toMs ?? 0
-    ),
-    queryFn: () =>
-      unwrap(
-        transport.queryNetworkByApp(
-          hostId,
-          range?.fromMs ?? 0,
-          range?.toMs ?? 0
-        )
-      ),
-    enabled: range !== null,
-    staleTime: (q) => (isFinal(q.state.data) ? Number.POSITIVE_INFINITY : 0),
-    refetchInterval: (q) =>
-      q.state.status === "error" || isFinal(q.state.data)
-        ? false
-        : pollMs(q.state.data, q.state.dataUpdateCount),
-    placeholderData: keepPrevious ? keepPreviousData : undefined,
+  return useRangeQuery<NetworkByApp>(range, {
+    key: historyKeys.networkByApp,
+    fetch: (transport, hostId, fromMs, toMs) =>
+      unwrap(transport.queryNetworkByApp(hostId, fromMs, toMs)),
+    isFinal,
+    keepPrevious,
+    pollMs,
   });
 }
 

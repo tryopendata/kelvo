@@ -20,7 +20,6 @@ import { useUnits } from "~/hooks/use-units";
 import { BrushProvider } from "~/stores/brush-store";
 import { useNetwork, usePrimaryIface } from "~/stores/live-selectors";
 import { useSettings } from "~/stores/settings-store";
-import { Card } from "~/widgets/card";
 import { StatStrip } from "~/widgets/stat-strip";
 import { AddressLine } from "./_components/address-line";
 import { AppsCard } from "./_components/apps-card";
@@ -100,15 +99,12 @@ export default function NetworkRoute() {
         {windowMs !== null && (
           <>
             <div {...{ [BRUSH_SCOPE_ATTR]: "" }} className="contents">
-              <Card
+              <SectionCard
                 accent="net"
-                variant="chart"
-                labelledBy="network-throughput"
-                className="flex flex-col gap-4 p-4"
+                title="Throughput"
+                hiddenTitle
+                className="gap-4"
               >
-                <h2 id="network-throughput" className="sr-only">
-                  Throughput
-                </h2>
                 <div className="flex flex-wrap items-end justify-between gap-x-7 gap-y-3">
                   <StatStrip
                     hero={{ label: "↓ Download", value: rate(net.rx) }}
@@ -143,7 +139,7 @@ export default function NetworkRoute() {
                   />
                   {brush && <SelectionSummary windowMs={windowMs} />}
                 </div>
-              </Card>
+              </SectionCard>
               {perProcess &&
                 history !== null &&
                 (history ? <AppsCard windowMs={windowMs} /> : <AppsNowCard />)}

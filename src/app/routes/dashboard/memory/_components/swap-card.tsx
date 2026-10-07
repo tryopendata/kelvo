@@ -1,14 +1,13 @@
 import { fixed, formatBytes, MISSING } from "@core/format";
 import { windowWords } from "@core/live-window";
-import { useId } from "react";
 import { useAreaBrush } from "~/components/area-brush";
 import { brushScopeProps } from "~/components/brush-overlay";
+import { SectionCard } from "~/components/section-card";
 import { useGapBands } from "~/hooks/use-gap-bands";
 import { useNiceCeiling } from "~/hooks/use-nice-ceiling";
 import { useHeld } from "~/hooks/use-ring";
 import { useUnits } from "~/hooks/use-units";
 import { useWindowSeries } from "~/hooks/use-window-series";
-import { Card } from "~/widgets/card";
 import { ceilingAxis, windowTicks } from "~/widgets/lib/chart-labels";
 import { StatStrip } from "~/widgets/stat-strip";
 import { StreamArea } from "~/widgets/stream-area";
@@ -24,7 +23,6 @@ const pages = (v: number | null | undefined) =>
  * swap-out rates. Brushable like the pressure chart (D-099).
  */
 export function SwapCard({ windowMs }: { windowMs: number }) {
-  const titleId = useId();
   const span = `last ${windowWords(windowMs)}`;
   const units = useUnits();
   const v = useHeld([KEY, "mem.swap_in", "mem.swap_out"]);
@@ -38,15 +36,13 @@ export function SwapCard({ windowMs }: { windowMs: number }) {
 
   return (
     <div {...brushScopeProps} className="contents">
-      <Card
+      <SectionCard
         accent="mem"
         origin="br"
-        labelledBy={titleId}
-        className="flex flex-col gap-3 p-4"
+        variant="default"
+        title={`Swap, ${span}`}
+        className="gap-3"
       >
-        <h2 id={titleId} className="m-0 font-[590] text-[14px]">
-          Swap, {span}
-        </h2>
         <StatStrip
           items={[
             { label: "Used", value: fmt(v[KEY]) },
@@ -69,7 +65,7 @@ export function SwapCard({ windowMs }: { windowMs: number }) {
           highlight={brush.highlight}
           overlay={brush.overlay}
         />
-      </Card>
+      </SectionCard>
     </div>
   );
 }

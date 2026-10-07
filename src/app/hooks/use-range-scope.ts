@@ -5,10 +5,13 @@ import { useHost } from "~/stores/host-store";
 /**
  * Start of the 10 s bucket the newest sample is in, or null before the
  * first sample. Changes once every 10 s, so a component reading it
- * re-renders at that cadence, not at 1 Hz.
+ * re-renders at that cadence, not at 1 Hz. Always null while `enabled` is
+ * false, so a reader that has it off does not re-render at all.
  */
-export function useOpenEdge(): number | null {
-  return useHost((s) => (s.lastTsMs === null ? null : floorTo(s.lastTsMs)));
+export function useOpenEdge(enabled = true): number | null {
+  return useHost((s) =>
+    enabled && s.lastTsMs !== null ? floorTo(s.lastTsMs) : null
+  );
 }
 
 export interface RangeScope {
