@@ -61,6 +61,7 @@ import type {
   CommandError,
   Event,
   EventRecorded,
+  ExportOutcome,
   HistoryGrowth,
   HistoryHealth,
   HistoryHealthChanged,
@@ -84,12 +85,12 @@ import type {
 } from "@core/generated/bindings";
 import {
   HISTORY_TIERS,
-  HOLD_FACTOR,
   METRIC_KINDS,
   PERFORMANCE_VISIBLE_MS,
   RING_SPAN_MS,
 } from "@core/generated/bindings";
 import { CHART_WINDOWS } from "./live-window";
+import { createEmitter } from "./mock/emitter";
 import { mockEvents } from "./mock/events";
 import {
   capabilities,
@@ -120,11 +121,12 @@ import {
   NET_COLLECTION_DELAY_MS,
   NET_MAX_SPAN_MS,
 } from "./mock/net-apps";
+import { holdMs, matches } from "./mock/series";
 import { mockUsageByApp } from "./mock/usage";
 import type { ProcessSignalError, ProcessSignalResult } from "./process-signal";
 import { samplingPlan } from "./sampling-plans";
 import { INTERVALS_MS, SIZE_LIMITS_MB } from "./settings-patch";
-import type { CommandResult, Transport, Unsubscribe } from "./transport";
+import type { CommandResult, Transport } from "./transport";
 
 export interface MockTransportOptions {
   scenarios?: readonly ScenarioName[];
@@ -270,14 +272,6 @@ function framePeriodMs(intervalMs: number, minPeriodMs: number | null): number {
   return Math.max(1, ticks) * intervalMs;
 }
 
-/**
- * How long a sample stays current: `HOLD_FACTOR` times its period, the
- * engine's `hold_ms` (D-047, D-090).
- */
-function holdMs(periodMs: number): number {
-  return Math.floor((periodMs * HOLD_FACTOR.num) / HOLD_FACTOR.den);
-}
-
 /** The engine's holds for a row whose series are sampled every `cadences` ticks. */
 function holdsOf(cadences: readonly number[], intervalMs: number): number[] {
   return cadences.map((c) => holdMs(c * intervalMs));
@@ -309,15 +303,6 @@ function effectiveMinPeriodMs(
 
 const project = <T>(values: readonly T[], pick: number[] | null): T[] =>
   pick === null ? [...values] : pick.map((i) => values[i] as T);
-
-function matches(key: SeriesKey, sel: SeriesSelector): boolean {
-  return (
-    key.metric === sel.metric &&
-    sel.labels.every(([k, v]) =>
-      key.labels.some(([kk, vv]) => kk === k && vv === v)
-    )
-  );
-}
 
 /** Indices of `keys` any selector matches, in layout order. */
 function pickFor(
@@ -610,13 +595,15 @@ export function createMockTransport(
   };
 
   const live = new Map<(msg: LiveMsg) => void, LiveSub>();
-  const settingsListeners = new Set<(e: SettingsChanged) => void>();
-  const capsListeners = new Set<(e: CapabilitiesChanged) => void>();
-  const appearanceListeners = new Set<(e: WindowAppearanceChanged) => void>();
-  const navigateListeners = new Set<(e: NavigateRequested) => void>();
-  const healthListeners = new Set<(e: HistoryHealthChanged) => void>();
-  const hostsListeners = new Set<(e: HostsChanged) => void>();
-  const eventListeners = new Set<(e: EventRecorded) => void>();
+  const emitters = {
+    settings: createEmitter<SettingsChanged>(),
+    caps: createEmitter<CapabilitiesChanged>(),
+    appearance: createEmitter<WindowAppearanceChanged>(),
+    navigate: createEmitter<NavigateRequested>(),
+    health: createEmitter<HistoryHealthChanged>(),
+    hosts: createEmitter<HostsChanged>(),
+    event: createEmitter<EventRecorded>(),
+  };
   const events: Event[] = mockEvents(startMs);
 
   const record = (command: string, ...args: unknown[]) => {
@@ -938,10 +925,6 @@ export function createMockTransport(
     ensureTimer();
   };
 
-  const emitSettings = () => {
-    for (const cb of [...settingsListeners]) cb(settings);
-  };
-
   /**
    * Re-resolve the tick and Performance mode after a settings or power
    * change: a status on either, and an appearance when the mode changed.
@@ -966,11 +949,53 @@ export function createMockTransport(
       reduce_transparency: false,
       theme: settings.settings.general.appearance,
     };
-    for (const cb of [...appearanceListeners]) cb({ appearance });
+    emitters.appearance.emit({ appearance });
   };
 
   const unknownHost = (host: HostId) =>
     host === MOCK_HOST_ID ? null : err({ kind: "unknown_host", host });
+
+  /**
+   * A host command's preamble, in the order Rust checks it: record the call
+   * (`args` as recorded), then `unknown_host`, then the store's error when
+   * the command `needsHistory` and history is unavailable, then `range`
+   * ending before it starts or spanning more than `maxSpanMs`. `body`
+   * answers once all of them pass.
+   */
+  const hostCommand = <T>(
+    name: string,
+    host: HostId,
+    args: unknown[],
+    checks: {
+      range?: readonly [fromMs: number, toMs: number];
+      maxSpanMs?: number;
+      needsHistory?: boolean;
+    },
+    body: () => CommandResult<T>
+  ): CommandResult<T> => {
+    record(name, ...args);
+    const bad = unknownHost(host);
+    if (bad) return bad;
+    if (checks.needsHistory && unavailable) return err(unavailable);
+    if (checks.range) {
+      const [fromMs, toMs] = checks.range;
+      if (toMs < fromMs) {
+        return err({
+          kind: "invalid_argument",
+          message: "the range ends before it starts",
+        });
+      }
+      if (checks.maxSpanMs !== undefined && toMs - fromMs > checks.maxSpanMs) {
+        return err({
+          kind: "invalid_argument",
+          message: "the range is longer than history keeps",
+        });
+      }
+    }
+    return body();
+  };
+  /** `hostCommand` checks for a command that reads or writes the store. */
+  const STORE = { needsHistory: true } as const;
 
   const transport: MockTransport = {
     kind: "mock",
@@ -981,11 +1006,11 @@ export function createMockTransport(
     tick,
     subscriberCount: () => live.size,
     requestNavigate(route) {
-      for (const cb of [...navigateListeners]) cb({ route });
+      emitters.navigate.emit({ route });
     },
     setHistoryHealth(next) {
       health = next;
-      for (const cb of [...healthListeners]) cb({ health });
+      emitters.health.emit({ health });
     },
     dispose() {
       if (timer !== null) clearInterval(timer);
@@ -995,13 +1020,7 @@ export function createMockTransport(
         if (sub.queueTimer !== null) clearTimeout(sub.queueTimer);
       }
       live.clear();
-      hostsListeners.clear();
-      settingsListeners.clear();
-      capsListeners.clear();
-      appearanceListeners.clear();
-      navigateListeners.clear();
-      healthListeners.clear();
-      eventListeners.clear();
+      for (const e of Object.values(emitters)) e.clear();
     },
 
     async listHosts() {
@@ -1009,12 +1028,12 @@ export function createMockTransport(
       return [hostRecord(flags, startMs)];
     },
     async getHost(host) {
-      record("get_host", host);
-      return unknownHost(host) ?? ok(hostRecord(flags, startMs));
+      return hostCommand("get_host", host, [host], {}, () =>
+        ok(hostRecord(flags, startMs))
+      );
     },
     async getCapabilities(host) {
-      record("get_capabilities", host);
-      return unknownHost(host) ?? ok(caps);
+      return hostCommand("get_capabilities", host, [host], {}, () => ok(caps));
     },
     async subscribeLive(host, onMsg, opts = {}) {
       const backfillMs = Math.min(opts.backfillMs ?? 60_000, RING_SPAN_MS);
@@ -1077,32 +1096,32 @@ export function createMockTransport(
       };
     },
     async setProcessInterest(host, interested, view, stream) {
-      record("set_process_interest", host, interested, view, stream);
-      const bad = unknownHost(host);
-      if (bad) return bad;
-      const wasActive = interestActive();
-      const wasNetwork = interest?.view.network === true;
-      const wasGpu = interest?.view.gpu === true;
-      // A new call replaces the window's view (D-066).
-      interest = interested
-        ? { view: view ?? { limit: null, sort: [], period_ms: null }, stream }
-        : null;
-      // One batch right away, so a page opened with `?ticks=0` (screenshots)
-      // still has rows; Rust sends its next batch on the next sample. The
-      // same when a view starts asking for network rates or GPU time (a
-      // column set switched), so the values show without a tick.
-      const startsNetwork = interest?.view.network === true && !wasNetwork;
-      const startsGpu = interest?.view.gpu === true && !wasGpu;
-      if (
-        interestActive() &&
-        (!wasActive || startsNetwork || startsGpu) &&
-        !status.paused &&
-        !flags.stale
-      ) {
-        lastBatchMs = null;
-        queueMicrotask(() => sendProcesses(now() + clockOffset));
-      }
-      return ok(null);
+      const args = [host, interested, view, stream];
+      return hostCommand("set_process_interest", host, args, {}, () => {
+        const wasActive = interestActive();
+        const wasNetwork = interest?.view.network === true;
+        const wasGpu = interest?.view.gpu === true;
+        // A new call replaces the window's view (D-066).
+        interest = interested
+          ? { view: view ?? { limit: null, sort: [], period_ms: null }, stream }
+          : null;
+        // One batch right away, so a page opened with `?ticks=0` (screenshots)
+        // still has rows; Rust sends its next batch on the next sample. The
+        // same when a view starts asking for network rates or GPU time (a
+        // column set switched), so the values show without a tick.
+        const startsNetwork = interest?.view.network === true && !wasNetwork;
+        const startsGpu = interest?.view.gpu === true && !wasGpu;
+        if (
+          interestActive() &&
+          (!wasActive || startsNetwork || startsGpu) &&
+          !status.paused &&
+          !flags.stale
+        ) {
+          lastBatchMs = null;
+          queueMicrotask(() => sendProcesses(now() + clockOffset));
+        }
+        return ok(null);
+      });
     },
     stepClock(deltaMs) {
       clockOffset += deltaMs;
@@ -1163,167 +1182,134 @@ export function createMockTransport(
     },
     emitHostsChanged() {
       const hosts = [hostRecord(flags, startMs)];
-      for (const cb of [...hostsListeners]) cb({ hosts });
+      emitters.hosts.emit({ hosts });
     },
     processInterest: () => (interestActive() ? interest : null),
     async queryHistory(request) {
-      record("query_history", request);
-      const bad = unknownHost(request.host);
-      if (bad) return bad;
-      if (request.selectors.length === 0 || request.to_ms < request.from_ms) {
-        return err({
-          kind: "invalid_argument",
-          message: "empty selectors or negative span",
-        });
-      }
-      // With history unavailable Rust answers from the engine's recent rows (`HISTORY_RECENT_MS`).
-      if (unavailable) {
-        return ok(
-          mockRecentHistory(request, gen.specs, now(), status.interval_ms)
-        );
-      }
-      // Gaps sit where the ring has its holes: fixed at start, not sliding.
-      return ok(
-        mockHistory(
-          request,
-          gen.specs,
-          mockGaps(flags, startMs),
-          now(),
-          status.interval_ms
-        )
-      );
-    },
-    async queryProcessesAt(host, tMs) {
-      record("query_processes_at", host, tMs);
-      const bad = unknownHost(host);
-      if (bad) return bad;
-      return ok({
-        ts_ms: Math.floor(tMs / 10_000) * 10_000,
-        resolution: "snapshot",
-        rows: processRows().map((p) => ({
-          name: p.name,
-          pid: p.pid,
-          cpu_pct: p.cpu_pct,
-          mem_bytes: p.mem_bytes,
-          threads: p.threads,
-          idle_wakeups_per_s: p.idle_wakeups_per_s,
-          energy: p.energy,
-        })),
+      return hostCommand("query_history", request.host, [request], {}, () => {
+        if (request.selectors.length === 0 || request.to_ms < request.from_ms) {
+          return err({
+            kind: "invalid_argument",
+            message: "empty selectors or negative span",
+          });
+        }
+        // With history unavailable Rust answers from the engine's recent
+        // rows (`HISTORY_RECENT_MS`). Gaps sit where the ring has its holes:
+        // fixed at start, not sliding.
+        return ok(historyPage(request));
       });
     },
-    async queryNetworkByApp(host, fromMs, toMs) {
-      record("query_network_by_app", host, fromMs, toMs);
-      const bad = unknownHost(host);
-      if (bad) return bad;
-      // With history unavailable Rust answers from the engine's ring alone,
-      // which is what the mock's rows are, so `unavailable` changes nothing.
-      if (toMs < fromMs) {
-        return err({
-          kind: "invalid_argument",
-          message: "the range ends before it starts",
-        });
-      }
-      if (toMs - fromMs > NET_MAX_SPAN_MS) {
-        return err({
-          kind: "invalid_argument",
-          message: "the range is longer than history keeps",
-        });
-      }
-      const lastTs = rows[rows.length - 1]?.ts;
-      const historyOn = netHistoryOff[netHistoryOff.length - 1]?.to !== null;
-      return ok(
-        mockNetworkByApp({
-          // The engine's open buckets: none with history off or no
-          // NetworkStatistics, else from the per-app stream's last report.
-          appsToMs:
-            caps.process_network && historyOn && lastTs !== undefined
-              ? appsReportedTo(lastTs)
-              : null,
-          rows: coverRates(rows, rxIdx, txIdx),
-          intervalMs: status.interval_ms,
-          startMs,
-          // No NetworkStatistics: nothing is ever recorded (appstore).
-          collectingFromMs: caps.process_network
-            ? ringStartMs + NET_COLLECTION_DELAY_MS
-            : Number.POSITIVE_INFINITY,
-          offSpans: netHistoryOff,
-          fromMs,
-          toMs,
+    async queryProcessesAt(host, tMs) {
+      return hostCommand("query_processes_at", host, [host, tMs], {}, () =>
+        ok({
+          ts_ms: Math.floor(tMs / 10_000) * 10_000,
+          resolution: "snapshot",
+          rows: processRows().map((p) => ({
+            name: p.name,
+            pid: p.pid,
+            cpu_pct: p.cpu_pct,
+            mem_bytes: p.mem_bytes,
+            threads: p.threads,
+            idle_wakeups_per_s: p.idle_wakeups_per_s,
+            energy: p.energy,
+          })),
         })
       );
+    },
+    async queryNetworkByApp(host, fromMs, toMs) {
+      // With history unavailable Rust answers from the engine's ring alone,
+      // which is what the mock's rows are, so `unavailable` changes nothing.
+      const checks = {
+        range: [fromMs, toMs],
+        maxSpanMs: NET_MAX_SPAN_MS,
+      } as const;
+      const args = [host, fromMs, toMs];
+      return hostCommand("query_network_by_app", host, args, checks, () => {
+        const lastTs = rows[rows.length - 1]?.ts;
+        const historyOn = netHistoryOff[netHistoryOff.length - 1]?.to !== null;
+        return ok(
+          mockNetworkByApp({
+            // The engine's open buckets: none with history off or no
+            // NetworkStatistics, else from the per-app stream's last report.
+            appsToMs:
+              caps.process_network && historyOn && lastTs !== undefined
+                ? appsReportedTo(lastTs)
+                : null,
+            rows: coverRates(rows, rxIdx, txIdx),
+            intervalMs: status.interval_ms,
+            startMs,
+            // No NetworkStatistics: nothing is ever recorded (appstore).
+            collectingFromMs: caps.process_network
+              ? ringStartMs + NET_COLLECTION_DELAY_MS
+              : Number.POSITIVE_INFINITY,
+            offSpans: netHistoryOff,
+            fromMs,
+            toMs,
+          })
+        );
+      });
     },
 
     async queryUsageByApp(host, fromMs, toMs, by, limit) {
-      record("query_usage_by_app", host, fromMs, toMs, by, limit);
-      const bad = unknownHost(host);
-      if (bad) return bad;
-      if (toMs < fromMs) {
-        return err({
-          kind: "invalid_argument",
-          message: "the range ends before it starts",
-        });
-      }
-      const latestMs = rows[rows.length - 1]?.ts ?? startMs;
-      // The engine keeps an hour; the mock's ring is its whole run.
-      const sinceMs = Math.max(ringStartMs, latestMs - 3_600_000);
-      const gpu = caps.process_gpu === true;
-      const from = Math.max(fromMs, sinceMs);
-      const stats =
-        from < toMs
-          ? mockSeriesStats(
-              host,
-              ["cpu.total", "gpu.util", "disk.read_total", "disk.write_total"],
-              from,
-              toMs,
-              now(),
-              historyPage
-            )
-          : null;
-      return ok(
-        mockUsageByApp({
-          processes: gpu ? withGpuPct(processRows()) : processRows(),
-          user: MOCK_USER,
-          fromMs,
-          toMs,
-          sinceMs,
-          latestMs,
-          by,
-          limit,
-          gpu,
-          stats,
-          cores: TOPOLOGY.reduce((n, c) => n + c.cores.length, 0),
-        })
-      );
+      const args = [host, fromMs, toMs, by, limit];
+      const checks = { range: [fromMs, toMs] } as const;
+      return hostCommand("query_usage_by_app", host, args, checks, () => {
+        const latestMs = rows[rows.length - 1]?.ts ?? startMs;
+        // The engine keeps an hour; the mock's ring is its whole run.
+        const sinceMs = Math.max(ringStartMs, latestMs - 3_600_000);
+        const gpu = caps.process_gpu === true;
+        const from = Math.max(fromMs, sinceMs);
+        const stats =
+          from < toMs
+            ? mockSeriesStats(
+                host,
+                [
+                  "cpu.total",
+                  "gpu.util",
+                  "disk.read_total",
+                  "disk.write_total",
+                ],
+                from,
+                toMs,
+                now(),
+                historyPage
+              )
+            : null;
+        return ok(
+          mockUsageByApp({
+            processes: gpu ? withGpuPct(processRows()) : processRows(),
+            user: MOCK_USER,
+            fromMs,
+            toMs,
+            sinceMs,
+            latestMs,
+            by,
+            limit,
+            gpu,
+            stats,
+            cores: TOPOLOGY.reduce((n, c) => n + c.cores.length, 0),
+          })
+        );
+      });
     },
     async querySeriesStats(host, metrics, fromMs, toMs) {
-      record("query_series_stats", host, metrics, fromMs, toMs);
-      const bad = unknownHost(host);
-      if (bad) return bad;
-      if (toMs < fromMs) {
-        return err({
-          kind: "invalid_argument",
-          message: "the range ends before it starts",
-        });
-      }
-      if (toMs - fromMs > NET_MAX_SPAN_MS) {
-        return err({
-          kind: "invalid_argument",
-          message: "the range is longer than history keeps",
-        });
-      }
-      return ok(
-        mockSeriesStats(host, metrics, fromMs, toMs, now(), historyPage)
+      const args = [host, metrics, fromMs, toMs];
+      const checks = {
+        range: [fromMs, toMs],
+        maxSpanMs: NET_MAX_SPAN_MS,
+      } as const;
+      return hostCommand("query_series_stats", host, args, checks, () =>
+        ok(mockSeriesStats(host, metrics, fromMs, toMs, now(), historyPage))
       );
     },
     async getNetworkAddresses(host) {
-      record("get_network_addresses", host);
-      const bad = unknownHost(host);
-      if (bad) return bad;
-      return ok({
-        iface: status.primary_iface,
-        ipv4: status.primary_iface === null ? [] : [MOCK_LOCAL_IPV4],
-        ipv6: [],
-      });
+      return hostCommand("get_network_addresses", host, [host], {}, () =>
+        ok({
+          iface: status.primary_iface,
+          ipv4: status.primary_iface === null ? [] : [MOCK_LOCAL_IPV4],
+          ipv6: [],
+        })
+      );
     },
     async getPublicIp() {
       record("get_public_ip");
@@ -1331,88 +1317,82 @@ export function createMockTransport(
     },
 
     async queryEvents(host, fromMs, toMs) {
-      record("query_events", host, fromMs, toMs);
-      const bad = unknownHost(host);
-      if (bad) return bad;
-      if (unavailable) return err(unavailable);
-      return ok(events.filter((e) => e.ts_ms >= fromMs && e.ts_ms < toMs));
+      const args = [host, fromMs, toMs];
+      return hostCommand("query_events", host, args, STORE, () =>
+        ok(events.filter((e) => e.ts_ms >= fromMs && e.ts_ms < toMs))
+      );
     },
     recordEvent(event) {
       events.push(event);
       events.sort((a, b) => a.ts_ms - b.ts_ms);
-      for (const cb of [...eventListeners]) cb({ host: MOCK_HOST_ID, event });
+      emitters.event.emit({ host: MOCK_HOST_ID, event });
     },
 
     async queryHeatmap(request) {
-      record("query_heatmap", request);
-      const bad = unknownHost(request.host);
-      if (bad) return bad;
-      if (unavailable) return err(unavailable);
-      if (request.days.some((d) => d.hour_starts.length !== 25)) {
-        return err({
-          kind: "invalid_argument",
-          message: "every day needs 25 hour boundaries",
-        });
-      }
-      return ok(mockHeatmap(request, now()));
+      return hostCommand("query_heatmap", request.host, [request], STORE, () =>
+        request.days.some((d) => d.hour_starts.length !== 25)
+          ? err({
+              kind: "invalid_argument",
+              message: "every day needs 25 hour boundaries",
+            })
+          : ok(mockHeatmap(request, now()))
+      );
     },
 
     async batteryHours(host, hourStartsMs) {
-      record("battery_hours", host, hourStartsMs);
-      const bad = unknownHost(host);
-      if (bad) return bad;
-      const hours = mockBatteryHours(host, hourStartsMs, (req) =>
-        unavailable
-          ? mockRecentHistory(req, gen.specs, now(), status.interval_ms)
-          : mockHistory(
-              req,
-              gen.specs,
-              mockGaps(flags, startMs),
-              now(),
-              status.interval_ms
-            )
-      );
-      return typeof hours === "string"
-        ? err({ kind: "invalid_argument", message: hours })
-        : ok(hours);
+      const args = [host, hourStartsMs];
+      return hostCommand("battery_hours", host, args, {}, () => {
+        const hours = mockBatteryHours(host, hourStartsMs, historyPage);
+        return typeof hours === "string"
+          ? err({ kind: "invalid_argument", message: hours })
+          : ok(hours);
+      });
     },
     async exportCsv(request) {
-      record("export_csv", request);
-      const bad = unknownHost(request.host);
-      if (bad) return bad;
-      if (unavailable) return err(unavailable);
-      if (request.selectors.length === 0 || request.to_ms <= request.from_ms) {
-        return err({
-          kind: "invalid_argument",
-          message: "empty selectors or empty range",
-        });
-      }
-      if (options.exportCancels) return ok({ kind: "cancelled" });
-      // One row per bucket of the tier `auto` would read (D-076), gaps apart.
-      const span = request.to_ms - request.from_ms;
-      const [s10, m1, m15] = HISTORY_TIERS;
-      const tierMs =
-        request.tier === "s10"
-          ? s10.bucket_ms
-          : request.tier === "m1"
-            ? m1.bucket_ms
-            : span <= s10.kept_ms
+      return hostCommand<ExportOutcome>(
+        "export_csv",
+        request.host,
+        [request],
+        STORE,
+        () => {
+          if (
+            request.selectors.length === 0 ||
+            request.to_ms <= request.from_ms
+          ) {
+            return err({
+              kind: "invalid_argument",
+              message: "empty selectors or empty range",
+            });
+          }
+          if (options.exportCancels) return ok({ kind: "cancelled" });
+          // One row per bucket of the tier `auto` would read (D-076), gaps apart.
+          const span = request.to_ms - request.from_ms;
+          const [s10, m1, m15] = HISTORY_TIERS;
+          const tierMs =
+            request.tier === "s10"
               ? s10.bucket_ms
-              : span <= m1.kept_ms
+              : request.tier === "m1"
                 ? m1.bucket_ms
-                : m15.bucket_ms;
-      const gapRows = mockGaps(flags, startMs).filter(
-        (g) =>
-          g.start_ms < request.to_ms && (g.end_ms ?? Infinity) > request.from_ms
-      ).length;
-      const rows = Math.ceil(span / tierMs);
-      return ok({
-        kind: "saved",
-        path: `/Users/mock/Downloads/${request.file_name ?? "kelvo-history.csv"}`,
-        rows,
-        gap_rows: gapRows,
-        bytes: 64 + rows * 24 * (1 + request.selectors.length * 3),
-      });
+                : span <= s10.kept_ms
+                  ? s10.bucket_ms
+                  : span <= m1.kept_ms
+                    ? m1.bucket_ms
+                    : m15.bucket_ms;
+          const gapRows = mockGaps(flags, startMs).filter(
+            (g) =>
+              g.start_ms < request.to_ms &&
+              (g.end_ms ?? Infinity) > request.from_ms
+          ).length;
+          const rows = Math.ceil(span / tierMs);
+          return ok({
+            kind: "saved",
+            path: `/Users/mock/Downloads/${request.file_name ?? "kelvo-history.csv"}`,
+            rows,
+            gap_rows: gapRows,
+            bytes: 64 + rows * 24 * (1 + request.selectors.length * 3),
+          });
+        }
+      );
     },
 
     async getSettings() {
@@ -1463,42 +1443,38 @@ export function createMockTransport(
       }
       settings = { revision: settings.revision + 1, settings: next };
       updatePower();
-      emitSettings();
+      emitters.settings.emit(settings);
       return ok(settings);
     },
     async historySize(host) {
-      record("history_size", host);
-      return (
-        unknownHost(host) ?? (unavailable ? err(unavailable) : ok(historyBytes))
+      return hostCommand("history_size", host, [host], STORE, () =>
+        ok(historyBytes)
       );
     },
     async historyGrowth(host) {
-      record("history_growth", host);
-      return unknownHost(host) ?? (unavailable ? err(unavailable) : ok(growth));
+      return hostCommand("history_growth", host, [host], STORE, () =>
+        ok(growth)
+      );
     },
     async clearHistory(host) {
-      record("clear_history", host);
-      const bad = unknownHost(host);
-      if (bad) return bad;
-      if (unavailable) return err(unavailable);
-      historyBytes = 0;
-      growth = null;
-      if (health.trimmed_before_ms !== null) {
-        transport.setHistoryHealth({
-          ...health,
-          trimmed_before_ms: null,
-          trimmed_limit_bytes: null,
-          cap_met: true,
-        });
-      }
-      return ok(historyBytes);
+      return hostCommand("clear_history", host, [host], STORE, () => {
+        historyBytes = 0;
+        growth = null;
+        if (health.trimmed_before_ms !== null) {
+          transport.setHistoryHealth({
+            ...health,
+            trimmed_before_ms: null,
+            trimmed_limit_bytes: null,
+            cap_met: true,
+          });
+        }
+        return ok(historyBytes);
+      });
     },
     async historyHealth(host) {
-      record("history_health", host);
-      const bad = unknownHost(host);
-      if (bad) return bad;
-      if (unavailable) return err(unavailable);
-      return ok(health);
+      return hostCommand("history_health", host, [host], STORE, () =>
+        ok(health)
+      );
     },
     async resetHistory() {
       record("reset_history");
@@ -1534,21 +1510,20 @@ export function createMockTransport(
       return ok(null);
     },
     async sensorDump(host) {
-      record("sensor_dump", host);
-      const bad = unknownHost(host);
-      if (bad) return bad;
-      const info = hostRecord(flags, startMs).info;
-      const last = rows[rows.length - 1]?.values ?? [];
-      return ok({
-        model: info.model,
-        chip: info.chip,
-        os_version: info.os_version,
-        chip_known: info.chip_known,
-        capabilities: caps,
-        sensors: gen.specs
-          .map((s, i) => ({ s, value: last[i] ?? null }))
-          .filter(({ s }) => s.module === "power" || s.module === "sensors")
-          .map(({ s, value }) => ({ key: s.key, value })),
+      return hostCommand("sensor_dump", host, [host], {}, () => {
+        const info = hostRecord(flags, startMs).info;
+        const last = rows[rows.length - 1]?.values ?? [];
+        return ok({
+          model: info.model,
+          chip: info.chip,
+          os_version: info.os_version,
+          chip_known: info.chip_known,
+          capabilities: caps,
+          sensors: gen.specs
+            .map((s, i) => ({ s, value: last[i] ?? null }))
+            .filter(({ s }) => s.module === "power" || s.module === "sensors")
+            .map(({ s, value }) => ({ key: s.key, value })),
+        });
       });
     },
     async processSignal(host, pid, startTimeUs, kind) {
@@ -1590,34 +1565,13 @@ export function createMockTransport(
       record("close_window");
     },
 
-    onNavigateRequested(cb): Unsubscribe {
-      navigateListeners.add(cb);
-      return () => navigateListeners.delete(cb);
-    },
-    onSettingsChanged(cb): Unsubscribe {
-      settingsListeners.add(cb);
-      return () => settingsListeners.delete(cb);
-    },
-    onHistoryHealthChanged(cb): Unsubscribe {
-      healthListeners.add(cb);
-      return () => healthListeners.delete(cb);
-    },
-    onEventRecorded(cb): Unsubscribe {
-      eventListeners.add(cb);
-      return () => eventListeners.delete(cb);
-    },
-    onCapabilitiesChanged(cb): Unsubscribe {
-      capsListeners.add(cb);
-      return () => capsListeners.delete(cb);
-    },
-    onHostsChanged(cb): Unsubscribe {
-      hostsListeners.add(cb);
-      return () => hostsListeners.delete(cb);
-    },
-    onWindowAppearanceChanged(cb): Unsubscribe {
-      appearanceListeners.add(cb);
-      return () => appearanceListeners.delete(cb);
-    },
+    onNavigateRequested: emitters.navigate.on,
+    onSettingsChanged: emitters.settings.on,
+    onHistoryHealthChanged: emitters.health.on,
+    onEventRecorded: emitters.event.on,
+    onCapabilitiesChanged: emitters.caps.on,
+    onHostsChanged: emitters.hosts.on,
+    onWindowAppearanceChanged: emitters.appearance.on,
   };
 
   return transport;

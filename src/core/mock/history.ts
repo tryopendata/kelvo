@@ -11,16 +11,15 @@ import {
   type HistoryPage,
   type HistoryPoint,
   type HistoryRequest,
-  HOLD_FACTOR,
   METRIC_MODULES,
-  type SeriesKey,
   type SeriesStats,
   type Tier,
 } from "@core/generated/bindings";
 import { seriesKeyString } from "@core/series-key";
 import type { ScenarioFlags } from "./fixtures";
 import type { SeriesSpec } from "./generator";
-import { rng } from "./rng";
+import { fnv1a, rng } from "./rng";
+import { holdMs, matches } from "./series";
 
 const MIN = 60_000;
 const HOUR = 60 * MIN;
@@ -99,20 +98,8 @@ export function mockGaps(flags: ScenarioFlags, nowMs: number): Gap[] {
   return gaps;
 }
 
-function matches(key: SeriesKey, sel: HistoryRequest["selectors"][number]) {
-  if (key.metric !== sel.metric) return false;
-  return sel.labels.every(([k, v]) =>
-    key.labels.some(([kk, vv]) => kk === k && vv === v)
-  );
-}
-
 function hash(s: string): number {
-  let h = 2166136261;
-  for (let i = 0; i < s.length; i++) {
-    h ^= s.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  return (h >>> 0) % 2147483646 || 1;
+  return fnv1a(s) % 2147483646 || 1;
 }
 
 type StoredTier = Extract<Tier, "s10" | "m1" | "m15">;
@@ -152,9 +139,9 @@ function mockTier(req: HistoryRequest, nowMs: number): StoredTier {
  * is sampled at (tray-only's idle cadence or the window's), or the page's
  * bucket if that is wider, as `LiveHub::history_hold_ms` computes it.
  */
-function holdMs(spec: SeriesSpec, intervalMs: number, bucketMs: number) {
+function historyHoldMs(spec: SeriesSpec, intervalMs: number, bucketMs: number) {
   const period = Math.max(spec.cadence, spec.idleCadence) * intervalMs;
-  return Math.max((period * HOLD_FACTOR.num) / HOLD_FACTOR.den, bucketMs);
+  return Math.max(holdMs(period), bucketMs);
 }
 
 /** How far back the engine keeps rows the store may not have. */
@@ -235,7 +222,11 @@ export function mockHistory(
           max: clamp(avg + amp * 0.6 * spread * r(), s),
         });
       }
-      return { key: s.key, points, hold_ms: holdMs(s, intervalMs, step) };
+      return {
+        key: s.key,
+        points,
+        hold_ms: historyHoldMs(s, intervalMs, step),
+      };
     });
 
   return {
