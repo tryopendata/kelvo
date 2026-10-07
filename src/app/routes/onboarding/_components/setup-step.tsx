@@ -13,7 +13,10 @@ import {
   ModuleToggleList,
 } from "~/components/module-toggle-list";
 import type { TrayValues } from "~/components/tray-preview";
-import { TrayStyleOption } from "~/components/tray-style-option";
+import {
+  TrayStyleGroup,
+  TrayStyleOption,
+} from "~/components/tray-style-option";
 import { Button } from "~/components/ui/button";
 import { Checkbox } from "~/components/ui/checkbox";
 import { cn } from "~/lib/utils";
@@ -159,8 +162,9 @@ export function SetupStep({
             }
           />
         </div>
-        <div
-          role="radiogroup"
+        <TrayStyleGroup
+          value={style}
+          onValueChange={setStyle}
           aria-labelledby="onboarding-style"
           className="flex flex-col gap-2"
         >
@@ -172,24 +176,16 @@ export function SetupStep({
             title="Combined"
             description="One item. Smallest footprint."
             recommended
-            selected={style === "combined"}
             values={values}
-            onSelect={setStyle}
           />
-          <GraphStyleOption
-            selected={style === "graphs"}
-            values={values}
-            onSelect={setStyle}
-          />
+          <GraphStyleOption values={values} />
           <TrayStyleOption
             style="values"
             title="Values only"
             description="Numbers with stacked labels."
-            selected={style === "values"}
             values={values}
-            onSelect={setStyle}
           />
-        </div>
+        </TrayStyleGroup>
       </div>
     </OnboardingFrame>
   );

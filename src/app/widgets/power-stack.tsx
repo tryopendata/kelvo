@@ -1,7 +1,6 @@
 import { scaleLinear } from "d3-scale";
 import { area, line } from "d3-shape";
 import { useId } from "react";
-import { cn } from "~/lib/utils";
 import {
   annotationFraction,
   ChartAnnotation,
@@ -11,6 +10,7 @@ import { GapBands, type GapSpan } from "./gap-band";
 import { accentVars } from "./lib/accent";
 import { windowTicks } from "./lib/chart-labels";
 import { useTickScroll } from "./lib/use-tick-scroll";
+import { WindowTicks } from "./window-ticks";
 
 const VB_W = 1000;
 
@@ -217,21 +217,7 @@ export function PowerStack({
           );
         })}
       </div>
-      <div aria-hidden className="flex justify-between">
-        {ticks.map((t, i) => (
-          <span
-            // A window under 2 s gives two "−1s" labels; position is the identity.
-            // biome-ignore lint/suspicious/noArrayIndexKey: fixed tick slots
-            key={i}
-            className={cn(
-              "data-mono text-[10px]",
-              i === ticks.length - 1 ? "text-muted-foreground" : "text-fg-faint"
-            )}
-          >
-            {t}
-          </span>
-        ))}
-      </div>
+      <WindowTicks ticks={ticks} />
     </div>
   );
 }

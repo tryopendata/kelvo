@@ -129,7 +129,7 @@ describe("UsageAppsCard (D-093, D-099)", () => {
     await user.click(
       screen.getByRole("button", { name: "Quit Google Chrome (10)" })
     );
-    const dialog = await screen.findByRole("dialog", {
+    const dialog = await screen.findByRole("alertdialog", {
       name: "Quit Google Chrome?",
     });
     expect(dialog).toHaveTextContent("PID 10");

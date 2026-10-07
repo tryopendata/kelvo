@@ -19,6 +19,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { PLOT_INSET } from "~/components/charts/layout";
 import { useBrush, useBrushStore } from "~/stores/brush-store";
 
 /** Pointer travel, px, below which a press is a click rather than a drag. */
@@ -37,7 +38,7 @@ export const brushScopeProps = { [BRUSH_SCOPE_ATTR]: "" } as const;
 const INTERACTIVE = [
   "button, a, input, select, textarea, label, summary, [contenteditable=true]",
   "[role=button], [role=link], [role=tab], [role=radio], [role=checkbox], [role=switch], [role=slider]",
-  "[role=menuitem], [role=menuitemradio], [role=menuitemcheckbox], [role=option], [role=listbox], [role=dialog]",
+  "[role=menuitem], [role=menuitemradio], [role=menuitemcheckbox], [role=option], [role=listbox], [role=dialog], [role=alertdialog]",
 ].join(", ");
 
 /**
@@ -112,7 +113,7 @@ export function BrushOverlay({
   spanMs,
   height,
   selectableToMs,
-  inset = 96,
+  inset = PLOT_INSET,
 }: BrushOverlayProps) {
   const store = useBrushStore();
   const view = useBrush((s) => s.draft ?? s.range);

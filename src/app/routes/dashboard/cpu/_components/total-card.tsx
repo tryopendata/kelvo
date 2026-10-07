@@ -12,14 +12,17 @@ import { useGapBands } from "~/hooks/use-gap-bands";
 import { useHeld } from "~/hooks/use-ring";
 import { useWindowSeries } from "~/hooks/use-window-series";
 import { Card } from "~/widgets/card";
-import { windowTicks } from "~/widgets/lib/chart-labels";
+import {
+  PERCENT_GRID,
+  PERCENT_Y_TICKS,
+  windowTicks,
+} from "~/widgets/lib/chart-labels";
 import { StatStrip } from "~/widgets/stat-strip";
 import { StreamArea } from "~/widgets/stream-area";
 
 const LOADAVG = ["1", "5", "15"].map((w) => `cpu.loadavg{window=${w}}`);
 const HELD = ["cpu.total", "cpu.user", "cpu.system", ...LOADAVG];
 const CHART = ["cpu.total", "cpu.system"];
-const Y_TICKS = [100, 75, 50, 25].map((v) => ({ value: v, label: String(v) }));
 const HEIGHT = 220;
 /** Over the window or the selection (D-099): `cpu.total` averaged and its peak. */
 const TOTALS: readonly RangeTotal[] = [
@@ -113,8 +116,8 @@ export function TotalCard({ windowMs }: { windowMs: number }) {
             accent="cpu"
             height={HEIGHT}
             ariaLabel={`CPU total and system, last ${windowWords(windowMs)}, total ${formatPercent(total)}. Drag to select a range.`}
-            gridlines={[25, 50, 75, 100]}
-            yTicks={Y_TICKS}
+            gridlines={PERCENT_GRID}
+            yTicks={PERCENT_Y_TICKS}
             xTicks={windowTicks(windowMs, 5)}
             highlight={brush.highlight}
             overlay={brush.overlay}

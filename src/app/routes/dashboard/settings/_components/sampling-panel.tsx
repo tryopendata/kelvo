@@ -18,18 +18,11 @@ import { unwrap } from "@core/transport";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
+import { ConfirmDialog } from "~/components/confirm-dialog";
 import { HistoryNotices } from "~/components/history-notices";
 import { SegmentedControl } from "~/components/segmented-control";
 import { SettingsRow } from "~/components/settings-row";
 import { Button } from "~/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "~/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -332,26 +325,23 @@ function HistoryOnDisk() {
       >
         Clear
       </Button>
-      <Dialog open={confirming} onOpenChange={setConfirming}>
-        <DialogContent showCloseButton={false} className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Clear history?</DialogTitle>
-            <DialogDescription>
-              Deletes the {sizeText} of history stored for this Mac. Live values
-              keep updating, and the Timeline starts again from now. This can't
-              be undone.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setConfirming(false)}>
-              Cancel
-            </Button>
-            <Button variant="destructive" disabled={clearing} onClick={clear}>
-              Clear history
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmDialog
+        open={confirming}
+        onOpenChange={setConfirming}
+        className="sm:max-w-sm"
+        title="Clear history?"
+        description={
+          <>
+            Deletes the {sizeText} of history stored for this Mac. Live values
+            keep updating, and the Timeline starts again from now. This can't be
+            undone.
+          </>
+        }
+        confirmLabel="Clear history"
+        confirmVariant="destructive"
+        onConfirm={clear}
+        busy={clearing}
+      />
     </SettingsRow>
   );
 }

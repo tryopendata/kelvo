@@ -1,5 +1,6 @@
 import type { TimeRange } from "@core/brush";
 import { formatClockSeconds } from "@core/format";
+import { PLOT_INSET } from "~/components/charts/layout";
 import { useBrushRange } from "~/stores/brush-store";
 import { useHost } from "~/stores/host-store";
 
@@ -13,7 +14,7 @@ import { useHost } from "~/stores/host-store";
 export function SelectionSummary({
   windowMs,
   shown,
-  inset = 96,
+  inset = PLOT_INSET,
 }: {
   windowMs: number;
   shown?: TimeRange | null;

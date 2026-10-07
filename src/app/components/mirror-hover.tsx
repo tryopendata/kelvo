@@ -1,5 +1,9 @@
 import { formatClockSeconds } from "@core/format";
 import { type RefObject, useLayoutEffect, useRef } from "react";
+import {
+  ChartTooltipShell,
+  SeriesSwatch,
+} from "~/components/charts/chart-tooltip";
 import type { GapSpan } from "~/widgets/gap-band";
 import { type Accent, accentVars, rampColor } from "~/widgets/lib/accent";
 import { FIELD_LABEL } from "~/widgets/lib/classes";
@@ -164,11 +168,10 @@ export function MirrorHover(props: MirrorHoverProps) {
         className="pointer-events-none absolute top-0 bg-foreground/4"
         style={{ height }}
       />
-      <div
+      <ChartTooltipShell
         ref={tipRef}
         hidden
-        role="tooltip"
-        className="pointer-events-none absolute top-0 z-10 flex w-[220px] flex-col gap-2 rounded-tile border border-border-strong bg-card/92 p-3 backdrop-blur-md"
+        className="top-0 w-[220px]"
         style={accentVars(accent)}
       >
         <div className="flex items-baseline justify-between gap-2">
@@ -187,17 +190,13 @@ export function MirrorHover(props: MirrorHoverProps) {
             ] as const
           ).map(([label, step, field]) => (
             <div key={label} className="flex items-center gap-2 text-[12px]">
-              <span
-                aria-hidden
-                className="size-2 rounded-mark"
-                style={{ background: rampColor(step) }}
-              />
+              <SeriesSwatch color={rampColor(step)} />
               <span className="flex-1 font-normal text-fg-subtle">{label}</span>
               <span data-field={field} className="data-mono" />
             </div>
           ))}
         </div>
-      </div>
+      </ChartTooltipShell>
     </>
   );
 }

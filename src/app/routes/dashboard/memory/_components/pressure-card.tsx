@@ -11,11 +11,14 @@ import { useWindowSeries } from "~/hooks/use-window-series";
 import { Swap } from "~/lib/motion/swap";
 import { cn } from "~/lib/utils";
 import { Card } from "~/widgets/card";
-import { windowTicks } from "~/widgets/lib/chart-labels";
+import {
+  PERCENT_GRID,
+  PERCENT_Y_TICKS,
+  windowTicks,
+} from "~/widgets/lib/chart-labels";
 import { StreamArea } from "~/widgets/stream-area";
 import { pressureState } from "../_lib/pressure";
 
-const Y_TICKS = [100, 75, 50, 25].map((v) => ({ value: v, label: String(v) }));
 const HEIGHT = 160;
 
 /**
@@ -96,8 +99,8 @@ export function PressureCard({ windowMs }: { windowMs: number }) {
             accent="mem"
             height={HEIGHT}
             ariaLabel={`Memory pressure, last ${windowWords(windowMs)}, now ${formatPercent(pressure)}. Drag to select a range.`}
-            gridlines={[25, 50, 75, 100]}
-            yTicks={Y_TICKS}
+            gridlines={PERCENT_GRID}
+            yTicks={PERCENT_Y_TICKS}
             xTicks={windowTicks(windowMs, 5)}
             highlight={brush.highlight}
             overlay={brush.overlay}

@@ -6,6 +6,7 @@ import { cn } from "~/lib/utils";
 import { GapBands, type GapSpan } from "./gap-band";
 import { type Accent, accentVars, rampColor } from "./lib/accent";
 import { useTickScroll } from "./lib/use-tick-scroll";
+import { WindowTicks } from "./window-ticks";
 
 /** Width of the drawing in viewBox units; the SVG stretches to its box. */
 const VB_W = 1000;
@@ -35,11 +36,11 @@ export interface StreamAreaProps {
   /** Corner label for the window ("60s"), bottom right. */
   windowLabel?: string;
   /** Horizontal gridlines at these y values (the baseline is always drawn). */
-  gridlines?: number[];
+  gridlines?: readonly number[];
   /** Y tick labels in a 32 px gutter on the left (100, 75, 50, 25). */
-  yTicks?: { value: number; label: string }[];
+  yTicks?: readonly { value: number; label: string }[];
   /** X tick labels spread under the plot, oldest first ("−60s" … "now"). */
-  xTicks?: string[];
+  xTicks?: readonly string[];
   /**
    * Labelled gaps (sleep, paused) drawn as hatched bands over the plot;
    * the parts outside the window are clipped.
@@ -262,23 +263,7 @@ export function StreamArea({
         )}
         {overlay}
       </div>
-      {xTicks && xTicks.length > 0 && (
-        <div aria-hidden className="flex justify-between">
-          {xTicks.map((t, i) => (
-            <span
-              key={t}
-              className={cn(
-                "data-mono text-[10px]",
-                i === xTicks.length - 1
-                  ? "text-muted-foreground"
-                  : "text-fg-faint"
-              )}
-            >
-              {t}
-            </span>
-          ))}
-        </div>
-      )}
+      {xTicks && xTicks.length > 0 && <WindowTicks ticks={xTicks} />}
     </div>
   );
 }

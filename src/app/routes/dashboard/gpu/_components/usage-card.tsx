@@ -12,13 +12,16 @@ import { useGapBands } from "~/hooks/use-gap-bands";
 import { useHeld } from "~/hooks/use-ring";
 import { useWindowSeries } from "~/hooks/use-window-series";
 import { Card } from "~/widgets/card";
-import { windowTicks } from "~/widgets/lib/chart-labels";
+import {
+  PERCENT_GRID,
+  PERCENT_Y_TICKS,
+  windowTicks,
+} from "~/widgets/lib/chart-labels";
 import { StatStrip } from "~/widgets/stat-strip";
 import { StreamArea } from "~/widgets/stream-area";
 
 const HELD = ["gpu.util", "gpu.render", "gpu.tiler", "gpu.freq", "power.gpu"];
 const CHART = ["gpu.util"];
-const Y_TICKS = [100, 75, 50, 25].map((v) => ({ value: v, label: String(v) }));
 const HEIGHT = 200;
 /** Over the window or the selection (D-099): `gpu.util` averaged and its peak. */
 const TOTALS: readonly RangeTotal[] = [
@@ -89,8 +92,8 @@ export function UsageCard({ windowMs }: { windowMs: number }) {
             accent="gpu"
             height={HEIGHT}
             ariaLabel={`GPU utilization, last ${windowWords(windowMs)}, now ${formatPercent(util)}. Drag to select a range.`}
-            gridlines={[25, 50, 75, 100]}
-            yTicks={Y_TICKS}
+            gridlines={PERCENT_GRID}
+            yTicks={PERCENT_Y_TICKS}
             xTicks={windowTicks(windowMs, 5)}
             highlight={brush.highlight}
             overlay={brush.overlay}

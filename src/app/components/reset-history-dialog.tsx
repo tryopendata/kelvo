@@ -1,12 +1,4 @@
-import { Button } from "~/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "~/components/ui/dialog";
+import { ConfirmDialog } from "~/components/confirm-dialog";
 import { useResetHistory } from "~/hooks/use-reset-history";
 
 export interface ResetHistoryDialogProps {
@@ -29,25 +21,21 @@ export function ResetHistoryDialog({
     onOpenChange(false);
   };
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent showCloseButton={false} className="sm:max-w-sm">
-        <DialogHeader>
-          <DialogTitle>Reset history?</DialogTitle>
-          <DialogDescription>
-            Kelvo starts a new, empty history file. The current one is kept
-            aside next to it as history-reset-&lt;time&gt;.sqlite, not deleted.
-            Live values keep updating, and the Timeline starts again from now.
-          </DialogDescription>
-        </DialogHeader>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button disabled={resetting} onClick={confirm}>
-            Reset history
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <ConfirmDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      className="sm:max-w-sm"
+      title="Reset history?"
+      description={
+        <>
+          Kelvo starts a new, empty history file. The current one is kept aside
+          next to it as history-reset-&lt;time&gt;.sqlite, not deleted. Live
+          values keep updating, and the Timeline starts again from now.
+        </>
+      }
+      confirmLabel="Reset history"
+      onConfirm={confirm}
+      busy={resetting}
+    />
   );
 }

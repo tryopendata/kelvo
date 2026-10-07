@@ -16,7 +16,10 @@ import { SettingsRow } from "~/components/settings-row";
 import { Sidebar, type SidebarProps } from "~/components/sidebar";
 import type { TrayStyle, TrayValues } from "~/components/tray-preview";
 import { TrayPreview } from "~/components/tray-preview";
-import { TrayStyleOption } from "~/components/tray-style-option";
+import {
+  TrayStyleGroup,
+  TrayStyleOption,
+} from "~/components/tray-style-option";
 import { Button } from "~/components/ui/button";
 import { Switch } from "~/components/ui/switch";
 import { UnsupportedNotice } from "~/components/unsupported-notice";
@@ -543,8 +546,9 @@ export function AppComponentsSection() {
           name="TrayStyleOption · TrayPreview"
           usedIn="Onboarding · menu bar"
         >
-          <div
-            role="radiogroup"
+          <TrayStyleGroup
+            value={style}
+            onValueChange={setStyle}
             aria-label="Menu bar style"
             className="flex flex-col gap-2"
           >
@@ -553,19 +557,15 @@ export function AppComponentsSection() {
               title="Combined"
               description="One item. Smallest footprint."
               recommended
-              selected={style === "combined"}
               values={TRAY}
-              onSelect={setStyle}
             />
             <TrayStyleOption
               style="values"
               title="Values only"
               description="Numbers with stacked labels."
-              selected={style === "values"}
               values={TRAY}
-              onSelect={setStyle}
             />
-          </div>
+          </TrayStyleGroup>
           <TrayPreview
             style="combined"
             values={{ cpu: null, gpu: null, mem: null, temp: null }}

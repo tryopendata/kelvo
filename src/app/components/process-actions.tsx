@@ -1,4 +1,6 @@
 import { refusalReason, type SignalKind } from "@core/process-signal";
+import { useRef } from "react";
+import { ConfirmDialog } from "~/components/confirm-dialog";
 import { Button } from "~/components/ui/button";
 import {
   ContextMenuContent,
@@ -6,14 +8,6 @@ import {
   ContextMenuLabel,
   ContextMenuSeparator,
 } from "~/components/ui/context-menu";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "~/components/ui/dialog";
 import {
   Tooltip,
   TooltipContent,
@@ -134,56 +128,40 @@ export function ProcessContextMenu({
  */
 export function QuitDialog({ flow }: { flow: QuitFlow }) {
   const req = flow.pending;
-  const force = req?.kind === "force_quit";
+  // The last request, so the dialog keeps its text while it fades out.
+  const last = useRef(req);
+  if (req) last.current = req;
+  const shown = req ?? last.current;
+  if (!shown) return null;
+  const force = shown.kind === "force_quit";
   return (
-    <Dialog
+    <ConfirmDialog
       open={req !== null}
       onOpenChange={(open) => {
         if (!open) flow.cancel();
       }}
-    >
-      <DialogContent showCloseButton={false} className="sm:max-w-md">
-        {req && (
+      className="sm:max-w-md"
+      title={`${force ? "Force quit" : "Quit"} ${shown.target.name}?`}
+      description={
+        force ? (
           <>
-            <DialogHeader>
-              <DialogTitle>
-                {force ? "Force quit" : "Quit"} {req.target.name}?
-              </DialogTitle>
-              <DialogDescription>
-                {force ? (
-                  <>
-                    {req.target.name} (PID{" "}
-                    <span className="data-mono">{req.target.pid}</span>) stops
-                    immediately. Unsaved data in this process will be lost.
-                  </>
-                ) : (
-                  <>
-                    Kelvo asks {req.target.name} (PID{" "}
-                    <span className="data-mono">{req.target.pid}</span>) to
-                    quit. An app with unsaved changes may ask you to save first.
-                  </>
-                )}
-              </DialogDescription>
-            </DialogHeader>
-            <DialogFooter>
-              <Button
-                variant="outline"
-                onClick={flow.cancel}
-                disabled={flow.busy}
-              >
-                Cancel
-              </Button>
-              <Button
-                variant={force ? "destructive" : "secondary"}
-                onClick={() => void flow.confirm()}
-                disabled={flow.busy}
-              >
-                {force ? "Force Quit" : "Quit"}
-              </Button>
-            </DialogFooter>
+            {shown.target.name} (PID{" "}
+            <span className="data-mono">{shown.target.pid}</span>) stops
+            immediately. Unsaved data in this process will be lost.
           </>
-        )}
-      </DialogContent>
-    </Dialog>
+        ) : (
+          <>
+            Kelvo asks {shown.target.name} (PID{" "}
+            <span className="data-mono">{shown.target.pid}</span>) to quit. An
+            app with unsaved changes may ask you to save first.
+          </>
+        )
+      }
+      confirmLabel={force ? "Force Quit" : "Quit"}
+      confirmVariant={force ? "destructive" : "secondary"}
+      onConfirm={() => void flow.confirm()}
+      busy={flow.busy}
+      lockWhileBusy
+    />
   );
 }

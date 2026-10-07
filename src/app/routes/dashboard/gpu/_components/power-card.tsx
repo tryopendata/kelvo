@@ -6,7 +6,7 @@ import { useNiceCeiling } from "~/hooks/use-nice-ceiling";
 import { useHeld } from "~/hooks/use-ring";
 import { useWindowSeries } from "~/hooks/use-window-series";
 import { Card } from "~/widgets/card";
-import { windowTicks } from "~/widgets/lib/chart-labels";
+import { ceilingAxis, windowTicks } from "~/widgets/lib/chart-labels";
 import { StreamArea } from "~/widgets/stream-area";
 
 const KEY = "power.gpu";
@@ -46,11 +46,7 @@ export function PowerCard({ windowMs }: { windowMs: number }) {
         accent="gpu"
         height={140}
         ariaLabel={`GPU power, ${span}, now ${formatWatts(now)}`}
-        gridlines={[ceiling / 2, ceiling]}
-        yTicks={[
-          { value: ceiling, label: `${ceiling}W` },
-          { value: ceiling / 2, label: String(ceiling / 2) },
-        ]}
+        {...ceilingAxis(ceiling, `${ceiling}W`)}
         xTicks={windowTicks(windowMs, 3)}
       />
     </Card>
