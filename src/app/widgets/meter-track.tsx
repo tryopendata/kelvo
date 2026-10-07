@@ -20,7 +20,10 @@ export interface MeterTrackProps {
   transition?: boolean;
 }
 
-/** A rounded track with a fill scaled from the left: a bar meter. */
+/**
+ * A rounded track with a fill scaled from the left: a bar meter. Decorative:
+ * every caller prints the figure beside it, so it is hidden from assistive tech.
+ */
 export function MeterTrack({
   fraction,
   fill = "var(--a)",
@@ -30,6 +33,7 @@ export function MeterTrack({
 }: MeterTrackProps) {
   return (
     <span
+      aria-hidden
       data-missing={fraction === null || undefined}
       className={cn(
         "block overflow-hidden rounded-full bg-track",

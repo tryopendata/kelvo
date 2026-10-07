@@ -58,6 +58,7 @@ export function CoreLoadCard({
       title={`Per-core load, ${span}`}
       aside={<HeatScaleLegend />}
       headerAlign="center"
+      compactHeader
       className="col-span-2 gap-3"
     >
       <CoreHeatmap

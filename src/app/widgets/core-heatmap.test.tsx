@@ -1,3 +1,4 @@
+import { MISSING } from "@core/format";
 import { render } from "@testing-library/react";
 import { expectJsonRoundTrip } from "@tests/widget-json";
 import {
@@ -92,7 +93,7 @@ describe("CoreHeatmap", () => {
 
   it("shows a dash for a stale current value, not 0%", () => {
     const { getByText } = render(<CoreHeatmap {...props} />);
-    expect(getByText("–")).toBeTruthy();
+    expect(getByText(MISSING)).toBeTruthy();
   });
 
   it("legend renders the four steps", () => {

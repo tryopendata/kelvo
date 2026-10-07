@@ -58,6 +58,9 @@ function useDismissOutside(clear: () => void, active: boolean) {
     };
     const onDown = (e: globalThis.PointerEvent) => {
       if (e.button !== 0) return;
+      // A dialog's backdrop is a sibling of its content, so the target check
+      // below would treat a press on it as empty space.
+      if (document.querySelector("[role=dialog], [role=alertdialog]")) return;
       const t = e.target instanceof Element ? e.target : null;
       if (!t || t.closest(`[${BRUSH_SCOPE_ATTR}]`) || t.closest(INTERACTIVE)) {
         return;
