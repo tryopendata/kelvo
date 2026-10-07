@@ -1,3 +1,4 @@
+import { MISSING } from "@core/format";
 import { cn } from "~/lib/utils";
 import { type Accent, accentVars } from "./lib/accent";
 
@@ -69,7 +70,7 @@ export function CoreTiles({ clusters, accent = "cpu" }: CoreTilesProps) {
                         }
                   }
                 >
-                  {load === null ? "–" : load}
+                  {load === null ? MISSING : load}
                 </li>
               );
             })}

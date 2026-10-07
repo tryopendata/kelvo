@@ -1,4 +1,4 @@
-import { formatBytes, formatPercent } from "@core/format";
+import { formatBytes, formatPercent, MISSING } from "@core/format";
 import type { PerformanceReason, Settings } from "@core/generated/bindings";
 import {
   approxSize,
@@ -167,7 +167,7 @@ export function SamplingPanel({
         }
       >
         <span className="data-mono text-[12px] text-muted-foreground">
-          {current ? `about ${approxSize(current.bytes)}` : "–"}
+          {current ? `about ${approxSize(current.bytes)}` : MISSING}
         </span>
         <Select
           value={String(history.retention_days)}
@@ -190,7 +190,7 @@ export function SamplingPanel({
                   {d} days
                   <span className="data-mono text-[11px] text-muted-foreground">
                     {p === null
-                      ? "–"
+                      ? MISSING
                       : p.limitedDays === null
                         ? `about ${approxSize(p.bytes)}`
                         : `${limitText}, about ${p.limitedDays} days`}
@@ -305,7 +305,7 @@ function HistoryOnDisk() {
     });
   };
 
-  const sizeText = size.data === undefined ? "–" : MB(size.data);
+  const sizeText = size.data === undefined ? MISSING : MB(size.data);
   return (
     <SettingsRow label="History on disk">
       <span className="data-mono text-[12px] text-fg-subtle">{sizeText}</span>

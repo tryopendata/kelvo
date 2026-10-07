@@ -1,4 +1,5 @@
 import { heatmapAlpha } from "@core/chart-math";
+import { MISSING } from "@core/format";
 import { memo, type ReactElement, useRef } from "react";
 import { cn } from "~/lib/utils";
 import { GapBands, type GapSpan } from "./gap-band";
@@ -150,7 +151,7 @@ export function CoreHeatmap({
               className="data-mono col-start-3 text-right text-[11px]"
               style={row(k)}
             >
-              {core.now == null ? "–" : `${Math.round(core.now)}%`}
+              {core.now == null ? MISSING : `${Math.round(core.now)}%`}
             </span>
           </div>
         );

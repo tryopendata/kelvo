@@ -316,7 +316,7 @@ export function LiveNetworkCard() {
   const rxNow = useHost((s) => s.held[rxKey] ?? null);
   const txNow = useHost((s) => s.held[txKey] ?? null);
   const rate = (bps: number | null) => {
-    if (bps === null) return { value: "–" };
+    if (bps === null) return { value: MISSING };
     const q = rateParts(bps, { units: bits ? "Mbps" : "MBps" });
     return { value: q.value, unit: q.unit };
   };
@@ -359,7 +359,7 @@ export function LiveBatteryCard() {
     b.timeRemainingMin === null
       ? source === "adapter" || source === "charging"
         ? "On power"
-        : "–"
+        : MISSING
       : formatHoursMinutes(b.timeRemainingMin * 60_000);
   return (
     <ModuleCard
@@ -382,7 +382,7 @@ export function LiveBatteryCard() {
           { label: "Health", value: formatPercent(b.health) },
           {
             label: "Cycles",
-            value: b.cycles === null ? "–" : String(Math.round(b.cycles)),
+            value: b.cycles === null ? MISSING : String(Math.round(b.cycles)),
           },
         ]}
       />

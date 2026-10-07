@@ -1,3 +1,4 @@
+import { MISSING } from "@core/format";
 import { render, screen } from "@testing-library/react";
 import { expectJsonRoundTrip } from "@tests/widget-json";
 import { CoreTiles } from "./core-tiles";
@@ -21,14 +22,14 @@ describe("CoreTiles", () => {
           {
             id: "E0",
             name: "E-cluster",
-            freq: "–",
+            freq: MISSING,
             cores: [{ id: "E0", load: null }],
           },
         ]}
       />
     );
     const tile = screen.getByLabelText("E0 no sample");
-    expect(tile).toHaveTextContent("–");
+    expect(tile).toHaveTextContent(MISSING);
     expect(tile).not.toHaveTextContent("0");
   });
 });
