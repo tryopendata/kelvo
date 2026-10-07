@@ -38,6 +38,7 @@ export function AppsShell({
       title={title}
       aside={aside}
       headerAlign="center"
+      compactHeader
       flush
       className="pb-1"
     >

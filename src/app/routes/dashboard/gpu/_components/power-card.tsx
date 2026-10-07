@@ -28,6 +28,8 @@ export function PowerCard({ windowMs }: { windowMs: number }) {
       title={`Power, ${span}`}
       aside={<span className="data-mono text-[13px]">{formatWatts(now)}</span>}
       headerAlign="baseline"
+      compactHeader
+      headerWrap={false}
       className="gap-3"
     >
       <StreamArea

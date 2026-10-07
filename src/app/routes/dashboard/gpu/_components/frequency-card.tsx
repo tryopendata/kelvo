@@ -42,6 +42,7 @@ export function FrequencyCard({ windowMs }: { windowMs: number }) {
       accent="gpu"
       variant="default"
       title="Frequency"
+      compactHeader
       className="gap-4"
     >
       <div className="flex items-start gap-5">

@@ -24,6 +24,13 @@ export interface SectionCardProps {
   /** How the title and `aside` line up. */
   headerAlign?: keyof typeof ALIGN;
   /**
+   * 12 px between title and `aside`, and no minimum title width, so the
+   * `aside` sits right after a short title instead of 24 px away.
+   */
+  compactHeader?: boolean;
+  /** Let `aside` drop below the title when the row is too narrow. */
+  headerWrap?: boolean;
+  /**
    * No card padding or gap: the header carries its own padding and the
    * body (a table) runs edge to edge.
    */
@@ -44,6 +51,8 @@ export function SectionCard({
   hiddenTitle = false,
   aside,
   headerAlign = "start",
+  compactHeader = false,
+  headerWrap = true,
   flush = false,
   variant = "chart",
   className,
@@ -69,12 +78,20 @@ export function SectionCard({
       ) : (
         <div
           className={cn(
-            "flex flex-wrap gap-x-6 gap-y-2",
+            "flex",
+            headerWrap && "flex-wrap",
+            compactHeader ? "gap-3" : "gap-x-6 gap-y-2",
             ALIGN[headerAlign],
             flush && "min-h-6 px-4 pt-3.5 pb-2"
           )}
         >
-          <h2 id={titleId} className="min-w-48 flex-1 font-[590] text-[14px]">
+          <h2
+            id={titleId}
+            className={cn(
+              "flex-1 font-[590] text-[14px]",
+              !compactHeader && "min-w-48"
+            )}
+          >
             {title}
           </h2>
           {aside}

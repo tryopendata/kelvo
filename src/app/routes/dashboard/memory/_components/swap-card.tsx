@@ -41,6 +41,7 @@ export function SwapCard({ windowMs }: { windowMs: number }) {
         origin="br"
         variant="default"
         title={`Swap, ${span}`}
+        compactHeader
         className="gap-3"
       >
         <StatStrip

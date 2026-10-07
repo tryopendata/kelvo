@@ -41,6 +41,8 @@ export function PressureCard({ windowMs }: { windowMs: number }) {
         origin="bl"
         title="Pressure"
         headerAlign="baseline"
+        compactHeader
+        headerWrap={false}
         className="col-span-2 gap-3"
         aside={
           <span className="flex items-baseline gap-3">
