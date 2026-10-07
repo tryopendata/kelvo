@@ -8,12 +8,11 @@
 use std::collections::HashMap;
 use std::ffi::c_void;
 
-use super::iokit;
+use super::iokit::{self, IOServiceClose};
 
 #[link(name = "IOKit", kind = "framework")]
 unsafe extern "C" {
     fn IOServiceOpen(service: u32, owning_task: u32, kind: u32, connect: *mut u32) -> i32;
-    fn IOServiceClose(connect: u32) -> i32;
     fn IOConnectCallStructMethod(
         connect: u32,
         selector: u32,

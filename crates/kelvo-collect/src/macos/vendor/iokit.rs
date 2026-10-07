@@ -16,13 +16,13 @@ const MAIN_PORT_DEFAULT: u32 = 0;
 
 #[link(name = "IOKit", kind = "framework")]
 unsafe extern "C" {
-    pub fn IOServiceMatching(name: *const c_char) -> CFMutableDictionaryRef;
+    pub(crate) fn IOServiceMatching(name: *const c_char) -> CFMutableDictionaryRef;
     fn IOServiceGetMatchingServices(
         main_port: u32,
         matching: CFDictionaryRef,
         existing: *mut u32,
     ) -> i32;
-    pub fn IOIteratorNext(iterator: u32) -> u32;
+    pub(crate) fn IOIteratorNext(iterator: u32) -> u32;
     fn IORegistryEntryGetName(entry: u32, name: *mut c_char) -> i32;
     fn IORegistryEntryCreateCFProperties(
         entry: u32,
@@ -30,13 +30,14 @@ unsafe extern "C" {
         allocator: CFAllocatorRef,
         options: u32,
     ) -> i32;
-    pub fn IORegistryEntryCreateCFProperty(
+    pub(crate) fn IORegistryEntryCreateCFProperty(
         entry: u32,
         key: CFStringRef,
         allocator: CFAllocatorRef,
         options: u32,
     ) -> CFTypeRef;
-    pub fn IOObjectRelease(object: u32) -> i32;
+    pub(crate) fn IOObjectRelease(object: u32) -> i32;
+    pub(crate) fn IOServiceClose(connect: u32) -> i32;
 }
 
 /// An owned `io_object_t`, released on drop.
