@@ -368,6 +368,35 @@ pub(crate) fn tier_width(tier: Tier) -> Result<i64> {
     tier.bucket_ms().ok_or(StoreError::NotPersisted(tier))
 }
 
+/// The tables a read of `tier` takes buckets from, each with the weight of its rows. An
+/// M15 read also takes the minutes still in `tier_1m`: a range that starts before the M1
+/// window usually ends inside it, and those minutes fall into the same 15-minute slots
+/// that the roll-down will fold them into (D-076). Each row weighs its width in minutes,
+/// so a slot holding both kinds is not tilted toward whichever has more rows.
+pub(crate) fn bucket_sources(tier: Tier) -> Result<&'static [(&'static str, u32)]> {
+    match tier {
+        Tier::S10 => Ok(&[("tier_10s", 1)]),
+        Tier::M1 => Ok(&[("tier_1m", 1)]),
+        Tier::M15 => Ok(&[("tier_15m", 15), ("tier_1m", 1)]),
+        Tier::Live1s | Tier::Unknown => Err(StoreError::NotPersisted(tier)),
+    }
+}
+
+/// `SELECT bucket_ts, layout_id, blob, weight` over every [`bucket_sources`] table of
+/// `tier`, for `host_id = ?1 AND bucket_ts >= ?2 AND bucket_ts < ?3`, as one `UNION ALL`.
+pub(crate) fn bucket_rows_sql(tier: Tier) -> Result<String> {
+    Ok(bucket_sources(tier)?
+        .iter()
+        .map(|(table, weight)| {
+            format!(
+                "SELECT bucket_ts, layout_id, blob, {weight} FROM {table}
+                   WHERE host_id = ?1 AND bucket_ts >= ?2 AND bucket_ts < ?3"
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n UNION ALL\n "))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

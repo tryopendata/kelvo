@@ -9,10 +9,11 @@
 
 use std::collections::HashMap;
 
-use kelvo_schema::{HostId, SeriesKey};
+use kelvo_schema::{HostId, SeriesKey, Tier};
 use rusqlite::params;
 
 use super::{Reader, f32_at, load_layout};
+use crate::db::bucket_rows_sql;
 use crate::error::{Result, StoreError};
 
 impl Reader {
@@ -40,13 +41,7 @@ impl Reader {
 
         // Where `series` sits in each layout, `None` when the layout lacks it.
         let mut positions: HashMap<u32, Option<usize>> = HashMap::new();
-        let mut stmt = self.conn.prepare_cached(
-            "SELECT bucket_ts, layout_id, blob, 15 FROM tier_15m
-               WHERE host_id = ?1 AND bucket_ts >= ?2 AND bucket_ts < ?3
-             UNION ALL
-             SELECT bucket_ts, layout_id, blob, 1 FROM tier_1m
-               WHERE host_id = ?1 AND bucket_ts >= ?2 AND bucket_ts < ?3",
-        )?;
+        let mut stmt = self.conn.prepare_cached(&bucket_rows_sql(Tier::M15)?)?;
         let mut rows = stmt.query(params![host_ref, from, to])?;
         while let Some(row) = rows.next()? {
             let ts: i64 = row.get(0)?;

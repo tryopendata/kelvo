@@ -165,7 +165,7 @@ impl Reader {
             TierChoice::Fixed(t) => t,
             TierChoice::Auto => self.auto_tier(host_ref, q.from_ms, q.to_ms)?,
         };
-        let (table, width) = (tier_table(tier)?, tier_width(tier)?);
+        let width = tier_width(tier)?;
         let gaps = self.gaps_in(host_ref, q.from_ms, q.to_ms)?;
         if q.to_ms <= q.from_ms || q.selectors.is_empty() {
             return Ok(HistoryResult {
@@ -177,26 +177,8 @@ impl Reader {
         }
         let mut merge = Merge::new(q, width);
 
-        // An M15 read also takes the minutes still in `tier_1m`: a range that starts
-        // before the M1 window usually ends inside it, and those minutes fall into the
-        // same 15-minute slots that the roll-down will fold them into (D-076). Each row
-        // weighs its width in minutes, so a slot holding both kinds is not tilted toward
-        // whichever has more rows.
-        let sql = if tier == Tier::M15 {
-            format!(
-                "SELECT bucket_ts, layout_id, blob, 15 FROM {table}
-                   WHERE host_id = ?1 AND bucket_ts >= ?2 AND bucket_ts < ?3
-                 UNION ALL
-                 SELECT bucket_ts, layout_id, blob, 1 FROM tier_1m
-                   WHERE host_id = ?1 AND bucket_ts >= ?2 AND bucket_ts < ?3
-                 ORDER BY bucket_ts"
-            )
-        } else {
-            format!(
-                "SELECT bucket_ts, layout_id, blob, 1 FROM {table}
-                 WHERE host_id = ?1 AND bucket_ts >= ?2 AND bucket_ts < ?3 ORDER BY bucket_ts"
-            )
-        };
+        // An M15 read also takes the minutes still in `tier_1m`, weighed by width (D-076).
+        let sql = format!("{} ORDER BY bucket_ts", db::bucket_rows_sql(tier)?);
         let rows: Vec<(i64, u32, Vec<u8>, u32)> = self
             .conn
             .prepare_cached(&sql)?
