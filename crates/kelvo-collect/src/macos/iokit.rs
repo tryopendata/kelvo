@@ -1,9 +1,10 @@
 //! First-party IOKit registry helpers for the disk, battery and GPU-process collectors:
 //! child walks, registry ids and single properties on [`IoObject`], and typed reads of
 //! CF values; and the engine's device-match and system-power notifications behind
-//! [`NotificationPort`] and [`SystemPower`]. The registry handle itself ([`IoObject`], [`matching_services`]) is the
-//! vendored one (`vendor/iokit.rs`), so the IOKit FFI is declared once. Only documented
-//! IOKit calls live here; private-API collectors keep their own FFI.
+//! [`NotificationPort`] and [`SystemPowerRegistration`]. The registry handle itself
+//! ([`IoObject`], [`matching_services`]) is the vendored one (`vendor/iokit.rs`), so the
+//! IOKit FFI is declared once. Only documented IOKit calls live here; private-API
+//! collectors keep their own FFI.
 
 use std::ffi::{CStr, c_char, c_void};
 
@@ -13,7 +14,6 @@ use core_foundation::dictionary::CFDictionary;
 use core_foundation::number::CFNumber;
 use core_foundation::string::CFString;
 use core_foundation_sys::base::kCFAllocatorDefault;
-
 use core_foundation_sys::dictionary::CFDictionaryRef;
 
 use super::dispatch::Queue;
@@ -312,7 +312,7 @@ pub unsafe fn drain_notification(iterator: u32) -> usize {
 /// delivering on a dispatch queue. Drop deregisters, destroys the port and closes the
 /// connection in IOKit's documented order, then drains the queue, so no callback is still
 /// running once it is gone.
-pub struct SystemPower {
+pub struct SystemPowerRegistration {
     port: PortRef,
     notifier: IoObjectT,
     root: IoConnect,
@@ -321,12 +321,12 @@ pub struct SystemPower {
 
 // SAFETY: the registration is only made and torn down by its owner; IOKit delivers
 // callbacks on `queue`, which is thread-safe.
-unsafe impl Send for SystemPower {}
+unsafe impl Send for SystemPowerRegistration {}
 
-impl SystemPower {
+impl SystemPowerRegistration {
     /// Registers `callback(refcon, service, message, argument)` for system power
-    /// messages, to be delivered on `queue` once [`SystemPower::deliver`] is called.
-    /// `None` when IOKit refuses.
+    /// messages, to be delivered on `queue` once [`SystemPowerRegistration::deliver`] is
+    /// called. `None` when IOKit refuses.
     ///
     /// # Safety
     ///
@@ -335,7 +335,7 @@ impl SystemPower {
         queue: Queue,
         refcon: *mut c_void,
         callback: InterestCallback,
-    ) -> Option<SystemPower> {
+    ) -> Option<SystemPowerRegistration> {
         let mut port: PortRef = std::ptr::null_mut();
         let mut notifier: IoObjectT = 0;
         // SAFETY: out-pointers are valid; the caller keeps `refcon` alive (see Drop).
@@ -343,7 +343,7 @@ impl SystemPower {
         if root == 0 || port.is_null() {
             return None;
         }
-        Some(SystemPower {
+        Some(SystemPowerRegistration {
             port,
             notifier,
             root,
@@ -365,7 +365,7 @@ impl SystemPower {
     }
 }
 
-impl Drop for SystemPower {
+impl Drop for SystemPowerRegistration {
     fn drop(&mut self) {
         // SAFETY: tearing down the registration made in `register`, in IOKit's documented
         // order. The queue is drained afterwards so no callback can still read the refcon.
@@ -379,8 +379,8 @@ impl Drop for SystemPower {
 }
 
 /// Answers a `kIOMessageCanSystemSleep` or `kIOMessageSystemWillSleep` message:
-/// `IOAllowPowerChange` on the registration's [`SystemPower::root`] with the message's
-/// notification id.
+/// `IOAllowPowerChange` on the registration's [`SystemPowerRegistration::root`] with the
+/// message's notification id.
 pub fn allow_power_change(root: u32, notification_id: isize) {
     // SAFETY: plain IOKit call with no pointers; an unknown connection or id is refused
     // with an error code.

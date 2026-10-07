@@ -29,7 +29,7 @@ use core_foundation::dictionary::CFDictionary;
 use core_foundation::string::CFString;
 use core_foundation_sys::dictionary::CFDictionaryRef;
 use kelvo_collect::macos::dispatch::Queue;
-use kelvo_collect::macos::iokit::{SystemPower as Registration, allow_power_change};
+use kelvo_collect::macos::iokit::{SystemPowerRegistration, allow_power_change};
 use kelvo_collect::macos::power_sources::Snapshot;
 use objc2_foundation::NSProcessInfo;
 
@@ -97,7 +97,7 @@ extern "C" fn on_system_power(refcon: *mut c_void, _service: u32, msg: u32, arg:
 /// The system power registration. Fields drop in order: the registration (torn down, its
 /// queue drained so no callback can still read `ctx`), then the context.
 struct SystemPower {
-    _registration: Registration,
+    _registration: SystemPowerRegistration,
     _ctx: Box<PowerCtx>,
 }
 
@@ -110,7 +110,11 @@ impl SystemPower {
         });
         // SAFETY: the refcon is kept in `_ctx`, which drops after the registration.
         let registration = unsafe {
-            Registration::register(queue, (&raw const *ctx).cast_mut().cast(), on_system_power)
+            SystemPowerRegistration::register(
+                queue,
+                (&raw const *ctx).cast_mut().cast(),
+                on_system_power,
+            )
         };
         let Some(registration) = registration else {
             tracing::warn!("IORegisterForSystemPower failed; sleep gaps rely on stall detection");
