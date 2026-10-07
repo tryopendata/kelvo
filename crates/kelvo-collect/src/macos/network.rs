@@ -49,7 +49,7 @@ use core_foundation_sys::base::CFTypeRef;
 use core_foundation_sys::string::{CFStringGetCString, CFStringRef, kCFStringEncodingUTF8};
 use kelvo_schema::{Entitlement, Labels, MetricId, Module, SeriesKey};
 
-use super::PartSum;
+use super::{PartSum, sysctl};
 use crate::{
     Cadence, CollectError, Collector, CollectorId, Every, IfaceNet, Interval, Probe, SampleBuf,
     Tick,
@@ -176,40 +176,14 @@ fn parse_iflist2(buf: &[u8], out: &mut Vec<IfCounters>) {
 fn read_iflist2(buf: &mut Vec<u8>) -> Result<(), CollectError> {
     let mut mib = [libc::CTL_NET, libc::PF_ROUTE, 0, 0, libc::NET_RT_IFLIST2, 0];
     for _ in 0..3 {
-        let mut len = 0usize;
-        crate::calls::count(crate::calls::Api::Kernel);
-        // SAFETY: a size query: null output buffer, `len` receives the needed size.
-        let rc = unsafe {
-            libc::sysctl(
-                mib.as_mut_ptr(),
-                mib.len() as u32,
-                std::ptr::null_mut(),
-                &mut len,
-                std::ptr::null_mut(),
-                0,
-            )
-        };
-        if rc != 0 {
+        let Some(len) = sysctl::mib_len(&mut mib) else {
             break;
-        }
+        };
         // Headroom for interfaces appearing between the two calls.
         let want = len + len / 8;
         buf.clear();
         buf.resize(want, 0);
-        let mut len = want;
-        crate::calls::count(crate::calls::Api::Kernel);
-        // SAFETY: `buf` has `len` writable bytes; the kernel writes at most `len`.
-        let rc = unsafe {
-            libc::sysctl(
-                mib.as_mut_ptr(),
-                mib.len() as u32,
-                buf.as_mut_ptr().cast(),
-                &mut len,
-                std::ptr::null_mut(),
-                0,
-            )
-        };
-        if rc == 0 {
+        if let Some(len) = sysctl::mib_into(&mut mib, buf) {
             buf.truncate(len);
             return Ok(());
         }

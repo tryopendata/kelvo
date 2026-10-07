@@ -23,6 +23,8 @@
 //!   declarations are visible to the first-party `macos/iokit.rs`, which adds child
 //!   walks and single-property reads to the same type rather than keeping a second
 //!   IOKit wrapper.
+//! - The chip name is read with the first-party `sysctl::string_in` (same 128-byte buffer,
+//!   not call-counted) instead of a private copy of it.
 //!
 //! The collectors that turn these readings into series live one level up
 //! (`macos/ioreport.rs`, `macos/smc.rs`, `macos/sensors.rs`, `macos/hid.rs`).

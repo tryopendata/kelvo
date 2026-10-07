@@ -22,7 +22,7 @@ pub mod processes;
 pub mod self_cpu;
 pub mod sensors;
 pub mod smc;
-mod sysctl;
+pub mod sysctl;
 pub mod thermal_state;
 mod vendor;
 
