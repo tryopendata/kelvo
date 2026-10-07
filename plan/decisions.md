@@ -3090,3 +3090,22 @@ Every push ran two hosted macOS jobs of about 12 minutes each (`macos-26` and th
 
 - The repo is public: hosted runners are then free, and running the macos job on push and pull_request again (or at least on pull_request) restores the PR check at no cost.
 - Outside contributions start: a PR check that does not depend on the author's hooks matters more than it does with one developer.
+
+## D-097: The live ring starts from stored history after a restart
+
+Status: Accepted. Date: 2026-10-07. Amends D-066.
+
+### Context
+
+Live charts and the per-core heatmap draw from the host's in-memory ring (D-066). After a restart the ring was empty, so a 1-hour live chart showed only the seconds since launch while the store held the hour before it. The Timeline showed that history; the module pages did not.
+
+### Decision
+
+- `LiveHub::warm` fills an empty ring from a store read of the 10 s tier over the ring's span (`RING_SPAN_MS`). One row per bucket holds each series' bucket average, at the bucket's end, since a mean or rate covers the span before its sample (D-090). Each series is held for the hold of the slower of 10 s and its catalog period, so consecutive buckets join and a missing bucket is a hole.
+- The rows carry their own layout, `WARM_LAYOUT_NO` (`u32::MAX`), which never collides with a source's layouts (numbered from 0 in a run), on timeline 0. They reach windows through the existing `Backfill` and `backfill_earlier` messages, so the wire format does not change. The rows age out of the ring as frames arrive.
+- The shell warms the local host's hub at startup, before the source starts. A ring that already has rows is never warmed. A failed read leaves it empty, as before.
+
+### Consequences
+
+- The pre-launch part of a live chart has 10 s resolution and loses each bucket's min and max. The oldest stored sample covers only its own slot. The time Kelvo was not running stays a hole.
+- A v4 remote source can warm its hub the same way from synced history.

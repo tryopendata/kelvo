@@ -32,8 +32,10 @@ use anyhow::Context;
 use kelvo_engine::{BusMsg, EngineParts, HousekeepingHandle, LocalSource, identity, retention_for};
 use kelvo_schema::settings::Appearance;
 use kelvo_schema::{
-    HostId, HostRecord, Module, ModuleCap, PerformanceReason, Settings, UnsupportedReason,
+    HostId, HostRecord, Labels, Module, ModuleCap, PerformanceReason, SeriesSelector, Settings,
+    Tier, UnsupportedReason,
 };
+use kelvo_store::{HistoryQuery, TierChoice};
 use tauri::{AppHandle, Manager, Theme};
 use tauri_specta::Event;
 
@@ -154,6 +156,8 @@ impl AppState {
             local,
             kelvo_engine::wall_ms(),
         ));
+        // Charts opened right after launch draw the hour before it from the store.
+        warm_live_ring(&state.history, &entry, local, kelvo_engine::wall_ms());
         // Managed before the source starts, so the watcher always finds the state.
         app.manage(state);
         entry.start(writer).context("starting the local source")?;
@@ -335,6 +339,39 @@ fn recent_alerts(history: &History, host: HostId, now: i64) -> Vec<kelvo_schema:
             tracing::warn!("reading recent alerts, alert cooldowns start fresh: {e:?}");
             Vec::new()
         }
+    }
+}
+
+/// Fills the host's live ring with the last hour of 10 s history, so a live chart opened
+/// after a restart shows what the previous run recorded. A read failure leaves the ring
+/// empty, as before: live charts then start at launch.
+fn warm_live_ring(history: &History, entry: &HostEntry, host: HostId, now: i64) {
+    if !history.is_available() {
+        return;
+    }
+    let query = HistoryQuery {
+        host,
+        selectors: kelvo_schema::CATALOG
+            .iter()
+            .filter(|d| d.persisted)
+            .map(|d| SeriesSelector {
+                metric: d.id.clone(),
+                labels: Labels::default(),
+            })
+            .collect(),
+        from_ms: now - kelvo_engine::RING_SPAN_MS,
+        to_ms: now,
+        tier: TierChoice::Fixed(Tier::S10),
+        // One more than the hour holds: `now` is off the 10 s grid, so the range touches
+        // a partial bucket at each end, and one slot short merges pairs into 20 s points.
+        max_points: u32::try_from(kelvo_engine::RING_SPAN_MS / 10_000 + 1).unwrap_or(u32::MAX),
+    };
+    match history.read(|r| r.history(&query)) {
+        Ok(result) => {
+            let rows = entry.warm_ring(&result);
+            tracing::info!(rows, "live ring warmed from history");
+        }
+        Err(e) => tracing::warn!("reading history for the live ring, it starts empty: {e:?}"),
     }
 }
 
@@ -541,6 +578,128 @@ mod tests {
         };
         assert_eq!(fires(&recent), 0);
         assert_eq!(fires(&[]), 1);
+        history.close();
+    }
+
+    /// A source that is never started: `warm_live_ring` only needs the entry's hub.
+    struct Unstarted(HostRecord);
+
+    impl kelvo_engine::Source for Unstarted {
+        fn host(&self) -> HostRecord {
+            self.0.clone()
+        }
+        fn capabilities(&self) -> kelvo_schema::Capabilities {
+            kelvo_schema::Capabilities::default()
+        }
+        fn start(
+            self: Arc<Self>,
+            _: kelvo_engine::SourceSink,
+        ) -> Result<kelvo_engine::SourceHandle, kelvo_engine::SourceError> {
+            Err(kelvo_engine::SourceError::AlreadyStarted)
+        }
+    }
+
+    /// The launch read that warms the live ring (D-097), against a real store: the
+    /// previous run's 10 s buckets come back at 10 s, per-core series included, cut to
+    /// the ring's hour, with the time since the quit left empty.
+    #[test]
+    fn the_live_ring_warms_from_the_last_hour_of_10s_history() {
+        const S10: i64 = 10_000;
+        const MIN: i64 = 60_000;
+        // Launch lands between ticks, as it always does in the field.
+        const LAUNCH: i64 = 1_800_000_000_000 + 4_321;
+        let data_dir = std::env::temp_dir().join(format!(
+            "kelvo-shell-warm-ring-{}-{}",
+            std::process::id(),
+            uuid::Uuid::new_v4().simple()
+        ));
+        let (history, id) = open_data_dir(&data_dir, |_| None);
+        let record = platform::local_host_record(id.id);
+        let writer = history.register_host(&record).unwrap();
+
+        // The previous run: 90 minutes of buckets, quit 20 minutes before this launch.
+        let series: Arc<[SeriesKey]> = ["cpu.total", "cpu.load{core=0}", "cpu.load{core=1}"]
+            .map(|k| SeriesKey::parse(k).unwrap())
+            .into();
+        let quit = LAUNCH - LAUNCH.rem_euclid(S10) - 20 * MIN;
+        let mut ts = quit - 90 * MIN;
+        while ts < quit {
+            let v = (ts / S10 % 100) as f32;
+            writer
+                .write_bucket(kelvo_store::BucketRow {
+                    host: id.id,
+                    tier: Tier::S10,
+                    bucket_ts: ts,
+                    series: Arc::clone(&series),
+                    stats: [
+                        v,
+                        v,
+                        v,
+                        v + 1.0,
+                        v + 1.0,
+                        v + 1.0,
+                        v + 2.0,
+                        v + 2.0,
+                        v + 2.0,
+                    ]
+                    .to_vec(),
+                })
+                .unwrap();
+            ts += S10;
+        }
+        writer.flush().unwrap();
+
+        let registry = HostRegistry::new();
+        let entry = registry.insert(record.clone(), Arc::new(Unstarted(record)));
+        warm_live_ring(&history, &entry, id.id, LAUNCH);
+
+        let segs = crate::live::LiveFeed::hub(&*entry).backfill(i64::MIN);
+        assert_eq!(segs.len(), 1, "one contiguous run of buckets");
+        let seg = &segs[0];
+        assert_eq!(seg.layout.layout_no, kelvo_engine::WARM_LAYOUT_NO);
+        assert_eq!(seg.interval_ms, 10_000, "the 10 s tier, not merged slots");
+        let keys: Vec<String> = seg.layout.series.iter().map(|k| k.to_string()).collect();
+        for k in ["cpu.total", "cpu.load{core=0}", "cpu.load{core=1}"] {
+            assert!(keys.iter().any(|s| s == k), "{k} missing from {keys:?}");
+        }
+        // The newest row is the last bucket's end; nothing is drawn after the quit.
+        let newest = seg.start_ms + (seg.rows.len() as i64 - 1) * S10;
+        assert_eq!(newest, quit);
+        // The oldest row is inside the ring's hour before launch.
+        assert!(
+            seg.start_ms >= LAUNCH - kelvo_engine::RING_SPAN_MS,
+            "{}",
+            seg.start_ms
+        );
+        // The value at each row is that bucket's average.
+        let total = keys.iter().position(|s| s == "cpu.total").unwrap();
+        let last_bucket = quit - S10;
+        assert_eq!(
+            seg.rows.last().unwrap()[total],
+            (last_bucket / S10 % 100) as f32
+        );
+        history.close();
+    }
+
+    /// No history yet (first launch) leaves the ring empty, so the first frame starts it.
+    #[test]
+    fn the_live_ring_stays_empty_without_history() {
+        let data_dir = std::env::temp_dir().join(format!(
+            "kelvo-shell-warm-empty-{}-{}",
+            std::process::id(),
+            uuid::Uuid::new_v4().simple()
+        ));
+        let (history, id) = open_data_dir(&data_dir, |_| None);
+        let record = platform::local_host_record(id.id);
+        history.register_host(&record).unwrap();
+        let registry = HostRegistry::new();
+        let entry = registry.insert(record.clone(), Arc::new(Unstarted(record)));
+        warm_live_ring(&history, &entry, id.id, 1_800_000_000_000);
+        assert!(
+            crate::live::LiveFeed::hub(&*entry)
+                .backfill(i64::MIN)
+                .is_empty()
+        );
         history.close();
     }
 

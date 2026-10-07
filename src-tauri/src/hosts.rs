@@ -54,6 +54,12 @@ impl HostEntry {
         self.live.bus()
     }
 
+    /// Fills the hub's ring from stored history before the source's first frame
+    /// ([`LiveHub::warm`]). Returns the rows added.
+    pub fn warm_ring(&self, history: &kelvo_store::HistoryResult) -> usize {
+        self.live.warm(history)
+    }
+
     /// The most recent frame, for readers that need current values without a stream (the
     /// sensor dump; the tray subscribes to the bus instead).
     pub fn latest_frame(&self) -> Option<Arc<LiveFrame>> {

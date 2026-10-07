@@ -1,6 +1,8 @@
 //! The one-hour ring buffer of raw frames, used to backfill a window's charts when it
 //! opens (architecture.md, Engine and Data flow). [`crate::LiveHub`] owns one per host
-//! and fills it from whatever source publishes for that host.
+//! and fills it from whatever source publishes for that host. Before the first frame of a
+//! run it may hold the stored 10 s buckets of the hour before ([`crate::LiveHub::warm`],
+//! D-097).
 
 use std::collections::VecDeque;
 use std::sync::Arc;

@@ -89,6 +89,8 @@ pub enum LiveMsg {
     /// `start_ms + i * interval_ms`. `null` where a series was not sampled. Segments never
     /// span a hole (sleep, pause, skipped ticks), so a reader never draws across one.
     /// `holds_ms` says, per series, how long a sample in these rows stays current (D-090).
+    /// After a restart the ring starts with up to an hour of stored 10 s bucket averages
+    /// under their own layout (`layout_no` 4294967295, D-097), so these rows can be that.
     Backfill {
         layout_no: u32,
         #[specta(type = JsSafeInt)]

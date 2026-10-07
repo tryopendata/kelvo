@@ -144,6 +144,52 @@ describe("backfill_earlier", () => {
   });
 });
 
+describe("stored history in the ring (LiveHub::warm)", () => {
+  // The rows a restarted engine reads back from the 10 s tier: their own
+  // layout number, 10 s apart, each series held 25 s.
+  const WARM = 4_294_967_295;
+  const warmLayout: LiveMsg = {
+    kind: "layout",
+    kinds: ["mean", "mean", "mean"],
+    layout_no: WARM,
+    series: SERIES,
+  };
+  const stored = (startMs: number, n: number): LiveMsg => ({
+    kind: "backfill_earlier",
+    layout_no: WARM,
+    start_ms: startMs,
+    interval_ms: 10_000,
+    rows: Array.from({ length: n }, (_, i) => [i + 1, null, 1]),
+    holds_ms: [25_000, 25_000, 25_000],
+  });
+
+  it("fills the chart grid before the live rows, without holes", () => {
+    const s = apply([
+      status,
+      warmLayout,
+      layout(),
+      rowsMsg("backfill", 100_000, 3),
+      frame(103_000),
+      // Buckets ending at 40, 50 and 60 s; the run restarted at 100 s.
+      stored(40_000, 3),
+    ]);
+    const w = seriesWindow(s, "cpu.total", 80_000).values;
+    // Slot i is 24 s + i seconds. A mean covers the span before its sample.
+    const at = (sec: number) => w[sec - 24];
+    // The oldest sample has none before it, so it covers only its own slot.
+    expect(at(39)).toBeNull();
+    expect(at(40)).toBe(1);
+    expect(at(41)).toBe(2);
+    expect(at(50)).toBe(2);
+    expect(at(55)).toBe(3);
+    expect(at(60)).toBe(3);
+    // Kelvo was not running between 60 and 100 s: a hole, not a line.
+    expect(at(70)).toBeNull();
+    expect(at(99)).toBeNull();
+    expect(at(100)).toBe(100);
+  });
+});
+
 /** Frames every second from `fromS` to `toS` seconds, timeline 0. */
 const frames = (fromS: number, toS: number): LiveMsg[] =>
   Array.from({ length: toS - fromS + 1 }, (_, i) => frame((fromS + i) * 1000));
