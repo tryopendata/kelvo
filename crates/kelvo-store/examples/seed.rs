@@ -12,8 +12,9 @@
 //!   minutes older than 7 days into 15-minute buckets, as it does in the app;
 //! - process snapshots (every 10 s for the last 72 hours, every minute before, rolled into
 //!   the per-minute and per-15-minute top 5 by pruning) and per-app network bytes;
-//! - nightly sleep gaps, the odd nap, one stretch with Kelvo quit, and the detector events
-//!   (fan ramps, sustained processes, thermal state changes) the simulated load triggers.
+//! - runs of two to five days, idling overnight, each ended by a night with the lid
+//!   closed or a few hours with Kelvo quit, and the detector events (fan ramps,
+//!   sustained processes, thermal state changes) the simulated load triggers.
 //!
 //! The days follow a working week: builds, calls and Time Machine during work hours,
 //! video or a game in the evening, unplugged stretches the battery drains through. The
@@ -456,12 +457,35 @@ impl Plan {
         let local = |t: i64| t + offset;
         let first_day = local(start).div_euclid(DAY);
         let last_day = local(end).div_euclid(DAY);
-        let days = (last_day - first_day + 1) as usize;
-        // One day on which Kelvo was quit for most of the afternoon.
-        let quit_day = first_day + (days as i64 / 3) + (rng.f() * 4.0) as i64;
+        let at_day = |day: i64, h: f32| day * DAY - offset + (h * HOUR as f32) as i64;
 
-        // Awake pieces across all days; each carries the reason of the gap after it.
-        let mut pieces: Vec<(i64, i64, GapReason)> = Vec::new();
+        // Kelvo runs for a few days at a time: the Mac idles overnight on its charger. A
+        // run ends with a night the lid was closed, or with Kelvo quit for a few hours (an
+        // update, a restart). Each piece carries the reason of the gap after it.
+        let mut pieces = vec![(start, end, GapReason::Sleep)];
+        let mut day = first_day;
+        loop {
+            day += 2 + (rng.f() * 4.0) as i64;
+            if day >= last_day {
+                break;
+            }
+            let (from, to, reason) = if rng.chance(0.6) {
+                let bed = at_day(day, 23.3 + rng.range(-1.0, 1.2));
+                let wake = at_day(day + 1, 7.5 + rng.range(-0.5, 1.5));
+                (bed, wake, GapReason::Sleep)
+            } else {
+                let quit = at_day(day, rng.range(10.0, 18.0));
+                let back = quit + (rng.range(0.5, 5.0) * HOUR as f32) as i64;
+                (quit, back, GapReason::AppNotRunning)
+            };
+            split(&mut pieces, from, to, reason);
+        }
+        let pieces: Vec<(i64, i64, GapReason)> = pieces
+            .into_iter()
+            .filter(|(s, e, _)| e - s >= MIN)
+            .map(|(s, e, after)| (s - s.rem_euclid(S10), e - e.rem_euclid(S10), after))
+            .collect();
+
         let mut episodes = Vec::new();
         let mut unplugged = Vec::new();
         let mut browsers = Vec::new();
@@ -473,27 +497,6 @@ impl Plan {
             let weekday = (day + 4).rem_euclid(7);
             let weekend = weekday == 0 || weekday == 6;
             browsers.push(rng.pick(BROWSERS));
-
-            let wake = at(7.0 + rng.range(-0.4, 1.2) + if weekend { 1.6 } else { 0.0 });
-            let bed = at(23.3 + rng.range(-1.0, 1.4));
-            let mut today = vec![(wake, bed, GapReason::Sleep)];
-            if !weekend && rng.chance(0.3) {
-                let nap = at(12.2 + rng.range(0.0, 0.6));
-                let back = nap + (rng.range(25.0, 70.0) * MIN as f32) as i64;
-                split(&mut today, nap, back, GapReason::Sleep);
-            }
-            if day == quit_day {
-                let quit = at(13.0 + rng.range(0.0, 1.0));
-                let back = quit + (rng.range(4.0, 7.0) * HOUR as f32) as i64;
-                split(&mut today, quit, back, GapReason::AppNotRunning);
-            }
-            for (s, e, after) in today {
-                let s = s.max(start);
-                let e = e.min(end);
-                if e - s >= MIN {
-                    pieces.push((s - s.rem_euclid(S10), e - e.rem_euclid(S10), after));
-                }
-            }
 
             let work = |rng: &mut Rng| {
                 if weekend {
@@ -942,6 +945,8 @@ impl Sim {
             (false, h) if (9.0..12.0).contains(&h) || (13.0..18.0).contains(&h) => 0.42,
             (false, h) if (12.0..13.0).contains(&h) => 0.22,
             (true, h) if (10.0..22.0).contains(&h) => 0.2,
+            // Overnight the Mac idles with the display off.
+            (_, h) if (1.0..7.0).contains(&h) => 0.03,
             _ => 0.14,
         };
         let a = (baseline + self.activity.step(rng)).clamp(0.02, 1.0);
