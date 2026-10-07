@@ -1,7 +1,13 @@
 import { formatClockSeconds } from "@core/format";
-import { act, fireEvent, screen } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { renderWithProviders } from "@tests/test-utils";
 import { Profiler } from "react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from "~/components/ui/dialog";
 import { BrushProvider, useBrushRange } from "~/stores/brush-store";
 import { BRUSH_SCOPE_ATTR } from "./brush-overlay";
 import { LiveMirrorChart } from "./live-mirror-chart";
@@ -171,11 +177,19 @@ describe("chart brush (D-089)", () => {
         {chart}
         <p data-testid="outside">empty</p>
         <Probe />
+        <Dialog defaultOpen>
+          <DialogContent>
+            <DialogTitle>Settings</DialogTitle>
+            <DialogDescription>A dialog over the chart.</DialogDescription>
+          </DialogContent>
+        </Dialog>
       </BrushProvider>,
       { transportOptions: { now: () => NOW } }
     );
+    // The open modal hides the chart from the accessibility tree.
     const brush = await screen.findByRole("slider", {
       name: "Select a time range",
+      hidden: true,
     });
     brush.getBoundingClientRect = () =>
       ({ left: 0, top: 0, width: WIDTH, height: 193 }) as DOMRect;
@@ -184,15 +198,16 @@ describe("chart brush (D-089)", () => {
     expect(range()).not.toBe("none");
 
     // Radix portals the overlay beside the dialog content, not inside it.
-    const backdrop = document.createElement("div");
-    const dialog = document.createElement("div");
-    dialog.setAttribute("role", "alertdialog");
-    document.body.append(backdrop, dialog);
-    fireEvent.pointerDown(backdrop, { button: 0 });
+    const overlay = document.querySelector("[data-slot=dialog-overlay]");
+    expect(overlay).not.toBeNull();
+    fireEvent.pointerDown(overlay as Element, { button: 0 });
     expect(range()).not.toBe("none");
 
-    backdrop.remove();
-    dialog.remove();
+    // Closed, the same press on empty space clears.
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+    );
     fireEvent.pointerDown(screen.getByTestId("outside"), { button: 0 });
     expect(range()).toBe("none");
   });

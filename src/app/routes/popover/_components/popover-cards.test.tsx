@@ -12,12 +12,17 @@ function GrabStore() {
 
 /** A frame like the last one, with `missing` series not measured. */
 function frameWithout(missing: string[]): LiveMsg {
+  return frameWith(Object.fromEntries(missing.map((k) => [k, null])));
+}
+
+/** A frame like the last one, with `overrides` replacing those series. */
+function frameWith(overrides: Record<string, number | null>): LiveMsg {
   const state = storeRef?.getState();
   const layoutNo = state?.layoutNo;
   if (!state || layoutNo == null) throw new Error("no layout");
   const keys = state.layouts[layoutNo]?.keys ?? [];
   const values = keys.map((k) =>
-    missing.includes(k) ? null : (state.held[k] ?? null)
+    k in overrides ? (overrides[k] ?? null) : (state.held[k] ?? null)
   );
   return {
     kind: "frame",
@@ -50,6 +55,21 @@ describe("popover memory card", () => {
       expect(value()).toBe(((used() as number) / 2 ** 30).toFixed(1))
     );
     expect(screen.getByText(/^\/ \d+ GB$/)).toBeInTheDocument();
+  });
+
+  it("keeps one decimal on used memory at 100 GB and up", async () => {
+    const { transport } = renderWithProviders(
+      <>
+        <GrabStore />
+        <LiveMemoryCard />
+      </>
+    );
+    await screen.findByText(/^\/ \d+ GB$/);
+    await waitFor(() => expect(storeRef?.getState().layoutNo).not.toBeNull());
+    act(() => transport.push(frameWith({ "mem.used": 128e9 })));
+    const value = () =>
+      screen.getByText(/^\/ \d+ GB$/).parentElement?.firstChild?.textContent;
+    expect(value()).toBe("128.0");
   });
 });
 
