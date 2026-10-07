@@ -744,9 +744,13 @@ impl UsageRing {
                 p.energy_j,
             )
         };
+        // A row that used none of the key (an app kept for its memory in a disk table)
+        // says nothing about it; the totals still count everyone.
         let mut apps: Vec<UsageApp> = apps
             .into_values()
+            .filter(|a| app_key(a) > 0.0)
             .map(|mut a| {
+                a.processes.retain(|p| proc_key(p) > 0.0);
                 a.processes
                     .sort_by(|x, y| proc_key(y).total_cmp(&proc_key(x)).then(x.pid.cmp(&y.pid)));
                 a
@@ -997,7 +1001,13 @@ mod tests {
         assert_eq!(r.covered_ms, 30_000);
         assert_eq!(r.gpu_covered_ms, 10_000);
         assert_eq!(r.apps[0].gpu_avg_pct.map(|v| v.round()), Some(40.0));
-        let none = ring.by_app(T0 + 10_000, T0 + 30_000, UsageKey::Gpu, 5);
+        // Never measured: no GPU rows, and an app's GPU reads unknown, not 0%.
+        assert!(
+            ring.by_app(T0 + 10_000, T0 + 30_000, UsageKey::Gpu, 5)
+                .apps
+                .is_empty()
+        );
+        let none = ring.by_app(T0 + 10_000, T0 + 30_000, UsageKey::Cpu, 5);
         assert_eq!(none.apps[0].gpu_avg_pct, None, "never measured, not 0%");
     }
 
@@ -1017,7 +1027,8 @@ mod tests {
         let cpu = ring.by_app(T0, T0 + 10_000, UsageKey::Cpu, 2);
         assert_eq!(names(&cpu), ["Busy", "Mid"]);
         assert!((cpu.total.cpu_avg_pct - 111.0).abs() < 1e-3);
-        let disk = ring.by_app(T0, T0 + 10_000, UsageKey::Disk, 1);
+        // The others moved no bytes: no row in the disk table.
+        let disk = ring.by_app(T0, T0 + 10_000, UsageKey::Disk, 5);
         assert_eq!(names(&disk), ["Disky"]);
         assert!((disk.apps[0].write_b - 1e7).abs() < 1.0);
     }

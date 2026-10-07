@@ -301,7 +301,10 @@ export function mockUsageByApp({
         )
       )
       .map((r) => r.proc)
+      .filter((p) => keyOf(by, p) > 0)
       .sort((a, b) => keyOf(by, b) - keyOf(by, a) || a.pid - b.pid);
+    // A row that used none of the key says nothing about it (`usage.rs`).
+    if (keyOf(by, usage) <= 0) continue;
     const main = running.find((r) => r.main);
     apps.push({
       name,
