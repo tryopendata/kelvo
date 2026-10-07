@@ -8,7 +8,7 @@ use rusqlite::params;
 
 use super::State;
 use crate::blob::{self, PackedProc};
-use crate::db;
+use crate::db::{self, HistoryKind};
 use crate::error::Result;
 use crate::rolldown::{NetFold, StatsFold};
 use crate::types::{CapTrim, PruneReport, Retention};
@@ -167,28 +167,42 @@ impl State {
                 break;
             }
             for host_ref in self.host_refs()? {
-                let (m15, e) = self.delete_batched("tier_15m", "bucket_ts", host_ref, cutoff)?;
-                let (m1, a) = self.delete_batched("tier_1m", "bucket_ts", host_ref, cutoff)?;
-                let (gaps, b) = self.delete_batched("gaps", "end_ts", host_ref, cutoff)?;
-                let (events, c) = self.delete_batched("events", "ts", host_ref, cutoff)?;
-                let (top15, _) =
-                    self.delete_batched("proc_top_15m", "bucket_ts", host_ref, cutoff)?;
-                let (top, _) = self.delete_batched("proc_top_1m", "bucket_ts", host_ref, cutoff)?;
-                let (s10, d) = self.delete_batched("tier_10s", "bucket_ts", host_ref, cutoff)?;
-                let (snaps, _) = self.delete_batched("proc_snap", "ts", host_ref, cutoff)?;
-                for table in ["proc_net_15m", "proc_net_1m", "proc_net_10s"] {
-                    let (n, _) = self.delete_batched(table, "bucket_ts", host_ref, cutoff)?;
-                    trim.net_rows += n;
+                // Highest deleted `seq` per `pruned` mark: M1 also covers gaps and events.
+                let (mut m1, mut m15, mut s10) = (None, None, None);
+                for table in db::HISTORY_TABLES {
+                    let Some(col) = table.trim_col else {
+                        continue;
+                    };
+                    let (n, max) = self.delete_batched(table.name, col, host_ref, cutoff)?;
+                    match table.kind {
+                        HistoryKind::M1 => {
+                            trim.m1_rows += n;
+                            m1 = m1.max(max);
+                        }
+                        HistoryKind::M15 => {
+                            trim.m15_rows += n;
+                            m15 = m15.max(max);
+                        }
+                        HistoryKind::S10 => {
+                            trim.s10_rows += n;
+                            s10 = s10.max(max);
+                        }
+                        HistoryKind::Gaps => {
+                            trim.gaps += n;
+                            m1 = m1.max(max);
+                        }
+                        HistoryKind::Events => {
+                            trim.events += n;
+                            m1 = m1.max(max);
+                        }
+                        HistoryKind::Proc => trim.proc_rows += n,
+                        HistoryKind::Net => trim.net_rows += n,
+                        HistoryKind::Cursors => {}
+                    }
                 }
-                self.mark_pruned(host_ref, Tier::M1, a.max(b).max(c), cutoff)?;
-                self.mark_pruned(host_ref, Tier::M15, e, cutoff)?;
-                self.mark_pruned(host_ref, Tier::S10, d, cutoff)?;
-                trim.m1_rows += m1;
-                trim.m15_rows += m15;
-                trim.gaps += gaps;
-                trim.events += events;
-                trim.proc_rows += top + top15 + snaps;
-                trim.s10_rows += s10;
+                self.mark_pruned(host_ref, Tier::M1, m1, cutoff)?;
+                self.mark_pruned(host_ref, Tier::M15, m15, cutoff)?;
+                self.mark_pruned(host_ref, Tier::S10, s10, cutoff)?;
             }
             trim.earliest_ts_ms = cutoff;
             self.incremental_vacuum()?;

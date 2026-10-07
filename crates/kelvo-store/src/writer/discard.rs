@@ -4,26 +4,21 @@ use kelvo_schema::{HostId, Tier};
 use rusqlite::params;
 
 use super::State;
+use crate::db;
 use crate::error::Result;
 
 impl State {
     pub(super) fn discard_from(&mut self, host: HostId, from: i64) -> Result<()> {
         let host_ref = self.host_ref(host)?;
-        for (table, col) in [
-            ("tier_10s", "bucket_ts"),
-            ("tier_1m", "bucket_ts"),
-            ("tier_15m", "bucket_ts"),
-            ("proc_snap", "ts"),
-            ("proc_top_1m", "bucket_ts"),
-            ("proc_top_15m", "bucket_ts"),
-            ("proc_net_10s", "bucket_ts"),
-            ("proc_net_1m", "bucket_ts"),
-            ("proc_net_15m", "bucket_ts"),
-            ("events", "ts"),
-            ("gaps", "start_ts"),
-        ] {
+        for table in db::HISTORY_TABLES {
+            let Some(col) = table.discard_col else {
+                continue;
+            };
             self.conn.execute(
-                &format!("DELETE FROM {table} WHERE host_id = ?1 AND {col} >= ?2"),
+                &format!(
+                    "DELETE FROM {} WHERE host_id = ?1 AND {col} >= ?2",
+                    table.name
+                ),
                 params![host_ref, from],
             )?;
         }
@@ -43,7 +38,7 @@ impl State {
         Ok(())
     }
 
-    /// [`Writer::discard_from`]. A batch before it that fails to commit is lost as any
+    /// [`super::Writer::discard_from`]. A batch before it that fails to commit is lost as any
     /// other (its span recorded as `write_failed`), and the discard still runs.
     pub(super) fn discard_committed(&mut self, host: HostId, from: i64) -> Result<()> {
         self.commit_logged();
@@ -75,22 +70,11 @@ impl State {
                     params![host_ref, tier.as_str(), last, now],
                 )?;
             }
-            for table in [
-                "tier_10s",
-                "tier_1m",
-                "tier_15m",
-                "gaps",
-                "events",
-                "proc_snap",
-                "proc_top_1m",
-                "proc_top_15m",
-                "proc_net_10s",
-                "proc_net_1m",
-                "proc_net_15m",
-                "cursors",
-            ] {
-                s.conn
-                    .execute(&format!("DELETE FROM {table} WHERE host_id = ?1"), [host_ref])?;
+            for table in db::HISTORY_TABLES {
+                s.conn.execute(
+                    &format!("DELETE FROM {} WHERE host_id = ?1", table.name),
+                    [host_ref],
+                )?;
             }
             Ok(())
         })?;
