@@ -1,6 +1,7 @@
 import {
   bytesParts,
   formatBytes,
+  formatClockSeconds,
   formatDuration,
   formatEnergy,
   formatHoursMinutes,
@@ -201,5 +202,17 @@ describe("formatHoursMinutes", () => {
     expect(formatHoursMinutes(5 * MIN)).toBe("0:05");
     expect(formatHoursMinutes(26 * HOUR)).toBe("26:00");
     expect(formatHoursMinutes(12 * MIN + 59_999)).toBe("0:12");
+  });
+});
+
+describe("formatClockSeconds", () => {
+  it("pads local hours, minutes and seconds", () => {
+    expect(formatClockSeconds(new Date(2026, 9, 4, 9, 5, 7).getTime())).toBe(
+      "09:05:07"
+    );
+    expect(formatClockSeconds(new Date(2026, 9, 4, 23, 0, 0).getTime())).toBe(
+      "23:00:00"
+    );
+    expect(formatClockSeconds(null)).toBe(MISSING);
   });
 });
