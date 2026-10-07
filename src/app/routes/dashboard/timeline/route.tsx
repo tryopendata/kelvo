@@ -1,9 +1,6 @@
 import { formatMarketingMemory } from "@core/format";
 import type { ModuleCap } from "@core/generated/bindings";
 import { historyUnavailable } from "@core/history-state";
-import { hostKeys } from "@core/query-keys";
-import { unwrap } from "@core/transport";
-import { useQuery } from "@tanstack/react-query";
 import { ChevronLeftIcon, ChevronRightIcon, DownloadIcon } from "lucide-react";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { HistoryNotices } from "~/components/history-notices";
@@ -11,8 +8,8 @@ import { SegmentedControl } from "~/components/segmented-control";
 import { Button } from "~/components/ui/button";
 import { useEvents } from "~/hooks/use-events";
 import { useHistoryHealth } from "~/hooks/use-history-health";
-import { useTransport } from "~/lib/transport-context";
-import { useHost, useHostId } from "~/stores/host-store";
+import { useHostRecord } from "~/hooks/use-host-record";
+import { useHost } from "~/stores/host-store";
 import { useSettings } from "~/stores/settings-store";
 import { HeatmapCard } from "./_components/heatmap-card";
 import { LanesCard } from "./_components/lanes-card";
@@ -41,8 +38,6 @@ const available = (cap: ModuleCap | undefined) =>
  * the range control shows none selected and Live returns to 24h.
  */
 export default function TimelineRoute() {
-  const transport = useTransport();
-  const hostId = useHostId();
   const [view, setView] = useState<TimelineView>({ span: "24h", endMs: null });
   const live = view.endMs === null;
   const caps = useHost((s) => s.capabilities);
@@ -65,11 +60,7 @@ export default function TimelineRoute() {
   const otherError =
     data.error && !historyUnavailable(data.error.error) ? data.error : null;
 
-  const { data: host } = useQuery({
-    queryKey: hostKeys.detail(hostId),
-    queryFn: () => unwrap(transport.getHost(hostId)),
-    staleTime: Number.POSITIVE_INFINITY,
-  });
+  const host = useHostRecord();
   const memTotal = host
     ? formatMarketingMemory(host.info.mem_total_bytes)
     : null;

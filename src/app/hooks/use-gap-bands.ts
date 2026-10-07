@@ -1,7 +1,7 @@
 import { type Gap, type Module, RING_SPAN_MS } from "@core/generated/bindings";
+import { probeHistory } from "@core/history-probe";
 import { type GapBandSpec, gapBands } from "@core/history-state";
 import { historyKeys } from "@core/query-keys";
-import { unwrap } from "@core/transport";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { useTransport } from "~/lib/transport-context";
@@ -31,16 +31,13 @@ function useRingGaps(): readonly Gap[] {
     queryFn: async () => {
       // The ring's clock: gaps and chart axes are both host time.
       const now = store.getState().lastTsMs ?? 0;
-      const page = await unwrap(
-        transport.queryHistory({
-          host: hostId,
-          selectors: [{ metric: "cpu.total", labels: [] }],
-          from_ms: now - RING_SPAN_MS - REFRESH_MS,
-          to_ms: now,
-          tier: "auto",
-          max_points: 1,
-        })
-      );
+      const page = await probeHistory(transport, {
+        host: hostId,
+        metric: "cpu.total",
+        fromMs: now - RING_SPAN_MS - REFRESH_MS,
+        toMs: now,
+        maxPoints: 1,
+      });
       return page.gaps;
     },
     // Charts have no axis before the first row, and the query needs its time.

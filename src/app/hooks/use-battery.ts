@@ -6,8 +6,8 @@ import {
 import { historyKeys } from "@core/query-keys";
 import { unwrap } from "@core/transport";
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
+import { useNextBoundary } from "~/hooks/use-next-boundary";
 import { useTransport } from "~/lib/transport-context";
 import { type HostLiveState, useHost, useHostId } from "~/stores/host-store";
 
@@ -41,17 +41,11 @@ export function useBatteryDetail(): BatteryDetail {
  * The bars' local hour boundaries, moving on when the current hour closes.
  */
 function useHourStarts(): number[] {
-  const [starts, setStarts] = useState(() => batteryHourStarts(new Date()));
-  const end = starts[starts.length - 1] as number;
-  useEffect(() => {
-    const t = setTimeout(
-      () => setStarts(batteryHourStarts(new Date())),
-      Math.max(1000, end - Date.now() + 1000)
-    );
-    return () => clearTimeout(t);
-  }, [end]);
-  return starts;
+  return useNextBoundary(currentHourStarts, lastStart);
 }
+
+const currentHourStarts = () => batteryHourStarts(new Date());
+const lastStart = (starts: number[]) => starts[starts.length - 1] as number;
 
 /**
  * How often the bars refresh: Rust answers through now (D-092), and a bar is
