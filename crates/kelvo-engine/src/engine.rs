@@ -1595,7 +1595,7 @@ impl Engine {
         self.close_net_as_is(self.ticker.now());
         if step < 0 {
             self.sink.live.net_drop_after(ts);
-            self.sink.live.energy_drop_after(ts);
+            self.sink.live.usage_drop_after(ts);
         }
         for at in self.sampled_at.iter_mut().chain(&mut self.slot_sampled_at) {
             if *at != i64::MIN {

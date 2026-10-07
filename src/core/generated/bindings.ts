@@ -103,6 +103,25 @@ export const commands = {
 	 */
 	queryEnergyByApp: (host: HostId, fromMs: Millis, toMs: Millis) => typedError<EnergyByApp, CommandError>(__TAURI_INVOKE("query_energy_by_app", { host, fromMs, toMs })),
 	/**
+	 *  Which apps used CPU, GPU, memory, disk and energy over `[from_ms, to_ms)` (D-099),
+	 *  widened to whole 10 s buckets, from the last hour of process samples the host's hub
+	 *  keeps in memory: the largest `limit` by `by`. A range reaching further back is
+	 *  answered for the part inside that hour, and `since_ms` says where counting started.
+	 *  `other` is what the host's own series measured beyond them over the covered part.
+	 *  `remote_host` for a host other than this Mac; `invalid_argument` when `to_ms` is
+	 *  before `from_ms`.
+	 */
+	queryUsageByApp: (host: HostId, fromMs: Millis, toMs: Millis, by: UsageKey, limit: number) => typedError<UsageByApp, CommandError>(__TAURI_INVOKE("query_usage_by_app", { host, fromMs, toMs, by, limit })),
+	/**
+	 *  Unlabelled metrics over `[from_ms, to_ms)`, widened to whole buckets and cut at now,
+	 *  from their rollups through now: each one's span-weighted average, largest sample and
+	 *  integral over the measured time (gaps that apply to its module left out). With
+	 *  history unavailable, the engine's last 15 minutes alone. `invalid_argument` when
+	 *  `to_ms` is before `from_ms`, the range is longer than the longest history retention,
+	 *  or a metric is labelled or unknown.
+	 */
+	querySeriesStats: (host: HostId, metrics: string[], fromMs: Millis, toMs: Millis) => typedError<SeriesStats, CommandError>(__TAURI_INVOKE("query_series_stats", { host, metrics, fromMs, toMs })),
+	/**
 	 *  The addresses of the interface carrying the default route. Read from the system on
 	 *  each call; no network request. `remote_host` for a host other than this Mac.
 	 */
@@ -231,8 +250,6 @@ export const events = {
 /* Constants */
 export const CLAMP_SLACK_BYTES = 8192 as const;
 
-export const ENERGY_BUCKET_MS = 10000 as const;
-
 export const HEADER_BYTES_PER_PACKET = 66 as const;
 
 export const HISTORY_COMMIT_MS = 300000 as const;
@@ -252,6 +269,8 @@ export const MENU_BAR_MODES = {"battery":["value_label","own_value","hidden"],"c
 export const METRIC_CODES = {"mem.pressure_level":{"critical":2,"normal":0,"warn":1},"power.cpu_source":{"calibrated":2,"seeded":3,"uncalibrated":1},"thermal.state":{"critical":3,"fair":1,"nominal":0,"serious":2}} as const;
 
 export const METRIC_KINDS = {"battery.capacity_wh":"gauge","battery.charge":"gauge","battery.charging":"gauge","battery.cycles":"gauge","battery.design_wh":"gauge","battery.external":"gauge","battery.health":"gauge","battery.power":"gauge","battery.temp":"gauge","battery.time_remaining":"gauge","cpu.cluster.active":"mean","cpu.cluster.freq":"mean","cpu.cluster.power":"mean","cpu.cluster.residency":"mean","cpu.load":"mean","cpu.loadavg":"gauge","cpu.system":"mean","cpu.total":"mean","cpu.user":"mean","disk.free":"gauge","disk.read":"rate","disk.read_total":"rate","disk.total":"gauge","disk.used":"gauge","disk.write":"rate","disk.write_total":"rate","fan.max":"gauge","fan.mode":"gauge","fan.rpm":"gauge","gpu.freq":"mean","gpu.render":"gauge","gpu.residency":"mean","gpu.tiler":"gauge","gpu.util":"gauge","mem.app":"gauge","mem.cached":"gauge","mem.compressed":"gauge","mem.free":"gauge","mem.pressure":"gauge","mem.pressure_level":"gauge","mem.swap_in":"rate","mem.swap_out":"rate","mem.swap_used":"gauge","mem.used":"gauge","mem.wired":"gauge","net.link_rate":"gauge","net.rx":"rate","net.rx_total":"rate","net.tx":"rate","net.tx_total":"rate","power.ane":"mean","power.cpu":"mean","power.cpu_source":"gauge","power.dram":"mean","power.gpu":"mean","power.package":"mean","power.system":"gauge","self.cpu":"mean","thermal.cpu":"gauge","thermal.gpu":"gauge","thermal.hottest":"gauge","thermal.sensor":"gauge","thermal.state":"gauge","thermal.zone":"gauge"} as const;
+
+export const METRIC_MODULES = {"battery.capacity_wh":"battery","battery.charge":"battery","battery.charging":"battery","battery.cycles":"battery","battery.design_wh":"battery","battery.external":"battery","battery.health":"battery","battery.power":"battery","battery.temp":"battery","battery.time_remaining":"battery","cpu.cluster.active":"cpu","cpu.cluster.freq":"cpu","cpu.cluster.power":"cpu","cpu.cluster.residency":"cpu","cpu.load":"cpu","cpu.loadavg":"cpu","cpu.system":"cpu","cpu.total":"cpu","cpu.user":"cpu","disk.free":"disk","disk.read":"disk","disk.read_total":"disk","disk.total":"disk","disk.used":"disk","disk.write":"disk","disk.write_total":"disk","fan.max":"sensors","fan.mode":"sensors","fan.rpm":"sensors","gpu.freq":"gpu","gpu.render":"gpu","gpu.residency":"gpu","gpu.tiler":"gpu","gpu.util":"gpu","mem.app":"memory","mem.cached":"memory","mem.compressed":"memory","mem.free":"memory","mem.pressure":"memory","mem.pressure_level":"memory","mem.swap_in":"memory","mem.swap_out":"memory","mem.swap_used":"memory","mem.used":"memory","mem.wired":"memory","net.link_rate":"network","net.rx":"network","net.rx_total":"network","net.tx":"network","net.tx_total":"network","power.ane":"power","power.cpu":"power","power.cpu_source":"power","power.dram":"power","power.gpu":"power","power.package":"power","power.system":"power","self.cpu":"cpu","thermal.cpu":"sensors","thermal.gpu":"sensors","thermal.hottest":"sensors","thermal.sensor":"sensors","thermal.state":"sensors","thermal.zone":"sensors"} as const;
 
 export const METRIC_PERIODS_MS = {"battery.capacity_wh":60000,"battery.charge":10000,"battery.charging":10000,"battery.cycles":60000,"battery.design_wh":60000,"battery.external":10000,"battery.health":60000,"battery.power":10000,"battery.temp":10000,"battery.time_remaining":10000,"cpu.cluster.active":1000,"cpu.cluster.freq":1000,"cpu.cluster.power":1000,"cpu.cluster.residency":1000,"cpu.load":1000,"cpu.loadavg":5000,"cpu.system":1000,"cpu.total":1000,"cpu.user":1000,"disk.free":60000,"disk.read":1000,"disk.read_total":1000,"disk.total":60000,"disk.used":60000,"disk.write":1000,"disk.write_total":1000,"fan.max":60000,"fan.mode":60000,"fan.rpm":2000,"gpu.freq":1000,"gpu.render":1000,"gpu.residency":1000,"gpu.tiler":1000,"gpu.util":1000,"mem.app":1000,"mem.cached":1000,"mem.compressed":1000,"mem.free":1000,"mem.pressure":1000,"mem.pressure_level":1000,"mem.swap_in":1000,"mem.swap_out":1000,"mem.swap_used":1000,"mem.used":1000,"mem.wired":1000,"net.link_rate":60000,"net.rx":1000,"net.rx_total":1000,"net.tx":1000,"net.tx_total":1000,"power.ane":1000,"power.cpu":1000,"power.cpu_source":1000,"power.dram":1000,"power.gpu":1000,"power.package":1000,"power.system":1000,"self.cpu":10000,"thermal.cpu":5000,"thermal.gpu":5000,"thermal.hottest":5000,"thermal.sensor":5000,"thermal.state":2000,"thermal.zone":5000} as const;
 
@@ -276,6 +295,8 @@ export const SAMPLING_PLANS = [{"ac":{"background_processes_ms":30000,"backgroun
 export const SETTINGS_MODULES = ["cpu","gpu","memory","power","network","disk","battery"] as const;
 
 export const SIZE_LIMITS_MB = [150,300,500,1000] as const;
+
+export const USAGE_BUCKET_MS = 10000 as const;
 
 /* Types */
 /**  Why an alert fired. */
@@ -324,6 +345,39 @@ export type AppEnergy = {
 	quit_pid: number | null,
 	/**  Largest first. */
 	processes: ProcessEnergy[],
+};
+
+/**
+ *  One app's use over a range: every one of its processes, summed at each sample, with
+ *  no floor (D-099). Helpers count toward their app by the identity rule per-app network
+ *  uses (D-089).
+ */
+export type AppUsage = {
+	/**  "Google Chrome", "Safari", `node`; the process name when no app was resolved. */
+	name: string,
+	/**  Average percent of one core over the covered time. */
+	cpu_avg_pct: number | null,
+	/**
+	 *  Average percent of the GPU over `gpu_covered_ms`; `null` when GPU was never
+	 *  measured.
+	 */
+	gpu_avg_pct: number | null,
+	/**  The largest footprint of its processes summed at one sample. */
+	mem_peak_bytes: number,
+	/**  Average footprint over the time it was running. */
+	mem_avg_bytes: number,
+	read_bytes: number | null,
+	write_bytes: number | null,
+	energy_j: number | null,
+	avg_w: number | null,
+	/**
+	 *  The process that Quit on the app's row acts on: its running main executable,
+	 *  or, for an app without one (a CLI), its only running process. `null` when
+	 *  neither exists; each running process can still be quit on its own.
+	 */
+	quit_pid: number | null,
+	/**  Ordered like the apps. */
+	processes: ProcessUsage[],
 };
 
 export type Appearance = "system" | "light" | "dark";
@@ -1104,6 +1158,19 @@ export type MetricKind =
  */
 "counter";
 
+/**  One metric of a `query_series_stats` answer. */
+export type MetricStat = {
+	metric: string,
+	/**  Time inside the range with a reading, outside the gaps that apply to the metric. */
+	measured_ms: number,
+	/**  Span-weighted average over the measured time; `null` when nothing was measured. */
+	avg: number | null,
+	/**  The largest sample; `null` when nothing was measured. */
+	max: number | null,
+	/**  `avg` times the measured seconds: bytes for a bytes-per-second metric. */
+	integral: number | null,
+};
+
 /**
  *  A process start time in microseconds since the Unix epoch, as `LiveProcess` carries
  *  it, passed as a plain JS `number` (D-039).
@@ -1412,6 +1479,37 @@ export type ProcessSort = "cpu" | "memory" | "threads" | "wakeups" | "energy" | 
 /**  Share of the GPU. Rows without a value rank last. */
 "gpu";
 
+/**
+ *  One process's use over a `query_usage_by_app` range: an expanded app row. Kept only
+ *  above a floor, so an app's processes need not add up to it.
+ */
+export type ProcessUsage = {
+	pid: number,
+	/**  With `pid`, the process's identity, as on `LiveProcess`. */
+	start_time_us: number,
+	name: string,
+	/**  Average percent of one core over the covered time. */
+	cpu_avg_pct: number | null,
+	/**
+	 *  Average percent of the GPU over the time GPU was measured; `null` when it never
+	 *  was.
+	 */
+	gpu_avg_pct: number | null,
+	/**  Largest footprint at one sample. */
+	mem_peak_bytes: number,
+	read_bytes: number | null,
+	write_bytes: number | null,
+	energy_j: number | null,
+	avg_w: number | null,
+	/**  It was in the newest process sample. An exited process cannot be quit. */
+	running: boolean,
+	/**
+	 *  Why Quit and Force Quit refuse it, as on `LiveProcess`; `null` for an exited
+	 *  process too, which has nothing to quit.
+	 */
+	refusal: SignalRefusal | null,
+};
+
 /**  How a window wants process rows (`set_process_interest`). */
 export type ProcessView = {
 	/**
@@ -1530,6 +1628,18 @@ export type SeriesSelector = {
 	metric: MetricId,
 	/**  Empty matches any labels. Otherwise every pair must appear in the series' labels. */
 	labels: Labels,
+};
+
+/**  `query_series_stats`: unlabelled metrics over a range, from their rollups through now. */
+export type SeriesStats = {
+	/**
+	 *  The range the stats cover: the request widened to whole buckets of the tier that
+	 *  answered and cut at now.
+	 */
+	from_ms: number,
+	to_ms: number,
+	/**  One per metric asked for, in order. */
+	metrics: MetricStat[],
 };
 
 export type Settings = {
@@ -1694,6 +1804,78 @@ export type UpdateStatus =
 { kind: "disabled" } | 
 /**  This build has no update source yet. */
 { kind: "not_configured" };
+
+/**
+ *  `query_usage_by_app`: which apps used CPU, GPU, memory, disk and energy over a range,
+ *  from the last hour of process samples Kelvo keeps in memory (D-093, D-099). Your
+ *  processes only; `other` holds the rest.
+ */
+export type UsageByApp = {
+	/**  The range the sums cover: the request widened to whole 10 s buckets. */
+	from_ms: number,
+	to_ms: number,
+	/**
+	 *  When Kelvo started counting (this launch, or the last history clear); `null`
+	 *  before the first process sample. After `from_ms`, the range is covered only from
+	 *  here.
+	 */
+	since_ms: number | null,
+	/**
+	 *  Time inside the range a process sample covered, ms. Averages divide by it; 0 means
+	 *  not measured, not zero use.
+	 */
+	covered_ms: number,
+	/**  The part of `covered_ms` whose samples measured GPU. */
+	gpu_covered_ms: number,
+	total: UsageTotal,
+	other: UsageOther,
+	/**  The largest `limit` by the requested key, largest first. */
+	apps: AppUsage[],
+};
+
+/**  What `query_usage_by_app` sorts apps by (D-099). */
+export type UsageKey = 
+/**  Average CPU. */
+"cpu" | 
+/**  Average GPU. */
+"gpu" | 
+/**  Peak footprint. */
+"memory" | 
+/**  Bytes read plus written. */
+"disk" | 
+/**  Joules. */
+"energy";
+
+/**
+ *  What the host measured beyond Kelvo's processes ("System and other"): the host's
+ *  own series over the same range less `UsageByApp.total`. It holds other users' and
+ *  root's processes and those that lived less than one sample. `null` fields where the
+ *  series was not recorded (module off, GPU never measured).
+ */
+export type UsageOther = {
+	/**  Percent of one core: `cpu.total` times the cores, less the apps. */
+	cpu_avg_pct: number | null,
+	/**  `gpu.util` less the apps. */
+	gpu_avg_pct: number | null,
+	/**  `disk.read_total` bytes less the apps'. */
+	read_bytes: number | null,
+	write_bytes: number | null,
+	/**
+	 *  The apps exceeded the host total somewhere (the two are sampled differently), and
+	 *  a remainder was clamped to 0.
+	 */
+	clamped: boolean,
+};
+
+/**  Every process's use over the range, before any floor: what shares are of. */
+export type UsageTotal = {
+	cpu_avg_pct: number | null,
+	gpu_avg_pct: number | null,
+	read_bytes: number | null,
+	write_bytes: number | null,
+	energy_j: number | null,
+	avg_w: number | null,
+};
 
 /**
  *  What every window root reflects as attributes: `data-performance`,

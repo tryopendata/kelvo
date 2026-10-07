@@ -8,21 +8,12 @@
  */
 import {
   type AppEnergy,
-  ENERGY_BUCKET_MS as BUCKET_MS,
+  USAGE_BUCKET_MS as BUCKET_MS,
   type EnergyByApp,
   type LiveProcess,
   type ProcessEnergy,
 } from "@core/generated/bindings";
-
-/** Helpers and services, by the app the identity rule charges them to. */
-const APP_OF: Record<string, string> = {
-  "Safari Web Content": "Safari",
-  SourceKitService: "Xcode",
-  "Code Helper (Renderer)": "Code",
-  "Google Chrome Helper (Renderer)": "Google Chrome",
-  "Slack Helper": "Slack",
-  "com.apple.WebKit.WebContent": "Safari",
-};
+import { APP_OF } from "./usage";
 
 /** Processes that ran during the window and have exited: `[app, name, pid, watts]`. */
 const EXITED: readonly [string, string, number, number][] = [

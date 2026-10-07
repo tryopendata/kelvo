@@ -64,6 +64,7 @@ import type {
   HistoryGrowth,
   HistoryHealth,
   HistoryHealthChanged,
+  HistoryRequest,
   HostId,
   HostsChanged,
   LiveMsg,
@@ -99,6 +100,7 @@ import {
   type ScenarioFlags,
   type ScenarioName,
   scenarioFlags,
+  TOPOLOGY,
   withGpuPct,
   withNetRates,
   withPorts,
@@ -111,6 +113,7 @@ import {
   mockHistory,
   mockNetworkTotals,
   mockRecentHistory,
+  mockSeriesStats,
 } from "./mock/history";
 import {
   appsReportedTo,
@@ -119,6 +122,7 @@ import {
   NET_COLLECTION_DELAY_MS,
   NET_MAX_SPAN_MS,
 } from "./mock/net-apps";
+import { mockUsageByApp } from "./mock/usage";
 import type { ProcessSignalError, ProcessSignalResult } from "./process-signal";
 import { samplingPlan } from "./sampling-plans";
 import { INTERVALS_MS, SIZE_LIMITS_MB } from "./settings-patch";
@@ -576,6 +580,17 @@ export function createMockTransport(
     }
     return out;
   };
+  /** A history read as `history_through_now` answers it, unavailable or not. */
+  const historyPage = (req: HistoryRequest) =>
+    unavailable
+      ? mockRecentHistory(req, gen.specs, now(), status.interval_ms)
+      : mockHistory(
+          req,
+          gen.specs,
+          mockGaps(flags, startMs),
+          now(),
+          status.interval_ms
+        );
   // Processes quit through `process_signal`, by pid; they leave later rows.
   const signalled = new Set<number>();
   const processRows = () =>
@@ -1263,6 +1278,68 @@ export function createMockTransport(
         })
       );
     },
+    async queryUsageByApp(host, fromMs, toMs, by, limit) {
+      record("query_usage_by_app", host, fromMs, toMs, by, limit);
+      const bad = unknownHost(host);
+      if (bad) return bad;
+      if (toMs < fromMs) {
+        return err({
+          kind: "invalid_argument",
+          message: "the range ends before it starts",
+        });
+      }
+      const latestMs = rows[rows.length - 1]?.ts ?? startMs;
+      // The engine keeps an hour; the mock's ring is its whole run.
+      const sinceMs = Math.max(ringStartMs, latestMs - 3_600_000);
+      const gpu = caps.process_gpu === true;
+      const from = Math.max(fromMs, sinceMs);
+      const stats =
+        from < toMs
+          ? mockSeriesStats(
+              host,
+              ["cpu.total", "gpu.util", "disk.read_total", "disk.write_total"],
+              from,
+              toMs,
+              now(),
+              historyPage
+            )
+          : null;
+      return ok(
+        mockUsageByApp({
+          processes: gpu ? withGpuPct(processRows()) : processRows(),
+          user: MOCK_USER,
+          fromMs,
+          toMs,
+          sinceMs,
+          latestMs,
+          by,
+          limit,
+          gpu,
+          stats,
+          cores: TOPOLOGY.reduce((n, c) => n + c.cores.length, 0),
+        })
+      );
+    },
+    async querySeriesStats(host, metrics, fromMs, toMs) {
+      record("query_series_stats", host, metrics, fromMs, toMs);
+      const bad = unknownHost(host);
+      if (bad) return bad;
+      if (toMs < fromMs) {
+        return err({
+          kind: "invalid_argument",
+          message: "the range ends before it starts",
+        });
+      }
+      if (toMs - fromMs > NET_MAX_SPAN_MS) {
+        return err({
+          kind: "invalid_argument",
+          message: "the range is longer than history keeps",
+        });
+      }
+      return ok(
+        mockSeriesStats(host, metrics, fromMs, toMs, now(), historyPage)
+      );
+    },
     async getNetworkAddresses(host) {
       record("get_network_addresses", host);
       const bad = unknownHost(host);
@@ -1320,19 +1397,7 @@ export function createMockTransport(
           message: "the range is longer than history keeps",
         });
       }
-      return ok(
-        mockNetworkTotals(host, fromMs, toMs, now(), (req) =>
-          unavailable
-            ? mockRecentHistory(req, gen.specs, now(), status.interval_ms)
-            : mockHistory(
-                req,
-                gen.specs,
-                mockGaps(flags, startMs),
-                now(),
-                status.interval_ms
-              )
-        )
-      );
+      return ok(mockNetworkTotals(host, fromMs, toMs, now(), historyPage));
     },
     async batteryHours(host, hourStartsMs) {
       record("battery_hours", host, hourStartsMs);

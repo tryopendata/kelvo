@@ -729,6 +729,7 @@ fn proc(pid: i32, cpu: f32, mem: u64) -> ProcessSample {
         idle_wakeups_per_s: 0.0,
         energy: 0.0,
         energy_j: 0.0,
+        interval_s: 1.0,
         app: None,
         app_main: false,
         disk_read_bps: 0.0,

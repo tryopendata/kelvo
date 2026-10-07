@@ -656,6 +656,165 @@ pub struct EnergyByApp {
     pub apps: Vec<AppEnergy>,
 }
 
+/// What `query_usage_by_app` sorts apps by (D-099).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum UsageKey {
+    /// Average CPU.
+    Cpu,
+    /// Average GPU.
+    Gpu,
+    /// Peak footprint.
+    Memory,
+    /// Bytes read plus written.
+    Disk,
+    /// Joules.
+    Energy,
+}
+
+/// One process's use over a `query_usage_by_app` range: an expanded app row. Kept only
+/// above a floor, so an app's processes need not add up to it.
+#[derive(Clone, Debug, PartialEq, Serialize, specta::Type)]
+pub struct ProcessUsage {
+    pub pid: i32,
+    /// With `pid`, the process's identity, as on `LiveProcess`.
+    #[specta(type = JsSafeInt)]
+    pub start_time_us: i64,
+    pub name: String,
+    /// Average percent of one core over the covered time.
+    pub cpu_avg_pct: f64,
+    /// Average percent of the GPU over the time GPU was measured; `null` when it never
+    /// was.
+    pub gpu_avg_pct: Option<f64>,
+    /// Largest footprint at one sample.
+    #[specta(type = JsSafeInt)]
+    pub mem_peak_bytes: u64,
+    pub read_bytes: f64,
+    pub write_bytes: f64,
+    pub energy_j: f64,
+    pub avg_w: f64,
+    /// It was in the newest process sample. An exited process cannot be quit.
+    pub running: bool,
+    /// Why Quit and Force Quit refuse it, as on `LiveProcess`; `null` for an exited
+    /// process too, which has nothing to quit.
+    pub refusal: Option<SignalRefusal>,
+}
+
+/// One app's use over a range: every one of its processes, summed at each sample, with
+/// no floor (D-099). Helpers count toward their app by the identity rule per-app network
+/// uses (D-089).
+#[derive(Clone, Debug, PartialEq, Serialize, specta::Type)]
+pub struct AppUsage {
+    /// "Google Chrome", "Safari", `node`; the process name when no app was resolved.
+    pub name: String,
+    /// Average percent of one core over the covered time.
+    pub cpu_avg_pct: f64,
+    /// Average percent of the GPU over `gpu_covered_ms`; `null` when GPU was never
+    /// measured.
+    pub gpu_avg_pct: Option<f64>,
+    /// The largest footprint of its processes summed at one sample.
+    #[specta(type = JsSafeInt)]
+    pub mem_peak_bytes: u64,
+    /// Average footprint over the time it was running.
+    #[specta(type = JsSafeInt)]
+    pub mem_avg_bytes: u64,
+    pub read_bytes: f64,
+    pub write_bytes: f64,
+    pub energy_j: f64,
+    pub avg_w: f64,
+    /// The process that Quit on the app's row acts on: its running main executable,
+    /// or, for an app without one (a CLI), its only running process. `null` when
+    /// neither exists; each running process can still be quit on its own.
+    pub quit_pid: Option<i32>,
+    /// Ordered like the apps.
+    pub processes: Vec<ProcessUsage>,
+}
+
+/// Every process's use over the range, before any floor: what shares are of.
+#[derive(Clone, Debug, PartialEq, Serialize, specta::Type)]
+pub struct UsageTotal {
+    pub cpu_avg_pct: f64,
+    pub gpu_avg_pct: Option<f64>,
+    pub read_bytes: f64,
+    pub write_bytes: f64,
+    pub energy_j: f64,
+    pub avg_w: f64,
+}
+
+/// What the host measured beyond Kelvo's processes ("System and other"): the host's
+/// own series over the same range less `UsageByApp.total`. It holds other users' and
+/// root's processes and those that lived less than one sample. `null` fields where the
+/// series was not recorded (module off, GPU never measured).
+#[derive(Clone, Debug, PartialEq, Serialize, specta::Type)]
+pub struct UsageOther {
+    /// Percent of one core: `cpu.total` times the cores, less the apps.
+    pub cpu_avg_pct: Option<f64>,
+    /// `gpu.util` less the apps.
+    pub gpu_avg_pct: Option<f64>,
+    /// `disk.read_total` bytes less the apps'.
+    pub read_bytes: Option<f64>,
+    pub write_bytes: Option<f64>,
+    /// The apps exceeded the host total somewhere (the two are sampled differently), and
+    /// a remainder was clamped to 0.
+    pub clamped: bool,
+}
+
+/// `query_usage_by_app`: which apps used CPU, GPU, memory, disk and energy over a range,
+/// from the last hour of process samples Kelvo keeps in memory (D-093, D-099). Your
+/// processes only; `other` holds the rest.
+#[derive(Clone, Debug, PartialEq, Serialize, specta::Type)]
+pub struct UsageByApp {
+    /// The range the sums cover: the request widened to whole 10 s buckets.
+    #[specta(type = JsSafeInt)]
+    pub from_ms: i64,
+    #[specta(type = JsSafeInt)]
+    pub to_ms: i64,
+    /// When Kelvo started counting (this launch, or the last history clear); `null`
+    /// before the first process sample. After `from_ms`, the range is covered only from
+    /// here.
+    #[specta(type = Option<JsSafeInt>)]
+    pub since_ms: Option<i64>,
+    /// Time inside the range a process sample covered, ms. Averages divide by it; 0 means
+    /// not measured, not zero use.
+    #[specta(type = JsSafeInt)]
+    pub covered_ms: i64,
+    /// The part of `covered_ms` whose samples measured GPU.
+    #[specta(type = JsSafeInt)]
+    pub gpu_covered_ms: i64,
+    pub total: UsageTotal,
+    pub other: UsageOther,
+    /// The largest `limit` by the requested key, largest first.
+    pub apps: Vec<AppUsage>,
+}
+
+/// One metric of a `query_series_stats` answer.
+#[derive(Clone, Debug, PartialEq, Serialize, specta::Type)]
+pub struct MetricStat {
+    pub metric: String,
+    /// Time inside the range with a reading, outside the gaps that apply to the metric.
+    #[specta(type = JsSafeInt)]
+    pub measured_ms: u64,
+    /// Span-weighted average over the measured time; `null` when nothing was measured.
+    pub avg: Option<f64>,
+    /// The largest sample; `null` when nothing was measured.
+    pub max: Option<f64>,
+    /// `avg` times the measured seconds: bytes for a bytes-per-second metric.
+    pub integral: f64,
+}
+
+/// `query_series_stats`: unlabelled metrics over a range, from their rollups through now.
+#[derive(Clone, Debug, PartialEq, Serialize, specta::Type)]
+pub struct SeriesStats {
+    /// The range the stats cover: the request widened to whole buckets of the tier that
+    /// answered and cut at now.
+    #[specta(type = JsSafeInt)]
+    pub from_ms: i64,
+    #[specta(type = JsSafeInt)]
+    pub to_ms: i64,
+    /// One per metric asked for, in order.
+    pub metrics: Vec<MetricStat>,
+}
+
 /// The primary interface's addresses (`get_network_addresses`).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, specta::Type)]
 pub struct NetworkAddresses {

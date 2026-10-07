@@ -34,6 +34,16 @@ pub fn metric_units() -> BTreeMap<&'static str, Unit> {
         .collect()
 }
 
+/// Every catalog metric's module, by metric id: which gaps apply to it (the mock's
+/// `query_series_stats` leaves out the module's own gaps, as `history.rs` does).
+pub fn metric_modules() -> BTreeMap<&'static str, &'static str> {
+    kelvo_schema::Catalog::builtin()
+        .defs()
+        .iter()
+        .map(|d| (d.id.as_str(), d.module.as_str()))
+        .collect()
+}
+
 /// Every catalog metric's nominal minimum sampling period in ms (`MetricDef::period_s`),
 /// by metric id: the mock samples `self.cpu` at it, as the engine does.
 pub fn metric_periods_ms() -> BTreeMap<&'static str, u32> {

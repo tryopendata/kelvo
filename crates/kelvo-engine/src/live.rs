@@ -21,8 +21,8 @@
 //! still has its rows: [`LiveHub::recent_net_buckets`]. In the same way it holds the
 //! history rollups and their last 15 minutes of rows ([`crate::RECENT_ROWS_MS`]), so
 //! `query_history` answers through now (D-092): [`LiveHub::recent_rows`]. And it adds
-//! every process batch to the last hour of per-process energy (D-093):
-//! [`LiveHub::energy_by_app`].
+//! every process batch to the last hour of per-process usage (D-093, D-099):
+//! [`LiveHub::usage_by_app`].
 
 use std::sync::{Arc, Mutex, MutexGuard};
 
@@ -33,10 +33,10 @@ use kelvo_store::{BucketRow, HistoryResult, NetBucket};
 
 use crate::accum::{Rollups, recent_rows};
 use crate::bus::{Bus, BusMsg, EngineStatus, FrameLayout, LiveFrame, Subscriber};
-use crate::energy::{EnergyByApp, EnergyRing};
 use crate::engine::hold_ms;
 use crate::netacc::{NetRing, NetSlot};
 use crate::ring::{BackfillSegment, Ring};
+use crate::usage::{UsageByApp, UsageKey, UsageRing};
 
 /// `layout_no` of ring rows read back from the store by [`LiveHub::warm`]. A source
 /// numbers its own layouts from 0 within a run, so this one never collides with them.
@@ -76,7 +76,7 @@ pub struct LiveHub {
     /// query copies rows out of it.
     rollups: Arc<Mutex<Rollups>>,
     /// Its own lock: a process batch adds to it, and a range query sums it.
-    energy: Arc<Mutex<EnergyRing>>,
+    usage: Arc<Mutex<UsageRing>>,
 }
 
 impl LiveHub {
@@ -87,7 +87,7 @@ impl LiveHub {
             retained: Arc::default(),
             net: Arc::default(),
             rollups: Arc::default(),
-            energy: Arc::default(),
+            usage: Arc::default(),
         }
     }
 
@@ -120,7 +120,7 @@ impl LiveHub {
             }
         }
         if let BusMsg::Processes(batch) = &msg {
-            self.energy().push(batch.ts_ms, &batch.rows);
+            self.usage().push(batch.ts_ms, &batch.rows);
         }
         self.bus.publish(msg);
     }
@@ -263,20 +263,20 @@ impl LiveHub {
         self.net().clear();
     }
 
-    fn energy(&self) -> MutexGuard<'_, EnergyRing> {
+    fn usage(&self) -> MutexGuard<'_, UsageRing> {
         // As for `lock`: nothing panics while holding it.
-        self.energy.lock().unwrap_or_else(|e| e.into_inner())
+        self.usage.lock().unwrap_or_else(|e| e.into_inner())
     }
 
-    /// Energy per app over `[from_ms, to_ms)` from the last hour of process batches
-    /// (D-093).
-    pub fn energy_by_app(&self, from_ms: i64, to_ms: i64) -> EnergyByApp {
-        self.energy().by_app(from_ms, to_ms)
+    /// Use per app over `[from_ms, to_ms)` from the last hour of process batches, the
+    /// largest `limit` by `by` (D-093, D-099).
+    pub fn usage_by_app(&self, from_ms: i64, to_ms: i64, by: UsageKey, limit: usize) -> UsageByApp {
+        self.usage().by_app(from_ms, to_ms, by, limit)
     }
 
-    /// Forgets energy buckets ending after `ts_ms`: the wall clock stepped back (engine).
-    pub(crate) fn energy_drop_after(&self, ts_ms: i64) {
-        self.energy().drop_after(ts_ms);
+    /// Forgets usage buckets ending after `ts_ms`: the wall clock stepped back (engine).
+    pub(crate) fn usage_drop_after(&self, ts_ms: i64) {
+        self.usage().drop_after(ts_ms);
     }
 
     pub(crate) fn rollups(&self) -> MutexGuard<'_, Rollups> {
@@ -299,11 +299,11 @@ impl LiveHub {
     /// (`clear_history`), and none of it may come back through `query_history` or a
     /// later emitted row. Call it before the store clears the host, so a bucket closing
     /// meanwhile holds only what was measured after, and again once the store is done. The
-    /// last hour of per-app energy goes with them.
+    /// last hour of per-app usage goes with them.
     pub fn forget_recent_rows(&self) {
         self.rollups().forget();
-        // Per-app energy is usage history too, even though it is never stored.
-        *self.energy() = EnergyRing::default();
+        // Per-app usage is history too, even though it is never stored.
+        *self.usage() = UsageRing::default();
     }
 
     /// How long a history point of `key` in buckets of `bucket_ms`, in a range starting

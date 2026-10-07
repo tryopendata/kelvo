@@ -49,6 +49,7 @@ fn proc(name: &str, pid: i32, cpu: f32, energy: f32) -> ProcessSample {
         idle_wakeups_per_s: 0.0,
         energy,
         energy_j: 0.0,
+        interval_s: 1.0,
         app: None,
         app_main: false,
         disk_read_bps: 0.0,

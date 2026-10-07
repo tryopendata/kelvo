@@ -29,6 +29,10 @@ pub struct ProcessSample {
     /// Summing it over every sample of a range gives the process's energy in that range,
     /// whatever the sampling cadence was.
     pub energy_j: f32,
+    /// Seconds the rates cover: since the previous sample of this process. A rate times
+    /// this is what the process used over the interval (cpu-seconds, bytes), so sums
+    /// over a range are right whatever the cadence was.
+    pub interval_s: f32,
     /// The app the process belongs to, by the identity rule per-app network uses
     /// (D-089): "Google Chrome" for its helpers, "Safari" for WebKit's XPC services,
     /// `node` for a CLI. Resolved once per process. `None` when its path could not be

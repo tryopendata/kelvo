@@ -99,9 +99,16 @@ impl HostEntry {
         self.live.recent_net(from_ms, to_ms)
     }
 
-    /// Per-app energy over a range from this host's hub (D-093).
-    pub fn energy_by_app(&self, from_ms: i64, to_ms: i64) -> kelvo_engine::EnergyByApp {
-        self.live.energy_by_app(from_ms, to_ms)
+    /// Per-app use over a range from this host's hub, the largest `limit` by `by`
+    /// (D-093, D-099).
+    pub fn usage_by_app(
+        &self,
+        from_ms: i64,
+        to_ms: i64,
+        by: kelvo_engine::UsageKey,
+        limit: usize,
+    ) -> kelvo_engine::UsageByApp {
+        self.live.usage_by_app(from_ms, to_ms, by, limit)
     }
 
     /// The interface carrying the default route, as the engine last reported it.

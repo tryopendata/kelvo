@@ -55,7 +55,6 @@ mod accum;
 mod bus;
 mod clock;
 pub mod detect;
-mod energy;
 mod engine;
 mod hints;
 mod housekeeping;
@@ -71,13 +70,13 @@ mod procview;
 mod ring;
 mod source;
 mod ticker;
+mod usage;
 
 pub use accum::RECENT_ROWS_MS;
 pub use bus::{
     BUS_CAPACITY, Bus, BusMsg, EngineStatus, FrameLayout, LiveFrame, ProcessBatch, Recv, Subscriber,
 };
 pub use clock::{ClockReading, continuous_ns, now, wall_ms};
-pub use energy::{ENERGY_BUCKET_MS, EnergyApp, EnergyByApp, EnergyProc};
 pub use engine::{
     BACKGROUND_TICK_MS, Engine, EngineControl, EngineHandle, EngineParts, EngineSettings,
     PERFORMANCE_IDLE_PROCESS_MS, PERFORMANCE_IDLE_SENSOR_MS, PERFORMANCE_VISIBLE_MS,
@@ -117,3 +116,4 @@ pub use source::{
     SourceSink, network_history_enabled,
 };
 pub use ticker::{FakeClock, FakeTicker, ThreadTicker, Ticker, leeway_for};
+pub use usage::{USAGE_BUCKET_MS, UsageApp, UsageByApp, UsageKey, UsageProc, UsageTotal};

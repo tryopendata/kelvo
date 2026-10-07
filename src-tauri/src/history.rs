@@ -269,19 +269,22 @@ impl History {
         }
     }
 
-    /// `query_network_totals`: bytes over `[from_ms, to_ms)` from the `net.rx_total` and
-    /// `net.tx_total` rollups, through now as `query_history` reads them. Each bucket's
-    /// span-weighted average rate (D-092) times the time it covers, cut at `now_ms`, less
-    /// any gap inside it that applies to Network; a bucket with no reading counts nothing.
-    /// The tier is the one `query_history` would pick. Blocking.
-    pub fn network_totals(
+    /// `query_series_stats`: each unlabelled metric of `metrics` over `[from_ms, to_ms)`
+    /// from its rollups, through now as `query_history` reads them: the span-weighted
+    /// average (D-092), the largest sample, and the average times the time measured (bytes
+    /// for a bytes-per-second metric). A bucket counts the time it covers, cut at
+    /// `now_ms`, less any gap inside it that applies to the metric's module; a bucket with
+    /// no reading counts nothing. The tier is the one `query_history` would pick.
+    /// Blocking.
+    pub fn series_stats(
         &self,
         host: kelvo_schema::HostId,
+        metrics: &[String],
         from_ms: i64,
         to_ms: i64,
         now_ms: i64,
         recent: impl Fn() -> Vec<BucketRow>,
-    ) -> Result<NetworkTotals, CommandError> {
+    ) -> Result<RangeStats, CommandError> {
         if to_ms < from_ms {
             return Err(CommandError::InvalidArgument {
                 message: format!("the range ends ({to_ms}) before it starts ({from_ms})"),
@@ -296,13 +299,26 @@ impl History {
                 ),
             });
         }
+        let catalog = kelvo_schema::Catalog::builtin();
+        let defs = metrics
+            .iter()
+            .map(|m| match catalog.get(m) {
+                Some(d) if d.label_keys.is_empty() => Ok(d),
+                Some(_) => Err(CommandError::InvalidArgument {
+                    message: format!("{m} has labels; series stats take unlabelled metrics"),
+                }),
+                None => Err(CommandError::InvalidArgument {
+                    message: format!("{m} is not in the catalog"),
+                }),
+            })
+            .collect::<Result<Vec<_>, _>>()?;
         let finest = Tier::S10.bucket_ms().unwrap_or(10_000);
         let query = HistoryQuery {
             host,
-            selectors: [NET_RX_TOTAL, NET_TX_TOTAL]
-                .into_iter()
-                .map(|m| kelvo_schema::SeriesSelector {
-                    metric: MetricId::from_static(m),
+            selectors: defs
+                .iter()
+                .map(|d| kelvo_schema::SeriesSelector {
+                    metric: d.id.clone(),
                     labels: Labels::new(),
                 })
                 .collect(),
@@ -313,7 +329,34 @@ impl History {
             max_points: u32::try_from((to_ms - from_ms) / finest + 2).unwrap_or(u32::MAX),
         };
         let read = self.history_through_now(&query, recent)?;
-        Ok(network_totals(&read, from_ms, to_ms, now_ms))
+        Ok(range_stats(&read, &defs, from_ms, to_ms, now_ms))
+    }
+
+    /// `query_network_totals`: bytes over `[from_ms, to_ms)` from the `net.rx_total` and
+    /// `net.tx_total` rollups ([`Self::series_stats`]). Blocking.
+    pub fn network_totals(
+        &self,
+        host: kelvo_schema::HostId,
+        from_ms: i64,
+        to_ms: i64,
+        now_ms: i64,
+        recent: impl Fn() -> Vec<BucketRow>,
+    ) -> Result<NetworkTotals, CommandError> {
+        let metrics = [NET_RX_TOTAL.to_owned(), NET_TX_TOTAL.to_owned()];
+        let s = self.series_stats(host, &metrics, from_ms, to_ms, now_ms, recent)?;
+        // One entry per metric asked for, in order.
+        let of = |m: &str| s.metrics.iter().find(|x| x.metric == m);
+        let (rx, tx) = (of(NET_RX_TOTAL), of(NET_TX_TOTAL));
+        let ms = |x: Option<&MetricStats>| x.map_or(0, |x| x.measured_ms);
+        let bytes = |x: Option<&MetricStats>| x.map_or(0, |x| x.integral.round() as u64);
+        Ok(NetworkTotals {
+            from_ms: s.from_ms,
+            to_ms: s.to_ms,
+            // Both directions are read together, so either one's time is the interface's.
+            measured_ms: u64::try_from(ms(rx).max(ms(tx))).unwrap_or(0),
+            rx_bytes: bytes(rx),
+            tx_bytes: bytes(tx),
+        })
     }
 
     /// `battery_hours`: for each hour between consecutive `hour_starts` (the
@@ -583,62 +626,99 @@ const CHARGING: &str = "battery.charging";
 const NET_RX_TOTAL: &str = "net.rx_total";
 const NET_TX_TOTAL: &str = "net.tx_total";
 
-/// Sums a `query_network_totals` read. The range is widened to whole buckets, as the read
-/// took them, and cut at `now_ms`. A bucket is measured where either direction has a
-/// reading, outside the gaps that apply to Network (host-wide ones and Network's own);
-/// an open gap runs to `now_ms`.
-fn network_totals(read: &HistoryResult, from_ms: i64, to_ms: i64, now_ms: i64) -> NetworkTotals {
+/// One metric's [`RangeStats`].
+#[derive(Clone, Debug, PartialEq)]
+pub struct MetricStats {
+    pub metric: &'static str,
+    /// Time inside the range with a reading, outside the gaps that apply to the metric.
+    pub measured_ms: i64,
+    /// Span-weighted average over `measured_ms`; `None` when nothing was measured.
+    pub avg: Option<f64>,
+    /// The largest sample; `None` when nothing was measured.
+    pub max: Option<f64>,
+    /// `avg` times the measured seconds.
+    pub integral: f64,
+}
+
+/// [`History::series_stats`]: the range widened to whole buckets, as the read took them,
+/// and cut at now, with one entry per metric asked for, in order.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RangeStats {
+    pub from_ms: i64,
+    pub to_ms: i64,
+    pub metrics: Vec<MetricStats>,
+}
+
+/// Sums a `series_stats` read. A bucket is measured where the metric has a reading,
+/// outside the gaps that apply to its module (host-wide ones and the module's own); an
+/// open gap runs to `now_ms`.
+fn range_stats(
+    read: &HistoryResult,
+    defs: &[&'static kelvo_schema::MetricDef],
+    from_ms: i64,
+    to_ms: i64,
+    now_ms: i64,
+) -> RangeStats {
     let width = read.bucket_ms.max(1);
     let from = from_ms - from_ms.rem_euclid(width);
     let to = (to_ms + (width - to_ms.rem_euclid(width)) % width)
         .min(now_ms)
         .max(from);
-    let mut gaps: Vec<(i64, i64)> = read
-        .gaps
+    let metrics = defs
         .iter()
-        .filter(|g| g.module.is_none_or(|m| m == kelvo_schema::Module::Network))
-        .map(|g| (g.start_ms, g.end_ms.unwrap_or(now_ms)))
+        .map(|d| {
+            let mut gaps: Vec<(i64, i64)> = read
+                .gaps
+                .iter()
+                .filter(|g| g.module.is_none_or(|m| m == d.module))
+                .map(|g| (g.start_ms, g.end_ms.unwrap_or(now_ms)))
+                .collect();
+            gaps.sort_unstable();
+            // Time in `[a, b)` outside every gap.
+            let measured = |a: i64, b: i64| -> i64 {
+                let mut covered = 0;
+                let mut cursor = a;
+                for &(s, e) in &gaps {
+                    let (s, e) = (s.max(cursor), e.min(b));
+                    if e > s {
+                        covered += e - s;
+                        cursor = e;
+                    }
+                }
+                (b - a - covered).max(0)
+            };
+            let mut measured_ms = 0_i64;
+            let mut weighted = 0.0_f64;
+            let mut max: Option<f64> = None;
+            let points = read
+                .series
+                .iter()
+                .filter(|s| s.key.metric == d.id)
+                .flat_map(|s| &s.points);
+            for p in points {
+                let ms = measured(p.t.max(from), (p.t + width).min(to));
+                if ms > 0 && p.avg.is_finite() {
+                    measured_ms += ms;
+                    weighted += f64::from(p.avg) * ms as f64;
+                    if p.max.is_finite() {
+                        max = Some(max.map_or(f64::from(p.max), |m| m.max(f64::from(p.max))));
+                    }
+                }
+            }
+            let avg = (measured_ms > 0).then(|| weighted / measured_ms as f64);
+            MetricStats {
+                metric: d.id.as_str(),
+                measured_ms,
+                avg,
+                max,
+                integral: avg.map_or(0.0, |a| a.max(0.0) * measured_ms as f64 / 1_000.0),
+            }
+        })
         .collect();
-    gaps.sort_unstable();
-    // Time in `[a, b)` outside every gap.
-    let measured = |a: i64, b: i64| -> i64 {
-        let mut covered = 0;
-        let mut cursor = a;
-        for &(s, e) in &gaps {
-            let (s, e) = (s.max(cursor), e.min(b));
-            if e > s {
-                covered += e - s;
-                cursor = e;
-            }
-        }
-        (b - a - covered).max(0)
-    };
-    let span = |t: i64| measured(t.max(from), (t + width).min(to));
-
-    let mut rx = 0.0_f64;
-    let mut tx = 0.0_f64;
-    let mut buckets = std::collections::BTreeSet::new();
-    for series in &read.series {
-        let sum = match series.key.metric.as_str() {
-            NET_RX_TOTAL => &mut rx,
-            NET_TX_TOTAL => &mut tx,
-            _ => continue,
-        };
-        for p in &series.points {
-            let ms = span(p.t);
-            if ms > 0 && p.avg.is_finite() {
-                *sum += f64::from(p.avg.max(0.0)) * ms as f64 / 1000.0;
-                buckets.insert(p.t);
-            }
-        }
-    }
-    let measured_ms: i64 = buckets.iter().map(|&t| span(t)).sum();
-    NetworkTotals {
+    RangeStats {
         from_ms: from,
         to_ms: to,
-        measured_ms: u64::try_from(measured_ms).unwrap_or(0),
-        rx_bytes: rx.round() as u64,
-        tx_bytes: tx.round() as u64,
+        metrics,
     }
 }
 
@@ -1336,6 +1416,77 @@ mod tests {
                 stats: vec![900.0, 1_100.0, 1_000.0, 90.0, 110.0, 100.0],
             })
             .collect()
+    }
+
+    #[test]
+    fn series_stats_average_peak_and_gaps_by_module() {
+        const S: i64 = 1_000;
+        let series: std::sync::Arc<[SeriesKey]> = vec![
+            SeriesKey::parse("cpu.total").unwrap(),
+            SeriesKey::parse("disk.read_total").unwrap(),
+        ]
+        .into();
+        // `cpu.total` at 20% for buckets 0..3 and 50% (peaking at 90%) for 3..6;
+        // `disk.read_total` at 1,000 B/s throughout.
+        let rows = (0..6)
+            .map(|b| BucketRow {
+                host: local_record().id,
+                tier: Tier::S10,
+                bucket_ts: NOW + b * 10_000,
+                series: std::sync::Arc::clone(&series),
+                stats: if b < 3 {
+                    vec![10.0, 30.0, 20.0, 1_000.0, 1_000.0, 1_000.0]
+                } else {
+                    vec![10.0, 90.0, 50.0, 1_000.0, 1_000.0, 1_000.0]
+                },
+            })
+            .collect::<Vec<_>>();
+        let dir = temp_dir("series-stats");
+        let history = History::open(&dir);
+        let w = history.register_host(&local_record()).unwrap();
+        for row in rows {
+            w.write_bucket(row).unwrap();
+        }
+        // Disk switched off over bucket 0: CPU still counts it.
+        let host = local_record().id;
+        w.write_gap(
+            host,
+            kelvo_schema::Gap::new(
+                NOW,
+                Some(NOW + 10 * S),
+                Some(kelvo_schema::Module::Disk),
+                kelvo_schema::GapReason::ModuleDisabled,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        w.flush().unwrap();
+        let metrics = ["cpu.total".to_owned(), "disk.read_total".to_owned()];
+        let s = history
+            .series_stats(host, &metrics, NOW, NOW + 60 * S, NOW + 600 * S, Vec::new)
+            .unwrap();
+        let [cpu, disk] = s.metrics.as_slice() else {
+            panic!("two metrics: {s:?}")
+        };
+        assert_eq!(cpu.measured_ms, 60_000);
+        assert_eq!(cpu.avg, Some(35.0));
+        assert_eq!(cpu.max, Some(90.0));
+        assert_eq!(disk.measured_ms, 50_000, "Disk's own gap");
+        assert_eq!(disk.integral, 50_000.0);
+        history.close();
+
+        let labelled = History::unavailable().series_stats(
+            host,
+            &["cpu.load".to_owned()],
+            NOW,
+            NOW + S,
+            NOW,
+            Vec::new,
+        );
+        assert!(matches!(
+            labelled,
+            Err(CommandError::InvalidArgument { .. })
+        ));
     }
 
     #[test]

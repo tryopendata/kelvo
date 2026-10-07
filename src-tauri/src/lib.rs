@@ -8,7 +8,6 @@ mod bench;
 mod calibration;
 mod commands;
 pub mod edition;
-mod energy;
 mod error;
 mod export;
 pub mod facts;
@@ -24,6 +23,7 @@ pub mod process_signal;
 pub mod settings;
 pub mod state;
 pub mod tray;
+mod usage;
 mod windows;
 
 use specta_typescript::Typescript;
@@ -66,6 +66,8 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             commands::query_network_by_app,
             commands::query_network_totals,
             commands::query_energy_by_app,
+            commands::query_usage_by_app,
+            commands::query_series_stats,
             commands::get_network_addresses,
             commands::get_public_ip,
             commands::query_events,
@@ -103,6 +105,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
         // Engine, store and settings facts the webview and the mock read instead of
         // keeping copies (D-092). See `facts.rs`.
         .constant("METRIC_UNITS", facts::metric_units())
+        .constant("METRIC_MODULES", facts::metric_modules())
         .constant("METRIC_PERIODS_MS", facts::metric_periods_ms())
         .constant("METRIC_CODES", kelvo_schema::metric_codes())
         .constant("RING_SPAN_MS", kelvo_engine::RING_SPAN_MS)
@@ -113,7 +116,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
         .constant("HOLD_FACTOR", facts::hold_factor())
         .constant("PERFORMANCE_VISIBLE_MS", kelvo_engine::PERFORMANCE_VISIBLE_MS)
         .constant("NET_BUCKET_MS", kelvo_engine::NET_BUCKET_MS)
-        .constant("ENERGY_BUCKET_MS", kelvo_engine::ENERGY_BUCKET_MS)
+        .constant("USAGE_BUCKET_MS", kelvo_engine::USAGE_BUCKET_MS)
         .constant("HEADER_BYTES_PER_PACKET", kelvo_engine::HEADER_BYTES_PER_PACKET)
         .constant("CLAMP_SLACK_BYTES", kelvo_engine::CLAMP_SLACK_BYTES)
         .constant("MAX_NET_SPAN_MS", history::MAX_NET_SPAN_MS)

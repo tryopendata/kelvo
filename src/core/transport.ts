@@ -41,11 +41,14 @@ import {
   type ProcessView,
   type SensorDump,
   type SeriesSelector,
+  type SeriesStats,
   type SettingsChanged,
   type SettingsPatch,
   type SettingsSnapshot,
   type SubscriptionInfo,
   type UpdateStatus,
+  type UsageByApp,
+  type UsageKey,
   type WindowAppearance,
   type WindowAppearanceChanged,
 } from "@core/generated/bindings";
@@ -145,6 +148,31 @@ export interface Transport {
     fromMs: Millis,
     toMs: Millis
   ): Promise<CommandResult<EnergyByApp>>;
+  /**
+   * Which apps used CPU, GPU, memory, disk and energy over `[fromMs, toMs)`
+   * (D-099), widened to whole 10 s buckets, from the last hour of process
+   * samples Rust keeps in memory: the largest `limit` by `by`, with what the
+   * host measured beyond them in `other`. `remote_host` for a host other than
+   * this Mac.
+   */
+  queryUsageByApp(
+    host: HostId,
+    fromMs: Millis,
+    toMs: Millis,
+    by: UsageKey,
+    limit: number
+  ): Promise<CommandResult<UsageByApp>>;
+  /**
+   * Unlabelled metrics over `[fromMs, toMs)`, widened to whole buckets and cut
+   * at now: each one's average, largest sample and integral over the time
+   * measured.
+   */
+  querySeriesStats(
+    host: HostId,
+    metrics: string[],
+    fromMs: Millis,
+    toMs: Millis
+  ): Promise<CommandResult<SeriesStats>>;
   /** The primary interface's addresses, read locally on each call. */
   getNetworkAddresses(host: HostId): Promise<CommandResult<NetworkAddresses>>;
   /**
@@ -312,6 +340,10 @@ export function createTauriTransport(label: string): Transport {
       commands.queryNetworkTotals(host, fromMs, toMs),
     queryEnergyByApp: (host, fromMs, toMs) =>
       commands.queryEnergyByApp(host, fromMs, toMs),
+    queryUsageByApp: (host, fromMs, toMs, by, limit) =>
+      commands.queryUsageByApp(host, fromMs, toMs, by, limit),
+    querySeriesStats: (host, metrics, fromMs, toMs) =>
+      commands.querySeriesStats(host, metrics, fromMs, toMs),
     getNetworkAddresses: (host) => commands.getNetworkAddresses(host),
     getPublicIp: () => commands.getPublicIp(),
     queryEvents: (host, fromMs, toMs) =>

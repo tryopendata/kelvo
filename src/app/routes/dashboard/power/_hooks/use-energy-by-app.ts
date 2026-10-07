@@ -1,5 +1,5 @@
 import { floorTo } from "@core/brush";
-import { ENERGY_BUCKET_MS } from "@core/generated/bindings";
+import { USAGE_BUCKET_MS } from "@core/generated/bindings";
 import { historyKeys } from "@core/query-keys";
 import { unwrap } from "@core/transport";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
@@ -16,7 +16,7 @@ export function useEnergyByApp(windowMs: number) {
   const transport = useTransport();
   const hostId = useHostId();
   const toMs = useHost((s) =>
-    s.lastTsMs === null ? null : floorTo(s.lastTsMs, ENERGY_BUCKET_MS)
+    s.lastTsMs === null ? null : floorTo(s.lastTsMs, USAGE_BUCKET_MS)
   );
   const fromMs = toMs === null ? 0 : toMs - windowMs;
   return useQuery({

@@ -12,8 +12,10 @@ import {
   type HistoryPoint,
   type HistoryRequest,
   HOLD_FACTOR,
+  METRIC_MODULES,
   type NetworkTotals,
   type SeriesKey,
+  type SeriesStats,
   type Tier,
 } from "@core/generated/bindings";
 import { seriesKeyString } from "@core/series-key";
@@ -312,26 +314,24 @@ export function mockBatteryHours(
 }
 
 /**
- * `query_network_totals` as Rust sums it: each `net.rx_total` and
- * `net.tx_total` bucket's average rate times the time it covers, from the
- * bucket the range starts in to the end of the one it ends in, cut at `now`,
- * less the gaps that apply to Network. A bucket with no reading counts nothing.
+ * `query_series_stats` as `history.rs` computes it: per metric, each bucket's
+ * average weighted by the time it covers, from the bucket the range starts in
+ * to the end of the one it ends in, cut at `now`, less the gaps that apply to
+ * the metric's module. A bucket with no reading counts nothing.
  */
-export function mockNetworkTotals(
+export function mockSeriesStats(
   host: string,
+  metrics: readonly string[],
   fromMs: number,
   toMs: number,
   now: number,
   history: (req: HistoryRequest) => HistoryPage
-): NetworkTotals {
+): SeriesStats {
   const finest =
     HISTORY_TIERS.find((t) => t.tier === "s10")?.bucket_ms ?? 10_000;
   const page = history({
     host,
-    selectors: [
-      { metric: "net.rx_total", labels: [] },
-      { metric: "net.tx_total", labels: [] },
-    ],
+    selectors: metrics.map((metric) => ({ metric, labels: [] })),
     from_ms: fromMs,
     to_ms: toMs,
     tier: "auto",
@@ -340,50 +340,78 @@ export function mockNetworkTotals(
   const width = Math.max(1, page.bucket_ms);
   const from = fromMs - (fromMs % width);
   const to = Math.max(from, Math.min(Math.ceil(toMs / width) * width, now));
-  const gaps = page.gaps
-    .filter((g) => g.module === null || g.module === "network")
-    .map((g) => [g.start_ms, g.end_ms ?? now] as const)
-    .sort((a, b) => a[0] - b[0]);
-  const measured = (a: number, b: number) => {
-    let covered = 0;
-    let cursor = a;
-    for (const [s0, e0] of gaps) {
-      const s = Math.max(s0, cursor);
-      const e = Math.min(e0, b);
-      if (e > s) {
-        covered += e - s;
-        cursor = e;
-      }
-    }
-    return Math.max(0, b - a - covered);
-  };
-  const span = (t: number) =>
-    measured(Math.max(t, from), Math.min(t + width, to));
-  const sums = { rx: 0, tx: 0 };
-  const buckets = new Set<number>();
-  for (const s of page.series) {
-    const dir =
-      s.key.metric === "net.rx_total"
-        ? "rx"
-        : s.key.metric === "net.tx_total"
-          ? "tx"
-          : null;
-    if (dir === null) continue;
-    for (const p of s.points) {
-      const ms = span(p.t);
-      if (ms > 0 && p.avg !== null) {
-        sums[dir] += (Math.max(0, p.avg) * ms) / 1000;
-        buckets.add(p.t);
-      }
-    }
-  }
-  let measuredMs = 0;
-  for (const t of buckets) measuredMs += span(t);
   return {
     from_ms: from,
     to_ms: to,
-    measured_ms: measuredMs,
-    rx_bytes: Math.round(sums.rx),
-    tx_bytes: Math.round(sums.tx),
+    metrics: metrics.map((metric) => {
+      const module = (METRIC_MODULES as Record<string, string>)[metric];
+      const gaps = page.gaps
+        .filter((g) => g.module === null || g.module === module)
+        .map((g) => [g.start_ms, g.end_ms ?? now] as const)
+        .sort((a, b) => a[0] - b[0]);
+      const measured = (a: number, b: number) => {
+        let covered = 0;
+        let cursor = a;
+        for (const [s0, e0] of gaps) {
+          const s = Math.max(s0, cursor);
+          const e = Math.min(e0, b);
+          if (e > s) {
+            covered += e - s;
+            cursor = e;
+          }
+        }
+        return Math.max(0, b - a - covered);
+      };
+      let measuredMs = 0;
+      let weighted = 0;
+      let max: number | null = null;
+      for (const s of page.series) {
+        if (s.key.metric !== metric) continue;
+        for (const p of s.points) {
+          const ms = measured(Math.max(p.t, from), Math.min(p.t + width, to));
+          if (ms > 0 && p.avg !== null) {
+            measuredMs += ms;
+            weighted += p.avg * ms;
+            if (p.max !== null)
+              max = max === null ? p.max : Math.max(max, p.max);
+          }
+        }
+      }
+      const avg = measuredMs > 0 ? weighted / measuredMs : null;
+      return {
+        metric,
+        measured_ms: measuredMs,
+        avg,
+        max,
+        integral: avg === null ? 0 : (Math.max(0, avg) * measuredMs) / 1000,
+      };
+    }),
+  };
+}
+
+/** `query_network_totals` from `mockSeriesStats`, as `history.rs` builds it. */
+export function mockNetworkTotals(
+  host: string,
+  fromMs: number,
+  toMs: number,
+  now: number,
+  history: (req: HistoryRequest) => HistoryPage
+): NetworkTotals {
+  const s = mockSeriesStats(
+    host,
+    ["net.rx_total", "net.tx_total"],
+    fromMs,
+    toMs,
+    now,
+    history
+  );
+  const [rx, tx] = s.metrics;
+  return {
+    from_ms: s.from_ms,
+    to_ms: s.to_ms,
+    // Both directions are read together, so either one's time is the interface's.
+    measured_ms: Math.max(rx?.measured_ms ?? 0, tx?.measured_ms ?? 0),
+    rx_bytes: Math.round(rx?.integral ?? 0),
+    tx_bytes: Math.round(tx?.integral ?? 0),
   };
 }

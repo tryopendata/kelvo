@@ -189,6 +189,7 @@ impl Collector for FakeCollector {
                 idle_wakeups_per_s: 1.0,
                 energy: 0.5,
                 energy_j: 5.0,
+                interval_s: 1.0,
                 app: None,
                 app_main: false,
                 disk_read_bps: 0.0,

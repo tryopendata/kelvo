@@ -15,8 +15,8 @@ use crate::error::CommandError;
 use crate::ipc::{
     BatteryHour, ByteCount, EnergyByApp, ExportOutcome, ExportRequest, HeatmapDay, HeatmapRequest,
     HistoryGrowth, HistoryHealth, HistoryPage, HistoryRequest, LiveMsg, Millis, NetworkAddresses,
-    NetworkByApp, NetworkTotals, ProcessView, ProcessesAt, SensorDump, SensorReading,
-    SettingsSnapshot, SubscriptionInfo, UpdateStatus, WindowAppearance,
+    NetworkByApp, NetworkTotals, ProcessView, ProcessesAt, SensorDump, SensorReading, SeriesStats,
+    SettingsSnapshot, SubscriptionInfo, UpdateStatus, UsageByApp, UsageKey, WindowAppearance,
 };
 use crate::live::{DEFAULT_BACKFILL_MS, LiveFeed, LiveRequest, LiveSink};
 use crate::process_signal::{
@@ -278,10 +278,108 @@ pub async fn query_energy_by_app(
         }
         let me = kelvo_engine::process_control::ProcessOs::self_pid(&SystemProcessOs);
         let own = kelvo_engine::process_control::own_processes();
-        Ok(crate::energy::energy_by_app(
-            entry.energy_by_app(from_ms.0, to_ms.0),
+        Ok(crate::usage::energy_by_app(
+            entry.usage_by_app(
+                from_ms.0,
+                to_ms.0,
+                kelvo_engine::UsageKey::Energy,
+                usize::MAX,
+            ),
             |pid, start, name| SignalRefusal::of(pid, name, me, own.contains(pid, start)),
         ))
+    })
+    .await
+}
+
+/// Which apps used CPU, GPU, memory, disk and energy over `[from_ms, to_ms)` (D-099),
+/// widened to whole 10 s buckets, from the last hour of process samples the host's hub
+/// keeps in memory: the largest `limit` by `by`. A range reaching further back is
+/// answered for the part inside that hour, and `since_ms` says where counting started.
+/// `other` is what the host's own series measured beyond them over the covered part.
+/// `remote_host` for a host other than this Mac; `invalid_argument` when `to_ms` is
+/// before `from_ms`.
+#[tauri::command]
+#[specta::specta]
+pub async fn query_usage_by_app(
+    app: AppHandle,
+    host: HostId,
+    from_ms: Millis,
+    to_ms: Millis,
+    by: UsageKey,
+    limit: u32,
+) -> Result<UsageByApp, CommandError> {
+    if to_ms.0 < from_ms.0 {
+        return Err(CommandError::InvalidArgument {
+            message: format!("to_ms {} is before from_ms {}", to_ms.0, from_ms.0),
+        });
+    }
+    blocking(app, move |state| {
+        let entry = state.host(host)?;
+        let record = entry.record();
+        if !record.is_local {
+            return Err(CommandError::RemoteHost { host });
+        }
+        let usage = entry.usage_by_app(
+            from_ms.0,
+            to_ms.0,
+            crate::usage::engine_key(by),
+            usize::try_from(limit).unwrap_or(usize::MAX),
+        );
+        let metrics = [
+            crate::usage::CPU_TOTAL,
+            crate::usage::GPU_UTIL,
+            crate::usage::DISK_READ,
+            crate::usage::DISK_WRITE,
+        ]
+        .map(str::to_owned);
+        // The remainder is best effort: without a readable series there is none.
+        let stats = crate::usage::remainder_range(&usage).and_then(|(from, to)| {
+            let recent_start = recent_from(from);
+            state
+                .history
+                .series_stats(host, &metrics, from, to, kelvo_engine::wall_ms(), || {
+                    entry.recent_rows(host, recent_start, to)
+                })
+                .ok()
+        });
+        let cores = record.info.cpu_topology.iter().map(|c| c.cores.len()).sum();
+        let me = kelvo_engine::process_control::ProcessOs::self_pid(&SystemProcessOs);
+        let own = kelvo_engine::process_control::own_processes();
+        Ok(crate::usage::usage_by_app(
+            usage,
+            stats.as_ref(),
+            cores,
+            |pid, start, name| SignalRefusal::of(pid, name, me, own.contains(pid, start)),
+        ))
+    })
+    .await
+}
+
+/// Unlabelled metrics over `[from_ms, to_ms)`, widened to whole buckets and cut at now,
+/// from their rollups through now: each one's span-weighted average, largest sample and
+/// integral over the measured time (gaps that apply to its module left out). With
+/// history unavailable, the engine's last 15 minutes alone. `invalid_argument` when
+/// `to_ms` is before `from_ms`, the range is longer than the longest history retention,
+/// or a metric is labelled or unknown.
+#[tauri::command]
+#[specta::specta]
+pub async fn query_series_stats(
+    app: AppHandle,
+    host: HostId,
+    metrics: Vec<String>,
+    from_ms: Millis,
+    to_ms: Millis,
+) -> Result<SeriesStats, CommandError> {
+    blocking(app, move |state| {
+        let entry = state.host(host)?;
+        let now_ms = kelvo_engine::wall_ms();
+        let recent_start = recent_from(from_ms.0);
+        state
+            .history
+            .series_stats(host, &metrics, from_ms.0, to_ms.0, now_ms, || {
+                entry.recent_rows(host, recent_start, to_ms.0)
+            })
+            .map(crate::usage::series_stats)
     })
     .await
 }

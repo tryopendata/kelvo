@@ -192,6 +192,8 @@ struct Rates {
     watts: f64,
     /// `watts` times the interval: what the process used over it.
     joules: f64,
+    /// The interval, seconds.
+    secs: f64,
 }
 
 fn rates(prev: &Prev, cur: &Prev, ticks_to_ns: f64) -> Option<Rates> {
@@ -216,6 +218,7 @@ fn rates(prev: &Prev, cur: &Prev, ticks_to_ns: f64) -> Option<Rates> {
         write_bps: d(cur.written, prev.written) / secs,
         watts,
         joules: watts * secs,
+        secs,
     })
 }
 
@@ -326,6 +329,7 @@ impl Collector for Processes {
                     idle_wakeups_per_s: r.wakeups_per_s as f32,
                     energy: r.watts as f32,
                     energy_j: r.joules as f32,
+                    interval_s: r.secs as f32,
                     app: known.app.clone(),
                     app_main: known.app_main,
                     disk_read_bps: r.read_bps as f32,
