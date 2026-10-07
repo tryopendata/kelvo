@@ -38,7 +38,7 @@ export const brushScopeProps = { [BRUSH_SCOPE_ATTR]: "" } as const;
 const INTERACTIVE = [
   "button, a, input, select, textarea, label, summary, [contenteditable=true]",
   "[role=button], [role=link], [role=tab], [role=radio], [role=checkbox], [role=switch], [role=slider]",
-  "[role=menuitem], [role=menuitemradio], [role=menuitemcheckbox], [role=option], [role=listbox], [role=dialog]",
+  "[role=menuitem], [role=menuitemradio], [role=menuitemcheckbox], [role=option], [role=listbox], [role=dialog], [role=alertdialog]",
 ].join(", ");
 
 /**

@@ -112,7 +112,7 @@ for (const theme of THEMES) {
 
       await page.getByRole("button", { name: "Clear", exact: true }).click();
       await page.getByRole("button", { name: "Clear history" }).click();
-      await expect(page.getByRole("dialog")).toBeHidden();
+      await expect(page.getByRole("alertdialog")).toBeHidden();
       await expect(page.getByText("0 MB", { exact: true })).toBeVisible();
       expect(errors).toEqual([]);
     });

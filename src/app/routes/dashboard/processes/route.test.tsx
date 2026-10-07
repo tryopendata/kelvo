@@ -98,7 +98,9 @@ describe("Processes page", () => {
     await user.click(
       await screen.findByRole("button", { name: "Quit Xcode (2214)" })
     );
-    const dialog = await screen.findByRole("dialog", { name: "Quit Xcode?" });
+    const dialog = await screen.findByRole("alertdialog", {
+      name: "Quit Xcode?",
+    });
     expect(dialog).toHaveTextContent("PID 2214");
     expect(signals(transport.calls)).toEqual([]);
 
@@ -112,7 +114,7 @@ describe("Processes page", () => {
       ])
     );
     expect(await screen.findByText("Asked Xcode (2214) to quit")).toBeVisible();
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
   });
 
   it("sends nothing when the dialog is cancelled", async () => {
@@ -120,14 +122,14 @@ describe("Processes page", () => {
     await user.click(
       await screen.findByRole("button", { name: "Force Quit Xcode (2214)" })
     );
-    const dialog = await screen.findByRole("dialog", {
+    const dialog = await screen.findByRole("alertdialog", {
       name: "Force quit Xcode?",
     });
     expect(dialog).toHaveTextContent(
       "Unsaved data in this process will be lost."
     );
     await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
     expect(signals(transport.calls)).toEqual([]);
   });
 
@@ -142,7 +144,7 @@ describe("Processes page", () => {
     ).toHaveAttribute("aria-disabled", "true");
 
     await user.click(quit);
-    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.queryByRole("alertdialog")).toBeNull();
     act(() => {
       quit.blur();
       quit.focus();
@@ -158,7 +160,7 @@ describe("Processes page", () => {
     await user.click(
       await screen.findByRole("button", { name: "Quit mds_stores (466)" })
     );
-    const dialog = await screen.findByRole("dialog");
+    const dialog = await screen.findByRole("alertdialog");
     await user.click(within(dialog).getByRole("button", { name: "Quit" }));
     expect(
       await screen.findByText(
@@ -175,7 +177,7 @@ describe("Processes page", () => {
     await user.click(
       within(menu).getByRole("menuitem", { name: "Force Quit…" })
     );
-    const dialog = await screen.findByRole("dialog", {
+    const dialog = await screen.findByRole("alertdialog", {
       name: "Force quit Figma?",
     });
     await user.click(
@@ -303,7 +305,7 @@ describe("Processes page, App Store edition (D-065)", () => {
     await user.click(
       await screen.findByRole("button", { name: "Quit Xcode (2214)" })
     );
-    const dialog = await screen.findByRole("dialog");
+    const dialog = await screen.findByRole("alertdialog");
     await user.click(within(dialog).getByRole("button", { name: "Quit" }));
     await waitFor(() =>
       expect(screen.queryByRole("button", { name: /Quit Xcode/ })).toBeNull()

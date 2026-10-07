@@ -73,7 +73,7 @@ test("quitting a process asks first, then removes it", async ({ page }) => {
   const row = page.getByRole("row", { name: /Xcode/ });
   await row.hover();
   await row.getByRole("button", { name: /^Quit Xcode/ }).click();
-  const dialog = page.getByRole("dialog");
+  const dialog = page.getByRole("alertdialog");
   await expect(dialog).toContainText("Quit Xcode?");
   await dialog.getByRole("button", { name: "Quit", exact: true }).click();
   await expect(page.getByText(/Asked Xcode \(\d+\) to quit/)).toBeVisible();

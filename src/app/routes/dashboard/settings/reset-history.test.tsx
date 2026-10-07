@@ -25,7 +25,7 @@ describe("Settings: history unavailable and Reset history (D-064)", () => {
       )
     );
 
-    const dialog = await screen.findByRole("dialog", {
+    const dialog = await screen.findByRole("alertdialog", {
       name: "Reset history?",
     });
     expect(dialog).toHaveTextContent(/kept aside/);
@@ -48,9 +48,9 @@ describe("Settings: history unavailable and Reset history (D-064)", () => {
     await user.click(
       await screen.findByRole("button", { name: "Reset history" })
     );
-    const dialog = await screen.findByRole("dialog");
+    const dialog = await screen.findByRole("alertdialog");
     await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
     expect(transport.calls.map((c) => c.command)).not.toContain(
       "reset_history"
     );
