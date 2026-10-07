@@ -8,9 +8,8 @@
 //! states (1020 to 2568 MHz), 20 P states (1092 to 4056 MHz) and a GPU table topping out
 //! at 1380 MHz, matching the residency state counts IOReport reports.
 
-use std::ffi::CStr;
-
 use super::{cf, iokit};
+use crate::macos::sysctl;
 
 /// DVFS operating points in MHz, in table order (the order of IOReport's active states).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -23,29 +22,7 @@ pub(crate) struct DvfsTables {
 
 /// `machdep.cpu.brand_string`, for example "Apple M3 Max".
 pub(crate) fn chip_name() -> Option<String> {
-    sysctl_string(c"machdep.cpu.brand_string")
-}
-
-fn sysctl_string(name: &CStr) -> Option<String> {
-    let mut buf = [0u8; 128];
-    let mut len = buf.len();
-    // SAFETY: `name` is NUL-terminated; `buf` has `len` writable bytes and the kernel
-    // writes at most that many.
-    let rc = unsafe {
-        libc::sysctlbyname(
-            name.as_ptr(),
-            buf.as_mut_ptr().cast(),
-            &mut len,
-            std::ptr::null_mut(),
-            0,
-        )
-    };
-    if rc != 0 {
-        return None;
-    }
-    let bytes = buf.get(..len)?;
-    let end = bytes.iter().position(|&b| b == 0).unwrap_or(bytes.len());
-    String::from_utf8(bytes.get(..end)?.to_vec()).ok()
+    sysctl::string_in::<128>(c"machdep.cpu.brand_string")
 }
 
 /// Reads the DVFS tables from the IORegistry. `None` if no CPU table was found.

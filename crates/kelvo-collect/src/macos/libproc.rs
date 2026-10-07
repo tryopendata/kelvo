@@ -4,6 +4,8 @@
 use std::borrow::Cow;
 use std::ffi::{CStr, c_char, c_int, c_void};
 
+use super::sysctl;
+
 /// `struct rusage_info_v6` from `<sys/resource.h>` (macOS 14+ SDK). libc stops at v4.
 /// CPU times are in Mach absolute time units; `ri_energy_nj` is nanojoules.
 #[repr(C)]
@@ -347,38 +349,12 @@ const ARGS_MAX: usize = 1 << 20;
 /// with a 4 KiB buffer and a 5.6 KiB area). Allocates the area's size once per process.
 fn argv0(pid: i32) -> Option<String> {
     let mut mib = [libc::CTL_KERN, libc::KERN_PROCARGS2, pid];
-    let mut size = 0usize;
-    crate::calls::count(crate::calls::Api::Kernel);
-    // SAFETY: a size query: null output buffer, `size` receives the needed size.
-    let rc = unsafe {
-        libc::sysctl(
-            mib.as_mut_ptr(),
-            mib.len() as u32,
-            std::ptr::null_mut(),
-            &mut size,
-            std::ptr::null_mut(),
-            0,
-        )
-    };
-    if rc != 0 || size == 0 || size > ARGS_MAX {
+    let size = sysctl::mib_len(&mut mib)?;
+    if size == 0 || size > ARGS_MAX {
         return None;
     }
     let mut buf = vec![0u8; size];
-    crate::calls::count(crate::calls::Api::Kernel);
-    // SAFETY: `buf` has `size` writable bytes; the kernel writes at most `size`.
-    let rc = unsafe {
-        libc::sysctl(
-            mib.as_mut_ptr(),
-            mib.len() as u32,
-            buf.as_mut_ptr().cast(),
-            &mut size,
-            std::ptr::null_mut(),
-            0,
-        )
-    };
-    if rc != 0 {
-        return None;
-    }
+    let size = sysctl::mib_into(&mut mib, &mut buf)?;
     parse_argv0(buf.get(..size)?).map(str::to_owned)
 }
 

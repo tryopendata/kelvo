@@ -23,15 +23,15 @@ use std::ffi::{CStr, c_char, c_int, c_void};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{Duration, Instant};
 
-use core_foundation::array::CFArray;
 use core_foundation::base::{CFType, TCFType};
 use core_foundation::boolean::CFBoolean;
 use core_foundation::dictionary::CFDictionary;
 use core_foundation::string::CFString;
-use core_foundation_sys::array::CFArrayRef;
-use core_foundation_sys::base::{CFRelease, CFTypeRef};
 use core_foundation_sys::dictionary::CFDictionaryRef;
-use core_foundation_sys::string::CFStringRef;
+use kelvo_collect::macos::iokit::{
+    IONotificationPortDestroy, IONotificationPortSetDispatchQueue, NotificationPort,
+};
+use kelvo_collect::macos::power_sources::Snapshot;
 use objc2_foundation::NSProcessInfo;
 
 use super::dispatch::Queue;
@@ -48,7 +48,6 @@ pub const SLOW_POLL: Duration = Duration::from_secs(2);
 
 type IoConnect = u32;
 type IoObject = u32;
-type NotificationPort = *mut c_void;
 type InterestCallback = extern "C" fn(*mut c_void, IoObject, u32, *mut c_void);
 
 // iokit_common_msg(...) = sys_iokit (0xe0000000) | sub_iokit_common (0) | message.
@@ -66,13 +65,7 @@ unsafe extern "C" {
     ) -> IoConnect;
     fn IODeregisterForSystemPower(notifier: *mut IoObject) -> c_int;
     fn IOAllowPowerChange(kernel_port: IoConnect, notification_id: isize) -> c_int;
-    fn IONotificationPortSetDispatchQueue(port: NotificationPort, queue: *mut c_void);
-    fn IONotificationPortDestroy(port: NotificationPort);
     fn IOServiceClose(connect: IoConnect) -> c_int;
-    fn IOPSCopyPowerSourcesInfo() -> CFTypeRef;
-    fn IOPSGetProvidingPowerSourceType(snapshot: CFTypeRef) -> CFStringRef;
-    fn IOPSCopyPowerSourcesList(snapshot: CFTypeRef) -> CFArrayRef;
-    fn IOPSGetPowerSourceDescription(snapshot: CFTypeRef, ps: CFTypeRef) -> CFDictionaryRef;
 }
 
 #[link(name = "CoreGraphics", kind = "framework")]
@@ -259,57 +252,17 @@ impl Drop for MacPowerSignals {
 /// `(on_battery, charging)` from one IOPowerSources snapshot. Without a snapshot or a
 /// battery, both are false: the Mac counts as on its adapter.
 fn power_source() -> (bool, bool) {
-    // SAFETY: Create rule: we own the snapshot and release it below.
-    let info = unsafe { IOPSCopyPowerSourcesInfo() };
-    if info.is_null() {
+    // Uncounted, as before: the engine's own reads are outside the collectors' call
+    // ceilings (D-062).
+    let Some(snapshot) = Snapshot::take() else {
         return (false, false);
-    }
-    // SAFETY: `info` is a valid snapshot; the returned string follows the Get rule and is
-    // only used while `info` is alive.
-    let kind = unsafe { IOPSGetProvidingPowerSourceType(info) };
-    let battery = if kind.is_null() {
-        false
-    } else {
-        // SAFETY: non-null CFString borrowed under the Get rule.
-        let s = unsafe { CFString::wrap_under_get_rule(kind) };
-        s == CFString::from_static_string("Battery Power")
     };
-    let charging = internal_battery_charging(info);
-    // SAFETY: releasing the snapshot we own.
-    unsafe { CFRelease(info) };
-    (battery, charging)
-}
-
-/// `Is Charging` of the internal battery in `info`, false when there is none.
-fn internal_battery_charging(info: CFTypeRef) -> bool {
-    // SAFETY: `info` is a live snapshot; Copy rule, so a non-null list is owned here.
-    let list = unsafe { IOPSCopyPowerSourcesList(info) };
-    if list.is_null() {
-        return false;
-    }
-    // SAFETY: non-null CFArray we own (Copy rule).
-    let list: CFArray<CFType> = unsafe { CFArray::wrap_under_create_rule(list) };
-    for ps in list.iter() {
-        // SAFETY: `ps` comes from this snapshot's list; Get rule, valid while `info` is.
-        let desc = unsafe { IOPSGetPowerSourceDescription(info, ps.as_CFTypeRef()) };
-        if desc.is_null() {
-            continue;
-        }
-        // SAFETY: non-null description dictionary with CFString keys, borrowed (Get rule).
-        let desc: CFDictionary<CFString, CFType> =
-            unsafe { CFDictionary::wrap_under_get_rule(desc) };
-        let internal = desc
-            .find(CFString::from_static_string("Type"))
-            .and_then(|v| v.downcast::<CFString>())
-            .is_some_and(|t| t == CFString::from_static_string("InternalBattery"));
-        if internal {
-            return desc
-                .find(CFString::from_static_string("Is Charging"))
-                .and_then(|v| v.downcast::<CFBoolean>())
-                .is_some_and(bool::from);
-        }
-    }
-    false
+    let charging = snapshot.internal_battery().is_some_and(|desc| {
+        desc.find(CFString::from_static_string("Is Charging"))
+            .and_then(|v| v.downcast::<CFBoolean>())
+            .is_some_and(bool::from)
+    });
+    (snapshot.on_battery(), charging)
 }
 
 fn display_asleep() -> bool {

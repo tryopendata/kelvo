@@ -5,7 +5,11 @@
 
 use std::ffi::{CStr, c_char, c_int, c_void};
 
-use core_foundation_sys::dictionary::{CFDictionaryRef, CFMutableDictionaryRef};
+use core_foundation_sys::dictionary::CFDictionaryRef;
+use kelvo_collect::macos::iokit::{
+    IOIteratorNext, IONotificationPortCreate, IONotificationPortDestroy,
+    IONotificationPortSetDispatchQueue, IOObjectRelease, IOServiceMatching, NotificationPort,
+};
 use kelvo_schema::Module;
 
 use super::dispatch::Queue;
@@ -13,15 +17,10 @@ use crate::hints::DeviceHints;
 use crate::inbox::Inbox;
 
 type IoObject = u32;
-type NotificationPort = *mut c_void;
 type MatchingCallback = extern "C" fn(*mut c_void, IoObject);
 
 #[link(name = "IOKit", kind = "framework")]
 unsafe extern "C" {
-    fn IONotificationPortCreate(main_port: u32) -> NotificationPort;
-    fn IONotificationPortSetDispatchQueue(port: NotificationPort, queue: *mut c_void);
-    fn IONotificationPortDestroy(port: NotificationPort);
-    fn IOServiceMatching(name: *const c_char) -> CFMutableDictionaryRef;
     fn IOServiceAddMatchingNotification(
         port: NotificationPort,
         notification_type: *const c_char,
@@ -30,8 +29,6 @@ unsafe extern "C" {
         refcon: *mut c_void,
         iterator: *mut IoObject,
     ) -> c_int;
-    fn IOIteratorNext(iterator: IoObject) -> IoObject;
-    fn IOObjectRelease(object: IoObject) -> c_int;
 }
 
 const FIRST_MATCH: &CStr = c"IOServiceFirstMatch";

@@ -20,7 +20,7 @@
 use kelvo_schema::{Entitlement, Labels, MetricId, Module, SeriesKey};
 
 use super::PartSum;
-use super::iokit::{self, IoObject, Key};
+use super::iokit::{self, IoObject, Key, matching_services};
 use crate::{Cadence, CollectError, Collector, CollectorId, Probe, SampleBuf, Tick};
 
 struct Device {
@@ -111,7 +111,7 @@ impl Collector for DiskIo {
         self.devices.clear();
         self.prev_ns = 0;
         let mut series = Vec::new();
-        for driver in IoObject::services(c"IOBlockStorageDriver") {
+        for driver in matching_services(c"IOBlockStorageDriver") {
             let Some(name) = driver
                 .first_child()
                 .and_then(|media| media.property(&self.k_bsd))

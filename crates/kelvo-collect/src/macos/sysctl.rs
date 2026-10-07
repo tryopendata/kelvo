@@ -1,6 +1,6 @@
 //! Small safe wrappers over `sysctlbyname` and the Mach timebase.
 
-use std::ffi::CStr;
+use std::ffi::{CStr, c_int};
 use std::mem::MaybeUninit;
 
 /// Reads a fixed-size sysctl value. Returns `None` if the name is unknown or the kernel
@@ -57,12 +57,20 @@ pub(crate) fn int(name: &CStr) -> Option<i64> {
     }
 }
 
-/// A string sysctl, without the trailing NUL.
-pub(crate) fn string(name: &CStr) -> Option<String> {
-    let mut buf = [0u8; 256];
-    let mut len = buf.len();
+/// A string sysctl, without the trailing NUL. Public so the engine can re-export it for
+/// the app shell's host facts.
+pub fn string(name: &CStr) -> Option<String> {
     crate::calls::count(crate::calls::Api::Kernel);
-    // SAFETY: `buf` is 256 writable bytes and `len` says so.
+    string_in::<256>(name)
+}
+
+/// [`string`] read into an `N`-byte buffer and not counted; `None` when the value does
+/// not fit.
+pub(crate) fn string_in<const N: usize>(name: &CStr) -> Option<String> {
+    let mut buf = [0u8; N];
+    let mut len = buf.len();
+    // SAFETY: `name` is NUL-terminated; `buf` is `N` writable bytes and `len` says so;
+    // the kernel writes at most that many.
     let rc = unsafe {
         libc::sysctlbyname(
             name.as_ptr(),
@@ -78,6 +86,47 @@ pub(crate) fn string(name: &CStr) -> Option<String> {
     let bytes = buf.get(..len)?;
     let end = bytes.iter().position(|&b| b == 0).unwrap_or(bytes.len());
     String::from_utf8(bytes.get(..end)?.to_vec()).ok()
+}
+
+/// The bytes `sysctl(mib)` would return: the size query of a size-then-fill read.
+/// `None` when the call fails; errno is left for the caller.
+pub(crate) fn mib_len(mib: &mut [c_int]) -> Option<usize> {
+    let mut len = 0usize;
+    crate::calls::count(crate::calls::Api::Kernel);
+    // SAFETY: a size query: null output buffer, `len` receives the needed size; `mib`
+    // has `mib.len()` valid entries.
+    let rc = unsafe {
+        libc::sysctl(
+            mib.as_mut_ptr(),
+            mib.len() as u32,
+            std::ptr::null_mut(),
+            &mut len,
+            std::ptr::null_mut(),
+            0,
+        )
+    };
+    (rc == 0).then_some(len)
+}
+
+/// Reads `sysctl(mib)` into `buf`, returning how many bytes the kernel wrote: the fill
+/// of a size-then-fill read after [`mib_len`]. `None` when the call fails; errno is left
+/// for the caller (`ENOMEM` when `buf` is too small).
+pub(crate) fn mib_into(mib: &mut [c_int], buf: &mut [u8]) -> Option<usize> {
+    let mut len = buf.len();
+    crate::calls::count(crate::calls::Api::Kernel);
+    // SAFETY: `buf` has `len` writable bytes; the kernel writes at most `len`. `mib` has
+    // `mib.len()` valid entries.
+    let rc = unsafe {
+        libc::sysctl(
+            mib.as_mut_ptr(),
+            mib.len() as u32,
+            buf.as_mut_ptr().cast(),
+            &mut len,
+            std::ptr::null_mut(),
+            0,
+        )
+    };
+    (rc == 0).then_some(len)
 }
 
 /// `vm.swapusage`.

@@ -6,23 +6,25 @@
 pub mod battery;
 pub mod cpu;
 pub mod disk;
+pub mod dispatch;
 pub mod gpu;
 pub mod gpu_procs;
 pub mod hid;
 pub mod ifaddrs;
-mod iokit;
+pub mod iokit;
 pub mod ioreport;
 mod libproc;
 pub mod memory;
 pub mod network;
 pub mod nstat;
 pub mod ports;
+pub mod power_sources;
 pub(crate) mod process_control;
 pub mod processes;
 pub mod self_cpu;
 pub mod sensors;
 pub mod smc;
-mod sysctl;
+pub mod sysctl;
 pub mod thermal_state;
 mod vendor;
 
