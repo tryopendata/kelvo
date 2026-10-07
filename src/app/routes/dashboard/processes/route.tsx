@@ -1,6 +1,6 @@
 import type { LiveProcess } from "@core/generated/bindings";
 import { FULL_TABLE, type ProcessView } from "@core/process-interest";
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { PageHeader } from "~/components/page-header";
 import {
   ProcessContextMenu,
@@ -11,6 +11,7 @@ import { type ProcessSort, ProcessTable } from "~/components/process-table";
 import { SearchField } from "~/components/search-field";
 import { SegmentedControl } from "~/components/segmented-control";
 import { useEdition } from "~/hooks/use-edition";
+import { useElementSize } from "~/hooks/use-element-size";
 import {
   useProcessGpu,
   useProcessInterest,
@@ -44,23 +45,6 @@ const FULL_TABLE_NETWORK: ProcessView = { ...FULL_TABLE_PORTS, network: true };
 
 /** With GPU time (D-085): the GPU column set. */
 const FULL_TABLE_GPU: ProcessView = { ...FULL_TABLE_PORTS, gpu: true };
-
-/** Height of the element, tracked as the window resizes. */
-function useMeasuredHeight(fallback: number) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [height, setHeight] = useState(fallback);
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el || typeof ResizeObserver === "undefined") return;
-    const ro = new ResizeObserver(([entry]) => {
-      const h = Math.floor(entry?.contentRect.height ?? 0);
-      if (h > 0) setHeight(h);
-    });
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
-  return [ref, height] as const;
-}
 
 /**
  * Processes (plan 4.14): the CPU page's "Top processes" table at full
@@ -97,7 +81,8 @@ export default function ProcessesRoute() {
   const tableSort = COLUMN_SETS[set].columns.includes(sort.by)
     ? sort
     : COLUMN_SETS[set].sort;
-  const [bodyRef, bodyHeight] = useMeasuredHeight(480);
+  const [bodyRef, measured] = useElementSize("height", 480);
+  const bodyHeight = Math.floor(measured);
 
   const shown = useMemo(() => filterProcesses(rows, query), [rows, query]);
   const loading = live === null;

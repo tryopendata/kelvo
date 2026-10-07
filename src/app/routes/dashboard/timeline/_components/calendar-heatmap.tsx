@@ -1,12 +1,6 @@
-import {
-  type KeyboardEvent,
-  memo,
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-} from "react";
+import { type KeyboardEvent, memo, useEffect, useRef, useState } from "react";
 import { useThemeVersion, withAlpha } from "~/components/charts/theme";
+import { useElementSize } from "~/hooks/use-element-size";
 import { cn } from "~/lib/utils";
 import {
   cellAlpha,
@@ -66,24 +60,11 @@ export const CalendarHeatmap = memo(function CalendarHeatmap({
 }: CalendarHeatmapProps) {
   const selectable = (row: HeatmapRow, h: number) =>
     !isFutureCell(row, h, nowHourMs);
-  const bodyRef = useRef<HTMLDivElement>(null);
+  const [bodyRef, width] = useElementSize("width");
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const theme = useThemeVersion();
-  const [width, setWidth] = useState(0);
   const [focus, setFocus] = useState<[number, number] | null>(null);
   const [fr, fh] = focus ?? current ?? [rows.length - 1, 0];
-
-  useLayoutEffect(() => {
-    const el = bodyRef.current;
-    if (!el) return;
-    setWidth(el.clientWidth);
-    if (typeof ResizeObserver === "undefined") return;
-    const resize = new ResizeObserver(([entry]) => {
-      if (entry) setWidth(entry.contentRect.width);
-    });
-    resize.observe(el);
-    return () => resize.disconnect();
-  }, []);
 
   const height = rows.length * (CELL_H + GAP) - GAP;
   const cellsW = Math.max(0, width - CELLS_LEFT);

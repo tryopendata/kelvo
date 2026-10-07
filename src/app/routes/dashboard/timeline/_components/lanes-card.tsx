@@ -15,6 +15,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { useElementSize } from "~/hooks/use-element-size";
 import { cn } from "~/lib/utils";
 import { GapBand } from "~/widgets/gap-band";
 import { accentVars } from "~/widgets/lib/accent";
@@ -144,23 +145,10 @@ export function LanesCard({
   memTotal,
   onPlotWidth,
 }: LanesCardProps) {
-  const plotColRef = useRef<HTMLDivElement>(null);
+  const [plotColRef, width] = useElementSize("width");
   const sliderRef = useRef<HTMLDivElement>(null);
-  const [width, setWidth] = useState(0);
   const [cursor, setCursor] = useState<number | null>(null);
   const [tableLane, setTableLane] = useState<LaneData | null>(null);
-
-  useEffect(() => {
-    const el = plotColRef.current;
-    if (!el) return;
-    setWidth(el.clientWidth);
-    if (typeof ResizeObserver === "undefined") return;
-    const ro = new ResizeObserver(([entry]) => {
-      if (entry) setWidth(entry.contentRect.width);
-    });
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
 
   useEffect(() => {
     if (width > 0) onPlotWidth?.(width);
