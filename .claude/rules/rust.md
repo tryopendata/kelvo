@@ -25,6 +25,9 @@ kelvo-engine  <- src-tauri (app shell), kelvo-agent (v4)
 
 - `kelvo-schema` is pure data: metric catalog, series keys (`metric_id` + labels), HostInfo,
   Capabilities, alert-rule data, the typed `Snapshot` view. No I/O, no platform code.
+  The one non-data module is `kelvo_schema::lock` (`LockExt`/`RwLockExt`, poison-recovering
+  lock access, std only): every crate already depends on schema, so it lives here rather
+  than adding a crate edge.
 - `kelvo-proto` is framing, codec (CBOR via `ciborium`), handshake and message types. It
   never touches the store or collectors.
 - `kelvo-collect` reads the OS. It knows nothing about storage or the UI.
