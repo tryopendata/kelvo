@@ -160,6 +160,10 @@ Measured after the commit: `make bench` tray-only 0.672% (from 1.21 to 1.38 earl
 
 Open: a parallel `make bench` against the pre-D-094 build to confirm the drop, then phases 2 to 5 of the plan (tray subview spike, dashboard-open gate, Overview cost, ratchet).
 
+### 2026-10-07 (e2e fixes)
+
+Onboarding step 1 overflowed the fixed 820 x 566 window by 35 px since the Kelvo mark got its own line (6c2a8a5), so "Values only" ran under the footer and `timeline-settings-onboarding.spec.ts` failed in both engines. The mark now sits beside the title, as in the popover header. `shell-screens.spec.ts` "a sidebar tab opens its page scrolled to the top" was flaky because its wait matched Overview's Network card heading before navigation finished; it now waits for the page title. 40 of 40 repeats pass, and it fails when the scroll reset is removed.
+
 ### 2026-10-07 (public IP on VPN, tray addresses)
 
 The public IP now follows a VPN (D-093 amended). A full-tunnel VPN can leave SystemConfiguration's primary interface on `en0` with the same LAN address, so the public lookup, keyed on those two, kept its old answer for up to 10 minutes. `NetworkAddresses.egress` reports the interface the kernel routes a public IPv4 address through (`egress_interface`, an `RTM_GET` on a routing socket in `kelvo-collect`'s `ifaddrs.rs`), the public query is keyed on it too, and the local read polls every 10 s and re-reads when a window is shown. The popover's Network card shows the local and public addresses in place of "All interfaces · en0", each click-to-copy with the Network page's tooltip, via a new `ModuleCard` `aside` slot drawn over the card outside its link; clicking anywhere else opens the Network page. `useAddresses` moved to `src/app/hooks`.

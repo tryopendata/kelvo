@@ -84,8 +84,11 @@ test("a sidebar tab opens its page scrolled to the top", async ({ page }) => {
     .getByRole("navigation")
     .getByRole("link", { name: /^Network/ })
     .click();
+  // The page title, not any "Network" heading: Overview's Network card has
+  // one too, which matched before navigation finished. The title and the
+  // scroll reset land in the same commit, so one read is enough.
   await expect(
-    page.getByRole("heading", { name: "Network", exact: true })
+    page.getByRole("heading", { level: 1, name: "Network", exact: true })
   ).toBeVisible();
   expect(await main.evaluate((el) => el.scrollTop)).toBe(0);
 });

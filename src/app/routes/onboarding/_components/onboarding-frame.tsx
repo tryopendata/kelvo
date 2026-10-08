@@ -41,8 +41,14 @@ export function OnboardingFrame({
         className={cn("flex flex-col gap-1.5 px-8 pt-2", head.className)}
         style={head.style}
       >
-        <KelvoMark className="mb-1 size-9" />
-        <h1 className="font-[590] text-[28px] tracking-[-0.022em]">{title}</h1>
+        {/* The mark sits beside the title, as in the popover header, so the
+            steps fit the fixed 820 x 566 window above the footer. */}
+        <div className="flex items-center gap-3">
+          <KelvoMark className="size-9" />
+          <h1 className="font-[590] text-[28px] tracking-[-0.022em]">
+            {title}
+          </h1>
+        </div>
         <p className="font-normal text-[14px] text-fg-subtle">{sub}</p>
       </div>
       <div
