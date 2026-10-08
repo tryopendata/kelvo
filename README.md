@@ -6,6 +6,8 @@ Kelvo shows CPU, GPU, memory, power and sensors, network, disk and battery once 
 
 Kelvo is pre-release. There's no signed download yet, so the installer builds it from source on your Mac.
 
+![The Kelvo dashboard switching between modules](https://raw.githubusercontent.com/tryopendata/kelvo/assets/media/dashboard.webp)
+
 ## Install
 
 You need an Apple Silicon Mac (M1 or newer) on macOS 26 or newer. Intel Macs aren't supported because the power and sensor readings come from interfaces only Apple Silicon has.
@@ -55,9 +57,19 @@ rm -rf ~/.kelvo
 | Battery | Charge, health, cycle count, power in or out, time remaining |
 | Processes | Every process, with CPU, memory, disk, network and GPU columns |
 
+![The CPU page](https://raw.githubusercontent.com/tryopendata/kelvo/assets/media/cpu.webp)
+
+![The Memory page](https://raw.githubusercontent.com/tryopendata/kelvo/assets/media/memory.webp)
+
+![The Network page](https://raw.githubusercontent.com/tryopendata/kelvo/assets/media/network.webp)
+
 The Timeline puts every module on one chart covering the last hour, 24 hours, 7 days or 30 days, and marks events on it: fans ramping, thermal state changes, a process pinning the CPU, power spikes. A heatmap shows CPU load or temperature by hour across 30 days. Any range exports to CSV.
 
+![The Timeline](https://raw.githubusercontent.com/tryopendata/kelvo/assets/media/timeline.webp)
+
 The menu bar can show one combined item or one item per module, each as a number, a graph or a per-core strip.
+
+<img src="https://raw.githubusercontent.com/tryopendata/kelvo/assets/media/tray.webp" alt="The menu bar popover" width="283">
 
 ## Resource use
 

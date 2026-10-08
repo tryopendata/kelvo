@@ -67,7 +67,8 @@ find_source() {
   else
     say "downloading the source to $SRC."
     mkdir -p "$(dirname "$SRC")"
-    git clone --quiet "$REPO_URL" "$SRC" </dev/null
+    # main only: the assets branch holds the README media, which the build doesn't need.
+    git clone --quiet --single-branch --branch main "$REPO_URL" "$SRC" </dev/null
   fi
 }
 
