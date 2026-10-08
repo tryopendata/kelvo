@@ -1334,6 +1334,7 @@ export function createMockTransport(
           iface: status.primary_iface,
           ipv4: status.primary_iface === null ? [] : [MOCK_LOCAL_IPV4],
           ipv6: [],
+          egress: status.primary_iface,
         })
       );
     },

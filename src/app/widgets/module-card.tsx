@@ -19,6 +19,12 @@ export interface ModuleCardProps {
    */
   subtitle?: string;
   subtitleStyle?: "text" | "label";
+  /**
+   * Controls in the subtitle's place (copyable addresses). Drawn over the
+   * card, outside its link, so a click on them never opens the page and no
+   * button nests in the anchor.
+   */
+  aside?: ReactNode;
   /** Popover cards share one light source (design-system.md): top left. */
   origin?: Corner;
   /** A state line under the header ("Sensor read failed · last value 11:02"). */
@@ -42,6 +48,7 @@ export function ModuleCard({
   unit,
   subtitle,
   subtitleStyle = "text",
+  aside,
   origin = "tl",
   notice,
   href,
@@ -73,7 +80,7 @@ export function ModuleCard({
               <span className="text-[12px] text-muted-foreground">{unit}</span>
             )}
           </span>
-        ) : subtitle !== undefined ? (
+        ) : subtitle !== undefined && aside === undefined ? (
           <span
             className={
               subtitleStyle === "label"
@@ -89,7 +96,7 @@ export function ModuleCard({
       {children}
     </>
   );
-  return (
+  const card = (
     <LinkCard
       accent={accent}
       origin={origin}
@@ -106,5 +113,14 @@ export function ModuleCard({
     >
       {content}
     </LinkCard>
+  );
+  if (aside === undefined) return card;
+  return (
+    <div className="relative">
+      {card}
+      <div className="absolute top-3 right-3 font-normal text-[11px] text-muted-foreground">
+        {aside}
+      </div>
+    </div>
   );
 }

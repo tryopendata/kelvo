@@ -1185,6 +1185,11 @@ export type NetworkAddresses = {
 	ipv4: string[],
 	/**  Link-local addresses are left out. */
 	ipv6: string[],
+	/**
+	 *  The interface IPv4 internet traffic leaves through: a full-tunnel VPN's `utun`
+	 *  while `iface` stays on Wi-Fi, else usually `iface`. `None` without an IPv4 route.
+	 */
+	egress: string | null,
 };
 
 /**

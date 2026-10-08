@@ -160,6 +160,14 @@ Measured after the commit: `make bench` tray-only 0.672% (from 1.21 to 1.38 earl
 
 Open: a parallel `make bench` against the pre-D-094 build to confirm the drop, then phases 2 to 5 of the plan (tray subview spike, dashboard-open gate, Overview cost, ratchet).
 
+### 2026-10-07 (public IP on VPN, tray addresses)
+
+The public IP now follows a VPN (D-093 amended). A full-tunnel VPN can leave SystemConfiguration's primary interface on `en0` with the same LAN address, so the public lookup, keyed on those two, kept its old answer for up to 10 minutes. `NetworkAddresses.egress` reports the interface the kernel routes a public IPv4 address through (`egress_interface`, an `RTM_GET` on a routing socket in `kelvo-collect`'s `ifaddrs.rs`), the public query is keyed on it too, and the local read polls every 10 s and re-reads when a window is shown. The popover's Network card shows the local and public addresses in place of "All interfaces · en0", each click-to-copy with the Network page's tooltip, via a new `ModuleCard` `aside` slot drawn over the card outside its link; clicking anywhere else opens the Network page. `useAddresses` moved to `src/app/hooks`.
+
+Verified: `bun run check` (Vitest 883), `make rust-check`, `cargo test -p kelvo-collect -p kelvo`; the egress test compares against `/sbin/route -n get` on this Mac; the VPN-switch and popover-copy tests fail when the fix is reverted. Popover card screenshotted against the dev server (mock transport).
+
+Open: not yet checked on hardware with a VPN toggled; the popover now asks ipify (at most every 10 minutes while shown), where before only the Network page did.
+
 ### 2026-10-07 (earlier)
 
 Power & Sensors, Network and Settings batch (D-093). Power & Sensors: the SoC thermal zones table scrolls past 10 rows with a sticky header; a new "Energy by app" table ranks apps by CPU energy over the page's chart window, expands to processes (exited ones marked), searches by app, process or PID, and quits an app's main process or any running child. The Search field, quit flow and process actions moved to `src/app/components` and `src/app/hooks` for sharing; the Network Apps table parts moved to `app-table.tsx`. Network: the header shows the primary interface's local IPv4 and the public IP, click to copy. A brushed range clears with a click on the chart, Esc, or a press on empty space outside the chart and Apps table; the chip's Clear is an ×. Settings: °F is the default for new installs.

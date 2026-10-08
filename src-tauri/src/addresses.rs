@@ -23,6 +23,7 @@ pub fn network_addresses(iface: Option<&str>) -> NetworkAddresses {
         iface: iface.map(str::to_owned),
         ipv4: addrs.ipv4.iter().map(ToString::to_string).collect(),
         ipv6: addrs.ipv6.iter().map(ToString::to_string).collect(),
+        egress: kelvo_engine::egress_interface(),
     }
 }
 

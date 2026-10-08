@@ -1,5 +1,5 @@
 import { CopyValue } from "~/components/copy-value";
-import { useAddresses } from "../_hooks/use-addresses";
+import { useAddresses } from "~/hooks/use-addresses";
 
 /**
  * The header's addresses (D-093): the primary interface's IPv4 (its IPv6

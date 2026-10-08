@@ -150,12 +150,15 @@ export const appKeys = {
   /** Build-time features (D-065); fixed for the life of the app. */
   edition: ["app", "edition"] as const,
   /**
-   * The public address (D-093), keyed by the primary interface and its local
-   * address: another network (a new lease, even on the same Wi-Fi
-   * interface) asks again.
+   * The public address (D-093), keyed by the primary interface, its local
+   * address and the egress interface: another network (a new lease, even on
+   * the same Wi-Fi interface) or a VPN coming up asks again.
    */
-  publicIp: (iface: string | null, local: string | null) =>
-    ["app", "public-ip", iface, local] as const,
+  publicIp: (
+    iface: string | null,
+    local: string | null,
+    egress: string | null
+  ) => ["app", "public-ip", iface, local, egress] as const,
 };
 
 /** True for a query key that starts with `prefix`. */

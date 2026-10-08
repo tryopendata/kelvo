@@ -50,6 +50,39 @@ describe("AddressLine (D-093)", () => {
     expect(publicCalls(t)).toBe(0);
   });
 
+  it("asks again when a VPN takes the internet route", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const t = transport();
+      let egress = "en0";
+      const local = t.getNetworkAddresses;
+      t.getNetworkAddresses = async (host) => {
+        const r = await local(host);
+        return r.status === "ok" ? { ...r, data: { ...r.data, egress } } : r;
+      };
+      let publicIp = MOCK_PUBLIC_IP;
+      t.getPublicIp = async () => ({ status: "ok", data: publicIp });
+      renderWithProviders(<AddressLine primary="en0" />, { transport: t });
+      expect(
+        await screen.findByRole("button", {
+          name: `Copy public IP address ${MOCK_PUBLIC_IP}`,
+        })
+      ).toBeVisible();
+
+      // Same interface, same LAN address; only the route moves.
+      egress = "utun4";
+      publicIp = "198.51.100.9";
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(
+        await screen.findByRole("button", {
+          name: "Copy public IP address 198.51.100.9",
+        })
+      ).toBeVisible();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("reads unavailable when the lookup fails, and does not retry", async () => {
     const t = transport();
     let asked = 0;

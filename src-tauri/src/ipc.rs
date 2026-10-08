@@ -685,6 +685,9 @@ pub struct NetworkAddresses {
     pub ipv4: Vec<String>,
     /// Link-local addresses are left out.
     pub ipv6: Vec<String>,
+    /// The interface IPv4 internet traffic leaves through: a full-tunnel VPN's `utun`
+    /// while `iface` stays on Wi-Fi, else usually `iface`. `None` without an IPv4 route.
+    pub egress: Option<String>,
 }
 
 /// What the history store can tell the UI about itself (D-057, D-059): the low-disk pause

@@ -99,7 +99,7 @@ pub use kelvo_collect::process_control;
 /// Collector periods the app shell's sampling plans quote (D-092).
 pub use kelvo_collect::{IDLE_MS, TEMPERATURE_PERIOD_MS};
 /// The Network page's address line reads the primary interface's addresses.
-pub use kelvo_collect::{IfaceAddrs, interface_addresses};
+pub use kelvo_collect::{IfaceAddrs, egress_interface, interface_addresses};
 pub use live::{LiveHub, RecentNet, WARM_LAYOUT_NO};
 pub use netacc::{NET_BUCKET_MS, NET_RING_BUCKETS};
 pub use netview::{

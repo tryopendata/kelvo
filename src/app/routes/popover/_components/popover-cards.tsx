@@ -18,6 +18,8 @@ import {
 } from "@core/format";
 import { METRIC_CODES } from "@core/generated/bindings";
 import { windowLabel, windowWords } from "@core/live-window";
+import { CopyValue } from "~/components/copy-value";
+import { useAddresses } from "~/hooks/use-addresses";
 import { useHostRecord } from "~/hooks/use-host-record";
 import { useNiceCeiling } from "~/hooks/use-nice-ceiling";
 import { useReadFailure } from "~/hooks/use-read-failure";
@@ -300,14 +302,16 @@ function seg2(
 
 /**
  * Network card: the totals over the reported interfaces (`net.rx_total`,
- * D-092), so the subtitle says so and names the interface carrying the
- * default route ("All interfaces · en0"; "All interfaces" on a full-tunnel
- * VPN). The figures are every interface's, not one interface's ("Wi‑Fi ·
- * en0"), and the interface kind is not reported yet.
+ * D-092). The header shows the local and public addresses (D-093), each
+ * copyable without opening the page. Before the local address is read, or
+ * without one (no network, a remote host), the subtitle says the figures are
+ * every interface's and names the one carrying the default route ("All
+ * interfaces · en0"; "All interfaces" on a full-tunnel VPN).
  */
 export function LiveNetworkCard() {
   const open = useOpen();
   const iface = usePrimaryIface();
+  const { lan, publicIp } = useAddresses(iface);
   const bits = useSettings((s) => s.units.network) === "bits_per_sec";
   const rxKey = "net.rx_total";
   const txKey = "net.tx_total";
@@ -329,6 +333,21 @@ export function LiveNetworkCard() {
       onOpen={open}
       subtitle={iface === null ? "All interfaces" : `All interfaces · ${iface}`}
       subtitleStyle="text"
+      aside={
+        lan === null ? undefined : (
+          <>
+            <CopyValue value={lan} label="local IP address" />
+            {" · "}
+            {publicIp.data ? (
+              <CopyValue value={publicIp.data} label="public IP address" />
+            ) : publicIp.isError ? (
+              "public unavailable"
+            ) : (
+              "…"
+            )}
+          </>
+        )
+      }
     >
       <StatGrid
         items={[

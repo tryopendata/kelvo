@@ -319,12 +319,18 @@ pub struct IfaceAddrs {
 }
 
 #[cfg(target_os = "macos")]
-pub use macos::ifaddrs::interface_addresses;
+pub use macos::ifaddrs::{egress_interface, interface_addresses};
 
 /// No addresses off macOS until the Linux collectors exist (v4).
 #[cfg(not(target_os = "macos"))]
 pub fn interface_addresses(_iface: &str) -> IfaceAddrs {
     IfaceAddrs::default()
+}
+
+/// No route lookup off macOS until the Linux collectors exist (v4).
+#[cfg(not(target_os = "macos"))]
+pub fn egress_interface() -> Option<String> {
+    None
 }
 
 /// The reported interface carrying the default route (D-092): the network collector's

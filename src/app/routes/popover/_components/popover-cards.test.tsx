@@ -1,8 +1,14 @@
 import type { LiveMsg } from "@core/generated/bindings";
+import { MOCK_LOCAL_IPV4, MOCK_PUBLIC_IP } from "@core/mock-transport";
 import { act, screen, waitFor } from "@testing-library/react";
 import { renderWithProviders } from "@tests/test-utils";
 import { type HostStore, useHostStore } from "~/stores/host-store";
-import { LiveCpuCard, LiveMemoryCard, LivePowerCard } from "./popover-cards";
+import {
+  LiveCpuCard,
+  LiveMemoryCard,
+  LiveNetworkCard,
+  LivePowerCard,
+} from "./popover-cards";
 
 let storeRef: HostStore | null = null;
 function GrabStore() {
@@ -110,5 +116,35 @@ describe("popover cards with missing values", () => {
     expect(after.getAttribute("aria-label")).toContain("GPU —");
     expect(after.getAttribute("aria-label")).toContain("Rest of system —");
     expect(after.children).toHaveLength(slices - 2);
+  });
+});
+
+describe("popover network card", () => {
+  it("copies an address without opening the page; the card still opens it", async () => {
+    const { transport, user } = renderWithProviders(<LiveNetworkCard />);
+    const write = vi
+      .spyOn(navigator.clipboard, "writeText")
+      .mockResolvedValue(undefined);
+    const opened = () =>
+      transport.calls.filter((c) => c.command === "open_dashboard").length;
+
+    await user.click(
+      await screen.findByRole("button", {
+        name: `Copy public IP address ${MOCK_PUBLIC_IP}`,
+      })
+    );
+    expect(write).toHaveBeenCalledWith(MOCK_PUBLIC_IP);
+    await user.click(
+      screen.getByRole("button", {
+        name: `Copy local IP address ${MOCK_LOCAL_IPV4}`,
+      })
+    );
+    expect(write).toHaveBeenCalledWith(MOCK_LOCAL_IPV4);
+    expect((await screen.findAllByText("Copied"))[0]).toBeInTheDocument();
+    expect(screen.queryByText(/All interfaces/)).toBeNull();
+    expect(opened()).toBe(0);
+
+    await user.click(screen.getByRole("link", { name: /Network/ }));
+    expect(opened()).toBe(1);
   });
 });
