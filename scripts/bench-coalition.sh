@@ -34,7 +34,7 @@
 #                              launch starts from shipped defaults held in memory
 #                              (KELVO_BENCH_DEFAULTS), so a setting left in the file
 #                              cannot spoil the run (D-073)
-#   MENU_BAR="cpu=own_graph"   menu bar modes on top of the defaults (KELVO_BENCH_MENU_BAR)
+#   MENU_BAR="items.cpu=graph" menu bar choices on top of the defaults (KELVO_BENCH_MENU_BAR, D-102)
 #
 # Each scenario also prints the tray's drawn frames per minute inside the measured window
 # (scripts/tray-frames.py) and what one drawn frame costs: main-thread ms (main % × 600 /

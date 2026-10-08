@@ -48,12 +48,16 @@ describe("Onboarding menu bar style", () => {
     await user.click(screen.getByRole("button", { name: "Continue" }));
 
     await waitFor(async () => {
-      const { modules } = (await transport.getSettings()).settings;
-      expect(modules.cpu?.menu_bar).toBe("own_graph");
-      expect(modules.memory?.menu_bar).toBe("own_graph");
-      expect(modules.network?.menu_bar).toBe("own_graph");
-      expect(modules.gpu?.menu_bar).toBe("hidden");
-      expect(modules.power?.menu_bar).toBe("hidden");
+      const { menu_bar } = (await transport.getSettings()).settings;
+      expect(menu_bar?.items).toMatchObject({
+        cpu: "graph",
+        memory: "graph",
+        network: "graph",
+        gpu: "off",
+        power: "off",
+      });
+      expect(menu_bar?.bars).toEqual({ cpu: false, gpu: false, memory: false });
+      expect(menu_bar?.readouts.temperature).toBe(false);
     });
   });
 });

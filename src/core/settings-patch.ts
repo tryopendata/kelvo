@@ -6,11 +6,13 @@
  */
 import {
   type CommandError,
-  MENU_BAR_MODES,
-  type MenuBarMode,
+  ITEM_MODES,
+  type ItemMode,
+  type MenuBarSettings,
   type ModuleCap,
   type Module as ModuleId,
   type ModulePatch,
+  type Readout,
   SAMPLING_INTERVALS_MS,
   SETTINGS_MODULES as SETTINGS_MODULE_ORDER,
   type SettingsPatch,
@@ -28,20 +30,48 @@ export const SETTINGS_MODULES: readonly SettingsModule[] =
 /** `SamplingSettings::INTERVALS_MS`. */
 export const INTERVALS_MS = SAMPLING_INTERVALS_MS;
 
-export const MENU_BAR_LABELS: Record<MenuBarMode, string> = {
-  in_combined: "In combined item",
-  value_label: "Value + label",
-  temp_in_combined: "Temp in combined",
-  watts_value: "Watts as value",
-  own_graph: "Own item: graph",
-  own_value: "Own item: value",
-  own_cores: "Own item: cores",
-  hidden: "Hidden",
-};
+/** `ItemMode::allowed_for`: what each module's own-item select offers (D-102). */
+export function itemModes(module: SettingsModule): readonly ItemMode[] {
+  return ITEM_MODES[module];
+}
 
-/** `MenuBarMode::allowed_for`: what each module's Menu bar select offers (4.2). */
-export function menuBarModes(module: SettingsModule): readonly MenuBarMode[] {
-  return MENU_BAR_MODES[module];
+/**
+ * The own-item option's label. "Value" says what it shows where the module
+ * has more than one kind of number: the Disk item is throughput, while the
+ * Disk readout is % used.
+ */
+export function itemModeLabel(module: SettingsModule, mode: ItemMode): string {
+  switch (mode) {
+    case "off":
+      return "Off";
+    case "graph":
+      return "Graph";
+    case "cores":
+      return "Per-core graph";
+    case "value":
+      if (module === "power") return "Watts";
+      if (module === "network") return "Total rate";
+      if (module === "disk") return "Read + write rate";
+      return "Value";
+  }
+}
+
+export function readoutPatch(readout: Readout, on: boolean): SettingsPatch {
+  return { menu_bar: { readouts: { [readout]: on } } };
+}
+
+export function barPatch(
+  module: "cpu" | "gpu" | "memory",
+  on: boolean
+): SettingsPatch {
+  return { menu_bar: { bars: { [module]: on } } };
+}
+
+export function itemPatch(
+  module: SettingsModule,
+  mode: ItemMode
+): SettingsPatch {
+  return { menu_bar: { items: { [module]: mode } } };
 }
 
 export function modulePatch(
@@ -67,40 +97,69 @@ export function modulePresence(
   return "present";
 }
 
-/** Menu bar styles: combined and values, and graph per module. */
+/** Menu bar styles onboarding offers: combined and values, and graph per module. */
 export type TrayStyle = "combined" | "values" | "graphs";
 
+const NO_ITEMS: MenuBarSettings["items"] = {
+  cpu: "off",
+  gpu: "off",
+  memory: "off",
+  power: "off",
+  network: "off",
+  disk: "off",
+  battery: "off",
+};
+const NO_READOUTS: MenuBarSettings["readouts"] = {
+  cpu: false,
+  gpu: false,
+  memory: false,
+  temperature: false,
+  power: false,
+  network: false,
+  disk: false,
+  battery: false,
+};
+
 /**
- * Per-module menu bar modes for a style (4.2): Combined puts CPU, GPU and
- * Memory in the combined item, Values gives each its own value and label.
- * Both keep the SoC temperature in the item and hide the rest. Graph per
- * module is the "Graphs" row: CPU sparkline, memory gauge and network
- * rates, each a status item of its own (D-080), and the rest hidden.
+ * The menu bar a style sets (D-102). Combined: three bars and the
+ * temperature. Values: CPU, GPU, Memory and the temperature as numbers.
+ * Graph per module: CPU sparkline, memory gauge and network rates, each a
+ * status item of its own (D-080), and nothing in the combined item.
  */
-export function trayStyleModes(
-  style: TrayStyle
-): Record<SettingsModule, MenuBarMode> {
+export function trayStyleMenuBar(style: TrayStyle): MenuBarSettings {
+  const bars = style === "combined";
   if (style === "graphs") {
     return {
-      cpu: "own_graph",
-      gpu: "hidden",
-      memory: "own_graph",
-      power: "hidden",
-      network: "own_graph",
-      disk: "hidden",
-      battery: "hidden",
+      bars: { cpu: false, gpu: false, memory: false },
+      readouts: NO_READOUTS,
+      items: { ...NO_ITEMS, cpu: "graph", memory: "graph", network: "graph" },
     };
   }
-  const bar: MenuBarMode = style === "combined" ? "in_combined" : "value_label";
+  const values = style === "values";
   return {
-    cpu: bar,
-    gpu: bar,
-    memory: bar,
-    power: "temp_in_combined",
-    network: "hidden",
-    disk: "hidden",
-    battery: "hidden",
+    bars: { cpu: bars, gpu: bars, memory: bars },
+    readouts: {
+      ...NO_READOUTS,
+      cpu: values,
+      gpu: values,
+      memory: values,
+      temperature: true,
+    },
+    items: NO_ITEMS,
   };
+}
+
+/** `MenuBarSettings::default()`: three bars and the temperature. */
+export const DEFAULT_MENU_BAR: MenuBarSettings = trayStyleMenuBar("combined");
+
+/**
+ * The settings' menu bar. Rust always sends it; the generated type has it
+ * optional only because a file from before D-102 decodes without it.
+ */
+export function menuBarOf(settings: {
+  menu_bar?: MenuBarSettings;
+}): MenuBarSettings {
+  return settings.menu_bar ?? DEFAULT_MENU_BAR;
 }
 
 export interface OnboardingChoices {
@@ -114,16 +173,16 @@ export interface OnboardingChoices {
 export function onboardingChoicesPatch(
   choices: OnboardingChoices
 ): SettingsPatch {
-  const modes = trayStyleModes(choices.style);
   const modules: Partial<Record<SettingsModule, ModulePatch>> = {};
   for (const m of SETTINGS_MODULES) {
     const enabled = choices.enabled[m];
-    modules[m] =
-      enabled === undefined
-        ? { menu_bar: modes[m] }
-        : { enabled, menu_bar: modes[m] };
+    if (enabled !== undefined) modules[m] = { enabled };
   }
-  return { modules, general: { launch_at_login: choices.launchAtLogin } };
+  return {
+    modules,
+    menu_bar: trayStyleMenuBar(choices.style),
+    general: { launch_at_login: choices.launchAtLogin },
+  };
 }
 
 /** Onboarding step 2 Done: the update switch, and onboarding is over. */

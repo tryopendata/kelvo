@@ -1,5 +1,6 @@
 import type { Settings } from "@core/generated/bindings";
 import { defaultSettings, scenarioFlags } from "@core/mock/fixtures";
+import { menuBarOf } from "@core/settings-patch";
 import {
   appKeys,
   historyKeys,
@@ -45,18 +46,19 @@ describe("settingsInvalidation", () => {
   it("a module switch: history (module_disabled gaps) and size", () => {
     const next: Settings = {
       ...base,
-      modules: { ...base.modules, gpu: { enabled: false, menu_bar: "hidden" } },
+      modules: { ...base.modules, gpu: { enabled: false } },
     };
     expect(stale(next)).toEqual(["historyRange", "maxima", "historySize"]);
   });
 
-  it("a menu bar style change alone invalidates nothing", () => {
-    const gpu = base.modules.gpu;
-    if (!gpu) throw new Error("no gpu module in the default settings");
-    const menu_bar = gpu.menu_bar === "hidden" ? "in_combined" : "hidden";
+  it("a menu bar change alone invalidates nothing", () => {
+    const menu_bar = menuBarOf(base);
     const next: Settings = {
       ...base,
-      modules: { ...base.modules, gpu: { ...gpu, menu_bar } },
+      menu_bar: {
+        ...menu_bar,
+        readouts: { ...menu_bar.readouts, power: !menu_bar.readouts.power },
+      },
     };
     expect(stale(next)).toEqual([]);
   });

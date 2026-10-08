@@ -1,5 +1,5 @@
 import { MOCK_HOST_ID } from "@core/mock/fixtures";
-import { act, screen, waitFor } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import { renderWithProviders } from "../../../../../tests/test-utils";
 import SettingsRoute from "./route";
 
@@ -23,45 +23,120 @@ const overhead = () => {
   return m ? { pct: Number(m[1]), at: m[2] } : null;
 };
 
-describe("Settings modules", () => {
+describe("Settings menu bar", () => {
   it("offers each module its own-item modes and writes the choice", async () => {
     const { transport, user } = renderWithProviders(<SettingsRoute />);
     await user.click(
-      await screen.findByRole("combobox", { name: "CPU menu bar style" })
+      await screen.findByRole("combobox", { name: "CPU separate item" })
     );
-    const cpu = (await screen.findAllByRole("option")).map(
-      (o) => o.textContent
-    );
-    expect(cpu).toEqual([
-      "In combined item",
-      "Value + label",
-      "Own item: graph",
-      "Own item: cores",
-      "Own item: value",
-      "Hidden",
-    ]);
-    await user.click(screen.getByRole("option", { name: "Own item: cores" }));
+    expect(
+      (await screen.findAllByRole("option")).map((o) => o.textContent)
+    ).toEqual(["Off", "Value", "Graph", "Per-core graph"]);
+    await user.click(screen.getByRole("option", { name: "Per-core graph" }));
     await waitFor(() =>
       expect(transport.calls).toContainEqual({
         command: "update_settings",
-        args: [{ modules: { cpu: { menu_bar: "own_cores" } } }],
+        args: [{ menu_bar: { items: { cpu: "cores" } } }],
       })
     );
 
-    // Cores is CPU's alone; Disk has no graph.
+    // Disk's value is throughput, named so it is not read as % used.
     await user.click(
-      screen.getByRole("combobox", { name: "GPU menu bar style" })
+      screen.getByRole("combobox", { name: "Disk separate item" })
     );
     expect(
       (await screen.findAllByRole("option")).map((o) => o.textContent)
-    ).not.toContain("Own item: cores");
-    await user.keyboard("{Escape}");
-    await user.click(
-      screen.getByRole("combobox", { name: "Battery menu bar style" })
+    ).toEqual(["Off", "Read + write rate"]);
+  });
+
+  it("a value switch writes one readout and shows in the preview", async () => {
+    const { transport, user } = renderWithProviders(<SettingsRoute />);
+    const power = await screen.findByRole("switch", {
+      name: "Show power in the menu bar",
+    });
+    expect(power).not.toBeChecked();
+    await user.click(power);
+    await waitFor(() =>
+      expect(transport.calls).toContainEqual({
+        command: "update_settings",
+        args: [{ menu_bar: { readouts: { power: true } } }],
+      })
     );
+    await waitFor(() =>
+      expect(
+        screen.getByRole("img", { name: /^Menu bar preview: .*power/ })
+      ).toBeInTheDocument()
+    );
+  });
+
+  it("a bar segment writes only the bar it changed", async () => {
+    const { transport, user } = renderWithProviders(<SettingsRoute />);
+    const bars = await screen.findByRole("toolbar", {
+      name: "Bars in the menu bar",
+    });
+    await user.click(within(bars).getByRole("button", { name: "GPU" }));
+    await waitFor(() =>
+      expect(transport.calls).toContainEqual({
+        command: "update_settings",
+        args: [{ menu_bar: { bars: { gpu: false } } }],
+      })
+    );
+  });
+
+  it("disables what an off module would show, keeping the stored choice", async () => {
+    const { transport } = renderWithProviders(<SettingsRoute />);
+    await screen.findByRole("switch", { name: "Show power in the menu bar" });
+    await act(() =>
+      transport.updateSettings({ modules: { power: { enabled: false } } })
+    );
+    const temp = await screen.findByRole("switch", {
+      name: "Show the hottest temperature in the menu bar",
+    });
+    await waitFor(() => expect(temp).toBeDisabled());
+    expect(temp).not.toBeChecked();
     expect(
-      (await screen.findAllByRole("option")).map((o) => o.textContent)
-    ).toEqual(["Value + label", "Own item: value", "Hidden"]);
+      screen.getAllByText("Turn on Power & Sensors in Modules to use this")
+    ).not.toHaveLength(0);
+    expect(
+      (await transport.getSettings()).settings.menu_bar?.readouts.temperature
+    ).toBe(true);
+  });
+
+  it("warns past the notch width and drops an empty combined item", async () => {
+    const { transport } = renderWithProviders(<SettingsRoute />);
+    await screen.findByRole("switch", { name: "Show power in the menu bar" });
+    const WIDE = /hidden behind the camera on MacBooks with a notch/;
+    expect(screen.queryByText(WIDE)).toBeNull();
+    await act(() =>
+      transport.updateSettings({
+        menu_bar: {
+          readouts: { cpu: true, gpu: true, memory: true, network: true },
+        },
+      })
+    );
+    await screen.findByText(WIDE);
+
+    await act(() =>
+      transport.updateSettings({
+        menu_bar: {
+          bars: { cpu: false, gpu: false, memory: false },
+          readouts: {
+            cpu: false,
+            gpu: false,
+            memory: false,
+            network: false,
+            temperature: false,
+          },
+          items: { cpu: "graph" },
+        },
+      })
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole("img", { name: /^Menu bar preview/ })
+      ).toHaveAccessibleName("Menu bar preview: cpu item")
+    );
+    expect(screen.queryByText(WIDE)).toBeNull();
   });
 });
 
@@ -105,7 +180,7 @@ describe("Settings Performance mode (D-088)", () => {
     const { transport } = renderWithProviders(<SettingsRoute />);
     await screen.findByRole("switch", { name: "Performance mode" });
     await transport.updateSettings({
-      modules: { cpu: { menu_bar: "own_graph" } },
+      menu_bar: { items: { cpu: "graph" } },
     });
     await waitFor(() =>
       expect(
@@ -113,7 +188,7 @@ describe("Settings Performance mode (D-088)", () => {
       ).toBeInTheDocument()
     );
     await transport.updateSettings({
-      modules: { cpu: { menu_bar: "in_combined" } },
+      menu_bar: { items: { cpu: "off" } },
       sampling: { interval_ms: 5000, slow_on_battery: true },
     });
     await waitFor(() => expect(screen.queryByText(/saves more/)).toBeNull());

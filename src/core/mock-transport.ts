@@ -126,7 +126,7 @@ import { holdMs, matches } from "./mock/series";
 import { mockUsageByApp } from "./mock/usage";
 import type { ProcessSignalError, ProcessSignalResult } from "./process-signal";
 import { samplingPlan } from "./sampling-plans";
-import { INTERVALS_MS, SIZE_LIMITS_MB } from "./settings-patch";
+import { INTERVALS_MS, menuBarOf, SIZE_LIMITS_MB } from "./settings-patch";
 import type { CommandResult, Transport } from "./transport";
 
 export interface MockTransportOptions {
@@ -1622,8 +1622,15 @@ export function applyPatch(s: Settings, patch: SettingsPatch): Settings {
     const cur = modules[id as keyof typeof modules];
     if (cur && mp) modules[id as keyof typeof modules] = pick(cur, mp);
   }
+  const mb = patch.menu_bar;
+  const base = menuBarOf(s);
   return {
     modules,
+    menu_bar: {
+      bars: pick(base.bars, mb?.bars),
+      readouts: pick(base.readouts, mb?.readouts),
+      items: pick(base.items, mb?.items),
+    },
     sampling: pick(s.sampling, patch.sampling),
     history: pick(s.history, patch.history),
     units: pick(s.units, patch.units),

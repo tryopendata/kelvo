@@ -116,7 +116,7 @@ Unknown chip (v1.0). On a Mac whose sensors Kelvo does not map yet, Power & Sens
 
 The status item image is drawn in Rust as a template `NSImage`. The full geometry and the decision not to tween are in [design-system.md, Tray icon spec](design-system.md#tray-icon-spec).
 
-Which elements appear is driven by each module's "Menu bar" setting in Settings. There is no separate global style setting: Combined is the state where CPU, GPU and Memory are "In combined item"; Values is the state where they are "Value + label". Onboarding presets these per-module modes. Network, Disk and Battery can only be "Value + label" or "Hidden" in v1.0. All visible elements render into one status item in v1.0; separate items per module arrive in v1.1.
+Which elements appear is driven by the Menu bar settings (D-102): which of CPU, GPU and Memory draw a bar, which readouts print after the bars (CPU, GPU, Memory, temperature, Power, Network, Disk used, Battery), and which modules get a separate item (v1.1, D-080). Onboarding's styles are presets of these.
 
 | Element | Data | Cadence | Source |
 |---|---|---|---|
@@ -124,7 +124,7 @@ Which elements appear is driven by each module's "Menu bar" setting in Settings.
 | GPU bar | `gpu.util` | base tick | live bus |
 | Memory bar | `mem.pressure` | base tick | live bus |
 | Temperature text "61°" | `thermal.hottest` | every 5 ticks (D-055) | live bus |
-| Values text | `cpu.total`, `gpu.util`, `mem.pressure`, `thermal.hottest`, `power.system`, `net.rx` + `net.tx` summed over interfaces, `disk.read` + `disk.write`, `battery.charge` | as above | live bus |
+| Readouts | `cpu.total`, `gpu.util`, `mem.pressure`, `thermal.hottest`, `power.system`, `net.tx_total` and `net.rx_total`, `disk.used` / `disk.total` of the boot volume (every 60 s), `battery.charge` | as above | live bus |
 | Accessibility label | same values in words | every redraw | live bus |
 
 Clicking the item toggles the popover. Right-click or Control-click opens a native menu: Open dashboard, Settings, Pause sampling, Quit Kelvo. On display sleep and screen lock the image stops updating. When sampling is paused, the bars drop to their tracks and the text shows "–".
@@ -342,7 +342,8 @@ Quit and Force Quit (D-029) appear as a row action on hover and in the row's con
 
 | Section | Row | Control | Effect |
 |---|---|---|---|
-| Modules | One row per module: swatch, name, Menu bar select, On switch | Select options for CPU, GPU, Memory: In combined item, Value + label, Hidden. Power & Sensors: Temp in combined, Watts as value, Hidden. Network, Disk, Battery: Value + label, Hidden | Off stops the module's collectors, removes it from tray, popover and Overview, and makes its series end (drawn as a gap). Modules the host lacks are listed disabled with "Not present on this Mac" |
+| Modules | One row per module: swatch, name, On switch | Switch | Off stops the module's collectors, removes it from tray, popover and Overview, and makes its series end (drawn as a gap). Modules the host lacks are listed disabled with "Not present on this Mac" |
+| Menu bar | Live preview, Bars, Values after the bars, Separate items (D-102) | Sticky `TrayPreview`; toggle group CPU, GPU, Memory; one switch per readout with its marker and live value; one select per module (Off, Value or its named value, Graph, Per-core graph as allowed) | Rows of an off module are disabled with "Turn on <module> in Modules to use this". Past about 150 pt the preview warns that wide items can hide behind the notch |
 | Sampling | Sample interval | `SegmentedControl` 0.5s, 1s, 2s, 5s, 10s, 30s, 60s, with "Kelvo uses about 0.4% CPU at 1s" | Reconfigures the ticker. The sentence uses the measured `self.cpu` 10-minute average, not a constant. Live chart windows scale with the interval (D-059) |
 | Sampling | Slow down on battery | Switch, "to 2s" (twice the interval, at most 60s) | Base tick doubles on battery, capped at 60 s (D-061) |
 | Sampling | Keep history | Select: 7, 30, 90 days, each with its projected size | Sets how long history is kept (`tier_15m` beyond the 7 days of `tier_1m`, gaps, events; D-076). When the size limit cuts it short: "Limited to about N days by the X MB limit" (D-059) |
@@ -361,7 +362,7 @@ Data: `get_settings`, `update_settings`, `settings-changed`, `history_size` (ref
 
 ### 4.16 Onboarding
 
-A fixed-size window (820 × 566 pt) shown on first run only. The modules list comes from `Capabilities`: present modules are switched on (Disk off by default), absent modules are shown disabled with "Not present on this Mac". Menu bar style options are cards with a live `TrayPreview` drawn from current values: Combined (Recommended), Values only, and in v1.1 Graph per module. Choosing a style sets the per-module menu bar modes described in 4.2. The footer chip status reads "M4 Pro detected · all sensors mapped" or "Mac17,4 detected · sensors not mapped yet". Launch at login is checked by default.
+A fixed-size window (820 × 566 pt) shown on first run only. The modules list comes from `Capabilities`: present modules are switched on (Disk off by default), absent modules are shown disabled with "Not present on this Mac". Menu bar style options are cards with a live `TrayPreview` drawn from current values: Combined (Recommended), Values only, and in v1.1 Graph per module. Choosing a style sets the menu bar settings described in 4.2 (D-102). The footer chip status reads "M4 Pro detected · all sensors mapped" or "Mac17,4 detected · sensors not mapped yet". Launch at login is checked by default.
 
 Skip applies the defaults and closes. Continue applies the choices and shows step 2 of 2, "Updates and privacy", which is not mocked. It has one switch, "Check for updates automatically" (on), with one sentence saying it is the only network request Kelvo makes and can be turned off any time in Settings. Below it, a plain statement: Kelvo has no telemetry, and all history stays on this Mac, with the history location (`~/Library/Application Support/com.tryopendata.kelvo/`) and its expected size ("about 150 MB for 30 days"). A Done button closes the window. Step 2 follows the step 1 layout and controls.
 
@@ -505,7 +506,9 @@ Every command and event is generated by tauri-specta into `src/core/generated/`.
 | Key | Type | Default |
 |---|---|---|
 | `modules.<id>.enabled` | bool | true for present modules except Disk |
-| `modules.<id>.menu_bar` | enum per 4.15 | CPU, GPU, Memory: InCombined; Power: TempInCombined; others Hidden |
+| `menu_bar.bars.<cpu,gpu,memory>` | bool | true |
+| `menu_bar.readouts.<readout>` | bool | temperature true, others false |
+| `menu_bar.items.<id>` | off, value, graph, cores (per module) | off |
 | `sampling.interval_ms` | 500, 1000, 2000, 5000, 10000, 30000, 60000 | 1000 |
 | `sampling.slow_on_battery` | bool | true |
 | `history.retention_days` | 7, 30, 90 | 30 |

@@ -83,10 +83,10 @@ for (const theme of THEMES) {
         path: shot("settings", theme, info.project.name),
         fullPage: true,
       });
-      // v1.1 own-item modes in the CPU select.
-      await page.getByRole("combobox", { name: "CPU menu bar style" }).click();
+      // Own-item modes in the CPU separate item select (D-080, D-102).
+      await page.getByRole("combobox", { name: "CPU separate item" }).click();
       await expect(
-        page.getByRole("option", { name: "Own item: cores" })
+        page.getByRole("option", { name: "Per-core graph" })
       ).toBeVisible();
       // Past the list's open animation, so the screenshot shows it settled.
       await page
@@ -107,7 +107,10 @@ for (const theme of THEMES) {
       await disk.click();
       await expect(disk).not.toBeChecked();
       await expect(
-        page.getByRole("combobox", { name: "Disk menu bar style" })
+        page.getByRole("combobox", { name: "Disk separate item" })
+      ).toBeDisabled();
+      await expect(
+        page.getByRole("switch", { name: "Show disk used in the menu bar" })
       ).toBeDisabled();
 
       await page.getByRole("button", { name: "Clear", exact: true }).click();

@@ -15,6 +15,7 @@ import type {
   Settings,
   SignalRefusal,
 } from "@core/generated/bindings";
+import { trayStyleMenuBar } from "@core/settings-patch";
 
 export type ScenarioName =
   | "default"
@@ -259,14 +260,15 @@ export function capabilities(
 export function defaultSettings(flags: ScenarioFlags): Settings {
   return {
     modules: {
-      cpu: { enabled: true, menu_bar: "in_combined" },
-      gpu: { enabled: true, menu_bar: "in_combined" },
-      memory: { enabled: true, menu_bar: "in_combined" },
-      power: { enabled: true, menu_bar: "temp_in_combined" },
-      network: { enabled: true, menu_bar: "hidden" },
-      disk: { enabled: true, menu_bar: "hidden" },
-      battery: { enabled: !flags.noBattery, menu_bar: "hidden" },
+      cpu: { enabled: true },
+      gpu: { enabled: true },
+      memory: { enabled: true },
+      power: { enabled: true },
+      network: { enabled: true },
+      disk: { enabled: true },
+      battery: { enabled: !flags.noBattery },
     },
+    menu_bar: trayStyleMenuBar("combined"),
     // The mock shows "Sampling every 1s" while on battery, so it has the
     // battery slowdown off.
     sampling: {

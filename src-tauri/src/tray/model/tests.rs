@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use kelvo_engine::EngineStatus;
-use kelvo_schema::settings::{NetworkUnit, TemperatureUnit};
+use kelvo_schema::settings::{ItemSettings, ReadoutSettings, TemperatureUnit};
 use kelvo_schema::{Labels, MetricId, SeriesKey};
 
 use super::pacer::{EARLY, GRACE};
@@ -28,6 +28,7 @@ fn sample() -> Readings {
         net_rx_bps: Reading::Value(37_200_000.0),
         net_tx_bps: Reading::Value(1_200_000.0),
         disk_bps: Reading::Value(220_000_000.0),
+        disk_used_pct: Reading::Value(61.6),
         // 10 P cores and 4 E cores.
         cores: vec![
             [34.0, 22.0, 41.0, 18.0, 12.0, 9.0, 27.0, 15.0, 8.0, 6.0]
@@ -56,17 +57,31 @@ fn own(items: &[TrayItem], module: Module) -> &TrayContent {
         .content
 }
 
-fn set(s: &mut Settings, module: Module, mode: MenuBarMode) {
-    s.modules.get_mut(&module).unwrap().menu_bar = mode;
+fn set(s: &mut Settings, module: Module, mode: ItemMode) {
+    *s.menu_bar.items.get_mut(module).unwrap() = mode;
 }
 
-fn values_settings() -> Settings {
-    let mut s = Settings::default();
-    for m in [Module::Cpu, Module::Gpu, Module::Memory] {
-        s.modules.get_mut(&m).unwrap().menu_bar = MenuBarMode::ValueLabel;
-    }
-    s.modules.get_mut(&Module::Power).unwrap().menu_bar = MenuBarMode::WattsValue;
-    s
+fn no_bars(s: &mut Settings) {
+    s.menu_bar.bars = BarSettings {
+        cpu: false,
+        gpu: false,
+        memory: false,
+    };
+}
+
+/// The readouts' markers and texts, in order.
+fn readouts(c: &TrayContent) -> Vec<(Marker, String)> {
+    c.frame
+        .readouts
+        .iter()
+        .map(|r| match r {
+            ReadoutFrame::Marked { marker, text } => (*marker, text.clone()),
+            ReadoutFrame::Graph(Graph::Rates { up, down }) => {
+                (Marker::Label("NET"), format!("{up}|{down}"))
+            }
+            ReadoutFrame::Graph(g) => panic!("unexpected readout graph {g:?}"),
+        })
+        .collect()
 }
 
 #[test]
@@ -82,7 +97,7 @@ fn resolves_series_and_reads_the_totals() {
             key("thermal.hottest", &[]),
         ]),
     };
-    let s = TraySeries::resolve(&layout);
+    let s = TraySeries::resolve(&layout, Some("/"));
     assert_eq!(s.layout_no, Some(3));
     let r = s.readings(&[18.0, 50.0, 7.0, 100.0, 20.0, f32::NAN]);
     assert_eq!(r.cpu, Reading::Value(18.0));
@@ -91,6 +106,7 @@ fn resolves_series_and_reads_the_totals() {
     assert_eq!(r.temp_c, Reading::Gap, "a stale value is a gap");
     assert_eq!(r.gpu, Reading::Absent);
     assert_eq!(r.disk_bps, Reading::Absent);
+    assert_eq!(r.disk_used_pct, Reading::Absent);
     // One direction stale: the labelled value is a gap, never rx alone.
     let r = s.readings(&[18.0, 50.0, 7.0, 100.0, f32::NAN, 61.0]);
     assert_eq!(r.net_bps, Reading::Gap);
@@ -98,94 +114,168 @@ fn resolves_series_and_reads_the_totals() {
     assert_eq!(r.net_tx_bps, Reading::Gap);
 }
 
+/// The Disk readout is the boot volume's used share; another volume, or no known boot
+/// volume, does not stand in for it.
+#[test]
+fn disk_used_reads_the_boot_volume() {
+    let layout = FrameLayout {
+        layout_no: 4,
+        series: Arc::from(vec![
+            key("disk.used", &[("vol", "/Volumes/Ext")]),
+            key("disk.total", &[("vol", "/Volumes/Ext")]),
+            key("disk.used", &[("vol", "/")]),
+            key("disk.total", &[("vol", "/")]),
+        ]),
+    };
+    let held = [1.0, 2.0, 250e9, 1000e9];
+    let r = TraySeries::resolve(&layout, Some("/")).readings(&held);
+    assert_eq!(r.disk_used_pct, Reading::Value(25.0));
+    let r = TraySeries::resolve(&layout, None).readings(&held);
+    assert_eq!(r.disk_used_pct, Reading::Absent);
+    // A stale total, or a zero one, is a gap, never a division by zero.
+    let s = TraySeries::resolve(&layout, Some("/"));
+    assert_eq!(
+        s.readings(&[1.0, 2.0, 250e9, f32::NAN]).disk_used_pct,
+        Reading::Gap
+    );
+    assert_eq!(
+        s.readings(&[1.0, 2.0, 250e9, 0.0]).disk_used_pct,
+        Reading::Gap
+    );
+}
+
 #[test]
 fn combined_default_quantizes_bars_to_device_pixels() {
     let c = combined(&sample(), &Settings::default(), false, 2);
     // 14 pt at 2x is 28 px: 18.2% -> 5, 36% -> 10, 42.4% -> 12.
     assert_eq!(c.frame.bars, vec![Some(5), Some(10), Some(12)]);
-    assert_eq!(c.frame.combined_text.as_deref(), Some("142°"));
+    assert_eq!(readouts(&c), [(Marker::None, "142°".into())]);
     assert!(c.frame.values.is_empty());
     assert_eq!(
         c.accessibility,
-        "CPU 18 percent, GPU 36 percent, memory 42 percent, 142 degrees"
+        "CPU 18 percent, GPU 36 percent, memory 42 percent, temperature 142 degrees"
     );
     let c1 = combined(&sample(), &Settings::default(), false, 1);
     assert_eq!(c1.frame.bars, vec![Some(3), Some(5), Some(6)]);
 }
 
+/// Every readout, in `Readout::ALL` order, with its marker (D-102).
 #[test]
-fn values_layout_and_units() {
-    let mut s = values_settings();
-    s.modules.get_mut(&Module::Network).unwrap().menu_bar = MenuBarMode::ValueLabel;
-    s.modules.get_mut(&Module::Battery).unwrap().menu_bar = MenuBarMode::ValueLabel;
+fn readouts_follow_the_bars_with_their_markers() {
+    let mut s = Settings::default();
+    s.modules.get_mut(&Module::Disk).unwrap().enabled = true;
+    s.menu_bar.readouts = ReadoutSettings {
+        cpu: true,
+        gpu: true,
+        memory: true,
+        temperature: true,
+        power: true,
+        network: true,
+        disk: true,
+        battery: true,
+    };
+    s.units.temperature = TemperatureUnit::Celsius;
     let c = combined(&sample(), &s, false, 2);
-    assert!(c.frame.bars.is_empty());
-    let got: Vec<(&str, &str)> = c
-        .frame
-        .values
-        .iter()
-        .map(|l| (l.label, l.text.as_str()))
-        .collect();
+    assert_eq!(c.frame.bars.len(), 3);
     assert_eq!(
-        got,
-        vec![
-            ("CPU", "18%"),
-            ("GPU", "36%"),
-            ("MEM", "42%"),
-            ("PWR", "14.8W"),
-            ("NET", "38.4MB"),
-            ("BAT", "87%"),
+        readouts(&c),
+        [
+            (Marker::Label("CPU"), "18%".into()),
+            (Marker::Label("GPU"), "36%".into()),
+            (Marker::Label("MEM"), "42%".into()),
+            (Marker::None, "61°".into()),
+            (Marker::Glyph(Glyph::Bolt), "14.8W".into()),
+            (
+                Marker::Label("NET"),
+                "1.2 MB/s \u{2191}|37.2 MB/s \u{2193}".into()
+            ),
+            (Marker::Glyph(Glyph::Drive), "62%".into()),
+            (Marker::Label("BAT"), "87%".into()),
         ]
     );
-    s.units.network = NetworkUnit::BitsPerSec;
-    s.units.temperature = TemperatureUnit::Fahrenheit;
-    s.modules.get_mut(&Module::Power).unwrap().menu_bar = MenuBarMode::TempInCombined;
+    assert_eq!(
+        c.accessibility,
+        "CPU 18 percent, GPU 36 percent, memory 42 percent, CPU 18 percent, \
+         GPU 36 percent, memory 42 percent, temperature 61 degrees, power 14.8 watts, \
+         network up 1.2 megabytes per second, down 37.2 megabytes per second, \
+         disk 62 percent used, battery 87 percent"
+    );
+}
+
+/// The old "Values" style: no bars, and "61°" needs no label of its own.
+#[test]
+fn values_without_bars() {
+    let mut s = Settings::default();
+    no_bars(&mut s);
+    s.menu_bar.readouts.cpu = true;
+    s.menu_bar.readouts.memory = true;
     let c = combined(&sample(), &s, false, 2);
-    // No bars, so the temperature gets its own label.
-    assert_eq!(c.frame.values[0].label, "SOC");
-    assert_eq!(c.frame.values[0].text, "142°");
-    assert!(c.frame.values.iter().any(|l| l.text == "307.2Mb"));
+    assert!(c.frame.bars.is_empty());
+    assert_eq!(
+        readouts(&c),
+        [
+            (Marker::Label("CPU"), "18%".into()),
+            (Marker::Label("MEM"), "42%".into()),
+            (Marker::None, "142°".into()),
+        ]
+    );
 }
 
 #[test]
 fn disabled_absent_and_hidden_modules_are_not_drawn() {
     let mut s = Settings::default();
     s.modules.get_mut(&Module::Gpu).unwrap().enabled = false;
-    s.modules.get_mut(&Module::Battery).unwrap().menu_bar = MenuBarMode::ValueLabel;
+    s.menu_bar.readouts.gpu = true;
+    s.menu_bar.readouts.battery = true;
+    // Disk is off by default: its readout draws nothing.
+    s.menu_bar.readouts.disk = true;
     let r = Readings {
         battery: Reading::Absent,
         ..sample()
     };
     let c = combined(&r, &s, false, 2);
     assert_eq!(c.frame.bars.len(), 2);
-    assert!(c.frame.values.is_empty());
+    assert_eq!(readouts(&c), [(Marker::None, "142°".into())]);
 
-    for m in [Module::Cpu, Module::Gpu, Module::Memory, Module::Power] {
-        s.modules.get_mut(&m).unwrap().menu_bar = MenuBarMode::Hidden;
-    }
-    s.modules.get_mut(&Module::Battery).unwrap().menu_bar = MenuBarMode::Hidden;
+    // Power & Sensors off takes the temperature with it.
+    s.modules.get_mut(&Module::Power).unwrap().enabled = false;
+    no_bars(&mut s);
     let c = combined(&r, &s, false, 2);
     assert_eq!(
         c.frame.bars,
         vec![None; 3],
         "never an empty, unclickable item"
     );
+    assert!(c.frame.readouts.is_empty());
 }
 
 #[test]
 fn paused_and_gaps_drop_to_tracks_and_dashes() {
-    let c = combined(&sample(), &Settings::default(), true, 2);
+    let mut s = Settings::default();
+    s.menu_bar.readouts.power = true;
+    let c = combined(&sample(), &s, true, 2);
     assert_eq!(c.frame.bars, vec![None; 3]);
-    assert_eq!(c.frame.combined_text.as_deref(), Some("\u{2013}"));
+    assert_eq!(
+        readouts(&c),
+        [
+            (Marker::None, "\u{2013}".into()),
+            (Marker::Glyph(Glyph::Bolt), "\u{2013}".into())
+        ],
+        "markers stay, values dash"
+    );
     assert_eq!(c.accessibility, "Kelvo, sampling paused");
 
     let r = Readings {
         gpu: Reading::Gap,
+        disk_used_pct: Reading::Gap,
         ..sample()
     };
-    let c = combined(&r, &Settings::default(), false, 2);
+    s.modules.get_mut(&Module::Disk).unwrap().enabled = true;
+    s.menu_bar.readouts.disk = true;
+    let c = combined(&r, &s, false, 2);
     assert_eq!(c.frame.bars[1], None);
     assert!(c.accessibility.contains("GPU no data"));
+    assert!(c.accessibility.ends_with("disk no data"));
 }
 
 /// Offers `content` as the combined item, the only item on screen.
@@ -543,7 +633,7 @@ fn resolves_cores_p_then_e_in_core_order() {
             key("cpu.load", &[("core", "P0")]),
         ]),
     };
-    let r = TraySeries::resolve(&layout).readings(&[10.0, 1.0, 2.0, 0.0, f32::NAN]);
+    let r = TraySeries::resolve(&layout, None).readings(&[10.0, 1.0, 2.0, 0.0, f32::NAN]);
     assert_eq!(
         r.cores,
         vec![
@@ -558,11 +648,11 @@ fn resolves_cores_p_then_e_in_core_order() {
 #[test]
 fn graph_per_module_builds_own_items_only() {
     let mut s = Settings::default();
-    set(&mut s, Module::Cpu, MenuBarMode::OwnGraph);
-    set(&mut s, Module::Memory, MenuBarMode::OwnGraph);
-    set(&mut s, Module::Network, MenuBarMode::OwnGraph);
-    set(&mut s, Module::Gpu, MenuBarMode::Hidden);
-    set(&mut s, Module::Power, MenuBarMode::Hidden);
+    no_bars(&mut s);
+    s.menu_bar.readouts.temperature = false;
+    set(&mut s, Module::Cpu, ItemMode::Graph);
+    set(&mut s, Module::Memory, ItemMode::Graph);
+    set(&mut s, Module::Network, ItemMode::Graph);
     let mut history = TrayHistory::default();
     for _ in 0..3 {
         history.record(&Readings {
@@ -620,8 +710,11 @@ fn graph_per_module_builds_own_items_only() {
 #[test]
 fn cores_and_gpu_history_build_the_cores_row() {
     let mut s = Settings::default();
-    set(&mut s, Module::Cpu, MenuBarMode::OwnCores);
-    set(&mut s, Module::Gpu, MenuBarMode::OwnGraph);
+    s.menu_bar.bars.cpu = false;
+    s.menu_bar.bars.gpu = false;
+    s.menu_bar.readouts.temperature = false;
+    set(&mut s, Module::Cpu, ItemMode::Cores);
+    set(&mut s, Module::Gpu, ItemMode::Graph);
     let mut r = sample();
     r.cores[1][3] = Reading::Value(0.4);
     r.cores[0][9] = Reading::Gap;
@@ -655,19 +748,22 @@ fn cores_and_gpu_history_build_the_cores_row() {
     );
 }
 
+/// Own items are independent of the combined item: CPU can be a bar and its own value.
 #[test]
-fn own_values_leave_the_rest_in_the_combined_item() {
+fn own_values_sit_beside_the_combined_item() {
     let mut s = Settings::default();
-    set(&mut s, Module::Cpu, MenuBarMode::OwnValue);
-    set(&mut s, Module::Power, MenuBarMode::OwnValue);
-    set(&mut s, Module::Battery, MenuBarMode::OwnValue);
+    set(&mut s, Module::Cpu, ItemMode::Value);
+    set(&mut s, Module::Power, ItemMode::Value);
+    set(&mut s, Module::Battery, ItemMode::Value);
+    set(&mut s, Module::Disk, ItemMode::Value);
     let items = build(&sample(), &TrayHistory::default(), &s, false, 2);
     let c = &items[0].content;
     assert_eq!(items[0].key, ItemKey::Combined);
-    assert_eq!(c.frame.bars, [Some(10), Some(12)], "GPU and memory");
+    assert_eq!(c.frame.bars, [Some(5), Some(10), Some(12)]);
     assert_eq!(
-        c.frame.combined_text, None,
-        "power shows watts, not the temperature"
+        readouts(c),
+        [(Marker::None, "142°".into())],
+        "Power's own item is watts; the temperature stays"
     );
     let value = |m| own(&items, m).frame.values.clone();
     assert_eq!(
@@ -688,11 +784,21 @@ fn own_values_leave_the_rest_in_the_combined_item() {
         own(&items, Module::Battery).accessibility,
         "battery 87 percent"
     );
+    // Disk is off by default: no own item for it.
+    assert!(items.iter().all(|i| i.key != ItemKey::Own(Module::Disk)));
+    s.modules.get_mut(&Module::Disk).unwrap().enabled = true;
+    let items = build(&sample(), &TrayHistory::default(), &s, false, 2);
+    assert_eq!(
+        own(&items, Module::Disk).frame.values,
+        [Labeled {
+            label: "DSK",
+            text: "220.0MB".into()
+        }],
+        "the own Disk item is the read + write rate"
+    );
 
-    // Back to the combined item: the own items are gone from the build.
-    set(&mut s, Module::Cpu, MenuBarMode::InCombined);
-    set(&mut s, Module::Power, MenuBarMode::TempInCombined);
-    set(&mut s, Module::Battery, MenuBarMode::Hidden);
+    // Back off: the own items are gone from the build.
+    s.menu_bar.items = ItemSettings::default();
     let items = build(&sample(), &TrayHistory::default(), &s, false, 2);
     assert_eq!(items.len(), 1);
     assert_eq!(items[0].key, ItemKey::Combined);
@@ -701,9 +807,9 @@ fn own_values_leave_the_rest_in_the_combined_item() {
 #[test]
 fn paused_own_items_drop_to_tracks() {
     let mut s = Settings::default();
-    set(&mut s, Module::Cpu, MenuBarMode::OwnGraph);
-    set(&mut s, Module::Memory, MenuBarMode::OwnGraph);
-    set(&mut s, Module::Network, MenuBarMode::OwnGraph);
+    set(&mut s, Module::Cpu, ItemMode::Graph);
+    set(&mut s, Module::Memory, ItemMode::Graph);
+    set(&mut s, Module::Network, ItemMode::Graph);
     let mut history = TrayHistory::default();
     history.record(&sample());
     let items = build(&sample(), &history, &s, true, 2);

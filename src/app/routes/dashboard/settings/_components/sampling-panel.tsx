@@ -87,6 +87,7 @@ export function SamplingPanel({
   const perAppNetwork = useProcessNetwork();
   const { performance } = useSampling();
   const modules = useSettings((s) => s.modules) ?? {};
+  const menuBar = useSettings((s) => s.menu_bar);
   const byLowPower = performance === "low_power_mode";
   const performanceOn = !!sampling.performance_mode || byLowPower;
 
@@ -115,6 +116,7 @@ export function SamplingPanel({
         <PerformanceChanges
           sampling={sampling}
           modules={modules}
+          menuBar={menuBar}
           reason={performance}
         />
       </SettingsRow>
@@ -250,14 +252,20 @@ export function SamplingPanel({
 function PerformanceChanges({
   sampling,
   modules,
+  menuBar,
   reason,
 }: {
   sampling: Settings["sampling"];
   modules: Settings["modules"];
+  menuBar: Settings["menu_bar"] | null | undefined;
   reason: PerformanceReason;
 }) {
   const changes = performanceChanges({ sampling, modules }, reason);
-  const next = performanceNextLever({ sampling, modules });
+  const next = performanceNextLever({
+    sampling,
+    modules,
+    menu_bar: menuBar ?? undefined,
+  });
   return (
     <div
       id="settings-performance-changes"

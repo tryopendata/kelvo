@@ -7,31 +7,20 @@ import {
   type TrayStyle,
 } from "@core/settings-patch";
 import { useState } from "react";
-import { useShallow } from "zustand/react/shallow";
 import {
   type ModuleToggleItem,
   ModuleToggleList,
 } from "~/components/module-toggle-list";
-import type { TrayValues } from "~/components/tray-preview";
-import {
-  TrayStyleGroup,
-  TrayStyleOption,
-} from "~/components/tray-style-option";
+import { TrayStyleGroup } from "~/components/tray-style-option";
 import { Button } from "~/components/ui/button";
 import { Checkbox } from "~/components/ui/checkbox";
 import { cn } from "~/lib/utils";
 import { useHost } from "~/stores/host-store";
-import {
-  selectCpu,
-  selectGpu,
-  selectMemory,
-  selectSensors,
-} from "~/stores/live-selectors";
 import type { Accent } from "~/widgets/lib/accent";
 import { FIELD_LABEL } from "~/widgets/lib/classes";
 import { chipStatus, defaultEnabled } from "../_lib/setup";
-import { GraphStyleOption } from "./graph-style-option";
 import { OnboardingFrame } from "./onboarding-frame";
+import { TrayStyleCards } from "./tray-style-cards";
 
 const MODULES: Record<
   SettingsModule,
@@ -70,13 +59,6 @@ const MODULES: Record<
   },
 };
 
-const selectTray = (s: Parameters<typeof selectCpu>[0]): TrayValues => ({
-  cpu: selectCpu(s).total,
-  gpu: selectGpu(s).util,
-  mem: selectMemory(s).pressure,
-  temp: selectSensors(s).hottest,
-});
-
 /** Step 1 of 2: modules, menu bar style, launch at login. */
 export function SetupStep({
   hostInfo,
@@ -90,7 +72,6 @@ export function SetupStep({
   onContinue: (choices: OnboardingChoices) => void;
 }) {
   const caps = useHost((s) => s.capabilities);
-  const values = useHost(useShallow(selectTray));
   const [touched, setTouched] = useState<
     Partial<Record<SettingsModule, boolean>>
   >({});
@@ -105,6 +86,9 @@ export function SetupStep({
     enabled: touched[m] ?? defaults[m],
   }));
   const status = chipStatus(hostInfo);
+  const enabledNow = Object.fromEntries(
+    items.map((i) => [i.id, i.available && i.enabled])
+  ) as Record<SettingsModule, boolean>;
 
   const submit = () => {
     const enabled: OnboardingChoices["enabled"] = {};
@@ -171,20 +155,7 @@ export function SetupStep({
           <span id="onboarding-style" className={FIELD_LABEL}>
             Menu bar style
           </span>
-          <TrayStyleOption
-            style="combined"
-            title="Combined"
-            description="One item. Smallest footprint."
-            recommended
-            values={values}
-          />
-          <GraphStyleOption values={values} />
-          <TrayStyleOption
-            style="values"
-            title="Values only"
-            description="Numbers with stacked labels."
-            values={values}
-          />
+          <TrayStyleCards enabled={enabledNow} />
         </TrayStyleGroup>
       </div>
     </OnboardingFrame>

@@ -106,6 +106,7 @@ See [README](README.md) for the roadmap and [architecture.md](architecture.md) f
 | D-098 | Network page totals over the chart window, from the stored interface totals | Accepted |
 | D-100 | The engine's process view and usage key carry their own IPC derives | Accepted |
 | D-101 | SF Pro for the UI, SF Pro Rounded for headline figures; no monospace or uppercase labels | Accepted |
+| D-102 | Menu bar settings: bars, readouts after the bars, and separate items as three independent choices | Accepted |
 
 ---
 
@@ -3194,3 +3195,26 @@ The type came over unchanged from opendata: Inter for text, JetBrains Mono (`.da
 ### Revisit when
 
 - The menu bar renderer gets fixed-width digit cells: it can move to SF and the JetBrains package can go.
+
+## D-102: Menu bar settings: bars, readouts after the bars, and separate items as three independent choices
+
+Status: Accepted. Date: 2026-10-08. RFC: `plan/rfc-menu-bar-readouts.md` (with its review outcome). Settings schema (`Settings.menu_bar`), tray model and renderer, Settings and onboarding UI. Supersedes the per-module `MenuBarMode` of 4.15 and D-080's select; D-080's own items are unchanged.
+
+### Context
+
+The combined menu bar item printed one number, the hottest temperature. Watts, memory or disk usage could not sit beside the bars, and one select per module mixed three ideas (draw a bar, print a value in the combined item, give the module an item of its own) in up to eight options, with no preview.
+
+### Decision
+
+1. `Settings.menu_bar: MenuBarSettings { bars, readouts, items }`. Bars: CPU, GPU, Memory, each a bool. Readouts: CPU, GPU, Memory, Temperature, Power, Network, Disk, Battery, each a bool, printed after the bars in that fixed order (`Readout::ALL`, exported as `READOUTS`). Items: one `ItemMode` (Off, Value, Graph, Cores) per module, allowed per module by `ItemMode::allowed_for` (exported as `ITEM_MODES`). `ModuleSettings` keeps `enabled` only.
+2. Every field decodes with its default when missing (hand-written `Deserialize` through `deserialize_with_defaults!`, because a `#[serde(default)]` field turns optional in the generated TS). A pre-D-102 settings file loads with the default menu bar: three bars and the temperature. No migration of custom choices (pre-v1).
+3. Markers: stacked three-letter labels for CPU, GPU, MEM and BAT; a bolt glyph for Power (watts); a drive glyph for Disk; nothing for temperature, whose degree sign says what it is; Network keeps the two-line Rates layout. The "SOC" label goes.
+4. Disk is % used of the boot volume (`HostInfo.boot_mounts[0]`). Capacity samples every 60 s regardless of interest, so the Disk readout does not mark Disk as shown in the menu bar and adds no per-tick work. The separate Disk item stays read + write throughput, labelled "Read + write rate".
+5. Settings gets a Menu bar panel under Modules: a sticky live `TrayPreview`, a Bars toggle group, one switch per readout with its marker and live value, and one select per separate item. Past an estimated 150 pt (`WIDE_ITEM_PT`) the panel warns that wide items can end up behind the notch. Onboarding's three style cards are presets of `MenuBarSettings`; Settings has no presets.
+6. `TrayPreview` draws a `TrayLayout` from `src/core/tray-layout.ts`, a mirror of the Rust `build()` (order, gaps, the combined item going away when empty beside an own item, three empty tracks when nothing is on), so onboarding and Settings show what the menu bar will.
+
+### Consequences
+
+- The bench presets (`KELVO_BENCH_MENU_BAR`) are `group.field=value` pairs under `/menu_bar/`.
+- `tray-layout.ts` copies the renderer's geometry constants for the preview and the width estimate; it matched the Rust images within a point at 50, 151 and 383 pt. A geometry change in `render.rs` needs the same change there.
+- Readout order is fixed; reordering, choosing the disk volume and per-readout colour are out of scope.

@@ -12,7 +12,7 @@ use std::time::Duration;
 use common::*;
 use kelvo_collect::{Cadence, Interest};
 use kelvo_engine::{Bus, Engine, EngineParts, FakePowerSignals, FakeTicker, LiveHub, SourceSink};
-use kelvo_schema::settings::MenuBarMode;
+use kelvo_schema::settings::{BarSettings, ReadoutSettings};
 use kelvo_schema::{Module, Settings};
 use kelvo_store::{NetBucket, Store};
 
@@ -22,9 +22,15 @@ use kelvo_store::{NetBucket, Store};
 /// background's slower cadence (D-094) has its own test.
 fn settings() -> Settings {
     let mut s = settings_all_on();
-    for m in s.modules.values_mut() {
-        m.menu_bar = MenuBarMode::Hidden;
-    }
+    s.menu_bar.bars = BarSettings {
+        cpu: false,
+        gpu: false,
+        memory: false,
+    };
+    s.menu_bar.readouts = ReadoutSettings {
+        temperature: false,
+        ..ReadoutSettings::default()
+    };
     s
 }
 

@@ -1,4 +1,14 @@
 import type { LiveProcess } from "@core/generated/bindings";
+import {
+  DEFAULT_MENU_BAR,
+  type TrayStyle,
+  trayStyleMenuBar,
+} from "@core/settings-patch";
+import {
+  type TrayReadings,
+  type TrayUnits,
+  trayLayout,
+} from "@core/tray-layout";
 import { type CSSProperties, useState } from "react";
 import { CardGrid } from "~/components/card-grid";
 import { CollectingOverlay } from "~/components/collecting-overlay";
@@ -14,7 +24,6 @@ import { type ProcessSort, ProcessTable } from "~/components/process-table";
 import { SegmentedControl } from "~/components/segmented-control";
 import { SettingsRow } from "~/components/settings-row";
 import { Sidebar, type SidebarProps } from "~/components/sidebar";
-import type { TrayStyle, TrayValues } from "~/components/tray-preview";
 import { TrayPreview } from "~/components/tray-preview";
 import {
   TrayStyleGroup,
@@ -272,7 +281,65 @@ const MODULES: ModuleToggleItem[] = [
   },
 ];
 
-const TRAY: TrayValues = { cpu: 18, gpu: 36, mem: 42, temp: 61, power: 14.8 };
+const TRAY: TrayReadings = {
+  cpu: 18,
+  gpu: 36,
+  mem: 42,
+  temp: 61,
+  power: 14.8,
+  netUp: 1.2e6,
+  netDown: 38.4e6,
+  diskRate: 4.1e6,
+  diskUsed: 62,
+  battery: 87,
+  cpuHistory: [12, 18, 30, 22, 15, 40, 55, 32, 18, 20, 26, 18],
+};
+const TRAY_GAPS: TrayReadings = {
+  cpu: null,
+  gpu: null,
+  mem: null,
+  temp: null,
+  power: null,
+  netUp: null,
+  netDown: null,
+  diskRate: null,
+  diskUsed: null,
+  battery: null,
+};
+const TRAY_UNITS: TrayUnits = {
+  temperature: "celsius",
+  network: "bytes_per_sec",
+};
+const ALL_ON = () => true;
+const trayPreset = (style: TrayStyle, v = TRAY) =>
+  trayLayout(trayStyleMenuBar(style), ALL_ON, v, TRAY_UNITS);
+const TRAY_ALL_READOUTS = trayLayout(
+  {
+    ...DEFAULT_MENU_BAR,
+    readouts: {
+      cpu: true,
+      gpu: true,
+      memory: true,
+      temperature: true,
+      power: true,
+      network: true,
+      disk: true,
+      battery: true,
+    },
+  },
+  ALL_ON,
+  TRAY,
+  TRAY_UNITS
+);
+const TRAY_POWER_DISK = trayLayout(
+  {
+    ...DEFAULT_MENU_BAR,
+    readouts: { ...DEFAULT_MENU_BAR.readouts, power: true, disk: true },
+  },
+  ALL_ON,
+  TRAY,
+  TRAY_UNITS
+);
 
 const GRID_ITEMS: { id: string; label: string; accent: Accent }[] = [
   { id: "cpu", label: "CPU", accent: "cpu" },
@@ -557,19 +624,24 @@ export function AppComponentsSection() {
               title="Combined"
               description="One item. Smallest footprint."
               recommended
-              values={TRAY}
+              layout={trayPreset("combined")}
+            />
+            <TrayStyleOption
+              style="graphs"
+              title="Graph per module"
+              description="Separate items you can reorder with ⌘-drag."
+              layout={trayPreset("graphs")}
             />
             <TrayStyleOption
               style="values"
               title="Values only"
               description="Numbers with stacked labels."
-              values={TRAY}
+              layout={trayPreset("values")}
             />
           </TrayStyleGroup>
-          <TrayPreview
-            style="combined"
-            values={{ cpu: null, gpu: null, mem: null, temp: null }}
-          />
+          <TrayPreview layout={TRAY_POWER_DISK} />
+          <TrayPreview layout={TRAY_ALL_READOUTS} />
+          <TrayPreview layout={trayPreset("combined", TRAY_GAPS)} />
         </GalleryItem>
       </div>
 

@@ -97,8 +97,8 @@ pub fn force_battery() -> bool {
 
 /// `KELVO_BENCH_DEFAULTS=1`: this launch starts from shipped default settings, kept in
 /// memory and never saved, so a setting left in the bench identity's file cannot spoil a
-/// run (D-073, and again on 2026-10-07). `KELVO_BENCH_MENU_BAR=cpu=own_graph,gpu=hidden`
-/// sets menu bar modes on top of the defaults. Without the variable, `file` is used.
+/// run (D-073, and again on 2026-10-07). `KELVO_BENCH_MENU_BAR=items.cpu=graph,bars.gpu=false`
+/// sets menu bar choices (D-102) on top of the defaults. Without the variable, `file` is used.
 #[cfg(feature = "bench")]
 pub fn settings_file(
     file: Box<dyn crate::settings::SettingsFile>,
@@ -119,21 +119,28 @@ pub fn settings_file(
     file
 }
 
-/// Default settings as stored JSON, with `module=mode` menu bar pairs applied (serde
-/// names, comma separated). A pair that does not parse is skipped with a warning; a mode
-/// a module does not offer fails the owner's validation, which falls back to defaults.
+/// Default settings as stored JSON, with `group.field=value` menu bar pairs applied
+/// (`items.cpu=graph`, `readouts.power=true`; serde names, comma separated). A pair that
+/// does not parse is skipped with a warning; a mode a module does not offer fails the
+/// owner's validation, which falls back to defaults.
 #[cfg_attr(not(feature = "bench"), allow(dead_code))]
 fn defaults_with(menu_bar: &str) -> serde_json::Value {
     let mut value = serde_json::to_value(kelvo_schema::settings::Settings::default())
         .unwrap_or(serde_json::Value::Null);
     for pair in menu_bar.split(',').filter(|p| !p.is_empty()) {
-        let Some((module, mode)) = pair.split_once('=') else {
-            tracing::warn!(pair, "KELVO_BENCH_MENU_BAR pairs are module=mode");
+        let Some((path, v)) = pair.split_once('=') else {
+            tracing::warn!(pair, "KELVO_BENCH_MENU_BAR pairs are group.field=value");
             continue;
         };
-        match value.pointer_mut(&format!("/modules/{module}/menu_bar")) {
-            Some(slot) => *slot = serde_json::Value::String(mode.to_owned()),
-            None => tracing::warn!(module, "KELVO_BENCH_MENU_BAR: no such module"),
+        let v = match v {
+            "true" => serde_json::Value::Bool(true),
+            "false" => serde_json::Value::Bool(false),
+            mode => serde_json::Value::String(mode.to_owned()),
+        };
+        let pointer = format!("/menu_bar/{}", path.replace('.', "/"));
+        match value.pointer_mut(&pointer) {
+            Some(slot) => *slot = v,
+            None => tracing::warn!(path, "KELVO_BENCH_MENU_BAR: no such field"),
         }
     }
     value
@@ -236,15 +243,18 @@ mod tests {
     #[test]
     fn menu_bar_pairs_apply_on_top_of_the_defaults() {
         use kelvo_schema::Module;
-        use kelvo_schema::settings::{MenuBarMode, Settings};
+        use kelvo_schema::settings::{ItemMode, Settings};
 
-        let value = defaults_with("cpu=own_graph,gpu=own_graph,bogus,nope=own_graph");
+        let value = defaults_with(
+            "items.cpu=graph,items.gpu=graph,bars.gpu=false,readouts.power=true,bogus,items.nope=graph",
+        );
         let s: Settings = serde_json::from_value(value).expect("decodes");
         let d = Settings::default();
-        let mode = |s: &Settings, m| s.module(m).map(|m| m.menu_bar);
-        assert_eq!(mode(&s, Module::Cpu), Some(MenuBarMode::OwnGraph));
-        assert_eq!(mode(&s, Module::Gpu), Some(MenuBarMode::OwnGraph));
-        assert_eq!(mode(&s, Module::Memory), mode(&d, Module::Memory));
+        assert_eq!(s.menu_bar.items.get(Module::Cpu), ItemMode::Graph);
+        assert_eq!(s.menu_bar.items.get(Module::Gpu), ItemMode::Graph);
+        assert_eq!(s.menu_bar.items.memory, d.menu_bar.items.memory);
+        assert!(!s.menu_bar.bars.gpu && s.menu_bar.bars.cpu);
+        assert!(s.menu_bar.readouts.power && s.menu_bar.readouts.temperature);
         assert_eq!(s.sampling.interval_ms, d.sampling.interval_ms);
     }
 

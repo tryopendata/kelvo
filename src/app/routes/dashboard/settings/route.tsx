@@ -10,6 +10,7 @@ import { useWriteSettings } from "~/hooks/use-write-settings";
 import { useSettings } from "~/stores/settings-store";
 import { AlertsPanel } from "./_components/alerts-panel";
 import { GeneralPanel } from "./_components/general-panel";
+import { MenuBarPanel } from "./_components/menu-bar-panel";
 import { ModulesPanel } from "./_components/modules-panel";
 import { SamplingPanel } from "./_components/sampling-panel";
 
@@ -72,6 +73,10 @@ export default function SettingsRoute() {
         <div className="grid grid-cols-[repeat(auto-fit,minmax(380px,1fr))] items-start gap-5">
           <div className="flex flex-col gap-5">
             <ModulesPanel modules={settings.modules} />
+            <MenuBarPanel
+              modules={settings.modules}
+              menuBar={settings.menu_bar}
+            />
             <AlertsPanel alerts={settings.alerts} />
           </div>
           <div className="flex flex-col gap-5">

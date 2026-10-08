@@ -223,8 +223,9 @@ The tray image is rendered in Rust (`tiny-skia` for shapes, `ab_glyph` for text)
 
 | Style | Ships | Content | Geometry |
 |---|---|---|---|
-| Combined | v1.0 (default) | Three bars (CPU, GPU, memory pressure) plus the hottest SoC zone temperature in text | 17 × 14 pt icon; bars 3 pt wide with a 4 pt gap; unfilled track at 30% opacity; 1 pt corner radius; temperature in mono after the bars ("61°") |
-| Values | v1.0 | Stacked three-letter vertical labels (CPU, GPU, MEM, SOC, PWR) beside mono values ("18%", "36%", "42%", "61°", "14.8W") | Labels at 6 to 6.5 px in a column 1 character wide; values at the menu bar text size |
+| Combined | v1.0 (default) | Three bars (CPU, GPU, memory pressure) plus the hottest SoC zone temperature in text | 17 × 14 pt icon; bars 3 pt wide with a 4 pt gap; unfilled track at 30% opacity; 1 pt corner radius; temperature in mono 4 pt after the bars ("61°") |
+| Values | v1.0 | Stacked three-letter vertical labels (CPU, GPU, MEM, BAT, and PWR on the Power item) beside mono values ("18%", "36%", "42%", "14.8W"); temperature is a bare "61°" | Labels at 6 to 6.5 px in a column 1 character wide; values at the menu bar text size |
+| Readouts | D-102 | Any of CPU, GPU, Memory, temperature, Power, Network, Disk used, Battery after the bars, in that order. Power: bolt glyph and watts ("14.8W"). Disk: drive glyph and % of the boot volume used ("62%"). Network: the two-line rates | First readout 6 pt after the bars (4 pt for a bare "61°"), 10 pt between readouts. Glyphs 12 pt box centred on the 18 pt image, 3 pt before the value. Bolt: filled, 7 pt wide, the sidebar power path. Drive: 11 × 7 pt rounded rect, radius 1.5, 1.2 pt stroke, 1.5 pt dot 2 pt in from the bottom right |
 | Graphs | v1.1 | CPU line sparkline, memory fill gauge with value, network up and down rates stacked | Sparkline 20 samples wide; rates in two lines at 8 px |
 | Cores + histogram | v1.1 | Per-core strip (P cores, a 3 pt gap, then E cores; 2 pt bars, 1 pt gap, 16 pt tall) plus a GPU usage histogram of the last 9 samples | As in the content column |
 
@@ -251,7 +252,7 @@ From opendata's `frontend-design-slop` skill, applied to Kelvo.
 
 | Screen | Route or window | Components it needs | Ships in |
 |---|---|---|---|
-| Menu bar strip | Native status item (Rust-rendered); `TrayPreview` in onboarding and Settings | Rust `tray::render`, `TrayPreview` | v1.0 combined and values; v1.1 graphs, cores + histogram, per-module items |
+| Menu bar strip | Native status item (Rust-rendered); `TrayPreview` in onboarding and Settings | Rust `tray::render`, `TrayPreview` | v1.0 combined and values; v1.1 graphs, cores + histogram, per-module items; readouts after the bars (D-102) |
 | Popover, dark | `popover` window, route `/popover` | `PopoverShell`, `PopoverHeader`, `StatusPill`, `IconButton`, `ModuleCard` (popover variant), `StreamArea`, `InlineBar`, `CoreTiles`, `StackBar`, `Legend`, `StatGrid`, `MirrorBars`, `PopoverFooter`, `SelfCpuReadout` | v1.0 |
 | Popover, light | same, light | same | v1.0 |
 | Overview, dark | `dashboard` window, route `/dashboard/overview` | `DashboardShell`, `Sidebar`, `PageHeader`, `StatusPill`, `MachineHeader`, `CardGrid`, `MetricCard`, `RingGauge`, `InlineBar`, `Legend`, `ProcessList`, `InitialChip` | v1.0. GPU and Network process lists v1.2. "Customize" button v2.3 |
@@ -263,7 +264,7 @@ From opendata's `frontend-design-slop` skill, applied to Kelvo.
 | Desktop widgets | `board-<displayId>` window, route `/board/:display` | `BoardCanvas`, `WidgetFrame`, `SnapGuides`, `ResizeHandles`, `SizeReadout`, `EditPill`, widget components (`CoreHeatmap`, `MirrorBars`, `RingGauge`, `StackBar`) | v2.1 |
 | Onboarding | `onboarding` window, route `/onboarding` | `OnboardingShell`, `ModuleToggleList`, `TrayStyleOption`, `TrayPreview`, `ChipStatus`, `Checkbox` | v1.0 (combined and values options); v1.1 adds the graph-per-module option |
 | Empty, sleep gap and unsupported states | States inside `/dashboard/timeline`, module pages and Overview | `CollectingOverlay`, `GapBand`, `UnsupportedNotice`, `MiniModuleCard` | v1.0 |
-| Settings | `/dashboard/settings` | `SettingsSection`, `SettingsRow`, `ModuleSettingsTable`, `Select`, `Switch`, `SegmentedControl`, `HistorySizeRow` | v1.0 (menu bar modes Combined, Value + label, Hidden); v1.1 per-module item modes |
+| Settings | `/dashboard/settings` | `SettingsSection`, `SettingsRow`, `ModuleSettingsTable`, `Select`, `Switch`, `SegmentedControl`, `HistorySizeRow` | v1.0; Menu bar panel (preview, bars, readouts, separate items) replaces the per-module select (D-102) |
 | Popover panel | Component used by `/popover` | as the popover | v1.0 |
 | Dashboard sidebar | Component used by every `/dashboard/*` route | `Sidebar`, `SidebarItem`, `SidebarFooter` | v1.0 (Widgets entry hidden until v2.0) |
 | GPU page | `/dashboard/gpu` | `StatStrip`, `StreamArea`, `RingStatCard`, `InlineBar`, `ProcessTable` (v1.2) | v1.0 |
@@ -320,7 +321,7 @@ Components under `src/app/widgets/` are render-only. They take plain props and c
 | `MachineHeader` | Illustration plus spec grid | no | `{ hostInfo: HostInfo; uptimeMs; lastWakeMs }` |
 | `PopoverHeader`, `PopoverFooter` | App title, interval pill, pause, settings; CTA row and self-CPU readout | no | `{ hostName; uptimeMs; intervalMs; paused; onPause; onSettings }`, `{ selfCpuPct; onOpenDashboard; onActivity }` |
 | `KelvoMark` | The brand mark (4 x 4 heat grid in the CPU accent, `brand/kelvo-icon.svg`): popover header, onboarding title, top of the dashboard sidebar | no | `{ className }` |
-| `TrayPreview` | Simulated menu bar showing a tray style | no | `{ style: TrayStyle; values: TrayValues; theme }` |
+| `TrayPreview` | Simulated menu bar drawn from a `TrayLayout` (`trayLayout(menuBar, enabled, readings, units)`) | no | `{ layout: TrayLayout; clock?: string }` |
 | `TrayStyleOption` | Selectable card with TrayPreview | no | `{ style; title; description; recommended?: boolean; selected; onSelect }` |
 | `ModuleToggleList` | Module rows with swatch, description, switch | no | `{ modules: { id; label; description; enabled; available }[]; onToggle }` |
 | `SettingsRow` | Label, optional sub, control slot | no | `{ label; sub?: string; children }` |

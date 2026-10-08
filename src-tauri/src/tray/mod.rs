@@ -497,6 +497,8 @@ async fn follow(
 ) {
     let mut sub = entry.bus().subscribe();
     let mut series = TraySeries::default();
+    // The Disk readout's volume; host facts do not change while the app runs.
+    let boot_mount = entry.record().info.boot_mounts.first().cloned();
     let mut readings = Readings::default();
     let mut history = TrayHistory::default();
     let mut idle_frames = 0u64;
@@ -537,7 +539,7 @@ async fn follow(
                     idle_frames += 1;
                 } else {
                     if series.layout_no != Some(f.layout.layout_no) {
-                        series = TraySeries::resolve(&f.layout);
+                        series = TraySeries::resolve(&f.layout, boot_mount.as_deref());
                     }
                     readings = series.readings(&f.held);
                     history.record(&readings);

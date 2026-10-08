@@ -11,7 +11,6 @@ use std::time::Duration;
 use common::*;
 use kelvo_collect::{Cadence, Interest};
 use kelvo_engine::{Bus, BusMsg, LiveHub, Source, SourceSink};
-use kelvo_schema::settings::MenuBarMode;
 use kelvo_schema::{
     Catalog, GapReason, Module, ModuleCap, PowerSource, SyncKinds, Tier, UnsupportedReason,
 };
@@ -815,7 +814,8 @@ fn performance_mode_slows_cadences_and_follows_low_power_mode() {
     let mut s = settings_all_on();
     s.sampling.slow_on_battery = false;
     // The menu bar shows watts, not a temperature.
-    s.modules.get_mut(&Module::Power).unwrap().menu_bar = MenuBarMode::WattsValue;
+    s.menu_bar.readouts.temperature = false;
+    s.menu_bar.readouts.power = true;
     let mut h = Harness::new("performance", vec![procs, temps], &s);
     h.visible();
     h.ticks(60);
@@ -888,7 +888,7 @@ fn the_background_slows_the_tick_processes_and_temperatures() {
         &["thermal.cpu"],
     );
     let mut s = settings_all_on();
-    s.modules.get_mut(&Module::Power).unwrap().menu_bar = MenuBarMode::TempInCombined;
+    s.menu_bar.readouts.temperature = true;
     let mut h = Harness::new("background", vec![procs, temps], &s);
     assert_eq!(h.clock.period(), Some(Duration::from_secs(2)));
     let st = h.ctl.status();
@@ -1784,8 +1784,8 @@ fn live_collectors_run_every_tick_only_while_a_window_or_the_menu_bar_shows_them
     assert_eq!(nh.samples(), 9, "window closed: back to every 10 s");
 
     // The menu bar gains network and drops CPU.
-    s.modules.get_mut(&Module::Network).unwrap().menu_bar = MenuBarMode::ValueLabel;
-    s.modules.get_mut(&Module::Cpu).unwrap().menu_bar = MenuBarMode::Hidden;
+    s.menu_bar.readouts.network = true;
+    s.menu_bar.bars.cpu = false;
     h.ctl.apply_settings(&s);
     h.pump();
     let (n0, c0) = (nh.samples(), ch.samples());

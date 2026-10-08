@@ -1,7 +1,9 @@
+import type { TrayStyle } from "@core/settings-patch";
+import type { TrayLayout } from "@core/tray-layout";
 import { RadioGroup } from "radix-ui";
 import type { ComponentProps } from "react";
 import { cn } from "~/lib/utils";
-import { TrayPreview, type TrayStyle, type TrayValues } from "./tray-preview";
+import { TrayPreview } from "./tray-preview";
 
 export interface TrayStyleGroupProps
   extends Omit<
@@ -36,7 +38,8 @@ export interface TrayStyleOptionProps {
   /** One sentence on what the style costs or gives ("One item. Smallest footprint."). */
   description: string;
   recommended?: boolean;
-  values: TrayValues;
+  /** The style's preset drawn over the current values (`trayLayout`). */
+  layout: TrayLayout;
 }
 
 /**
@@ -48,7 +51,7 @@ export function TrayStyleOption({
   title,
   description,
   recommended = false,
-  values,
+  layout,
 }: TrayStyleOptionProps) {
   return (
     <RadioGroup.Item
@@ -64,7 +67,7 @@ export function TrayStyleOption({
           <span className="font-normal text-[11px] text-link">Recommended</span>
         )}
       </span>
-      <TrayPreview style={style} values={values} className="w-full" />
+      <TrayPreview layout={layout} className="w-full" />
       <span className="font-normal text-[11px] text-muted-foreground">
         {description}
       </span>

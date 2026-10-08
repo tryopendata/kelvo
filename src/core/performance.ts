@@ -1,13 +1,10 @@
-import {
-  OWN_ITEM_MODES,
-  type PerformanceReason,
-  type PlanFigures,
-  type Settings,
+import type {
+  PerformanceReason,
+  PlanFigures,
+  Settings,
 } from "@core/generated/bindings";
 import { samplingPlan } from "@core/sampling-plans";
-
-/** Menu bar modes that put a module in a status item of its own (D-080). */
-const OWN_ITEM: readonly string[] = OWN_ITEM_MODES;
+import { menuBarOf, SETTINGS_MODULES } from "@core/settings-patch";
 
 const secs = (ms: number) => `${ms / 1000} s`;
 
@@ -62,13 +59,15 @@ export function performanceChanges(
  * neither applies.
  */
 export function performanceNextLever(
-  settings: Pick<Settings, "sampling" | "modules">
+  settings: Pick<Settings, "sampling" | "modules" | "menu_bar">
 ): string | null {
-  const own = Object.values(settings.modules).some(
-    (m) => m?.enabled && OWN_ITEM.includes(m.menu_bar)
+  // Own status items (D-080) of modules that are on.
+  const items = menuBarOf(settings).items;
+  const own = SETTINGS_MODULES.some(
+    (m) => settings.modules[m]?.enabled && items[m] !== "off"
   );
   if (own) {
-    return "Separate menu bar items cost the most; combine them in Modules to save more.";
+    return "Separate menu bar items cost the most; turn them off under Menu bar to save more.";
   }
   // In the background the tick is already at least 2 s (D-094).
   if (settings.sampling.interval_ms < 2000) {

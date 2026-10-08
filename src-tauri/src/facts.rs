@@ -8,7 +8,9 @@ use kelvo_engine::{
     EngineStatus, PerformanceSlowdown, PowerState, background_interval_ms, effective_interval_ms,
     performance_period,
 };
-use kelvo_schema::settings::{HistorySettings, MenuBarMode, SETTINGS_MODULES, SamplingSettings};
+use kelvo_schema::settings::{
+    HistorySettings, ItemMode, Readout, SETTINGS_MODULES, SamplingSettings,
+};
 use kelvo_schema::{MetricKind, Module, PerformanceReason, Tier, Unit};
 use kelvo_store::{FILL_MINUTES, FILL_ROLLED, FillMeasurement, Retention};
 use serde::Serialize;
@@ -74,28 +76,16 @@ pub fn history_commit_ms() -> i64 {
     i64::try_from(kelvo_store::DEFAULT_COMMIT_INTERVAL.as_millis()).unwrap_or(i64::MAX)
 }
 
-/// The menu bar modes each settings module offers (`MenuBarMode::allowed_for`).
-pub fn menu_bar_modes() -> BTreeMap<Module, &'static [MenuBarMode]> {
+/// The own-item modes each settings module offers (`ItemMode::allowed_for`, D-102).
+pub fn item_modes() -> BTreeMap<Module, &'static [ItemMode]> {
     SETTINGS_MODULES
         .into_iter()
-        .map(|m| (m, MenuBarMode::allowed_for(m)))
+        .map(|m| (m, ItemMode::allowed_for(m)))
         .collect()
 }
 
-/// The modes that put a module in a status item of its own (`MenuBarMode::own_item`).
-pub fn own_item_modes() -> Vec<MenuBarMode> {
-    SETTINGS_MODULES
-        .into_iter()
-        .flat_map(MenuBarMode::allowed_for)
-        .copied()
-        .filter(|m| m.own_item())
-        .fold(Vec::new(), |mut out, m| {
-            if !out.contains(&m) {
-                out.push(m);
-            }
-            out
-        })
-}
+/// Every menu bar readout, in the order the menu bar draws them (`Readout::ALL`).
+pub const READOUTS: [Readout; 8] = Readout::ALL;
 
 /// One persisted history tier.
 #[derive(Clone, Copy, Debug, Serialize, specta::Type)]
@@ -427,14 +417,10 @@ mod tests {
     }
 
     #[test]
-    fn own_item_modes_are_the_status_item_modes() {
-        assert_eq!(
-            own_item_modes(),
-            [
-                MenuBarMode::OwnGraph,
-                MenuBarMode::OwnCores,
-                MenuBarMode::OwnValue
-            ]
-        );
+    fn item_modes_cover_every_settings_module() {
+        let modes = item_modes();
+        assert_eq!(modes.len(), SETTINGS_MODULES.len());
+        assert_eq!(modes[&Module::Cpu].last(), Some(&ItemMode::Cores));
+        assert!(modes.values().all(|m| m.first() == Some(&ItemMode::Off)));
     }
 }

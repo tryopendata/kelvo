@@ -74,6 +74,17 @@ Status values: Not started, In progress, Blocked (say on what), Done (with the v
 
 ## Log
 
+### 2026-10-08 (menu bar readouts, D-102)
+
+The menu bar is configurable beyond the temperature: RFC `plan/rfc-menu-bar-readouts.md`, reviewed by a devil's-advocate UX pass whose findings are in its "Review outcome", and decision D-102.
+
+- Schema: `Settings.menu_bar { bars, readouts, items }` replaces `ModuleSettings.menu_bar` / `MenuBarMode`. Old settings files decode with the default menu bar. Patches are per field.
+- Tray: readouts after the bars in a fixed order, with stacked labels (CPU, GPU, MEM, BAT), a bolt for watts, a drive for Disk used (boot volume, 60 s cadence, no per-tick cost), a bare "61°", and two-line network rates. The "SOC" label is gone.
+- Settings: Modules is swatch, name and On. A new Menu bar panel has a sticky live preview with a notch-width warning past 150 pt, a Bars toggle group, a switch per readout with its marker and live value, and a select per separate item ("Read + write rate", "Total rate", "Watts" where a module's value needs naming).
+- `TrayPreview` draws a `TrayLayout` from `src/core/tray-layout.ts` (a mirror of the Rust `build()`), shared by Settings, the onboarding style cards (now presets) and the gallery. `useRecent` moved to `~/hooks`; `useTrayReadings` feeds the previews.
+
+Verified: `cargo test --workspace`, `make rust-check`, `bun run lint`, `bun run typecheck`, `bun run test` (900 tests); new tray-layout and Menu bar panel tests revert-checked (the empty-combined rule and the width threshold). The `dump_tray_rows` PNGs were checked by eye on light and dark bars, and the TS width estimate matched the Rust images within a point. Screenshots of Settings (light and dark, scrolled with the sticky preview), onboarding and the gallery were compared with the neighbouring panels. Differences left in place: value rows are 40 px rather than the 48 px `SettingsRow`, so sixteen rows stay scannable; the preview is drawn at menu bar size (1x), so it reads small inside a wide panel, as in onboarding. Not done: `make bench` (the defaults draw the same as before plus no new series), and a check of the glyphs in the real menu bar at 1x on a non-Retina display.
+
 ### 2026-10-07 (refactor pass)
 
 A DRY and library pass over Rust and TS with no intended behavior change, except as listed below.

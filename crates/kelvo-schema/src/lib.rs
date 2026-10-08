@@ -61,7 +61,10 @@ pub use history::{
 };
 pub use host::{ClusterInfo, CoreKind, HostId, HostIdentity, HostInfo, HostRecord, OsKind};
 pub use series::{Labels, MetricId, SeriesKey, SeriesParseError, SeriesSelector};
-pub use settings::{AlertSettings, PerformanceReason, PowerSource, Settings, SettingsError};
+pub use settings::{
+    AlertSettings, ItemMode, MenuBarSettings, PerformanceReason, PowerSource, Readout, Settings,
+    SettingsError,
+};
 pub use snapshot::{
     BatteryView, ClusterView, CoreView, CpuView, DiskDeviceView, DiskView, FanView,
     FrameLenMismatch, FrameView, GpuView, InterfaceView, LabeledValue, MemoryView, NetworkView,

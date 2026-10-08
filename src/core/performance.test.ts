@@ -1,16 +1,12 @@
 import { performanceChanges, performanceNextLever } from "./performance";
+import { DEFAULT_MENU_BAR } from "./settings-patch";
 
 const settings = (
   interval_ms: number,
-  over: {
-    slow_on_battery?: boolean;
-    power?: { enabled: boolean; menu_bar: "temp_in_combined" | "hidden" };
-  } = {}
+  over: { slow_on_battery?: boolean } = {}
 ) => ({
   sampling: { interval_ms, slow_on_battery: over.slow_on_battery ?? false },
-  modules: {
-    power: over.power ?? { enabled: true, menu_bar: "hidden" as const },
-  },
+  modules: { power: { enabled: true } },
 });
 
 describe("performanceChanges (D-088)", () => {
@@ -48,16 +44,11 @@ describe("performanceChanges (D-088)", () => {
   });
 
   it("leaves out the background's cadences, which apply without it (D-094)", () => {
-    for (const power of [
-      { enabled: true, menu_bar: "temp_in_combined" as const },
-      { enabled: true, menu_bar: "hidden" as const },
-    ]) {
-      for (const interval of [500, 1000, 2000]) {
-        const lines = performanceChanges(settings(interval, { power }));
-        expect(lines.filter((l) => /background|Temperatures/.test(l))).toEqual(
-          []
-        );
-      }
+    for (const interval of [500, 1000, 2000]) {
+      const lines = performanceChanges(settings(interval));
+      expect(lines.filter((l) => /background|Temperatures/.test(l))).toEqual(
+        []
+      );
     }
   });
 });
@@ -66,7 +57,11 @@ describe("performanceNextLever", () => {
   it("names own menu bar items first, then the interval", () => {
     const own = {
       ...settings(1000),
-      modules: { cpu: { enabled: true, menu_bar: "own_graph" as const } },
+      modules: { cpu: { enabled: true } },
+      menu_bar: {
+        ...DEFAULT_MENU_BAR,
+        items: { ...DEFAULT_MENU_BAR.items, cpu: "graph" as const },
+      },
     };
     expect(performanceNextLever(own)).toMatch(/Separate menu bar items/);
     expect(performanceNextLever(settings(1000))).toBe(

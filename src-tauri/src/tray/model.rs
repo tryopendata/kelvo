@@ -3,19 +3,18 @@
 //! and pacing, the accessibility label and what a drawn frame changes on the status item
 //! are tested without a menu bar.
 //!
-//! Each module's "Menu bar" setting decides its element (v1-local-monitor.md 4.2):
-//! CPU, GPU and Memory are a bar in the combined group or a labelled value; Power &
-//! Sensors adds the hottest temperature after the bars (`TempInCombined`) or system watts
-//! as a labelled value (`WattsValue`); Network, Disk and Battery are labelled values.
-//! The `Own*` modes give a module a status item of its own (D-080): its labelled value,
-//! or its graph (CPU sparkline or per-core strip, GPU history bars, memory
-//! fill gauge, network rates). The sparkline and history bars read [`TrayHistory`], a
-//! bounded ring fed by every frame, never a history query.
+//! The menu bar settings (D-102) decide the elements: CPU, GPU and Memory bars in the
+//! combined item, then the readouts after them in [`Readout::ALL`] order, each a marker
+//! and a value (a stacked label, a glyph, nothing for "61°", or the two-line network
+//! rates). A module's own item (D-080) is its labelled value or its graph (CPU sparkline
+//! or per-core strip, GPU history bars, memory fill gauge, network rates). The sparkline
+//! and history bars read [`TrayHistory`], a bounded ring fed by every frame, never a
+//! history query.
 
 use std::collections::VecDeque;
 
 use kelvo_engine::FrameLayout;
-use kelvo_schema::settings::MenuBarMode;
+use kelvo_schema::settings::{BarSettings, ItemMode, NetworkUnit, Readout};
 use kelvo_schema::{Module, Settings};
 
 use self::format::{pct_text, rate_line, rate_text, rate_words, temp_text, watts_text, words_name};
@@ -57,6 +56,9 @@ pub struct TraySeries {
     /// `disk.read_total` and `disk.write_total`, the same over devices.
     disk_read: Option<usize>,
     disk_write: Option<usize>,
+    /// `disk.used` and `disk.total` of the boot volume (`HostInfo.boot_mounts[0]`).
+    disk_used: Option<usize>,
+    disk_total: Option<usize>,
     /// `cpu.load` per core, grouped by core kind: P cores, then E cores, then any other
     /// kind, each in core-number order.
     cores: Vec<Vec<usize>>,
@@ -75,7 +77,9 @@ fn core_order(label: &str) -> (u8, char, u32) {
 }
 
 impl TraySeries {
-    pub fn resolve(layout: &FrameLayout) -> Self {
+    /// `boot_mount` is the volume the Disk readout shows (`HostInfo.boot_mounts[0]`);
+    /// without one the readout is absent.
+    pub fn resolve(layout: &FrameLayout, boot_mount: Option<&str>) -> Self {
         let mut s = Self {
             layout_no: Some(layout.layout_no),
             ..Self::default()
@@ -83,6 +87,7 @@ impl TraySeries {
         let mut cores: Vec<((u8, char, u32), usize)> = Vec::new();
         for (i, key) in layout.series.iter().enumerate() {
             let bare = key.labels.is_empty();
+            let boot = boot_mount.is_some() && key.labels.get("vol") == boot_mount;
             match key.metric.as_str() {
                 "cpu.total" if bare => s.cpu = Some(i),
                 "gpu.util" if bare => s.gpu = Some(i),
@@ -94,6 +99,8 @@ impl TraySeries {
                 "net.tx_total" if bare => s.net_tx = Some(i),
                 "disk.read_total" if bare => s.disk_read = Some(i),
                 "disk.write_total" if bare => s.disk_write = Some(i),
+                "disk.used" if boot => s.disk_used = Some(i),
+                "disk.total" if boot => s.disk_total = Some(i),
                 "cpu.load" => {
                     if let Some(core) = key.labels.get("core") {
                         cores.push((core_order(core), i));
@@ -133,6 +140,13 @@ impl TraySeries {
         };
         let net_rx = one(self.net_rx);
         let net_tx = one(self.net_tx);
+        let disk_used_pct = match (one(self.disk_used), one(self.disk_total)) {
+            (Reading::Value(used), Reading::Value(total)) if total > 0.0 => {
+                Reading::Value(used / total * 100.0)
+            }
+            (Reading::Absent, Reading::Absent) => Reading::Absent,
+            _ => Reading::Gap,
+        };
         Readings {
             cpu: one(self.cpu),
             gpu: one(self.gpu),
@@ -144,6 +158,7 @@ impl TraySeries {
             net_rx_bps: net_rx,
             net_tx_bps: net_tx,
             disk_bps: both(one(self.disk_read), one(self.disk_write)),
+            disk_used_pct,
             cores: self
                 .cores
                 .iter()
@@ -186,6 +201,8 @@ pub struct Readings {
     pub net_rx_bps: Reading,
     pub net_tx_bps: Reading,
     pub disk_bps: Reading,
+    /// % of the boot volume used.
+    pub disk_used_pct: Reading,
     /// `cpu.load` per core, P cores then E cores (see [`TraySeries`]).
     pub cores: Vec<Vec<Reading>>,
 }
@@ -264,15 +281,12 @@ impl TrayHistory {
     }
 }
 
-/// A labelled value in the values layout: a stacked three-letter label and mono text.
+/// A labelled value in an own item: a stacked three-letter label and the value.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Labeled {
     pub label: &'static str,
     pub text: String,
 }
-
-/// Characters of width the combined temperature always reserves ("61°").
-pub const TEMP_MIN_CHARS: usize = 3;
 
 /// Characters of width a labelled value always reserves, so the status item keeps its
 /// width as values change ("9%" vs "18%", a dash while paused). A wider status item
@@ -282,6 +296,53 @@ pub fn min_chars(label: &str) -> usize {
         "PWR" => 5,         // "14.8W"
         "NET" | "DSK" => 6, // "38.4MB"
         _ => 3,             // "18%", "61°"
+    }
+}
+
+/// A glyph drawn before a readout's value (design-system.md, Tray icon spec).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Glyph {
+    /// Power: a filled bolt.
+    Bolt,
+    /// Disk used: an outlined drive with an activity dot.
+    Drive,
+}
+
+/// What says which value a readout is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Marker {
+    /// A stacked three-letter label ("CPU").
+    Label(&'static str),
+    Glyph(Glyph),
+    /// The value says it itself ("61°").
+    None,
+}
+
+impl Marker {
+    /// Characters of width the value after this marker always reserves.
+    pub fn min_chars(self) -> usize {
+        match self {
+            Marker::Label(l) => min_chars(l),
+            Marker::Glyph(Glyph::Bolt) => 5, // "14.8W"
+            Marker::Glyph(Glyph::Drive) | Marker::None => 3,
+        }
+    }
+}
+
+/// One readout in the combined item, after the bars.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum ReadoutFrame {
+    Marked {
+        marker: Marker,
+        text: String,
+    },
+    /// Network up over down, drawn as the own item's rates.
+    Graph(Graph),
+}
+
+impl ReadoutFrame {
+    fn marked(marker: Marker, text: String) -> Self {
+        ReadoutFrame::Marked { marker, text }
     }
 }
 
@@ -328,8 +389,9 @@ pub struct TrayFrame {
     /// The combined group's bars, left to right. `None` draws the track only (gap or
     /// paused).
     pub bars: Vec<Option<u16>>,
-    /// Text after the bars ("61°").
-    pub combined_text: Option<String>,
+    /// The readouts after the bars, in [`Readout::ALL`] order.
+    pub readouts: Vec<ReadoutFrame>,
+    /// An own item's labelled value.
     pub values: Vec<Labeled>,
     /// Graphs, after the values (an own item has one).
     pub graphs: Vec<Graph>,
@@ -340,7 +402,7 @@ impl TrayFrame {
         Self {
             scale,
             bars: Vec::new(),
-            combined_text: None,
+            readouts: Vec::new(),
             values: Vec::new(),
             graphs: Vec::new(),
         }
@@ -348,7 +410,7 @@ impl TrayFrame {
 
     fn is_empty(&self) -> bool {
         self.bars.is_empty()
-            && self.combined_text.is_none()
+            && self.readouts.is_empty()
             && self.values.is_empty()
             && self.graphs.is_empty()
     }
@@ -397,10 +459,16 @@ pub struct TrayItem {
 
 const DASH: &str = "\u{2013}";
 
-fn mode(settings: &Settings, module: Module) -> MenuBarMode {
-    match settings.module(module) {
-        Some(m) if m.enabled => m.menu_bar,
-        _ => MenuBarMode::Hidden,
+fn enabled(settings: &Settings, module: Module) -> bool {
+    settings.module(module).is_some_and(|m| m.enabled)
+}
+
+/// `module`'s own item, `Off` when the module is switched off.
+fn item_mode(settings: &Settings, module: Module) -> ItemMode {
+    if enabled(settings, module) {
+        settings.menu_bar.items.get(module)
+    } else {
+        ItemMode::Off
     }
 }
 
@@ -415,36 +483,21 @@ fn bar_px(pct: f32, scale: u32) -> u16 {
     px(pct, BAR_HEIGHT_PT, scale)
 }
 
-/// Where a module's labelled value goes.
-#[derive(Clone, Copy)]
-enum Place {
-    Combined,
-    Own,
-}
-
 /// Collects the combined item's elements and the own items as modules are visited.
 struct Layout {
     scale: u32,
     paused: bool,
     combined: TrayFrame,
     bar_words: Vec<String>,
-    value_words: Vec<String>,
+    readout_words: Vec<String>,
     own: Vec<TrayItem>,
 }
 
 impl Layout {
-    fn value(&mut self, place: Place, module: Module, value: Labeled, words: String) {
-        match place {
-            Place::Combined => {
-                self.combined.values.push(value);
-                self.value_words.push(words);
-            }
-            Place::Own => {
-                let mut frame = TrayFrame::empty(self.scale);
-                frame.values.push(value);
-                self.own_item(module, frame, words);
-            }
-        }
+    fn own_value(&mut self, module: Module, value: Labeled, words: String) {
+        let mut frame = TrayFrame::empty(self.scale);
+        frame.values.push(value);
+        self.own_item(module, frame, words);
     }
 
     fn graph(&mut self, module: Module, graph: Graph, words: String) {
@@ -476,10 +529,42 @@ fn ring_px(ring: &Ring, range_pt: u32, scale: u32, paused: bool) -> Vec<Option<u
         .collect()
 }
 
-/// Builds every status item for `readings` under `settings`: the combined item first (if
-/// it has anything to show, or nothing else is shown), then the own items in module
-/// order. `paused` drops bars and graphs to their tracks and shows a dash for every
-/// text, as a gap does.
+/// A percentage reading's text and words ("CPU 18 percent").
+fn pct_parts(r: Reading, word: &str) -> (String, String) {
+    match r.value() {
+        Some(v) => (
+            pct_text(v),
+            format!("{word} {} percent", v.clamp(0.0, 999.0).round() as i32),
+        ),
+        None => (DASH.into(), format!("{word} no data")),
+    }
+}
+
+/// Network up over down, in the stacked two-line form, and its words.
+fn rates_parts(tx: Reading, rx: Reading, unit: NetworkUnit) -> (Graph, Option<String>) {
+    let line = |r: Reading| {
+        r.value()
+            .map_or_else(|| DASH.into(), |v| rate_line(v, unit))
+    };
+    let graph = Graph::Rates {
+        up: format!("{} \u{2191}", line(tx)),
+        down: format!("{} \u{2193}", line(rx)),
+    };
+    let words = match (tx, rx) {
+        (Reading::Value(tx), Reading::Value(rx)) => Some(format!(
+            "network up {}, down {}",
+            rate_words(tx, unit),
+            rate_words(rx, unit)
+        )),
+        _ => None,
+    };
+    (graph, words)
+}
+
+/// Builds every status item for `readings` under `settings` (D-102): the combined item
+/// first (bars, then the readouts in [`Readout::ALL`] order), if it has anything to show
+/// or nothing else is shown, then the own items in module order. `paused` drops bars and
+/// graphs to their tracks and shows a dash for every text, as a gap does.
 pub fn build(
     readings: &Readings,
     history: &TrayHistory,
@@ -489,61 +574,140 @@ pub fn build(
 ) -> Vec<TrayItem> {
     let unit_t = settings.units.temperature;
     let unit_n = settings.units.network;
+    let mb = &settings.menu_bar;
     let shown = |r: Reading| if paused { Reading::Gap } else { r };
     let mut l = Layout {
         scale,
         paused,
         combined: TrayFrame::empty(scale),
         bar_words: Vec::new(),
-        value_words: Vec::new(),
+        readout_words: Vec::new(),
         own: Vec::new(),
     };
 
-    let pct_modules = [
-        (Module::Cpu, readings.cpu, "CPU", "CPU"),
-        (Module::Gpu, readings.gpu, "GPU", "GPU"),
-        (Module::Memory, readings.mem, "MEM", "memory"),
-    ];
-    for (module, reading, label, word) in pct_modules {
-        if reading == Reading::Absent {
+    let pct_of = |module: Module| match module {
+        Module::Cpu => readings.cpu,
+        Module::Gpu => readings.gpu,
+        _ => readings.mem,
+    };
+    for module in BarSettings::MODULES {
+        let reading = pct_of(module);
+        if !mb.bars.get(module) || !enabled(settings, module) || reading == Reading::Absent {
             continue;
         }
         let r = shown(reading);
-        let words = match r.value() {
-            Some(v) => format!("{word} {} percent", v.clamp(0.0, 999.0).round() as i32),
-            None => format!("{word} no data"),
-        };
-        let text = r.value().map_or_else(|| DASH.into(), pct_text);
-        match mode(settings, module) {
-            MenuBarMode::InCombined => {
-                l.combined.bars.push(r.value().map(|v| bar_px(v, scale)));
-                l.bar_words.push(words);
-            }
-            MenuBarMode::ValueLabel => {
-                l.value(Place::Combined, module, Labeled { label, text }, words);
-            }
-            MenuBarMode::OwnValue => {
-                l.value(Place::Own, module, Labeled { label, text }, words);
-            }
-            MenuBarMode::OwnGraph => {
-                let graph = match module {
-                    Module::Cpu => Graph::Spark {
-                        label,
-                        points: ring_px(&history.cpu, SPARK_RANGE_PT, scale, paused),
-                    },
-                    Module::Gpu => Graph::Hist {
-                        label,
-                        bars: ring_px(&history.gpu, BOX_FILL_PT, scale, paused),
-                    },
-                    _ => Graph::Gauge {
-                        label,
-                        fill: r.value().map(|v| px(v, BOX_FILL_PT, scale)),
-                        text,
-                    },
+        l.combined.bars.push(r.value().map(|v| bar_px(v, scale)));
+        l.bar_words.push(pct_parts(r, words_name(module)).1);
+    }
+
+    for readout in Readout::ALL {
+        if !mb.readouts.get(readout) || !enabled(settings, readout.module()) {
+            continue;
+        }
+        let (frame, words) = match readout {
+            Readout::Cpu | Readout::Gpu | Readout::Memory | Readout::Battery => {
+                let (reading, label) = match readout {
+                    Readout::Cpu => (readings.cpu, "CPU"),
+                    Readout::Gpu => (readings.gpu, "GPU"),
+                    Readout::Memory => (readings.mem, "MEM"),
+                    _ => (readings.battery, "BAT"),
                 };
-                l.graph(module, graph, words);
+                if reading == Reading::Absent {
+                    continue;
+                }
+                let (text, words) = pct_parts(shown(reading), words_name(readout.module()));
+                (ReadoutFrame::marked(Marker::Label(label), text), words)
             }
-            MenuBarMode::OwnCores if !readings.cores.is_empty() => {
+            Readout::Temperature => {
+                if readings.temp_c == Reading::Absent {
+                    continue;
+                }
+                let r = shown(readings.temp_c);
+                let text = r
+                    .value()
+                    .map_or_else(|| DASH.into(), |c| temp_text(c, unit_t));
+                let words = match r.value() {
+                    Some(_) => format!("temperature {} degrees", text.trim_end_matches('°')),
+                    None => "temperature no data".into(),
+                };
+                // The degree sign says what it is: no marker (D-102).
+                (ReadoutFrame::marked(Marker::None, text), words)
+            }
+            Readout::Power => {
+                if readings.watts == Reading::Absent {
+                    continue;
+                }
+                let r = shown(readings.watts);
+                let text = r.value().map_or_else(|| DASH.into(), watts_text);
+                let words = match r.value() {
+                    Some(w) => format!("power {w:.1} watts"),
+                    None => "power no data".into(),
+                };
+                (
+                    ReadoutFrame::marked(Marker::Glyph(Glyph::Bolt), text),
+                    words,
+                )
+            }
+            Readout::Network => {
+                if readings.net_bps == Reading::Absent {
+                    continue;
+                }
+                let (graph, words) = rates_parts(
+                    shown(readings.net_tx_bps),
+                    shown(readings.net_rx_bps),
+                    unit_n,
+                );
+                let words = words.unwrap_or_else(|| "network no data".into());
+                (ReadoutFrame::Graph(graph), words)
+            }
+            Readout::Disk => {
+                if readings.disk_used_pct == Reading::Absent {
+                    continue;
+                }
+                let (text, words) = pct_parts(shown(readings.disk_used_pct), "disk");
+                let words = if text == DASH {
+                    words
+                } else {
+                    format!("{words} used")
+                };
+                (
+                    ReadoutFrame::marked(Marker::Glyph(Glyph::Drive), text),
+                    words,
+                )
+            }
+        };
+        l.combined.readouts.push(frame);
+        l.readout_words.push(words);
+    }
+
+    // Own items, in module order.
+    let pct_modules = [
+        (Module::Cpu, "CPU"),
+        (Module::Gpu, "GPU"),
+        (Module::Memory, "MEM"),
+    ];
+    for (module, label) in pct_modules {
+        let reading = pct_of(module);
+        let mode = item_mode(settings, module);
+        if reading == Reading::Absent || mode == ItemMode::Off {
+            continue;
+        }
+        let r = shown(reading);
+        let (text, words) = pct_parts(r, words_name(module));
+        match (mode, module) {
+            (ItemMode::Graph, Module::Cpu) => {
+                let points = ring_px(&history.cpu, SPARK_RANGE_PT, scale, paused);
+                l.graph(module, Graph::Spark { label, points }, words);
+            }
+            (ItemMode::Graph, Module::Gpu) => {
+                let bars = ring_px(&history.gpu, BOX_FILL_PT, scale, paused);
+                l.graph(module, Graph::Hist { label, bars }, words);
+            }
+            (ItemMode::Graph, _) => {
+                let fill = r.value().map(|v| px(v, BOX_FILL_PT, scale));
+                l.graph(module, Graph::Gauge { label, fill, text }, words);
+            }
+            (ItemMode::Cores, _) if !readings.cores.is_empty() => {
                 // Any load shows at least 1 pt.
                 let min = u16::try_from(scale).unwrap_or(1);
                 let clusters = readings
@@ -562,44 +726,13 @@ pub fn build(
                     .collect();
                 l.graph(module, Graph::Cores { label, clusters }, words);
             }
-            MenuBarMode::OwnCores => {
-                // No per-core series on this host: the value is still worth an item.
-                l.value(Place::Own, module, Labeled { label, text }, words);
-            }
-            _ => {}
+            // Value, or Cores on a host without per-core series: the value is still
+            // worth an item.
+            _ => l.own_value(module, Labeled { label, text }, words),
         }
     }
 
-    let power_mode = mode(settings, Module::Power);
-    if power_mode == MenuBarMode::TempInCombined && readings.temp_c != Reading::Absent {
-        let r = shown(readings.temp_c);
-        let text = r
-            .value()
-            .map_or_else(|| DASH.into(), |c| temp_text(c, unit_t));
-        let words = match r.value() {
-            Some(c) => {
-                let t = temp_text(c, unit_t);
-                format!("{} degrees", t.trim_end_matches('°'))
-            }
-            None => "temperature no data".into(),
-        };
-        if l.combined.bars.is_empty() {
-            // Without bars a bare "61°" would not say what it is.
-            l.combined.values.insert(0, Labeled { label: "SOC", text });
-            l.value_words.insert(0, words);
-        } else {
-            l.combined.combined_text = Some(text);
-            l.bar_words.push(words);
-        }
-    }
-    let watts_place = match power_mode {
-        MenuBarMode::WattsValue => Some(Place::Combined),
-        MenuBarMode::OwnValue => Some(Place::Own),
-        _ => None,
-    };
-    if let Some(place) = watts_place
-        && readings.watts != Reading::Absent
-    {
+    if item_mode(settings, Module::Power) == ItemMode::Value && readings.watts != Reading::Absent {
         let r = shown(readings.watts);
         let value = Labeled {
             label: "PWR",
@@ -609,7 +742,7 @@ pub fn build(
             Some(w) => format!("power {w:.1} watts"),
             None => "power no data".into(),
         };
-        l.value(place, Module::Power, value, words);
+        l.own_value(Module::Power, value, words);
     }
 
     let rate_modules = [
@@ -617,7 +750,8 @@ pub fn build(
         (Module::Disk, readings.disk_bps, "DSK", "disk"),
     ];
     for (module, reading, label, word) in rate_modules {
-        if reading == Reading::Absent {
+        let mode = item_mode(settings, module);
+        if reading == Reading::Absent || mode == ItemMode::Off {
             continue;
         }
         let r = shown(reading);
@@ -625,53 +759,29 @@ pub fn build(
             Some(v) => format!("{word} {}", rate_words(v, unit_n)),
             None => format!("{word} no data"),
         };
-        let value = Labeled {
-            label,
-            text: r
-                .value()
-                .map_or_else(|| DASH.into(), |v| rate_text(v, unit_n)),
-        };
-        match mode(settings, module) {
-            MenuBarMode::ValueLabel => l.value(Place::Combined, module, value, words),
-            MenuBarMode::OwnValue => l.value(Place::Own, module, value, words),
-            MenuBarMode::OwnGraph => {
-                let line = |r: Reading| {
-                    shown(r)
-                        .value()
-                        .map_or_else(|| DASH.into(), |v| rate_line(v, unit_n))
-                };
-                let words = match (shown(readings.net_tx_bps), shown(readings.net_rx_bps)) {
-                    (Reading::Value(tx), Reading::Value(rx)) => format!(
-                        "{word} up {}, down {}",
-                        rate_words(tx, unit_n),
-                        rate_words(rx, unit_n)
-                    ),
-                    _ => words,
-                };
-                let graph = Graph::Rates {
-                    up: format!("{} \u{2191}", line(readings.net_tx_bps)),
-                    down: format!("{} \u{2193}", line(readings.net_rx_bps)),
-                };
-                l.graph(module, graph, words);
-            }
-            _ => {}
+        if mode == ItemMode::Graph {
+            let (graph, rate_words) = rates_parts(
+                shown(readings.net_tx_bps),
+                shown(readings.net_rx_bps),
+                unit_n,
+            );
+            l.graph(module, graph, rate_words.unwrap_or(words));
+        } else {
+            let value = Labeled {
+                label,
+                text: r
+                    .value()
+                    .map_or_else(|| DASH.into(), |v| rate_text(v, unit_n)),
+            };
+            l.own_value(module, value, words);
         }
     }
-    if readings.battery != Reading::Absent {
-        let r = shown(readings.battery);
-        let value = Labeled {
-            label: "BAT",
-            text: r.value().map_or_else(|| DASH.into(), pct_text),
-        };
-        let words = match r.value() {
-            Some(v) => format!("battery {} percent", v.round() as i32),
-            None => "battery no data".into(),
-        };
-        match mode(settings, Module::Battery) {
-            MenuBarMode::ValueLabel => l.value(Place::Combined, Module::Battery, value, words),
-            MenuBarMode::OwnValue => l.value(Place::Own, Module::Battery, value, words),
-            _ => {}
-        }
+
+    if item_mode(settings, Module::Battery) == ItemMode::Value
+        && readings.battery != Reading::Absent
+    {
+        let (text, words) = pct_parts(shown(readings.battery), "battery");
+        l.own_value(Module::Battery, Labeled { label: "BAT", text }, words);
     }
 
     // The combined item goes away when it has nothing to show and an own item is there to
@@ -682,7 +792,7 @@ pub fn build(
     let mut items = Vec::with_capacity(l.own.len() + 1);
     if !l.combined.is_empty() {
         let mut words: Vec<String> = l.bar_words;
-        words.extend(l.value_words);
+        words.extend(l.readout_words);
         let accessibility = if paused {
             "Kelvo, sampling paused".to_owned()
         } else if words.is_empty() {

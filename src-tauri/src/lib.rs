@@ -122,12 +122,13 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
         .constant("RETENTION_DAYS", facts::RETENTION_DAYS)
         .constant("SIZE_LIMITS_MB", facts::SIZE_LIMITS_MB)
         .constant("SETTINGS_MODULES", kelvo_schema::settings::SETTINGS_MODULES)
-        .constant("MENU_BAR_MODES", facts::menu_bar_modes())
-        .constant("OWN_ITEM_MODES", facts::own_item_modes())
+        .constant("ITEM_MODES", facts::item_modes())
+        .constant("READOUTS", facts::READOUTS)
         .constant("HISTORY_TIERS", facts::history_tiers())
         .constant("HISTORY_PROJECTION", facts::history_projection())
         .constant("SAMPLING_PLANS", facts::sampling_plans())
         .typ::<facts::SamplingPlan>()
+        .typ::<kelvo_schema::Readout>()
 }
 
 /// Writes the TypeScript bindings for `builder` to [`BINDINGS_PATH`].

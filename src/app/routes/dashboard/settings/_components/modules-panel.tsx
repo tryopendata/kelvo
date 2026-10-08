@@ -1,20 +1,11 @@
-import type { MenuBarMode, Settings } from "@core/generated/bindings";
+import type { Settings } from "@core/generated/bindings";
 import {
-  MENU_BAR_LABELS,
-  menuBarModes,
   modulePatch,
   modulePresence,
   SETTINGS_MODULES,
   type SettingsModule,
 } from "@core/settings-patch";
 import { SettingsPanel } from "~/components/settings-row";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "~/components/ui/select";
 import { Switch } from "~/components/ui/switch";
 import { useWriteSettings } from "~/hooks/use-write-settings";
 import { cn } from "~/lib/utils";
@@ -22,7 +13,10 @@ import { useHost } from "~/stores/host-store";
 import type { Accent } from "~/widgets/lib/accent";
 import { FIELD_LABEL } from "~/widgets/lib/classes";
 
-const MODULE_ROWS: Record<SettingsModule, { name: string; accent: Accent }> = {
+export const MODULE_ROWS: Record<
+  SettingsModule,
+  { name: string; accent: Accent }
+> = {
   cpu: { name: "CPU", accent: "cpu" },
   gpu: { name: "GPU", accent: "gpu" },
   memory: { name: "Memory", accent: "mem" },
@@ -32,15 +26,15 @@ const MODULE_ROWS: Record<SettingsModule, { name: string; accent: Accent }> = {
   battery: { name: "Battery", accent: "battery" },
 };
 
-const ABSENT_TEXT = {
+export const ABSENT_TEXT = {
   not_present: "Not present on this Mac",
   unavailable: "Not available on this Mac",
 } as const;
 
 /**
- * "Modules": swatch, name, Menu bar select (the modes the module
- * allows) and the On switch. A module the host lacks stays listed, disabled.
- * Switching a module off greys its select; the mode is kept for when it
+ * "Modules": swatch, name and the On switch. A module the host lacks stays
+ * listed, disabled. What a module shows in the menu bar is the Menu bar
+ * panel's (D-102); switching a module off keeps those choices for when it
  * comes back.
  */
 export function ModulesPanel({ modules }: { modules: Settings["modules"] }) {
@@ -51,7 +45,6 @@ export function ModulesPanel({ modules }: { modules: Settings["modules"] }) {
     <SettingsPanel title="Modules">
       <div className="flex min-h-[34px] items-center gap-3 border-border-subtle border-b px-4">
         <span className={cn(FIELD_LABEL, "flex-1")}>Module</span>
-        <span className={cn(FIELD_LABEL, "w-[150px]")}>Menu bar</span>
         <span className={cn(FIELD_LABEL, "w-[30px]")}>On</span>
       </div>
       {SETTINGS_MODULES.map((m) => {
@@ -60,7 +53,7 @@ export function ModulesPanel({ modules }: { modules: Settings["modules"] }) {
         const presence = modulePresence(caps?.modules[m], caps !== null);
         const present = presence === "present";
         const on = present && (setting?.enabled ?? false);
-        const selectId = `settings-menubar-${m}`;
+        const switchId = `settings-module-${m}`;
         return (
           <div
             key={m}
@@ -76,7 +69,7 @@ export function ModulesPanel({ modules }: { modules: Settings["modules"] }) {
             />
             <div className="flex min-w-0 flex-1 flex-col py-2">
               <label
-                htmlFor={selectId}
+                htmlFor={switchId}
                 className={cn(!on && "text-muted-foreground")}
               >
                 {row.name}
@@ -87,30 +80,8 @@ export function ModulesPanel({ modules }: { modules: Settings["modules"] }) {
                 </span>
               )}
             </div>
-            <Select
-              value={setting?.menu_bar}
-              disabled={!on}
-              onValueChange={(mode) =>
-                write(modulePatch(m, { menu_bar: mode as MenuBarMode }))
-              }
-            >
-              <SelectTrigger
-                id={selectId}
-                size="sm"
-                aria-label={`${row.name} menu bar style`}
-                className="w-[150px] px-2 text-[12px]"
-              >
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {menuBarModes(m).map((mode) => (
-                  <SelectItem key={mode} value={mode}>
-                    {MENU_BAR_LABELS[mode]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
             <Switch
+              id={switchId}
               checked={on}
               disabled={!present}
               aria-label={`${row.name} enabled`}

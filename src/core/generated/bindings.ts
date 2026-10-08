@@ -245,9 +245,9 @@ export const HISTORY_TIERS = [{"bucket_ms":10000,"kept_ms":86400000,"tier":"s10"
 
 export const HOLD_FACTOR = {"den":2,"num":5} as const;
 
-export const MAX_NET_SPAN_MS = 7776000000 as const;
+export const ITEM_MODES = {"battery":["off","value"],"cpu":["off","value","graph","cores"],"disk":["off","value"],"gpu":["off","value","graph"],"memory":["off","value","graph"],"network":["off","value","graph"],"power":["off","value"]} as const;
 
-export const MENU_BAR_MODES = {"battery":["value_label","own_value","hidden"],"cpu":["in_combined","value_label","own_graph","own_cores","own_value","hidden"],"disk":["value_label","own_value","hidden"],"gpu":["in_combined","value_label","own_graph","own_value","hidden"],"memory":["in_combined","value_label","own_graph","own_value","hidden"],"network":["value_label","own_graph","own_value","hidden"],"power":["temp_in_combined","watts_value","own_value","hidden"]} as const;
+export const MAX_NET_SPAN_MS = 7776000000 as const;
 
 export const METRIC_CODES = {"mem.pressure_level":{"critical":2,"normal":0,"warn":1},"power.cpu_source":{"calibrated":2,"seeded":3,"uncalibrated":1},"thermal.state":{"critical":3,"fair":1,"nominal":0,"serious":2}} as const;
 
@@ -261,9 +261,9 @@ export const METRIC_UNITS = {"battery.capacity_wh":"watt_hours","battery.charge"
 
 export const NET_BUCKET_MS = 10000 as const;
 
-export const OWN_ITEM_MODES = ["own_graph","own_cores","own_value"] as const;
-
 export const PERFORMANCE_VISIBLE_MS = 2000 as const;
+
+export const READOUTS = ["cpu","gpu","memory","temperature","power","network","disk","battery"] as const;
 
 export const RETENTION_DAYS = [7,30,90] as const;
 
@@ -345,6 +345,19 @@ export type AppUsage = {
 };
 
 export type Appearance = "system" | "light" | "dark";
+
+/**  Which modules draw a bar in the combined item. */
+export type BarSettings = {
+	cpu: boolean,
+	gpu: boolean,
+	memory: boolean,
+};
+
+export type BarsPatch = {
+	cpu?: boolean | null,
+	gpu?: boolean | null,
+	memory?: boolean | null,
+};
 
 /**  One local hour of `battery_hours`. */
 export type BatteryHour = {
@@ -879,6 +892,42 @@ export type HostsChanged = {
 };
 
 /**
+ *  A module's status item of its own (D-080). Not every mode is offered for every
+ *  module; see [`ItemMode::allowed_for`].
+ */
+export type ItemMode = "off" | 
+/**  The labelled value: percent, watts, or the read + write or total network rate. */
+"value" | 
+/**
+ *  The module's graph: CPU sparkline, GPU history bars, memory fill gauge, network
+ *  up and down rates.
+ */
+"graph" | 
+/**  CPU per-core load, P cores then E cores (CPU only). */
+"cores";
+
+/**  Each settings module's own item; `Off` by default. */
+export type ItemSettings = {
+	cpu: ItemMode,
+	gpu: ItemMode,
+	memory: ItemMode,
+	power: ItemMode,
+	network: ItemMode,
+	disk: ItemMode,
+	battery: ItemMode,
+};
+
+export type ItemsPatch = {
+	cpu?: ItemMode | null,
+	gpu?: ItemMode | null,
+	memory?: ItemMode | null,
+	power?: ItemMode | null,
+	network?: ItemMode | null,
+	disk?: ItemMode | null,
+	battery?: ItemMode | null,
+};
+
+/**
  *  A label set: small, sorted by key, keys unique. The invariant is enforced by every
  *  constructor and by deserialization, so two equal label sets always compare, hash and
  *  display the same.
@@ -1047,28 +1096,30 @@ export type LiveStatus = {
 export type MemoryUnit = "decimal" | "binary";
 
 /**
- *  How a module appears in the menu bar (4.2, 4.15). Not every mode is valid for every
- *  module; see [`MenuBarMode::allowed_for`].
+ *  A change to the menu bar (D-102). Each field of each group patches on its own, so one
+ *  switch never overwrites another window's change to a different one (D-050).
  */
-export type MenuBarMode = 
-/**  A bar in the combined item (CPU, GPU, Memory). */
-"in_combined" | 
-/**  Its own value with a label. */
-"value_label" | 
-/**  Temperature in the combined item (Power & Sensors). */
-"temp_in_combined" | 
-/**  System watts as a value (Power & Sensors). */
-"watts_value" | 
+export type MenuBarPatch = {
+	bars?: BarsPatch | null,
+	readouts?: ReadoutsPatch | null,
+	items?: ItemsPatch | null,
+};
+
 /**
- *  A status item of its own showing the module's graph ("Graphs" and "Cores +
- *  histogram"): CPU sparkline, GPU history bars, memory fill gauge, network
- *  up and down rates (D-080).
+ *  What the menu bar shows (D-102): bars and values in the combined item, and the modules
+ *  with a status item of their own. The three are independent; a module that is switched
+ *  off shows in none of them, and keeps its choices for when it comes back.
+ * 
+ *  A group or field missing from the file takes its default, so a settings file written
+ *  before a readout existed still loads; a field from a newer build is ignored. The
+ *  fields are filled in by hand-written `Deserialize` impls rather than `#[serde(default)]`,
+ *  which would make every field optional in the generated TypeScript.
  */
-"own_graph" | 
-/**  A status item of its own showing the labelled value (watts for Power & Sensors). */
-"own_value" | 
-/**  A status item of its own showing CPU per-core load, P cores then E cores (CPU only). */
-"own_cores" | "hidden";
+export type MenuBarSettings = {
+	bars: BarSettings,
+	readouts: ReadoutSettings,
+	items: ItemSettings,
+};
 
 /**
  *  Dotted, stable, lowercase metric name such as `cpu.load` or `power.cpu`. Never reused
@@ -1160,12 +1211,10 @@ export type ModuleCap =
 
 export type ModulePatch = {
 	enabled?: boolean | null,
-	menu_bar?: MenuBarMode | null,
 };
 
 export type ModuleSettings = {
 	enabled: boolean,
-	menu_bar: MenuBarMode,
 };
 
 /**
@@ -1455,6 +1504,48 @@ export type ProcessesAt = {
 	rows: StoredProcess[],
 };
 
+/**  A value the combined item prints after the bars, with its marker (D-102). */
+export type Readout = 
+/**  `cpu.total`. */
+"cpu" | 
+/**  `gpu.util`. */
+"gpu" | 
+/**  `mem.pressure`. */
+"memory" | 
+/**  `thermal.hottest`. */
+"temperature" | 
+/**  `power.system`. */
+"power" | 
+/**  `net.tx_total` over `net.rx_total`. */
+"network" | 
+/**  % used of the boot volume (`disk.used` / `disk.total`). */
+"disk" | 
+/**  `battery.charge`. */
+"battery";
+
+/**  Which readouts are on. */
+export type ReadoutSettings = {
+	cpu: boolean,
+	gpu: boolean,
+	memory: boolean,
+	temperature: boolean,
+	power: boolean,
+	network: boolean,
+	disk: boolean,
+	battery: boolean,
+};
+
+export type ReadoutsPatch = {
+	cpu?: boolean | null,
+	gpu?: boolean | null,
+	memory?: boolean | null,
+	temperature?: boolean | null,
+	power?: boolean | null,
+	network?: boolean | null,
+	disk?: boolean | null,
+	battery?: boolean | null,
+};
+
 export type SamplingPatch = {
 	interval_ms?: number | null,
 	slow_on_battery?: boolean | null,
@@ -1553,6 +1644,8 @@ export type Settings = {
 	 *  decode (D-040).
 	 */
 	modules: Partial<{ [key in Module]: ModuleSettings }>,
+	/**  Absent from a settings file written before D-102: the default menu bar. */
+	menu_bar?: MenuBarSettings,
 	sampling: SamplingSettings,
 	history: HistorySettings,
 	units: UnitSettings,
@@ -1571,6 +1664,7 @@ export type SettingsChanged = {
 /**  A partial change. Every field is optional; absent fields keep their value. */
 export type SettingsPatch = {
 	modules?: Partial<{ [key in Module]: ModulePatch }> | null,
+	menu_bar?: MenuBarPatch | null,
 	sampling?: SamplingPatch | null,
 	history?: HistoryPatch | null,
 	units?: UnitsPatch | null,

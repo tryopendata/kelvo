@@ -17,7 +17,7 @@ use kelvo_schema::Module;
 use kelvo_schema::Settings;
 use kelvo_schema::lock::LockExt;
 use kelvo_schema::settings::{
-    Appearance, ChartWindow, MemoryUnit, MenuBarMode, NetworkUnit, TemperatureUnit,
+    Appearance, ChartWindow, ItemMode, MemoryUnit, NetworkUnit, TemperatureUnit,
 };
 use serde::Deserialize;
 
@@ -30,6 +30,8 @@ use crate::ipc::SettingsSnapshot;
 pub struct SettingsPatch {
     #[specta(optional)]
     pub modules: Option<BTreeMap<Module, ModulePatch>>,
+    #[specta(optional)]
+    pub menu_bar: Option<MenuBarPatch>,
     #[specta(optional)]
     pub sampling: Option<SamplingPatch>,
     #[specta(optional)]
@@ -49,8 +51,70 @@ pub struct SettingsPatch {
 pub struct ModulePatch {
     #[specta(optional)]
     pub enabled: Option<bool>,
+}
+
+/// A change to the menu bar (D-102). Each field of each group patches on its own, so one
+/// switch never overwrites another window's change to a different one (D-050).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Deserialize, specta::Type)]
+#[serde(default)]
+pub struct MenuBarPatch {
     #[specta(optional)]
-    pub menu_bar: Option<MenuBarMode>,
+    pub bars: Option<BarsPatch>,
+    #[specta(optional)]
+    pub readouts: Option<ReadoutsPatch>,
+    #[specta(optional)]
+    pub items: Option<ItemsPatch>,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Deserialize, specta::Type)]
+#[serde(default)]
+pub struct BarsPatch {
+    #[specta(optional)]
+    pub cpu: Option<bool>,
+    #[specta(optional)]
+    pub gpu: Option<bool>,
+    #[specta(optional)]
+    pub memory: Option<bool>,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Deserialize, specta::Type)]
+#[serde(default)]
+pub struct ReadoutsPatch {
+    #[specta(optional)]
+    pub cpu: Option<bool>,
+    #[specta(optional)]
+    pub gpu: Option<bool>,
+    #[specta(optional)]
+    pub memory: Option<bool>,
+    #[specta(optional)]
+    pub temperature: Option<bool>,
+    #[specta(optional)]
+    pub power: Option<bool>,
+    #[specta(optional)]
+    pub network: Option<bool>,
+    #[specta(optional)]
+    pub disk: Option<bool>,
+    #[specta(optional)]
+    pub battery: Option<bool>,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Deserialize, specta::Type)]
+#[serde(default)]
+pub struct ItemsPatch {
+    #[specta(optional)]
+    pub cpu: Option<ItemMode>,
+    #[specta(optional)]
+    pub gpu: Option<ItemMode>,
+    #[specta(optional)]
+    pub memory: Option<ItemMode>,
+    #[specta(optional)]
+    pub power: Option<ItemMode>,
+    #[specta(optional)]
+    pub network: Option<ItemMode>,
+    #[specta(optional)]
+    pub disk: Option<ItemMode>,
+    #[specta(optional)]
+    pub battery: Option<ItemMode>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Deserialize, specta::Type)]
@@ -140,7 +204,35 @@ impl SettingsPatch {
                             ),
                         })?;
                 set(&mut entry.enabled, p.enabled);
-                set(&mut entry.menu_bar, p.menu_bar);
+            }
+        }
+        if let Some(p) = self.menu_bar {
+            let mb = &mut s.menu_bar;
+            if let Some(b) = p.bars {
+                set(&mut mb.bars.cpu, b.cpu);
+                set(&mut mb.bars.gpu, b.gpu);
+                set(&mut mb.bars.memory, b.memory);
+            }
+            if let Some(r) = p.readouts {
+                let o = &mut mb.readouts;
+                set(&mut o.cpu, r.cpu);
+                set(&mut o.gpu, r.gpu);
+                set(&mut o.memory, r.memory);
+                set(&mut o.temperature, r.temperature);
+                set(&mut o.power, r.power);
+                set(&mut o.network, r.network);
+                set(&mut o.disk, r.disk);
+                set(&mut o.battery, r.battery);
+            }
+            if let Some(i) = p.items {
+                let o = &mut mb.items;
+                set(&mut o.cpu, i.cpu);
+                set(&mut o.gpu, i.gpu);
+                set(&mut o.memory, i.memory);
+                set(&mut o.power, i.power);
+                set(&mut o.network, i.network);
+                set(&mut o.disk, i.disk);
+                set(&mut o.battery, i.battery);
             }
         }
         if let Some(p) = self.sampling {
@@ -510,7 +602,6 @@ mod tests {
             Module::Gpu,
             ModulePatch {
                 enabled: Some(false),
-                menu_bar: None,
             },
         );
         owner
@@ -531,36 +622,58 @@ mod tests {
         );
     }
 
-    fn menu_bar(module: Module, mode: MenuBarMode) -> SettingsPatch {
+    fn menu_bar(p: MenuBarPatch) -> SettingsPatch {
         SettingsPatch {
-            modules: Some(BTreeMap::from([(
-                module,
-                ModulePatch {
-                    enabled: None,
-                    menu_bar: Some(mode),
-                },
-            )])),
+            menu_bar: Some(p),
             ..SettingsPatch::default()
         }
+    }
+
+    fn readouts(r: ReadoutsPatch) -> SettingsPatch {
+        menu_bar(MenuBarPatch {
+            readouts: Some(r),
+            ..MenuBarPatch::default()
+        })
     }
 
     /// The engine runs a menu-bar module's live collectors with no window open (D-067),
     /// so showing or hiding a module in the menu bar has to reach it.
     #[test]
-    fn menu_bar_mode_reaches_the_engine_when_it_changes_what_is_shown() {
+    fn menu_bar_changes_reach_the_engine_when_they_change_what_is_shown() {
         let owner = SettingsOwner::load(Box::new(MemFile::default()));
         let fx = Recorder::default();
         assert!(!owner.settings().menu_bar_shows(Module::Network));
         owner
-            .update(&menu_bar(Module::Network, MenuBarMode::ValueLabel), &fx)
+            .update(
+                &readouts(ReadoutsPatch {
+                    network: Some(true),
+                    ..ReadoutsPatch::default()
+                }),
+                &fx,
+            )
             .unwrap();
-        // CPU stays shown, only drawn differently: nothing for the engine.
+        // CPU stays shown, as a bar and now a value too: nothing for the engine.
         owner
-            .update(&menu_bar(Module::Cpu, MenuBarMode::ValueLabel), &fx)
+            .update(
+                &readouts(ReadoutsPatch {
+                    cpu: Some(true),
+                    ..ReadoutsPatch::default()
+                }),
+                &fx,
+            )
             .unwrap();
         owner
-            .update(&menu_bar(Module::Network, MenuBarMode::Hidden), &fx)
+            .update(
+                &readouts(ReadoutsPatch {
+                    network: Some(false),
+                    ..ReadoutsPatch::default()
+                }),
+                &fx,
+            )
             .unwrap();
+        // The other readouts were left alone by each one-field patch.
+        let r = owner.settings().menu_bar.readouts;
+        assert!(r.cpu && r.temperature && !r.network);
         assert_eq!(
             *fx.calls.borrow(),
             vec![
@@ -591,16 +704,13 @@ mod tests {
                 }),
                 ..SettingsPatch::default()
             },
-            SettingsPatch {
-                modules: Some(BTreeMap::from([(
-                    Module::Cpu,
-                    ModulePatch {
-                        enabled: None,
-                        menu_bar: Some(MenuBarMode::WattsValue),
-                    },
-                )])),
-                ..SettingsPatch::default()
-            },
+            menu_bar(MenuBarPatch {
+                items: Some(ItemsPatch {
+                    disk: Some(ItemMode::Graph),
+                    ..ItemsPatch::default()
+                }),
+                ..MenuBarPatch::default()
+            }),
             SettingsPatch {
                 modules: Some(BTreeMap::from([(Module::Sensors, ModulePatch::default())])),
                 ..SettingsPatch::default()
@@ -743,10 +853,7 @@ mod tests {
         let s = patch.apply(&Settings::default()).unwrap();
         assert_eq!(
             s.module(Module::Disk),
-            Some(&ModuleSettings {
-                enabled: true,
-                menu_bar: MenuBarMode::Hidden
-            })
+            Some(&ModuleSettings { enabled: true })
         );
         assert!(s.general.show_in_dock);
     }

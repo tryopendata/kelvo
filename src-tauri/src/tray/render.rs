@@ -15,7 +15,8 @@ use tiny_skia::{
 };
 
 use super::model::{
-    BAR_HEIGHT_PT, CORE_HEIGHT_PT, Graph, RATE_MIN_CHARS, TEMP_MIN_CHARS, TrayFrame, min_chars,
+    BAR_HEIGHT_PT, CORE_HEIGHT_PT, Glyph, Graph, Marker, RATE_MIN_CHARS, ReadoutFrame, TrayFrame,
+    min_chars,
 };
 
 /// Image height in points (tray-icon's fixed status item image height).
@@ -27,6 +28,20 @@ const BAR_RADIUS_PT: f32 = 1.0;
 const TRACK_ALPHA: f32 = 0.3;
 /// Between the bars and the temperature, and between a stacked label and its value.
 const INNER_GAP_PT: f32 = 4.0;
+/// Between the bars and a readout with a marker (D-102).
+const BARS_READOUT_GAP_PT: f32 = 6.0;
+/// Readout glyphs (D-102): a 12 pt tall box centred on the image, 3 pt before the value.
+const GLYPH_HEIGHT_PT: f32 = 12.0;
+const GLYPH_GAP_PT: f32 = 3.0;
+/// Bolt: 7 pt wide, the sidebar's power outline filled.
+const BOLT_WIDTH_PT: f32 = 7.0;
+/// Drive: an 11 x 7 pt box, radius 1.5, 1.2 pt stroke, a 1.5 pt dot 2 pt in from the
+/// bottom-right corner.
+const DRIVE_WIDTH_PT: f32 = 11.0;
+const DRIVE_HEIGHT_PT: f32 = 7.0;
+const DRIVE_RADIUS_PT: f32 = 1.5;
+const DRIVE_STROKE_PT: f32 = 1.2;
+const DRIVE_DOT_PT: f32 = 1.5;
 /// Between one element and the next.
 const GROUP_GAP_PT: f32 = 10.0;
 /// Values at the menu bar text size.
@@ -229,10 +244,74 @@ fn stroke(pixmap: &mut Pixmap, path: Option<tiny_skia::Path>, alpha: f32, width:
 /// One thing to draw, with its width in px, laid out left to right.
 enum Item<'a> {
     Bars(&'a [Option<u16>]),
-    /// Text and the characters of width it reserves.
-    Text(&'a str, usize),
+    /// A readout: its marker and its value.
+    Marked(Marker, &'a str),
     Labeled(&'a str, &'a str),
     Graph(&'a Graph),
+}
+
+/// Width in points of a glyph.
+fn glyph_width_pt(g: Glyph) -> f32 {
+    match g {
+        Glyph::Bolt => BOLT_WIDTH_PT,
+        Glyph::Drive => DRIVE_WIDTH_PT,
+    }
+}
+
+/// Draws `g` with its left edge at `x` px.
+fn draw_glyph(pixmap: &mut Pixmap, s: f32, x: f32, g: Glyph) {
+    let top = (HEIGHT_PT - GLYPH_HEIGHT_PT) / 2.0 * s;
+    match g {
+        Glyph::Bolt => {
+            // The sidebar's 24 pt power path (M13 2 3 14h9l-1 8 10-12h-9l1-8z), x 3 to 21
+            // and y 2 to 22, squeezed into the glyph box.
+            let (sx, sy) = (BOLT_WIDTH_PT / 18.0 * s, GLYPH_HEIGHT_PT / 20.0 * s);
+            let at = |px: f32, py: f32| (x + (px - 3.0) * sx, top + (py - 2.0) * sy);
+            let mut pb = PathBuilder::new();
+            let points = [
+                (13.0, 2.0),
+                (3.0, 14.0),
+                (12.0, 14.0),
+                (11.0, 22.0),
+                (21.0, 10.0),
+            ];
+            for (k, &(px, py)) in points.iter().chain(&[(12.0, 10.0)]).enumerate() {
+                let (gx, gy) = at(px, py);
+                if k == 0 {
+                    pb.move_to(gx, gy);
+                } else {
+                    pb.line_to(gx, gy);
+                }
+            }
+            pb.close();
+            fill(pixmap, pb.finish(), 1.0);
+        }
+        Glyph::Drive => {
+            let y = (HEIGHT_PT - DRIVE_HEIGHT_PT) / 2.0 * s;
+            let half = DRIVE_STROKE_PT / 2.0 * s;
+            stroke(
+                pixmap,
+                rounded_rect(
+                    x + half,
+                    y + half,
+                    DRIVE_WIDTH_PT * s - 2.0 * half,
+                    DRIVE_HEIGHT_PT * s - 2.0 * half,
+                    DRIVE_RADIUS_PT * s,
+                ),
+                1.0,
+                DRIVE_STROKE_PT * s,
+            );
+            let r = DRIVE_DOT_PT / 2.0 * s;
+            let inset = 2.0 * s + r;
+            let mut pb = PathBuilder::new();
+            pb.push_circle(
+                x + DRIVE_WIDTH_PT * s - inset,
+                y + DRIVE_HEIGHT_PT * s - inset,
+                r,
+            );
+            fill(pixmap, pb.finish(), 1.0);
+        }
+    }
 }
 
 /// Width in points of a per-core strip.
@@ -271,8 +350,11 @@ pub fn render(frame: &TrayFrame) -> Result<Rendered, RenderError> {
     if !frame.bars.is_empty() {
         items.push(Item::Bars(&frame.bars));
     }
-    if let Some(t) = &frame.combined_text {
-        items.push(Item::Text(t, TEMP_MIN_CHARS));
+    for r in &frame.readouts {
+        items.push(match r {
+            ReadoutFrame::Marked { marker, text } => Item::Marked(*marker, text),
+            ReadoutFrame::Graph(g) => Item::Graph(g),
+        });
     }
     for v in &frame.values {
         items.push(Item::Labeled(v.label, &v.text));
@@ -291,13 +373,20 @@ pub fn render(frame: &TrayFrame) -> Result<Rendered, RenderError> {
         |t: &str| text_width(&fonts.regular, rate_em, t).max(RATE_MIN_CHARS as f32 * rate_digit);
     // The stacked label and the gap after it.
     let labelled = (LABEL_COLUMN_PT + INNER_GAP_PT) * s;
+    let marker_width = |m: Marker| -> f32 {
+        match m {
+            Marker::Label(_) => labelled,
+            Marker::Glyph(g) => (glyph_width_pt(g) + GLYPH_GAP_PT) * s,
+            Marker::None => 0.0,
+        }
+    };
     let width_of = |item: &Item<'_>| -> f32 {
         match item {
             Item::Bars(b) => {
                 let n = b.len() as f32;
                 (n * BAR_WIDTH_PT + (n - 1.0).max(0.0) * BAR_GAP_PT) * s
             }
-            Item::Text(t, min) => value_width(t, *min),
+            Item::Marked(m, t) => marker_width(*m) + value_width(t, m.min_chars()),
             Item::Labeled(l, t) => labelled + value_width(t, min_chars(l)),
             Item::Graph(g) => match g {
                 Graph::Spark { .. } | Graph::Hist { .. } => labelled + BOX_WIDTH_PT * s,
@@ -312,7 +401,9 @@ pub fn render(frame: &TrayFrame) -> Result<Rendered, RenderError> {
     let gap_before = |prev: Option<&Item<'_>>, item: &Item<'_>| -> f32 {
         match (prev, item) {
             (None, _) => 0.0,
-            (Some(Item::Bars(_)), Item::Text(..)) => INNER_GAP_PT * s,
+            // "61°" sits close to the bars, as it always has.
+            (Some(Item::Bars(_)), Item::Marked(Marker::None, _)) => INNER_GAP_PT * s,
+            (Some(Item::Bars(_)), _) => BARS_READOUT_GAP_PT * s,
             _ => GROUP_GAP_PT * s,
         }
     };
@@ -353,9 +444,15 @@ pub fn render(frame: &TrayFrame) -> Result<Rendered, RenderError> {
                     }
                 }
             }
-            Item::Text(t, min) => {
-                let tx = x + value_width(t, *min) - text_width(&fonts.regular, value_em, t);
-                draw_text(&mut pixmap, &fonts.regular, value_em, tx, value_baseline, t);
+            Item::Marked(m, t) => {
+                match m {
+                    Marker::Label(label) => draw_label(&mut pixmap, &fonts.medium, s, x, label),
+                    Marker::Glyph(g) => draw_glyph(&mut pixmap, s, x, *g),
+                    Marker::None => {}
+                }
+                let vx = x + marker_width(*m) + value_width(t, m.min_chars())
+                    - text_width(&fonts.regular, value_em, t);
+                draw_text(&mut pixmap, &fonts.regular, value_em, vx, value_baseline, t);
             }
             Item::Labeled(label, t) => {
                 draw_label(&mut pixmap, &fonts.medium, s, x, label);
@@ -538,7 +635,13 @@ mod tests {
         TrayFrame {
             scale,
             bars,
-            combined_text: text.map(str::to_owned),
+            readouts: text
+                .map(|t| ReadoutFrame::Marked {
+                    marker: Marker::None,
+                    text: t.into(),
+                })
+                .into_iter()
+                .collect(),
             values: Vec::new(),
             graphs: Vec::new(),
         }
@@ -598,7 +701,7 @@ mod tests {
         let frame = TrayFrame {
             scale: 2,
             bars: Vec::new(),
-            combined_text: None,
+            readouts: Vec::new(),
             graphs: Vec::new(),
             values: vec![
                 Labeled {
@@ -636,7 +739,7 @@ mod tests {
             render(&TrayFrame {
                 scale: 2,
                 bars: Vec::new(),
-                combined_text: None,
+                readouts: Vec::new(),
                 graphs: Vec::new(),
                 values: vec![Labeled {
                     label: "CPU",
@@ -647,6 +750,68 @@ mod tests {
             .width
         };
         assert_eq!(v("9%"), v("18%"));
+    }
+
+    fn readout(scale: u32, bars: usize, marker: Marker, text: &str) -> Rendered {
+        render(&TrayFrame {
+            scale,
+            bars: vec![Some(5); bars],
+            readouts: vec![ReadoutFrame::Marked {
+                marker,
+                text: text.into(),
+            }],
+            values: Vec::new(),
+            graphs: Vec::new(),
+        })
+        .unwrap()
+    }
+
+    #[test]
+    fn readout_glyphs_match_the_spec() {
+        // Bolt: 7 pt, 3 pt gap, 5 characters of value. Alone, it starts at x 0.
+        let bolt = readout(2, 0, Marker::Glyph(Glyph::Bolt), "14.8W");
+        // Ink in the glyph's box (x 0..14 at 2x), centred: the 12 pt box spans y 6..30.
+        assert!(ink(&bolt, 0..14, 6..30) > 0, "the bolt");
+        assert_eq!(ink(&bolt, 0..14, 0..5), 0, "above the glyph box");
+        assert_eq!(ink(&bolt, 0..14, 31..36), 0, "below the glyph box");
+        // The bolt's tip at the top sits right of centre, its tail at the bottom left of
+        // centre: the top row's ink is in the right half, the bottom row's in the left.
+        assert!(ink(&bolt, 7..14, 6..9) > ink(&bolt, 0..7, 6..9));
+        assert!(ink(&bolt, 0..7, 27..30) > ink(&bolt, 7..14, 27..30));
+        // The gap between glyph and value is empty.
+        assert_eq!(ink(&bolt, 14..20, 0..36), 0, "the 3 pt gap");
+
+        // Drive: an 11 x 7 pt outline (22 x 14 px, y 11..25), hollow, with a dot.
+        let drive = readout(2, 0, Marker::Glyph(Glyph::Drive), "62%");
+        assert_eq!(alpha(&drive, 11, 12), 255, "top edge");
+        assert_eq!(alpha(&drive, 6, 18), 0, "hollow inside");
+        assert!(
+            alpha(&drive, 16, 20) > 200,
+            "the dot, 2 pt in from bottom-right"
+        );
+        assert_eq!(ink(&drive, 0..22, 0..10), 0, "above the box");
+        assert_eq!(ink(&drive, 0..22, 26..36), 0, "below the box");
+        assert_eq!(ink(&drive, 22..28, 0..36), 0, "the 3 pt gap");
+    }
+
+    #[test]
+    fn readouts_keep_their_width_and_gap_after_the_bars() {
+        for marker in [
+            Marker::Label("CPU"),
+            Marker::Glyph(Glyph::Bolt),
+            Marker::Glyph(Glyph::Drive),
+            Marker::None,
+        ] {
+            let w = |t: &str| readout(2, 3, marker, t).width;
+            assert_eq!(w("9%"), w("\u{2013}"), "{marker:?} keeps its width paused");
+        }
+        // A marked readout sits 6 pt after the bars; "61°" keeps its 4 pt.
+        let bars = 34;
+        let label = readout(2, 3, Marker::Label("CPU"), "18%");
+        assert_eq!(ink(&label, bars..bars + 12, 0..36), 0, "6 pt gap");
+        assert!(ink(&label, bars + 12..bars + 24, 0..36) > 0, "the label");
+        let temp = readout(2, 3, Marker::None, "61°");
+        assert!(temp.width < label.width);
     }
 
     #[test]
@@ -808,8 +973,8 @@ mod tests {
     #[ignore = "writes files; run by hand for visual review"]
     fn dump_tray_rows() {
         use crate::tray::model::{ItemKey, Reading, Readings, TrayHistory, build};
-        use kelvo_schema::settings::MenuBarMode;
-        use kelvo_schema::{Module, Settings};
+        use kelvo_schema::Settings;
+        use kelvo_schema::settings::{BarSettings, ItemMode, ItemSettings, ReadoutSettings};
 
         let dir = std::env::var("KELVO_TRAY_PNG_DIR").unwrap_or_else(|_| ".".into());
         // Sample values for each graph.
@@ -838,6 +1003,8 @@ mod tests {
             net_bps: Reading::Value(39_600_000.0),
             net_rx_bps: Reading::Value(38_400_000.0),
             net_tx_bps: Reading::Value(1_200_000.0),
+            disk_used_pct: Reading::Value(62.0),
+            battery: Reading::Value(87.0),
             cores: vec![
                 loads[..10]
                     .iter()
@@ -850,67 +1017,104 @@ mod tests {
             ],
             ..Readings::default()
         };
-        let rows: [(&str, [(Module, MenuBarMode); 7]); 4] = [
+        let no_bars = BarSettings {
+            cpu: false,
+            gpu: false,
+            memory: false,
+        };
+        let no_readouts = ReadoutSettings {
+            temperature: false,
+            ..ReadoutSettings::default()
+        };
+        let rows: [(&str, BarSettings, ReadoutSettings, ItemSettings); 7] = [
             (
                 "combined",
-                [
-                    (Module::Cpu, MenuBarMode::InCombined),
-                    (Module::Gpu, MenuBarMode::InCombined),
-                    (Module::Memory, MenuBarMode::InCombined),
-                    (Module::Power, MenuBarMode::TempInCombined),
-                    (Module::Network, MenuBarMode::Hidden),
-                    (Module::Disk, MenuBarMode::Hidden),
-                    (Module::Battery, MenuBarMode::Hidden),
-                ],
+                BarSettings::default(),
+                ReadoutSettings::default(),
+                ItemSettings::default(),
+            ),
+            (
+                "combined-power-disk",
+                BarSettings::default(),
+                ReadoutSettings {
+                    power: true,
+                    disk: true,
+                    ..ReadoutSettings::default()
+                },
+                ItemSettings::default(),
+            ),
+            (
+                "readouts-all",
+                BarSettings::default(),
+                ReadoutSettings {
+                    cpu: true,
+                    gpu: true,
+                    memory: true,
+                    temperature: true,
+                    power: true,
+                    network: true,
+                    disk: true,
+                    battery: true,
+                },
+                ItemSettings::default(),
+            ),
+            (
+                "values",
+                no_bars,
+                ReadoutSettings {
+                    cpu: true,
+                    gpu: true,
+                    memory: true,
+                    ..ReadoutSettings::default()
+                },
+                ItemSettings::default(),
             ),
             (
                 "graphs",
-                [
-                    (Module::Cpu, MenuBarMode::OwnGraph),
-                    (Module::Gpu, MenuBarMode::Hidden),
-                    (Module::Memory, MenuBarMode::OwnGraph),
-                    (Module::Power, MenuBarMode::Hidden),
-                    (Module::Network, MenuBarMode::OwnGraph),
-                    (Module::Disk, MenuBarMode::Hidden),
-                    (Module::Battery, MenuBarMode::Hidden),
-                ],
+                no_bars,
+                no_readouts,
+                ItemSettings {
+                    cpu: ItemMode::Graph,
+                    memory: ItemMode::Graph,
+                    network: ItemMode::Graph,
+                    ..ItemSettings::default()
+                },
             ),
             (
                 "cores-histogram",
-                [
-                    (Module::Cpu, MenuBarMode::OwnCores),
-                    (Module::Gpu, MenuBarMode::OwnGraph),
-                    (Module::Memory, MenuBarMode::Hidden),
-                    (Module::Power, MenuBarMode::Hidden),
-                    (Module::Network, MenuBarMode::Hidden),
-                    (Module::Disk, MenuBarMode::Hidden),
-                    (Module::Battery, MenuBarMode::Hidden),
-                ],
+                no_bars,
+                no_readouts,
+                ItemSettings {
+                    cpu: ItemMode::Cores,
+                    gpu: ItemMode::Graph,
+                    ..ItemSettings::default()
+                },
             ),
             (
                 "values-own",
-                [
-                    (Module::Cpu, MenuBarMode::OwnValue),
-                    (Module::Gpu, MenuBarMode::OwnValue),
-                    (Module::Memory, MenuBarMode::OwnValue),
-                    (Module::Power, MenuBarMode::OwnValue),
-                    (Module::Network, MenuBarMode::Hidden),
-                    (Module::Disk, MenuBarMode::Hidden),
-                    (Module::Battery, MenuBarMode::Hidden),
-                ],
+                no_bars,
+                no_readouts,
+                ItemSettings {
+                    cpu: ItemMode::Value,
+                    gpu: ItemMode::Value,
+                    memory: ItemMode::Value,
+                    power: ItemMode::Value,
+                    ..ItemSettings::default()
+                },
             ),
         ];
-        for (name, modes) in rows {
+        for (name, bars, readouts, items) in rows {
             let mut s = Settings::default();
-            for (m, mode) in modes {
-                let e = s.modules.get_mut(&m).unwrap();
+            for e in s.modules.values_mut() {
                 e.enabled = true;
-                e.menu_bar = mode;
             }
+            s.menu_bar.bars = bars;
+            s.menu_bar.readouts = readouts;
+            s.menu_bar.items = items;
             let items = build(&readings, &history, &s, false, 2);
             let images: Vec<Rendered> = items
                 .iter()
-                .inspect(|i| assert!(i.key == ItemKey::Combined || name != "combined"))
+                .inspect(|i| assert!(i.key == ItemKey::Combined || !name.starts_with("combined")))
                 .map(|i| render(&i.content.frame).unwrap())
                 .collect();
             // Items 14 pt apart, 8 px margin, on dark (ink #f5f5f7 on #18181b) and

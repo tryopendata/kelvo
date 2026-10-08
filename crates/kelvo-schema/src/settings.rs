@@ -25,6 +25,9 @@ pub struct Settings {
     #[serde(deserialize_with = "crate::catalog::deserialize_known_modules")]
     #[specta(type = BTreeMap<Module, ModuleSettings>)]
     pub modules: BTreeMap<Module, ModuleSettings>,
+    /// Absent from a settings file written before D-102: the default menu bar.
+    #[serde(default)]
+    pub menu_bar: MenuBarSettings,
     pub sampling: SamplingSettings,
     pub history: HistorySettings,
     pub units: UnitSettings,
@@ -38,56 +41,270 @@ pub struct Settings {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 pub struct ModuleSettings {
     pub enabled: bool,
-    pub menu_bar: MenuBarMode,
 }
 
-/// How a module appears in the menu bar (4.2, 4.15). Not every mode is valid for every
-/// module; see [`MenuBarMode::allowed_for`].
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, specta::Type)]
-#[serde(rename_all = "snake_case")]
-pub enum MenuBarMode {
-    /// A bar in the combined item (CPU, GPU, Memory).
-    InCombined,
-    /// Its own value with a label.
-    ValueLabel,
-    /// Temperature in the combined item (Power & Sensors).
-    TempInCombined,
-    /// System watts as a value (Power & Sensors).
-    WattsValue,
-    /// A status item of its own showing the module's graph ("Graphs" and "Cores +
-    /// histogram"): CPU sparkline, GPU history bars, memory fill gauge, network
-    /// up and down rates (D-080).
-    OwnGraph,
-    /// A status item of its own showing the labelled value (watts for Power & Sensors).
-    OwnValue,
-    /// A status item of its own showing CPU per-core load, P cores then E cores (CPU only).
-    OwnCores,
-    Hidden,
+/// What the menu bar shows (D-102): bars and values in the combined item, and the modules
+/// with a status item of their own. The three are independent; a module that is switched
+/// off shows in none of them, and keeps its choices for when it comes back.
+///
+/// A group or field missing from the file takes its default, so a settings file written
+/// before a readout existed still loads; a field from a newer build is ignored. The
+/// fields are filled in by hand-written `Deserialize` impls rather than `#[serde(default)]`,
+/// which would make every field optional in the generated TypeScript.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, specta::Type)]
+pub struct MenuBarSettings {
+    pub bars: BarSettings,
+    pub readouts: ReadoutSettings,
+    pub items: ItemSettings,
 }
 
-impl MenuBarMode {
-    /// The options the Settings select offers for `module`.
-    pub fn allowed_for(module: Module) -> &'static [MenuBarMode] {
-        use MenuBarMode::*;
+/// Deserializes `$ty` from a mirror with every field optional, taking each missing one
+/// from `$ty::default()`.
+macro_rules! deserialize_with_defaults {
+    ($ty:ident { $($field:ident: $fty:ty),* $(,)? }) => {
+        impl<'de> Deserialize<'de> for $ty {
+            fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+                #[derive(Deserialize)]
+                struct Wire {
+                    $(#[serde(default)] $field: Option<$fty>,)*
+                }
+                let w = Wire::deserialize(d)?;
+                let base = $ty::default();
+                Ok($ty {
+                    $($field: w.$field.unwrap_or(base.$field),)*
+                })
+            }
+        }
+    };
+}
+
+deserialize_with_defaults!(MenuBarSettings {
+    bars: BarSettings,
+    readouts: ReadoutSettings,
+    items: ItemSettings,
+});
+deserialize_with_defaults!(BarSettings {
+    cpu: bool,
+    gpu: bool,
+    memory: bool,
+});
+deserialize_with_defaults!(ReadoutSettings {
+    cpu: bool,
+    gpu: bool,
+    memory: bool,
+    temperature: bool,
+    power: bool,
+    network: bool,
+    disk: bool,
+    battery: bool,
+});
+deserialize_with_defaults!(ItemSettings {
+    cpu: ItemMode,
+    gpu: ItemMode,
+    memory: ItemMode,
+    power: ItemMode,
+    network: ItemMode,
+    disk: ItemMode,
+    battery: ItemMode,
+});
+
+/// Which modules draw a bar in the combined item.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, specta::Type)]
+pub struct BarSettings {
+    pub cpu: bool,
+    pub gpu: bool,
+    pub memory: bool,
+}
+
+impl Default for BarSettings {
+    fn default() -> Self {
+        Self {
+            cpu: true,
+            gpu: true,
+            memory: true,
+        }
+    }
+}
+
+impl BarSettings {
+    /// The modules that can be a bar, in drawing order.
+    pub const MODULES: [Module; 3] = [Module::Cpu, Module::Gpu, Module::Memory];
+
+    pub fn get(&self, module: Module) -> bool {
         match module {
-            Module::Cpu => &[InCombined, ValueLabel, OwnGraph, OwnCores, OwnValue, Hidden],
-            Module::Gpu | Module::Memory => &[InCombined, ValueLabel, OwnGraph, OwnValue, Hidden],
-            Module::Power | Module::Sensors => &[TempInCombined, WattsValue, OwnValue, Hidden],
-            Module::Network => &[ValueLabel, OwnGraph, OwnValue, Hidden],
-            Module::Disk | Module::Battery => &[ValueLabel, OwnValue, Hidden],
+            Module::Cpu => self.cpu,
+            Module::Gpu => self.gpu,
+            Module::Memory => self.memory,
+            _ => false,
+        }
+    }
+}
+
+/// A value the combined item prints after the bars, with its marker (D-102).
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, specta::Type,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum Readout {
+    /// `cpu.total`.
+    Cpu,
+    /// `gpu.util`.
+    Gpu,
+    /// `mem.pressure`.
+    Memory,
+    /// `thermal.hottest`.
+    Temperature,
+    /// `power.system`.
+    Power,
+    /// `net.tx_total` over `net.rx_total`.
+    Network,
+    /// % used of the boot volume (`disk.used` / `disk.total`).
+    Disk,
+    /// `battery.charge`.
+    Battery,
+}
+
+impl Readout {
+    /// Every readout, in the order the menu bar draws them.
+    pub const ALL: [Readout; 8] = [
+        Readout::Cpu,
+        Readout::Gpu,
+        Readout::Memory,
+        Readout::Temperature,
+        Readout::Power,
+        Readout::Network,
+        Readout::Disk,
+        Readout::Battery,
+    ];
+
+    /// The module whose series it shows. Temperature is `Sensors`, which the Power &
+    /// Sensors settings entry switches.
+    pub fn module(self) -> Module {
+        match self {
+            Readout::Cpu => Module::Cpu,
+            Readout::Gpu => Module::Gpu,
+            Readout::Memory => Module::Memory,
+            Readout::Temperature => Module::Sensors,
+            Readout::Power => Module::Power,
+            Readout::Network => Module::Network,
+            Readout::Disk => Module::Disk,
+            Readout::Battery => Module::Battery,
+        }
+    }
+}
+
+/// Which readouts are on.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, specta::Type)]
+pub struct ReadoutSettings {
+    pub cpu: bool,
+    pub gpu: bool,
+    pub memory: bool,
+    pub temperature: bool,
+    pub power: bool,
+    pub network: bool,
+    pub disk: bool,
+    pub battery: bool,
+}
+
+impl Default for ReadoutSettings {
+    fn default() -> Self {
+        Self {
+            cpu: false,
+            gpu: false,
+            memory: false,
+            temperature: true,
+            power: false,
+            network: false,
+            disk: false,
+            battery: false,
+        }
+    }
+}
+
+impl ReadoutSettings {
+    pub fn get(&self, r: Readout) -> bool {
+        match r {
+            Readout::Cpu => self.cpu,
+            Readout::Gpu => self.gpu,
+            Readout::Memory => self.memory,
+            Readout::Temperature => self.temperature,
+            Readout::Power => self.power,
+            Readout::Network => self.network,
+            Readout::Disk => self.disk,
+            Readout::Battery => self.battery,
+        }
+    }
+}
+
+/// A module's status item of its own (D-080). Not every mode is offered for every
+/// module; see [`ItemMode::allowed_for`].
+#[derive(
+    Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize, specta::Type,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum ItemMode {
+    #[default]
+    Off,
+    /// The labelled value: percent, watts, or the read + write or total network rate.
+    Value,
+    /// The module's graph: CPU sparkline, GPU history bars, memory fill gauge, network
+    /// up and down rates.
+    Graph,
+    /// CPU per-core load, P cores then E cores (CPU only).
+    Cores,
+}
+
+impl ItemMode {
+    /// The options the Settings select offers for `module`.
+    pub fn allowed_for(module: Module) -> &'static [ItemMode] {
+        use ItemMode::*;
+        match module {
+            Module::Cpu => &[Off, Value, Graph, Cores],
+            Module::Gpu | Module::Memory | Module::Network => &[Off, Value, Graph],
+            Module::Power | Module::Sensors | Module::Disk | Module::Battery => &[Off, Value],
             Module::Unknown => &[],
         }
     }
 }
 
-impl MenuBarMode {
-    /// Whether the module gets a status item of its own rather than drawing into the
-    /// combined item.
-    pub fn own_item(self) -> bool {
-        matches!(
-            self,
-            MenuBarMode::OwnGraph | MenuBarMode::OwnValue | MenuBarMode::OwnCores
-        )
+/// Each settings module's own item; `Off` by default.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, specta::Type)]
+pub struct ItemSettings {
+    pub cpu: ItemMode,
+    pub gpu: ItemMode,
+    pub memory: ItemMode,
+    pub power: ItemMode,
+    pub network: ItemMode,
+    pub disk: ItemMode,
+    pub battery: ItemMode,
+}
+
+impl ItemSettings {
+    /// `module`'s item; `Sensors` reads the Power & Sensors entry.
+    pub fn get(&self, module: Module) -> ItemMode {
+        match module {
+            Module::Cpu => self.cpu,
+            Module::Gpu => self.gpu,
+            Module::Memory => self.memory,
+            Module::Power | Module::Sensors => self.power,
+            Module::Network => self.network,
+            Module::Disk => self.disk,
+            Module::Battery => self.battery,
+            Module::Unknown => ItemMode::Off,
+        }
+    }
+
+    pub fn get_mut(&mut self, module: Module) -> Option<&mut ItemMode> {
+        match module {
+            Module::Cpu => Some(&mut self.cpu),
+            Module::Gpu => Some(&mut self.gpu),
+            Module::Memory => Some(&mut self.memory),
+            Module::Power => Some(&mut self.power),
+            Module::Network => Some(&mut self.network),
+            Module::Disk => Some(&mut self.disk),
+            Module::Battery => Some(&mut self.battery),
+            Module::Sensors | Module::Unknown => None,
+        }
     }
 }
 
@@ -317,22 +534,15 @@ impl Default for Settings {
         let modules = SETTINGS_MODULES
             .into_iter()
             .map(|m| {
-                let menu_bar = match m {
-                    Module::Cpu | Module::Gpu | Module::Memory => MenuBarMode::InCombined,
-                    Module::Power | Module::Sensors => MenuBarMode::TempInCombined,
-                    Module::Network | Module::Disk | Module::Battery | Module::Unknown => {
-                        MenuBarMode::Hidden
-                    }
-                };
                 let settings = ModuleSettings {
                     enabled: m != Module::Disk,
-                    menu_bar,
                 };
                 (m, settings)
             })
             .collect();
         Self {
             modules,
+            menu_bar: MenuBarSettings::default(),
             sampling: SamplingSettings {
                 interval_ms: 1000,
                 slow_on_battery: true,
@@ -372,22 +582,22 @@ impl Settings {
         self.modules.get(&key)
     }
 
-    /// Whether the menu bar shows a value from `module` (enabled and not hidden). The
-    /// Power & Sensors entry shows the hottest temperature (`Sensors`) or system watts
-    /// (`Power`), never both. The engine samples a module the menu bar shows at the base
-    /// interval even with no window open (D-067).
+    /// Whether the menu bar shows a value from `module` (enabled, and a bar, a readout or
+    /// an own item). The engine samples a module the menu bar shows at the base interval
+    /// even with no window open (D-067). The Disk readout does not count: disk capacity
+    /// is sampled every 60 s whatever is on screen, and counting it would put disk
+    /// throughput on the background tick (D-102).
     pub fn menu_bar_shows(&self, module: Module) -> bool {
-        let Some(m) = self.module(module).filter(|m| m.enabled) else {
+        if module == Module::Unknown || !self.module(module).is_some_and(|m| m.enabled) {
             return false;
-        };
-        match (module, m.menu_bar) {
-            (_, MenuBarMode::Hidden) | (Module::Unknown, _) => false,
-            (Module::Power, mode) => {
-                matches!(mode, MenuBarMode::WattsValue | MenuBarMode::OwnValue)
-            }
-            (Module::Sensors, mode) => mode == MenuBarMode::TempInCombined,
-            _ => true,
         }
+        let mb = &self.menu_bar;
+        let readout = Readout::ALL
+            .into_iter()
+            .any(|r| r != Readout::Disk && r.module() == module && mb.readouts.get(r));
+        // Sensors rides on the Power entry, but only the temperature readout draws it.
+        let item = module != Module::Sensors && mb.items.get(module) != ItemMode::Off;
+        mb.bars.get(module) || readout || item
     }
 
     /// Checks every value against the allowed sets in 6.4.
@@ -408,15 +618,12 @@ impl Settings {
             return Err(SettingsError::UnknownModule);
         }
         for m in SETTINGS_MODULES {
-            let s = self
-                .modules
-                .get(&m)
-                .ok_or(SettingsError::MissingModule(m))?;
-            if !MenuBarMode::allowed_for(m).contains(&s.menu_bar) {
-                return Err(SettingsError::MenuBarMode {
-                    module: m,
-                    mode: s.menu_bar,
-                });
+            if !self.modules.contains_key(&m) {
+                return Err(SettingsError::MissingModule(m));
+            }
+            let mode = self.menu_bar.items.get(m);
+            if !ItemMode::allowed_for(m).contains(&mode) {
+                return Err(SettingsError::ItemMode { module: m, mode });
             }
         }
         Ok(())
@@ -437,8 +644,8 @@ pub enum SettingsError {
     SensorsEntry,
     #[error("settings cannot hold an entry for an unknown module")]
     UnknownModule,
-    #[error("menu bar mode {mode:?} is not offered for {module:?}")]
-    MenuBarMode { module: Module, mode: MenuBarMode },
+    #[error("menu bar item {mode:?} is not offered for {module:?}")]
+    ItemMode { module: Module, mode: ItemMode },
 }
 
 #[cfg(test)]
@@ -456,18 +663,14 @@ mod tests {
         assert!(s.history.network_history);
         assert!(!s.module(Module::Disk).unwrap().enabled);
         assert!(s.module(Module::Cpu).unwrap().enabled);
-        assert_eq!(
-            s.module(Module::Gpu).unwrap().menu_bar,
-            MenuBarMode::InCombined
-        );
-        assert_eq!(
-            s.module(Module::Sensors).unwrap().menu_bar,
-            MenuBarMode::TempInCombined
-        );
-        assert_eq!(
-            s.module(Module::Network).unwrap().menu_bar,
-            MenuBarMode::Hidden
-        );
+        // Three bars and the temperature, no own items (D-102 keeps the v1.0 look).
+        assert_eq!(s.menu_bar.bars, BarSettings::default());
+        let on: Vec<Readout> = Readout::ALL
+            .into_iter()
+            .filter(|&r| s.menu_bar.readouts.get(r))
+            .collect();
+        assert_eq!(on, [Readout::Temperature]);
+        assert_eq!(s.menu_bar.items, ItemSettings::default());
         assert!(s.general.launch_at_login && !s.general.show_in_dock && s.general.check_updates);
         assert!(!s.onboarding.completed);
         assert_eq!(s.alerts, AlertSettings::default());
@@ -580,40 +783,53 @@ mod tests {
     #[test]
     fn menu_bar_shows_what_the_tray_draws() {
         let mut s = Settings::default();
-        let shown: Vec<Module> = Module::ALL
-            .into_iter()
-            .filter(|&m| s.menu_bar_shows(m))
-            .collect();
-        // Power's default TempInCombined draws nothing; Sensors' draws the hottest sensor.
+        let shown = |s: &Settings| -> Vec<Module> {
+            Module::ALL
+                .into_iter()
+                .filter(|&m| s.menu_bar_shows(m))
+                .collect()
+        };
+        // The temperature draws Sensors; Power draws nothing until watts are on.
         assert_eq!(
-            shown,
+            shown(&s),
             [Module::Cpu, Module::Gpu, Module::Memory, Module::Sensors]
         );
 
-        let set = |s: &mut Settings, module, mode| {
-            s.modules.get_mut(&module).unwrap().menu_bar = mode;
-        };
-        // Power and Sensors share one setting: watts draws power, not a temperature.
-        set(&mut s, Module::Power, MenuBarMode::WattsValue);
-        set(&mut s, Module::Network, MenuBarMode::ValueLabel);
-        set(&mut s, Module::Cpu, MenuBarMode::Hidden);
-        assert!(s.menu_bar_shows(Module::Power));
-        assert!(!s.menu_bar_shows(Module::Sensors));
-        assert!(s.menu_bar_shows(Module::Network));
-        assert!(!s.menu_bar_shows(Module::Cpu));
+        // Power and Sensors share one entry but are drawn by different readouts.
+        s.menu_bar.readouts.temperature = false;
+        s.menu_bar.readouts.power = true;
+        s.menu_bar.readouts.network = true;
+        s.menu_bar.bars.cpu = false;
+        assert_eq!(
+            shown(&s),
+            [Module::Gpu, Module::Memory, Module::Power, Module::Network]
+        );
 
-        // Own items draw too; Power's own item is watts, so the temperature is not drawn.
-        set(&mut s, Module::Cpu, MenuBarMode::OwnCores);
-        set(&mut s, Module::Power, MenuBarMode::OwnValue);
-        set(&mut s, Module::Network, MenuBarMode::OwnGraph);
+        // A readout or an own item shows a module without its bar.
+        s.menu_bar.readouts.cpu = true;
         assert!(s.menu_bar_shows(Module::Cpu));
+        s.menu_bar.readouts.cpu = false;
+        s.menu_bar.items.cpu = ItemMode::Cores;
+        assert!(s.menu_bar_shows(Module::Cpu));
+        // Power's own item is watts: it does not draw the temperature.
+        s.menu_bar.readouts.power = false;
+        s.menu_bar.items.power = ItemMode::Value;
         assert!(s.menu_bar_shows(Module::Power));
         assert!(!s.menu_bar_shows(Module::Sensors));
-        assert!(s.menu_bar_shows(Module::Network));
 
-        // A disabled module is not sampled, so it draws nothing whatever its mode.
-        set(&mut s, Module::Disk, MenuBarMode::ValueLabel);
+        // The Disk readout reads capacity, sampled every 60 s anyway: not on the
+        // background tick. Disk's own item (throughput) is.
+        s.modules.get_mut(&Module::Disk).unwrap().enabled = true;
+        s.menu_bar.readouts.disk = true;
         assert!(!s.menu_bar_shows(Module::Disk));
+        s.menu_bar.items.disk = ItemMode::Value;
+        assert!(s.menu_bar_shows(Module::Disk));
+
+        // A disabled module is not sampled, so it draws nothing whatever is chosen.
+        s.modules.get_mut(&Module::Network).unwrap().enabled = false;
+        assert!(!s.menu_bar_shows(Module::Network));
+        s.modules.get_mut(&Module::Power).unwrap().enabled = false;
+        assert!(!s.menu_bar_shows(Module::Power));
         assert!(!s.menu_bar_shows(Module::Unknown));
     }
 
@@ -642,44 +858,26 @@ mod tests {
         );
 
         let mut s = ok.clone();
-        s.modules.insert(
-            Module::Sensors,
-            ModuleSettings {
-                enabled: true,
-                menu_bar: MenuBarMode::Hidden,
-            },
-        );
+        s.modules
+            .insert(Module::Sensors, ModuleSettings { enabled: true });
         assert_eq!(s.validate(), Err(SettingsError::SensorsEntry));
 
         let mut s = ok.clone();
-        s.modules.insert(
-            Module::Unknown,
-            ModuleSettings {
-                enabled: true,
-                menu_bar: MenuBarMode::Hidden,
-            },
-        );
+        s.modules
+            .insert(Module::Unknown, ModuleSettings { enabled: true });
         assert_eq!(s.validate(), Err(SettingsError::UnknownModule));
 
+        // Cores is CPU only; graphs exist for CPU, GPU, Memory, Network.
         for (module, mode) in [
-            (Module::Cpu, MenuBarMode::WattsValue),
-            (Module::Power, MenuBarMode::InCombined),
-            (Module::Disk, MenuBarMode::InCombined),
-            // Own items: cores is CPU only; graphs exist for CPU, GPU, Memory, Network.
-            (Module::Gpu, MenuBarMode::OwnCores),
-            (Module::Network, MenuBarMode::OwnCores),
-            (Module::Disk, MenuBarMode::OwnGraph),
-            (Module::Battery, MenuBarMode::OwnGraph),
-            (Module::Power, MenuBarMode::OwnGraph),
+            (Module::Gpu, ItemMode::Cores),
+            (Module::Network, ItemMode::Cores),
+            (Module::Disk, ItemMode::Graph),
+            (Module::Battery, ItemMode::Graph),
+            (Module::Power, ItemMode::Graph),
         ] {
             let mut s = ok.clone();
-            if let Some(m) = s.modules.get_mut(&module) {
-                m.menu_bar = mode;
-            }
-            assert_eq!(
-                s.validate(),
-                Err(SettingsError::MenuBarMode { module, mode })
-            );
+            *s.menu_bar.items.get_mut(module).unwrap() = mode;
+            assert_eq!(s.validate(), Err(SettingsError::ItemMode { module, mode }));
         }
     }
 
@@ -699,46 +897,95 @@ mod tests {
             s.validate().unwrap();
         }
         for m in SETTINGS_MODULES {
-            for &mode in MenuBarMode::allowed_for(m) {
+            for &mode in ItemMode::allowed_for(m) {
                 let mut s = Settings::default();
-                if let Some(e) = s.modules.get_mut(&m) {
-                    e.menu_bar = mode;
-                }
+                *s.menu_bar.items.get_mut(m).unwrap() = mode;
                 s.validate().unwrap();
             }
         }
     }
 
     #[test]
-    fn own_item_modes_are_offered_per_module() {
-        use MenuBarMode::*;
-        let own = |m| -> Vec<MenuBarMode> {
-            MenuBarMode::allowed_for(m)
-                .iter()
-                .copied()
-                .filter(|mode| mode.own_item())
-                .collect()
-        };
-        assert_eq!(own(Module::Cpu), [OwnGraph, OwnCores, OwnValue]);
-        assert_eq!(own(Module::Gpu), [OwnGraph, OwnValue]);
-        assert_eq!(own(Module::Memory), [OwnGraph, OwnValue]);
-        assert_eq!(own(Module::Network), [OwnGraph, OwnValue]);
-        assert_eq!(own(Module::Power), [OwnValue]);
-        assert_eq!(own(Module::Disk), [OwnValue]);
-        assert_eq!(own(Module::Battery), [OwnValue]);
-        assert!(!InCombined.own_item() && !ValueLabel.own_item() && !Hidden.own_item());
-        assert_eq!(serde_json::to_string(&OwnCores).unwrap(), r#""own_cores""#);
+    fn item_modes_are_offered_per_module() {
+        use ItemMode::*;
+        assert_eq!(
+            ItemMode::allowed_for(Module::Cpu),
+            [Off, Value, Graph, Cores]
+        );
+        for m in [Module::Gpu, Module::Memory, Module::Network] {
+            assert_eq!(ItemMode::allowed_for(m), [Off, Value, Graph]);
+        }
+        for m in [Module::Power, Module::Disk, Module::Battery] {
+            assert_eq!(ItemMode::allowed_for(m), [Off, Value]);
+        }
+        assert_eq!(serde_json::to_string(&Cores).unwrap(), r#""cores""#);
+    }
+
+    #[test]
+    fn readouts_map_to_their_modules_in_drawing_order() {
+        let modules: Vec<Module> = Readout::ALL.into_iter().map(Readout::module).collect();
+        assert_eq!(
+            modules,
+            [
+                Module::Cpu,
+                Module::Gpu,
+                Module::Memory,
+                Module::Sensors,
+                Module::Power,
+                Module::Network,
+                Module::Disk,
+                Module::Battery,
+            ]
+        );
+        assert_eq!(
+            serde_json::to_string(&Readout::Temperature).unwrap(),
+            r#""temperature""#
+        );
     }
 
     #[test]
     fn json_round_trip() {
         let s = Settings::default();
         let json = serde_json::to_string(&s).unwrap();
+        assert!(json.contains(r#""cpu":{"enabled":true}"#), "{json}");
         assert!(
-            json.contains(r#""cpu":{"enabled":true,"menu_bar":"in_combined"}"#),
+            json.contains(r#""bars":{"cpu":true,"gpu":true,"memory":true}"#),
             "{json}"
         );
         assert_eq!(serde_json::from_str::<Settings>(&json).unwrap(), s);
+    }
+
+    /// A settings file from before D-102: per-module `menu_bar` modes and no top-level
+    /// `menu_bar`. The old modes are dropped, the default menu bar applies, and every
+    /// other setting is kept.
+    #[test]
+    fn settings_from_before_d102_load_with_the_default_menu_bar() {
+        let mut want = Settings::default();
+        want.sampling.interval_ms = 2000;
+        let mut json = serde_json::to_value(&want).unwrap();
+        json.as_object_mut().unwrap().remove("menu_bar");
+        for (_, m) in json["modules"].as_object_mut().unwrap() {
+            m["menu_bar"] = "watts_value".into();
+        }
+        let s: Settings = serde_json::from_value(json).unwrap();
+        assert_eq!(s, want);
+        s.validate().unwrap();
+    }
+
+    /// A file written before a readout (or bar, or item) existed takes that field's
+    /// default; one from a newer build with a readout this build lacks drops it.
+    #[test]
+    fn menu_bar_fields_missing_or_unknown_decode() {
+        let mut json = serde_json::to_value(Settings::default()).unwrap();
+        let readouts = json["menu_bar"]["readouts"].as_object_mut().unwrap();
+        readouts.remove("temperature");
+        readouts.insert("fans".into(), true.into());
+        json["menu_bar"]["items"]
+            .as_object_mut()
+            .unwrap()
+            .remove("cpu");
+        let s: Settings = serde_json::from_value(json).unwrap();
+        assert_eq!(s.menu_bar, MenuBarSettings::default());
     }
 
     #[test]
@@ -746,7 +993,7 @@ mod tests {
         let s = Settings::default();
         let json = serde_json::to_string(&s).unwrap().replacen(
             r#""modules":{"#,
-            r#""modules":{"npu":{"enabled":true,"menu_bar":"hidden"},"#,
+            r#""modules":{"npu":{"enabled":true},"#,
             1,
         );
         let back: Settings = serde_json::from_str(&json).unwrap();
