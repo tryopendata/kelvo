@@ -51,17 +51,16 @@ The same test applies to the sub line. Keep it only when it adds a scope, a numb
 
 Default for a section header in app UI: heading, optional one-line sub with real content, and an action slot. No kicker. If the section is one of many on a long page, use the heading's size and the section's container to signal weight, not a label.
 
-## Where uppercase tracked text is fine
+## Monospace and uppercase labels
 
-`text-[10px] uppercase tracking-wider text-muted-foreground` is not slop by itself. It is slop when it labels a section. It is fine when it labels a field:
+Kelvo has no monospace and no uppercase in its UI (D-101). Monospace figures plus `text-[10px] uppercase tracking-wider` mono labels are the default "developer dashboard" kit a model reaches for, and next to an Inter UI they read as generated rather than designed. Kelvo's figures are SF Pro with tabular numbers (`.figures`), headline numbers are SF Pro Rounded (`.figures-display`), and field labels are 11 px sentence case (`FIELD_LABEL`).
 
-- table column headers (process table, zone table)
-- form group labels inside settings and the widget composer
-- the mono uppercase label under or beside a figure in a metric card (`.data-mono` field labels)
-- a sidebar group label in the dashboard nav (`Modules`, `History`)
-- a compact status badge (`Throttled`, `On battery`)
+| Pattern | Grep | Instead |
+|---|---|---|
+| Monospace for numbers, IDs or labels | `rg "font-mono\|monospace"` | `.figures` for anything that updates; plain SF for the rest |
+| Uppercase tracked field label | `rg "uppercase\|tracking-\[\.0"` | `FIELD_LABEL` |
 
-The distinction: field labels sit next to a value or a control and name what it is. Section kickers sit above a heading and name what the heading already names.
+Labels still split by job. A field label sits next to a value or a control and names it: column headers, KPI labels, settings group labels, sidebar groups. A section kicker sits above a heading and names what the heading already names, and is slop in any case.
 
 ## Catalog of patterns
 

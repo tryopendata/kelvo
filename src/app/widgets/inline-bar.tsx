@@ -23,7 +23,7 @@ export interface InlineBarProps {
   accent?: Accent;
   rampStep?: RampStep;
   /**
-   * `stacked`: mono uppercase label and value over a 4 px bar (Overview, 04).
+   * `stacked`: field label and value over a 4 px bar (Overview, 04).
    * `row`: label, right-aligned value, bar in one grid row (popover, 14).
    * `wide`: label and value over a 6 px bar (popover memory pressure, battery).
    */
@@ -69,7 +69,7 @@ export function InlineBar({
         <span className="font-normal text-fg-subtle">{label}</span>
         <span
           className={cn(
-            "data-mono text-right",
+            "figures text-right",
             fraction === null && "text-muted-foreground"
           )}
         >
@@ -97,7 +97,7 @@ export function InlineBar({
         </span>
         <span
           className={cn(
-            "data-mono text-[11px]",
+            "figures text-[11px]",
             typeof fraction !== "number" && "text-muted-foreground"
           )}
         >

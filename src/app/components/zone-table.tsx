@@ -112,7 +112,7 @@ export function ZoneTable({ rows, extras, units, rangeLabel }: ZoneTableProps) {
                 <td className="py-[3px] font-normal text-fg-subtle">
                   {r.name}
                 </td>
-                <td className="data-mono py-[3px] pl-2.5 text-[11px] text-muted-foreground">
+                <td className="figures py-[3px] pl-2.5 text-[11px] text-muted-foreground">
                   {r.key}
                 </td>
                 <td className="px-2.5 py-[3px]">
@@ -122,10 +122,10 @@ export function ZoneTable({ rows, extras, units, rangeLabel }: ZoneTableProps) {
                     transition
                   />
                 </td>
-                <td className="data-mono py-[3px] text-right text-foreground">
+                <td className="figures py-[3px] text-right text-foreground">
                   {formatTemperature(r.now, { units })}
                 </td>
-                <td className="data-mono py-[3px] text-right text-[11px] text-muted-foreground">
+                <td className="figures py-[3px] text-right text-[11px] text-muted-foreground">
                   {range(r.min, r.max, units)}
                 </td>
               </tr>
@@ -141,7 +141,7 @@ export function ZoneTable({ rows, extras, units, rangeLabel }: ZoneTableProps) {
               className="font-normal text-[12px] text-fg-subtle"
             >
               {x.label}{" "}
-              <span className="data-mono text-foreground">
+              <span className="figures text-foreground">
                 {formatTemperature(x.value, { units })}
               </span>
             </span>

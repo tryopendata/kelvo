@@ -96,7 +96,7 @@ export function GeneralPanel({ general }: { general: Settings["general"] }) {
         />
       </SettingsRow>
       <SettingsRow label="Version" sub={status ?? undefined}>
-        <span className="data-mono text-[12px] text-fg-subtle">{version}</span>
+        <span className="figures text-[12px] text-fg-subtle">{version}</span>
         <Button
           variant="outline"
           size="sm"

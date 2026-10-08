@@ -405,7 +405,7 @@ export function AppComponentsSection() {
               }
             >
               <span className="font-[590] text-[13px]">{m.label}</span>
-              <span className="data-mono text-[11px] text-muted-foreground">
+              <span className="figures text-[11px] text-muted-foreground">
                 {origin}
               </span>
             </section>
@@ -599,9 +599,7 @@ export function AppComponentsSection() {
               <Switch defaultChecked aria-label="Slow down on battery" />
             </SettingsRow>
             <SettingsRow label="History on disk">
-              <span className="data-mono text-[12px] text-fg-subtle">
-                148 MB
-              </span>
+              <span className="figures text-[12px] text-fg-subtle">148 MB</span>
               <Button variant="outline" size="sm">
                 Clear
               </Button>

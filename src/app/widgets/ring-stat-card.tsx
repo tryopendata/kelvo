@@ -52,7 +52,7 @@ export function RingStatCard({
         )}
         <dl className="flex flex-col gap-px">
           <dt className={FIELD_LABEL}>{kv.label}</dt>
-          <dd className="data-mono text-[13px]">{kv.value}</dd>
+          <dd className="figures text-[13px]">{kv.value}</dd>
         </dl>
       </div>
     </Card>

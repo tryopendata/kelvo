@@ -37,7 +37,7 @@ export function StatusPill({ state, label }: StatusPillProps) {
             )}
           />
         )}
-        <span className="data-mono">{label}</span>
+        <span className="figures">{label}</span>
       </Swap>
     </span>
   );

@@ -38,7 +38,7 @@ export function CoreTiles({ clusters, accent = "cpu" }: CoreTilesProps) {
             <span className="font-normal text-[11px] text-fg-subtle">
               {cluster.name}
             </span>
-            <span className="data-mono text-[11px]">{cluster.freq}</span>
+            <span className="figures text-[11px]">{cluster.freq}</span>
           </div>
           <ul
             aria-label={`${cluster.name} core load`}
@@ -55,7 +55,7 @@ export function CoreTiles({ clusters, accent = "cpu" }: CoreTilesProps) {
                   title={`${core.id} ${load === null ? "no sample" : `${load}%`}`}
                   aria-label={`${core.id} ${load === null ? "no sample" : `${load}%`}`}
                   className={cn(
-                    "data-mono flex h-5 items-center justify-center rounded-mark text-[9px] transition-[background-color] duration-(--motion-tick) ease-tick",
+                    "figures flex h-5 items-center justify-center rounded-mark text-[9px] transition-[background-color] duration-(--motion-tick) ease-tick",
                     load === null
                       ? "bg-track text-muted-foreground"
                       : load > DARK_TEXT_FROM

@@ -61,7 +61,7 @@ export function Legend({ items, accent, columns = "inline" }: LegendProps) {
           >
             <Swatch step={item.step} />
             {item.label}
-            <span className="data-mono text-foreground">{item.value}</span>
+            <span className="figures text-foreground">{item.value}</span>
           </li>
         ))}
       </ul>
@@ -82,7 +82,7 @@ export function Legend({ items, accent, columns = "inline" }: LegendProps) {
           <span className="flex-1 font-normal text-fg-subtle">
             {item.label}
           </span>
-          <span className="data-mono">{item.value}</span>
+          <span className="figures">{item.value}</span>
         </li>
       ))}
     </ul>

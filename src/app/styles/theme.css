@@ -7,12 +7,16 @@
  * `static` emits every token, so plain CSS (cards.css) can read them with var().
  */
 @theme static {
+  /* SF Pro: the system face, so the popover reads as part of the Mac. */
   --font-sans:
-    "Inter Variable", "Inter", ui-sans-serif, system-ui, sans-serif,
+    -apple-system, BlinkMacSystemFont, system-ui, sans-serif,
     "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
-  --font-mono:
-    "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, "SF Mono", Menlo,
-    Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  /* SF Pro Rounded in WKWebView; other engines fall back to SF Pro. */
+  --font-rounded:
+    ui-rounded, -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  /* The menu bar image is drawn in Rust in bundled JetBrains Mono (D-023);
+     the tray preview uses the same face so it matches. Nothing else does. */
+  --font-tray: "JetBrains Mono Variable", ui-monospace, monospace;
 
   /* Shadcn/ui color tokens - Light mode (zinc-based, cyan accent) */
   --color-background: #fafafa;

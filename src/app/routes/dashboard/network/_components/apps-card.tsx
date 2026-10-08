@@ -100,15 +100,15 @@ export function AppsCard({ windowMs }: { windowMs: number }) {
       <>
         {partial && (
           <AppsNote>
-            Measured for <span className="data-mono">{partial.measuredS}</span>{" "}
-            of <span className="data-mono">{partial.spanS}</span> s. Network
-            history wasn't recording for the rest, so these totals cover{" "}
-            <span className="data-mono">{partial.measuredS}</span> s.
+            Measured for <span className="figures">{partial.measuredS}</span> of{" "}
+            <span className="figures">{partial.spanS}</span> s. Network history
+            wasn't recording for the rest, so these totals cover{" "}
+            <span className="figures">{partial.measuredS}</span> s.
           </AppsNote>
         )}
         {tail > 0 && (
           <AppsNote>
-            The last <span className="data-mono">{tail}</span> s are still being
+            The last <span className="figures">{tail}</span> s are still being
             measured. These totals update as they close.
           </AppsNote>
         )}
@@ -164,7 +164,7 @@ function Unrecorded({
       ) : (
         <>
           No app data · Network history started{" "}
-          <span className="data-mono">{formatClockSeconds(started)}</span>
+          <span className="figures">{formatClockSeconds(started)}</span>
         </>
       )}
     </UnrecordedRange>
@@ -207,14 +207,14 @@ function AppsTable({
                   {r.name}
                 </span>
               </TableCell>
-              <TableCell className={cn(APP_CELL, "data-mono text-right")}>
+              <TableCell className={cn(APP_CELL, "figures text-right")}>
                 {bytes(r.rxBytes)}
               </TableCell>
-              <TableCell className={cn(APP_CELL, "data-mono text-right")}>
+              <TableCell className={cn(APP_CELL, "figures text-right")}>
                 {bytes(r.txBytes)}
               </TableCell>
               <TableCell
-                className={cn(APP_CELL, "data-mono text-right text-foreground")}
+                className={cn(APP_CELL, "figures text-right text-foreground")}
               >
                 {bytes(r.totalBytes)}
               </TableCell>
@@ -222,7 +222,7 @@ function AppsTable({
               <TableCell
                 className={cn(
                   APP_CELL,
-                  "data-mono text-right",
+                  "figures text-right",
                   !r.nowBps && "text-fg-faint"
                 )}
               >
@@ -237,18 +237,18 @@ function AppsTable({
               system={r.kind === "system"}
               first={i === 0}
             >
-              <TableCell className={cn(APP_CELL, "data-mono text-right")}>
+              <TableCell className={cn(APP_CELL, "figures text-right")}>
                 {bytes(r.rxBytes)}
               </TableCell>
-              <TableCell className={cn(APP_CELL, "data-mono text-right")}>
+              <TableCell className={cn(APP_CELL, "figures text-right")}>
                 {bytes(r.txBytes)}
               </TableCell>
-              <TableCell className={cn(APP_CELL, "data-mono text-right")}>
+              <TableCell className={cn(APP_CELL, "figures text-right")}>
                 {bytes(r.totalBytes)}
               </TableCell>
               <ShareCell share={r.share} muted />
               <TableCell
-                className={cn(APP_CELL, "data-mono text-right text-fg-faint")}
+                className={cn(APP_CELL, "figures text-right text-fg-faint")}
               >
                 {MISSING}
               </TableCell>

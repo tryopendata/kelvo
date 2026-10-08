@@ -171,7 +171,7 @@ const PAST_WORDS: Record<Span, string> = {
 };
 
 /**
- * The header subtitle, as a lead and the times in mono. Following Live it
+ * The header subtitle, as a lead and the times in tabular figures. Following Live it
  * names the end ("Last 24 hours, ending Sun Oct 4 ·
  * 22:40"). A window the user stepped back to gives both ends, the second
  * without its day when it is the same day: "7 days, Sun Sep 27 · 22:40 –

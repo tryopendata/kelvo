@@ -33,7 +33,7 @@ export function OnboardingFrame({
         className="flex h-10 shrink-0 items-center px-4"
       >
         <span className="flex-1" />
-        <span className="data-mono text-[11px] text-muted-foreground">
+        <span className="figures text-[11px] text-muted-foreground">
           {step} of 2
         </span>
       </div>

@@ -84,7 +84,7 @@ export function SensorDumpDialog({
         </DialogHeader>
         <pre
           data-testid="sensor-dump-json"
-          className="data-mono m-0 max-h-[320px] overflow-auto rounded-tile border border-border bg-deep p-3 text-[11px] text-fg-subtle"
+          className="figures m-0 max-h-[320px] overflow-auto rounded-tile border border-border bg-deep p-3 text-[11px] text-fg-subtle"
         >
           {error
             ? "The sensor dump could not be read."

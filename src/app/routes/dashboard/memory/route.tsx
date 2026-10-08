@@ -55,7 +55,7 @@ export default function MemoryRoute() {
           subtitle={
             totalGb !== null && (
               <>
-                <span className="data-mono">{totalGb}</span> GB unified
+                <span className="figures">{totalGb}</span> GB unified
               </>
             )
           }

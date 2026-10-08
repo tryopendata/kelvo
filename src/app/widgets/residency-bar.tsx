@@ -44,7 +44,7 @@ export function ResidencyBar({
     <div className="flex flex-col gap-2" style={accentVars(accent)}>
       <div className="flex justify-between">
         <span className="text-[12px]">{cluster}</span>
-        <span className="data-mono text-[11px] text-muted-foreground">
+        <span className="figures text-[11px] text-muted-foreground">
           active {Math.round(activePct)}%
         </span>
       </div>
@@ -74,8 +74,8 @@ export function ResidencyBar({
               className="size-2 shrink-0 rounded-mark"
               style={{ background: color(s.label) }}
             />
-            <span className="data-mono flex-1 text-fg-subtle">{s.label}</span>
-            <span className="data-mono">{Math.round(s.pct)}%</span>
+            <span className="figures flex-1 text-fg-subtle">{s.label}</span>
+            <span className="figures">{Math.round(s.pct)}%</span>
           </li>
         ))}
       </ul>

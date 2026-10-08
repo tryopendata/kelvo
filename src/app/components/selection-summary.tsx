@@ -44,11 +44,11 @@ export function SelectionSummary({
       className={className}
       style={{ paddingLeft: inset }}
     >
-      <span className="data-mono text-foreground">
+      <span className="figures text-foreground">
         {formatClockSeconds(r.fromMs)}
       </span>{" "}
       to{" "}
-      <span className="data-mono text-foreground">
+      <span className="figures text-foreground">
         {formatClockSeconds(r.toMs)}
       </span>
       {offChart && " · earlier than this chart"}

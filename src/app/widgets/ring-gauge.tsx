@@ -14,21 +14,21 @@ const GEOMETRY: Record<
     r: 30,
     stroke: 6,
     value: "text-[14px]",
-    label: "text-[8px]",
+    label: "text-[9px]",
     round: false,
   },
   88: {
     r: 38,
     stroke: 7,
     value: "text-[17px]",
-    label: "text-[9px]",
+    label: "text-[10px]",
     round: true,
   },
   112: {
     r: 48,
     stroke: 8,
     value: "text-[18px]",
-    label: "text-[9px]",
+    label: "text-[10px]",
     round: true,
   },
 };
@@ -42,7 +42,7 @@ export interface RingGaugeProps {
   fractions: (number | null)[];
   /** Center figure, already formatted ("18%", "17.6", "3.20"). */
   value: string;
-  /** Mono label under the figure ("LOAD", "GB USED", "GHz"). */
+  /** Label under the figure ("load", "GB used", "GHz"). */
   label: string;
   accent: Accent;
   size: RingSize;
@@ -118,15 +118,10 @@ export function RingGauge({
         })}
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center gap-px">
-        <span className={cn("data-mono tracking-[-0.02em]", g.value)}>
+        <span className={cn("figures-display tracking-[-0.02em]", g.value)}>
           <NumberTicker text={value} unit={label} />
         </span>
-        <span
-          className={cn(
-            "data-mono font-normal text-muted-foreground uppercase tracking-[.08em]",
-            g.label
-          )}
-        >
+        <span className={cn("font-normal text-muted-foreground", g.label)}>
           {label}
         </span>
       </div>

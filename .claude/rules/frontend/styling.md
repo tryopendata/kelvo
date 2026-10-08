@@ -33,8 +33,8 @@ Three tiers, in order. Reach for the next one only when the one above cannot exp
 
 - Color tokens are semantic (`bg-background`, `text-foreground`, `border-border`), not hardcoded hex
 - Dark mode is the primary design context
-- Typography: self-hosted Inter Variable and JetBrains Mono Variable, OpenType features `"cv01", "ss03"`
-- Figures use `.data-mono` (tabular, mono); field labels are mono uppercase
+- Typography: SF Pro (`-apple-system`), nothing self-hosted for the UI. No monospace and no uppercase (D-101)
+- Figures use `.figures` (tabular); a card's headline number uses `.figures-display` (SF Pro Rounded); field labels are 11 px sentence case (`FIELD_LABEL`)
 - Cards use the corner-glow accent card (9% tint; 6% on chart cards)
 - Module accents: CPU cyan, GPU pink, Memory violet, Power & Sensors amber, Network emerald, Disk blue, Battery lime. Series inside a card use a lightness ramp of the card's accent, not other module accents
 - Amber/red warning states must stay distinguishable from the amber Power accent: icon and text, never color alone
@@ -44,7 +44,7 @@ Three tiers, in order. Reach for the next one only when the one above cannot exp
 
 Values change every second. Styling must not make that expensive or jittery:
 
-- `tabular-nums` (or `.data-mono`) on every live number so widths don't shift each tick
+- `tabular-nums` (or `.figures`) on every live number so widths don't shift each tick
 - Fixed widths/min-widths on value slots; a value going from 9.9 to 10.0 must not reflow the card
 - Animate `transform`/`opacity` only. Streaming charts scroll with `translateX`; never animate `width`, `height`, `top` or SVG path `d` per tick
 - No CSS transitions on values that update every tick unless the transition is shorter than the tick and runs off a motion token, so Performance mode (`data-performance`, D-088) turns it off

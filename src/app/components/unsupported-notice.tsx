@@ -24,8 +24,8 @@ export function UnsupportedNotice({
       />
       <p className="m-0 font-normal text-[12px] text-muted-foreground leading-normal">
         Temperature and fan sensors aren't mapped for this chip{" "}
-        <span className="data-mono">({modelId})</span> yet, so Power &amp;
-        Sensors is hidden. CPU and GPU watts still show on their own pages.{" "}
+        <span className="figures">({modelId})</span> yet, so Power &amp; Sensors
+        is hidden. CPU and GPU watts still show on their own pages.{" "}
         <button
           type="button"
           onClick={onShareDump}

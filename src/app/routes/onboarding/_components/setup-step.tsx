@@ -136,7 +136,7 @@ export function SetupStep({
           {status && (
             <span
               className={cn(
-                "data-mono text-[11px]",
+                "figures text-[11px]",
                 hostInfo?.chip_known ? "text-fg-faint" : "text-muted-foreground"
               )}
             >

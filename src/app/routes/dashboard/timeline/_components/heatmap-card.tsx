@@ -90,7 +90,7 @@ export const HeatmapCard = memo(function HeatmapCard({
           ariaLabel="Heatmap metric"
         />
         <div aria-hidden className="flex items-center gap-1">
-          <span className="data-mono mr-1 text-[10px] text-muted-foreground">
+          <span className="figures mr-1 text-[10px] text-muted-foreground">
             {lo}
           </span>
           {LEGEND_ALPHAS.map((a) => (
@@ -103,7 +103,7 @@ export const HeatmapCard = memo(function HeatmapCard({
               }}
             />
           ))}
-          <span className="data-mono ml-1 text-[10px] text-muted-foreground">
+          <span className="figures ml-1 text-[10px] text-muted-foreground">
             {hi}
           </span>
         </div>

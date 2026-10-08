@@ -12,9 +12,10 @@ export interface AnnotationRowProps {
 }
 
 /**
- * Mono 10 px is about 6 px per character, plus the 7 px dot and its gap.
- * An event pill is Inter 11 px (about 5.8 px per character) after a mono
- * "14:02 ", plus its padding, the 8 px dot and the gaps.
+ * Tabular SF 10 px is under 6 px per character, plus the 7 px dot and its
+ * gap. An event pill is SF 11 px (under 5.8 px per character) after a
+ * tabular "14:02 ", plus its padding, the 8 px dot and the gaps. The
+ * estimates run wide, so pills never overlap.
  */
 const measure = (m: Marker) =>
   m.kind === "event"
@@ -75,7 +76,7 @@ export function AnnotationRow({
               onClick={() => onSelect?.(p.tMs)}
             >
               <span>
-                <span className="data-mono text-power-ink">
+                <span className="figures text-power-ink">
                   {formatClock(p.tMs)}
                 </span>{" "}
                 {p.label}
@@ -99,7 +100,7 @@ export function AnnotationRow({
                 p.kind === "wake" && "bg-muted-foreground"
               )}
             />
-            <span className="data-mono whitespace-nowrap text-[10px] text-muted-foreground">
+            <span className="figures whitespace-nowrap text-[10px] text-muted-foreground">
               {p.label}
               {p.more > 0 && ` +${p.more}`}
             </span>

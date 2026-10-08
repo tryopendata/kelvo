@@ -113,7 +113,7 @@ function SidebarItem({
       </svg>
       <span className="flex-1 truncate text-[13px]">{entry.label}</span>
       {!entry.disabled && entry.value && (
-        <span className="data-mono min-w-9 text-right font-normal text-[11px] text-muted-foreground">
+        <span className="figures min-w-9 text-right font-normal text-[11px] text-muted-foreground">
           {entry.value}
         </span>
       )}
@@ -263,7 +263,7 @@ export function Sidebar({
               <span aria-hidden className="size-1.5 rounded-full bg-live" />
               <span className="min-w-0 truncate font-normal text-[11px] text-muted-foreground">
                 Sampling every{" "}
-                <span className="data-mono">
+                <span className="figures">
                   {intervalLabel(status.intervalMs)}
                 </span>
                 {status.onBattery && " · on battery"}
@@ -271,9 +271,7 @@ export function Sidebar({
             </>
           )}
           <span className="flex-1" />
-          <span className="data-mono text-[10px] text-fg-faint">
-            v{version}
-          </span>
+          <span className="figures text-[10px] text-fg-faint">v{version}</span>
         </div>
         {footerNote}
       </div>

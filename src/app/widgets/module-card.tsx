@@ -15,7 +15,7 @@ export interface ModuleCardProps {
   unit?: string;
   /**
    * Shown on the right instead of a value: muted text ("Wi‑Fi · en0") or a
-   * mono field label ("% LOAD").
+   * field label ("% load").
    */
   subtitle?: string;
   subtitleStyle?: "text" | "label";
@@ -74,7 +74,7 @@ export function ModuleCard({
           )}
         </h3>
         {value !== undefined ? (
-          <span className="data-mono text-[15px]">
+          <span className="figures-display text-[15px]">
             {value}
             {unit && (
               <span className="text-[12px] text-muted-foreground">{unit}</span>

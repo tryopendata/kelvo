@@ -58,13 +58,13 @@ export function VolumeTable({ rows, units }: VolumeTableProps) {
                   </span>
                 )}
               </TableCell>
-              <TableCell className="data-mono text-right">
+              <TableCell className="figures text-right">
                 {formatBytes(r.usedBytes, { units })}
               </TableCell>
-              <TableCell className="data-mono text-right">
+              <TableCell className="figures text-right">
                 {formatBytes(r.freeBytes, { units })}
               </TableCell>
-              <TableCell className="data-mono text-right text-fg-subtle">
+              <TableCell className="figures text-right text-fg-subtle">
                 {formatBytes(r.totalBytes, { units })}
               </TableCell>
               <TableCell>

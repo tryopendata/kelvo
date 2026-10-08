@@ -175,8 +175,8 @@ interface CellCtx {
   rateUnits: RateUnits;
 }
 
-const mono = (text: string, className?: string) => (
-  <span className={cn("data-mono", className)}>{text}</span>
+const figure = (text: string, className?: string) => (
+  <span className={cn("figures", className)}>{text}</span>
 );
 
 /** A percent with an inline bar in the module color, the bar full at `max`. */
@@ -196,7 +196,7 @@ function PercentBar({
         fill={fill}
         className="inline-block w-12"
       />
-      <span className="data-mono inline-block w-10 text-right text-foreground">
+      <span className="figures inline-block w-10 text-right text-foreground">
         {num(pct, 1)}
       </span>
     </span>
@@ -219,7 +219,7 @@ const COLUMNS: Record<ProcessColumn, ColumnDef<LiveProcess, CellCtx>> = {
     label: "PID",
     align: "right",
     sortValue: (p) => p.pid,
-    cell: (p) => mono(String(p.pid), "text-muted-foreground"),
+    cell: (p) => figure(String(p.pid), "text-muted-foreground"),
   },
   port: {
     label: "Port",
@@ -228,7 +228,7 @@ const COLUMNS: Record<ProcessColumn, ColumnDef<LiveProcess, CellCtx>> = {
     sortValue: (p) => p.ports?.[0] ?? null,
     cell: (p) => (
       <span
-        className="data-mono text-muted-foreground"
+        className="figures text-muted-foreground"
         title={
           p.ports && p.ports.length > PORTS_SHOWN
             ? p.ports.join(", ")
@@ -255,70 +255,77 @@ const COLUMNS: Record<ProcessColumn, ColumnDef<LiveProcess, CellCtx>> = {
     label: "Memory",
     align: "right",
     sortValue: (p) => p.mem_bytes,
-    cell: (p, c) => mono(formatBytes(p.mem_bytes, { units: c.memUnits })),
+    cell: (p, c) => figure(formatBytes(p.mem_bytes, { units: c.memUnits })),
   },
   compressed: {
     label: "Compressed",
     align: "right",
     sortValue: (p) => p.compressed_bytes,
     cell: (p, c) =>
-      mono(formatBytes(p.compressed_bytes, { units: c.memUnits })),
+      figure(formatBytes(p.compressed_bytes, { units: c.memUnits })),
   },
   threads: {
     label: "Threads",
     align: "right",
     sortValue: (p) => p.threads,
-    cell: (p) => mono(num(p.threads)),
+    cell: (p) => figure(num(p.threads)),
   },
   wakeups: {
     label: "Idle wake-ups",
     align: "right",
     sortValue: (p) => p.idle_wakeups_per_s,
-    cell: (p) => mono(num(p.idle_wakeups_per_s)),
+    cell: (p) => figure(num(p.idle_wakeups_per_s)),
   },
   energy: {
     label: "Energy",
     align: "right",
     sortValue: (p) => p.energy,
-    cell: (p) => mono(num(p.energy, 1)),
+    cell: (p) => figure(num(p.energy, 1)),
   },
   diskRead: {
     label: "Disk read",
     align: "right",
     sortValue: (p) => p.disk_read_bps,
-    cell: (p, c) => mono(formatRate(p.disk_read_bps, { units: c.rateUnits })),
+    cell: (p, c) => figure(formatRate(p.disk_read_bps, { units: c.rateUnits })),
   },
   diskWrite: {
     label: "Disk write",
     align: "right",
     sortValue: (p) => p.disk_write_bps,
-    cell: (p, c) => mono(formatRate(p.disk_write_bps, { units: c.rateUnits })),
+    cell: (p, c) =>
+      figure(formatRate(p.disk_write_bps, { units: c.rateUnits })),
   },
   diskTotal: {
     label: "Disk total",
     align: "right",
     sortValue: diskTotal,
     cell: (p, c) =>
-      mono(formatRate(diskTotal(p), { units: c.rateUnits }), "text-foreground"),
+      figure(
+        formatRate(diskTotal(p), { units: c.rateUnits }),
+        "text-foreground"
+      ),
   },
   netRx: {
     label: "Down",
     align: "right",
     sortValue: (p) => p.net_rx_bps,
-    cell: (p, c) => mono(formatRate(p.net_rx_bps, { units: c.rateUnits })),
+    cell: (p, c) => figure(formatRate(p.net_rx_bps, { units: c.rateUnits })),
   },
   netTx: {
     label: "Up",
     align: "right",
     sortValue: (p) => p.net_tx_bps,
-    cell: (p, c) => mono(formatRate(p.net_tx_bps, { units: c.rateUnits })),
+    cell: (p, c) => figure(formatRate(p.net_tx_bps, { units: c.rateUnits })),
   },
   netTotal: {
     label: "Net total",
     align: "right",
     sortValue: netTotal,
     cell: (p, c) =>
-      mono(formatRate(netTotal(p), { units: c.rateUnits }), "text-foreground"),
+      figure(
+        formatRate(netTotal(p), { units: c.rateUnits }),
+        "text-foreground"
+      ),
   },
   gpu: {
     label: "% GPU",
@@ -333,7 +340,7 @@ const COLUMNS: Record<ProcessColumn, ColumnDef<LiveProcess, CellCtx>> = {
     label: "User",
     align: "left",
     sortValue: (p) => p.user,
-    cell: (p) => mono(p.user, "text-muted-foreground"),
+    cell: (p) => figure(p.user, "text-muted-foreground"),
   },
 };
 

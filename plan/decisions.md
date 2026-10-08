@@ -105,6 +105,7 @@ See [README](README.md) for the roadmap and [architecture.md](architecture.md) f
 | D-096 | macOS checks move to a pre-push hook; hosted CI runs Linux jobs on push | Accepted |
 | D-098 | Network page totals over the chart window, from the stored interface totals | Accepted |
 | D-100 | The engine's process view and usage key carry their own IPC derives | Accepted |
+| D-101 | SF Pro for the UI, SF Pro Rounded for headline figures; no monospace or uppercase labels | Accepted |
 
 ---
 
@@ -3167,3 +3168,29 @@ Status: Accepted. Date: 2026-10-07. Engine types `ProcessView`, `ProcessSort`, `
 
 - Renaming a variant or field of these types is now an IPC change; `make bindings-check` catches it.
 - `kelvo-engine` depends on `serde` and `specta` directly (both already in its graph through `kelvo-schema`).
+
+## D-101: SF Pro for the UI, SF Pro Rounded for headline figures; no monospace or uppercase labels
+
+Status: Accepted. Date: 2026-10-07. Design system typography; `theme.css`, `effects.css`, `FIELD_LABEL`.
+
+### Context
+
+The type came over unchanged from opendata: Inter for text, JetBrains Mono (`.data-mono`) for every figure, and 10 px mono uppercase tracked field labels. That pairing is the stock look of model-generated dashboards, and the popover sits beside Control Center and other menu bar apps set in SF Pro, where it read as a web page. Mono was there for stable digit widths, which tabular figures give in any face.
+
+### Decision
+
+1. SF Pro (`-apple-system`) everywhere in the UI. Inter and its `cv01`/`ss03` features are gone, and the UI self-hosts no font.
+2. `.data-mono` becomes `.figures`: tabular numbers in the UI face.
+3. Headline figures (card values, hero and stat-strip figures, ring centres, lane "now" values) use `.figures-display`: SF Pro Rounded through `ui-rounded`, tabular. Outside WKWebView it falls back to SF Pro.
+4. Field labels are 11 px sentence case with no tracking; ring labels go up 1 px for the same reason. Nothing in the UI is uppercase.
+5. The menu bar image keeps JetBrains Mono NL (D-023), and the tray preview uses it through `--font-tray` to match.
+
+### Consequences
+
+- `@fontsource-variable/inter` is removed. `@fontsource-variable/jetbrains-mono` stays for the tray preview only.
+- The browser dev server and Playwright show headline figures in SF Pro, not Rounded; check Rounded in WKWebView (the app, or a WKWebView snapshot).
+- SF Pro tabular digits are narrower than JetBrains Mono's, so fixed value slots sized for mono have slack. None clip.
+
+### Revisit when
+
+- The menu bar renderer gets fixed-width digit cells: it can move to SF and the JetBrains package can go.

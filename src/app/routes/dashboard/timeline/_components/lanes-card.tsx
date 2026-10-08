@@ -480,13 +480,13 @@ export function LanesCard({
           {ticks.map((t) => (
             <span
               key={t.tMs}
-              className="data-mono absolute top-1.5 -translate-x-1/2 text-[10px] text-fg-faint"
+              className="figures absolute top-1.5 -translate-x-1/2 text-[10px] text-fg-faint"
               style={{ left: `${fractionAt(t.tMs, fromMs, toMs) * 100}%` }}
             >
               {t.label}
             </span>
           ))}
-          <span className="data-mono absolute top-1.5 right-0 text-[10px] text-muted-foreground">
+          <span className="figures absolute top-1.5 right-0 text-[10px] text-muted-foreground">
             {endLabel(span, toMs, live)}
           </span>
         </div>

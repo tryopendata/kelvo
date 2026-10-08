@@ -90,9 +90,8 @@ export function SortHeader<K extends string>(props: SortHeaderProps<K>) {
                   : firstDir,
             });
           }}
-          // `uppercase` again: preflight resets text-transform on buttons.
           className={cn(
-            "w-full px-3 py-2 uppercase outline-none focus-visible:ring-2 focus-visible:ring-ring",
+            "w-full px-3 py-2 outline-none focus-visible:ring-2 focus-visible:ring-ring",
             right ? "text-right" : "text-left",
             dir
               ? "text-foreground"

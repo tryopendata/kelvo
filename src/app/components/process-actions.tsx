@@ -95,7 +95,7 @@ export function ProcessContextMenu({
     <ContextMenuContent className="w-60">
       <ContextMenuLabel className="truncate font-[590] text-[12px]">
         {p.name}
-        <span className="data-mono ml-1.5 font-normal text-muted-foreground">
+        <span className="figures ml-1.5 font-normal text-muted-foreground">
           {p.pid}
         </span>
       </ContextMenuLabel>
@@ -146,14 +146,14 @@ export function QuitDialog({ flow }: { flow: QuitFlow }) {
         force ? (
           <>
             {shown.target.name} (PID{" "}
-            <span className="data-mono">{shown.target.pid}</span>) stops
+            <span className="figures">{shown.target.pid}</span>) stops
             immediately. Unsaved data in this process will be lost.
           </>
         ) : (
           <>
             Kelvo asks {shown.target.name} (PID{" "}
-            <span className="data-mono">{shown.target.pid}</span>) to quit. An
-            app with unsaved changes may ask you to save first.
+            <span className="figures">{shown.target.pid}</span>) to quit. An app
+            with unsaved changes may ask you to save first.
           </>
         )
       }

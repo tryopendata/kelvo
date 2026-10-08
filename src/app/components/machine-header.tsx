@@ -11,7 +11,7 @@ export interface MachineHeaderProps {
   title: string;
   /** "macOS 27.0.1". */
   osVersion: string;
-  /** "27A5320", shown in mono after the version. */
+  /** "27A5320", shown after the version. */
   osBuild?: string;
   /** Two-column spec grid, filled row by row. */
   specs: readonly MachineSpec[];
@@ -108,7 +108,7 @@ export function MachineHeader({
           <span className="font-normal text-[13px] text-muted-foreground">
             {osVersion}
             {osBuild && (
-              <span className="data-mono text-[11px]"> ({osBuild})</span>
+              <span className="figures text-[11px]"> ({osBuild})</span>
             )}
           </span>
         </div>
@@ -118,7 +118,7 @@ export function MachineHeader({
               key={s.label}
               className="flex items-baseline gap-3 border-border-subtle border-b pb-[5px]"
             >
-              <dt className="data-mono w-[72px] shrink-0 text-[10px] text-muted-foreground uppercase tracking-[.08em]">
+              <dt className="w-[72px] shrink-0 font-normal text-[11px] text-muted-foreground">
                 {s.label}
               </dt>
               <dd className="m-0 truncate font-normal text-[12px] text-fg-subtle">

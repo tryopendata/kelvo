@@ -81,7 +81,7 @@ export function PrivacyStep({
           <span className={FIELD_LABEL}>Privacy</span>
           <p className="font-normal text-[13px] text-fg-subtle leading-relaxed">
             Kelvo has no telemetry. All history stays on this Mac, in{" "}
-            <span className="data-mono whitespace-nowrap text-[12px] text-foreground">
+            <span className="figures whitespace-nowrap text-[12px] text-foreground">
               {HISTORY_DIR}
             </span>
             , and {sizeText}.

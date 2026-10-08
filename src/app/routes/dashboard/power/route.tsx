@@ -113,13 +113,13 @@ function PowerSubtitle() {
   return (
     <>
       {onBattery ? "On battery" : "On power adapter"} ·{" "}
-      <span className="data-mono">{formatWatts(v["power.system"])}</span> system
+      <span className="figures">{formatWatts(v["power.system"])}</span> system
       draw
       {onBattery && remaining !== null && (
         <>
           {" "}
           ·{" "}
-          <span className="data-mono">
+          <span className="figures">
             {formatHoursMinutes(remaining * 60_000)}
           </span>{" "}
           remaining

@@ -27,7 +27,7 @@ export function ProcessList({ rows, ariaLabel }: ProcessListProps) {
           <span className="min-w-0 flex-1 truncate font-normal text-fg-subtle">
             {row.name}
           </span>
-          <span className="data-mono text-[11px]">{row.value}</span>
+          <span className="figures text-[11px]">{row.value}</span>
         </li>
       ))}
     </ul>

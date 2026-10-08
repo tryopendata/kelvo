@@ -36,10 +36,10 @@ export default function CpuRoute() {
             counts && (
               <>
                 {info.chip ?? "Unknown chip"} ·{" "}
-                <span className="data-mono">{counts.performance}</span>{" "}
+                <span className="figures">{counts.performance}</span>{" "}
                 performance +{" "}
-                <span className="data-mono">{counts.efficiency}</span>{" "}
-                efficiency cores
+                <span className="figures">{counts.efficiency}</span> efficiency
+                cores
               </>
             )
           }
@@ -80,8 +80,8 @@ function CpuFootnote({ coreCount }: { coreCount: number | null }) {
       Average % of one core over the sampled time
       {coreCount !== null && (
         <>
-          ; <span className="data-mono">{coreCount}</span> cores ={" "}
-          <span className="data-mono">{coreCount * 100}%</span>
+          ; <span className="figures">{coreCount}</span> cores ={" "}
+          <span className="figures">{coreCount * 100}%</span>
         </>
       )}
       . System and other is the rest of the CPU total: other users&apos; and

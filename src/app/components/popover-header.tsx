@@ -46,7 +46,7 @@ export function PopoverHeader({
         <h1 className="m-0 font-[590] text-[13px] tracking-[-0.01em]">Kelvo</h1>
         <span className="truncate font-normal text-[11px] text-muted-foreground">
           {hostName} · up{" "}
-          <span className="data-mono">{formatDuration(uptimeMs)}</span>
+          <span className="figures">{formatDuration(uptimeMs)}</span>
         </span>
       </div>
       {performance === "off" ? (

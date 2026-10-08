@@ -69,10 +69,10 @@ export function LaneLabel({ def, sub, units, onShowTable }: LaneLabelProps) {
           <TableIcon className="size-3" />
         </button>
       </div>
-      <span className="data-mono text-[16px] tracking-[-0.01em]">
+      <span className="figures-display text-[16px] tracking-[-0.01em]">
         {formatMetric(NOW_METRIC[def.id], now, units)}
       </span>
-      <span className="data-mono truncate text-[10px] text-muted-foreground">
+      <span className="figures truncate text-[10px] text-muted-foreground">
         {sub}
       </span>
     </div>

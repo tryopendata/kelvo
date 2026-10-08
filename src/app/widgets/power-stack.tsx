@@ -192,13 +192,13 @@ export function PowerStack({
         )}
         <span
           aria-hidden
-          className="data-mono absolute -top-1.5 -left-6.5 text-[10px] text-fg-faint"
+          className="figures absolute -top-1.5 -left-6.5 text-[10px] text-fg-faint"
         >
           {`${yMax}W`}
         </span>
         <span
           aria-hidden
-          className="data-mono absolute -left-6.5 -translate-y-1/2 text-[10px] text-fg-faint"
+          className="figures absolute -left-6.5 -translate-y-1/2 text-[10px] text-fg-faint"
           style={{ top: height / 2 }}
         >
           {yMax / 2}

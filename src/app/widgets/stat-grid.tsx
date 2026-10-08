@@ -19,7 +19,7 @@ export interface StatGridProps {
   accent?: Accent;
 }
 
-/** Two to four mono KPI cells with field labels (GPU, battery, power). */
+/** Two to four KPI cells with field labels (GPU, battery, power). */
 export function StatGrid({ items, accent }: StatGridProps) {
   return (
     <dl
@@ -37,7 +37,7 @@ export function StatGrid({ items, accent }: StatGridProps) {
           </dt>
           <dd
             className={cn(
-              "data-mono text-[12px]",
+              "figures text-[12px]",
               item.muted && "text-muted-foreground"
             )}
           >

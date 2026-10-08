@@ -56,7 +56,7 @@ export function BatteryHistoryBars({
         <span
           key={label}
           aria-hidden
-          className="data-mono absolute left-0 text-[10px] text-fg-faint"
+          className="figures absolute left-0 text-[10px] text-fg-faint"
           style={{ top: top as number }}
         >
           {label}
@@ -98,7 +98,7 @@ export function BatteryHistoryBars({
         {hours.map((h, i) => (
           <span
             key={h.tsMs}
-            className="data-mono text-center text-[10px] text-fg-faint"
+            className="figures text-center text-[10px] text-fg-faint"
           >
             {i % 3 === 0 ? hourLabel(h.tsMs) : ""}
           </span>

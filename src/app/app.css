@@ -1,11 +1,10 @@
 @import "tailwindcss";
+/* JetBrains Mono for the tray preview only (`--font-tray`), matching the
+   face Rust draws the menu bar in. */
+@import "@fontsource-variable/jetbrains-mono/wght.css";
 /* Enter/exit keyframes for the shadcn primitives. Components set
    `duration-(--motion-fast)`, so these are instant under reduced motion. */
 @import "tw-animate-css";
-
-/* Self-hosted variable fonts (woff2, bundled by Vite). */
-@import "@fontsource-variable/inter/wght.css";
-@import "@fontsource-variable/jetbrains-mono/wght.css";
 
 /* Core styles */
 @import "./styles/theme.css";

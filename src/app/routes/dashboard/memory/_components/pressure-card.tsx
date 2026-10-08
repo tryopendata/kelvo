@@ -70,7 +70,7 @@ export function PressureCard({ windowMs }: { windowMs: number }) {
                 Pressure: {state}
               </Swap>
             )}
-            <span className="data-mono text-[13px]">
+            <span className="figures text-[13px]">
               {formatPercent(pressure)}
               {state && (
                 <span className="text-[11px] text-muted-foreground">

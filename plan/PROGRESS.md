@@ -160,6 +160,14 @@ Measured after the commit: `make bench` tray-only 0.672% (from 1.21 to 1.38 earl
 
 Open: a parallel `make bench` against the pre-D-094 build to confirm the drop, then phases 2 to 5 of the plan (tray subview spike, dashboard-open gate, Overview cost, ratchet).
 
+### 2026-10-07 (type: SF Pro, Rounded headline figures)
+
+The UI type moved off the opendata pairing (D-101). Text is SF Pro (`-apple-system`); Inter and its `cv01`/`ss03` features are gone. `.data-mono` became `.figures` (tabular numbers in SF Pro) through a scripted rename, and headline figures (card values, hero and stat-strip figures, ring centres, lane "now" values) use `.figures-display`, SF Pro Rounded via `ui-rounded`. Field labels are 11 px sentence case with no tracking (`FIELD_LABEL`), ring labels 1 px larger, and table headers lost `uppercase`; nothing in the UI is uppercase or monospace. The tray preview keeps JetBrains Mono through `--font-tray` to match the Rust-drawn menu bar (D-023). `@fontsource-variable/inter` is removed. `design-system.md` Typography, the styling rule and the slop skill say so.
+
+Verified: `bun run check` (Vitest 883), `bun run test:e2e`; screenshots in a WKWebView of the popover, Overview, CPU, Processes, Network, Timeline, Settings and onboarding, Rounded confirmed on the headline figures (the browser dev server and Playwright fall back to SF Pro there).
+
+Open: the menu bar itself is still JetBrains Mono. Moving it to SF needs fixed-width digit cells in `tray/render.rs` (`ab_glyph` applies no `tnum`), and then the JetBrains package can go.
+
 ### 2026-10-07 (e2e fixes)
 
 Onboarding step 1 overflowed the fixed 820 x 566 window by 35 px since the Kelvo mark got its own line (6c2a8a5), so "Values only" ran under the footer and `timeline-settings-onboarding.spec.ts` failed in both engines. The mark now sits beside the title, as in the popover header. `shell-screens.spec.ts` "a sidebar tab opens its page scrolled to the top" was flaky because its wait matched Overview's Network card heading before navigation finished; it now waits for the page title. 40 of 40 repeats pass, and it fails when the scroll reset is removed.

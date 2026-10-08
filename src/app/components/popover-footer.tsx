@@ -29,7 +29,7 @@ export function PopoverFooter({
         Activity
       </Button>
       <span className="flex-1" />
-      <span className="data-mono whitespace-nowrap text-[10px] text-muted-foreground">
+      <span className="figures whitespace-nowrap text-[10px] text-muted-foreground">
         kelvo {formatPercent(selfCpuPct, { decimals: 1 })} cpu
       </span>
     </footer>

@@ -175,7 +175,7 @@ export function MirrorHover(props: MirrorHoverProps) {
         style={accentVars(accent)}
       >
         <div className="flex items-baseline justify-between gap-2">
-          <span data-field="span" className="data-mono text-[12px]" />
+          <span data-field="span" className="figures text-[12px]" />
           <span data-field="res" className={FIELD_LABEL} />
         </div>
         <span
@@ -192,7 +192,7 @@ export function MirrorHover(props: MirrorHoverProps) {
             <div key={label} className="flex items-center gap-2 text-[12px]">
               <SeriesSwatch color={rampColor(step)} />
               <span className="flex-1 font-normal text-fg-subtle">{label}</span>
-              <span data-field={field} className="data-mono" />
+              <span data-field={field} className="figures" />
             </div>
           ))}
         </div>

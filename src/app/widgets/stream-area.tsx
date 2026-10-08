@@ -239,7 +239,7 @@ export function StreamArea({
           <span
             key={t.label}
             aria-hidden
-            className="data-mono absolute -left-8 -translate-y-1/2 text-[10px] text-fg-faint"
+            className="figures absolute -left-8 -translate-y-1/2 text-[10px] text-fg-faint"
             style={{ top: y(t.value) }}
           >
             {t.label}
@@ -248,7 +248,7 @@ export function StreamArea({
         {ceilingLabel && (
           <span
             aria-hidden
-            className="data-mono absolute -top-0.5 left-0 text-[9px] text-fg-faint"
+            className="figures absolute -top-0.5 left-0 text-[9px] text-fg-faint"
           >
             {ceilingLabel}
           </span>
@@ -256,7 +256,7 @@ export function StreamArea({
         {windowLabel && (
           <span
             aria-hidden
-            className="data-mono absolute right-0 -bottom-3.5 text-[9px] text-fg-faint"
+            className="figures absolute right-0 -bottom-3.5 text-[9px] text-fg-faint"
           >
             {windowLabel}
           </span>

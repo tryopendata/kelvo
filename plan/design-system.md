@@ -11,7 +11,7 @@ Token values live in `src/app/styles/theme.css`. This doc refers to tokens by na
 | opendata design spec | [`DESIGN.md`](https://github.com/tryopendata/opendata/blob/main/DESIGN.md) | Surfaces, type rules, radius scale, motion (§10) |
 | opendata tokens | [`shared/styles/theme.css`](https://github.com/tryopendata/opendata/blob/main/shared/styles/theme.css) | `@theme` structure, shadcn token names, dark custom variant |
 | opendata card glow | [`shared/styles/tool-cards.css`](https://github.com/tryopendata/opendata/blob/main/shared/styles/tool-cards.css) (`.ask-accent`, `.ask-accent--quiet`, `.ask-accent-tile`) | The corner-glow card |
-| opendata figures | [`shared/styles/effects.css`](https://github.com/tryopendata/opendata/blob/main/shared/styles/effects.css) (`.data-mono`) | Mono tabular figures |
+| opendata figures | [`shared/styles/effects.css`](https://github.com/tryopendata/opendata/blob/main/shared/styles/effects.css) (`.data-mono`) | Replaced by SF tabular figures (D-101) |
 | opendata anti-slop rules | [`.claude/skills/frontend-design-slop/SKILL.md`](https://github.com/tryopendata/opendata/blob/main/.claude/skills/frontend-design-slop/SKILL.md) | The review checklist at the end of this doc |
 
 ## Ported from opendata
@@ -21,10 +21,10 @@ Token values live in `src/app/styles/theme.css`. This doc refers to tokens by na
 | `@custom-variant dark (&:where(.dark, .dark *))` and the `@theme static` block | `shared/styles/theme.css` | `src/app/styles/theme.css` | Provider colors, `--od-*` aliases, Satoshi and Source Serif dropped. Kelvo tokens added |
 | shadcn token names (`background`, `card`, `popover`, `primary`, `border`, `input`, `ring`, `muted-foreground`, `destructive`) | `shared/styles/theme.css` | same | Dark `muted-foreground` changes to `#8a8f98`, light `surface-raised` becomes `--color-raised: #e4e4e7` |
 | `.ask-accent` corner glow, `--quiet` variant, accent tile | `shared/styles/tool-cards.css` | `src/app/styles/cards.css` as `.vt-card`, `.vt-card--chart` | Origin becomes a variable (`--o`), hover raises the tint to 22%, `@property --g` registered so the tint can transition |
-| `.data-mono` | `shared/styles/effects.css` | `src/app/styles/effects.css` | Unchanged |
+| `.data-mono` | `shared/styles/effects.css` | `src/app/styles/effects.css` | Replaced by `.figures` and `.figures-display` (D-101) |
 | Motion tokens (150 ms, 300 ms, `cubic-bezier(0.16,1,0.3,1)`) and the reduced-motion wrapper rule | `DESIGN.md` §10, `tool-cards.css` | `src/app/styles/motion.css` as `--motion-fast`, `--motion-entry`, `--ease-out` | The 500 ms word fade is not ported; Kelvo has no streaming prose |
 | Radius scale (2, 4, 6, 8, 12, 22, full) | `DESIGN.md` §5 | `theme.css` `--radius-*` | 1 px added for dense heatmap cells |
-| Type rules: Inter with `cv01` and `ss03`, weights 400/510/590, never 700 | `DESIGN.md` §3 | `theme.css`, `html` rule | Sizes follow Kelvo's app scale, not opendata's marketing scale |
+| Type rules: weights 400/510/590, never 700 | `DESIGN.md` §3 | `theme.css`, `html` rule | The face is SF Pro, not Inter (D-101). Sizes follow Kelvo's app scale, not opendata's marketing scale |
 | Luminance stepping for depth, no drop shadows on dark | `DESIGN.md` §6 | applies everywhere | Unchanged |
 | Stable keys, one flat keyed array, `inert` on collapsed regions | `DESIGN.md` §10 | React rendering rules | Unchanged |
 
@@ -94,26 +94,30 @@ The Power accent is `#fbbf24`, the temperature series is `#f59e0b`, and opendata
 
 ## Typography
 
-Inter Variable with `cv01` and `ss03` on every element. Root weight 510. Figures use `.data-mono` (JetBrains Mono, `tabular-nums`) so digits do not shift as values update each second. Nothing outside this scale should appear.
+SF Pro, the macOS system face, on every element (`--font-sans`: `-apple-system`), so the popover and dashboard read as part of the Mac beside Control Center and Activity Monitor. Nothing is self-hosted for the UI. Root weight 510. Every figure is `.figures` (`tabular-nums`) so digits do not shift as values update each second. Headline figures are `.figures-display`: SF Pro Rounded (`--font-rounded`: `ui-rounded`) with tabular figures. Rounded is reserved for those few large numbers, which gives each card one figure with its own voice; everything else stays SF Pro. There is no monospace in the UI (D-101). Outside WKWebView `ui-rounded` falls back to SF Pro, so the browser dev server shows headline figures unrounded. Nothing outside this scale should appear.
 
 | Role | Family | Size | Weight | Tracking | Example in mocks |
 |---|---|---|---|---|---|
-| Onboarding title | Inter | 28 px | 590 | -0.022em | "Set up Kelvo" (11) |
-| Page title | Inter | 22 px | 590 | -0.022em | "Overview", "CPU", "Timeline" (04, 06, 07, 08, 13) |
-| Machine name | Inter | 20 px | 590 | -0.022em | "MacBook Pro 14-inch (M4 Pro, 2024)" (04) |
-| Hero figure | Mono | 32 px | 400 | -0.022em | CPU total "18%" (07) |
-| Large figure | Mono | 16 to 18 px | 400 | -0.01em to -0.02em | Lane "now" values (06), cluster GHz rings (07), network rates in popover (02) |
-| Card figure | Mono | 15 px | 400 | normal | Popover card headline values (14), CPU stat strip (07) |
-| Ring center value | Mono | 14 px (Overview), 17 px (Power rings) | 400 | -0.02em | "18%", "14.8" (04, 08) |
-| Composer title, popover app title | Inter | 16 px, 13 px | 590 | -0.01em | "Widgets" (09), "Kelvo" (14) |
-| Card title | Inter | 13 px (dashboard), 12 px (popover) | 590 | normal | "CPU", "Per-core load, last 10 minutes" |
-| Body and row text | Inter | 12 to 13 px | 400 or 510 | normal | Process names, settings rows |
-| Secondary text | Inter | 11 to 12 px | 400 | normal | Card subtitles ("10P + 4E"), page subtitles, `--color-muted-foreground` |
-| Field label | Mono | 10 px | 400 | 0.08em, uppercase | "P-CLUSTER", "FREQ", table headers, "MODULE" |
-| Axis tick, chart corner label | Mono | 9 to 10 px | 400 | normal | "-60s", "now", "40%", heatmap hour labels |
-| Initials chip | Mono | 9 px | 400 | normal | Process initial in a 16 px square, 4 px radius, `--color-raised` |
+| Onboarding title | SF Pro | 28 px | 590 | -0.022em | "Set up Kelvo" (11) |
+| Page title | SF Pro | 22 px | 590 | -0.022em | "Overview", "CPU", "Timeline" (04, 06, 07, 08, 13) |
+| Machine name | SF Pro | 20 px | 590 | -0.022em | "MacBook Pro 14-inch (M4 Pro, 2024)" (04) |
+| Hero figure | SF Pro Rounded, tabular | 32 px | 400 | -0.022em | CPU total "18%" (07) |
+| Large figure | SF Pro Rounded, tabular | 16 to 18 px | 400 | -0.01em to -0.02em | Lane "now" values (06), cluster GHz rings (07) |
+| Card figure | SF Pro Rounded, tabular | 15 px | 400 | normal | Popover card headline values (14), CPU stat strip (07) |
+| Ring center value | SF Pro Rounded, tabular | 14 px (Overview), 17 px (Power rings) | 400 | -0.02em | "18%", "14.8" (04, 08) |
+| Composer title, popover app title | SF Pro | 16 px, 13 px | 590 | -0.01em | "Widgets" (09), "Kelvo" (14) |
+| Card title | SF Pro | 13 px (dashboard), 12 px (popover) | 590 | normal | "CPU", "Per-core load, last 10 minutes" |
+| Body and row text | SF Pro | 12 to 13 px | 400 or 510 | normal | Process names, settings rows |
+| Secondary text | SF Pro | 11 to 12 px | 400 | normal | Card subtitles ("10P + 4E"), page subtitles, `--color-muted-foreground` |
+| Value in a row, stat cell or table | SF Pro, tabular | 11 to 13 px | 400 or 510 | normal | "3.9 GB", "1.1 GHz", PIDs, IP addresses |
+| Field label | SF Pro | 11 px | 400 | normal, sentence case | "P-cluster", "Freq", table headers, "Module" |
+| Ring label | SF Pro | 9 to 10 px | 400 | normal, sentence case | "Load", "GB used" |
+| Axis tick, chart corner label | SF Pro, tabular | 9 to 10 px | 400 | normal | "-60s", "now", "40%", heatmap hour labels |
+| Initials chip | SF Pro | 9 px | 400 | normal | Process initial in a 16 px square, 4 px radius, `--color-raised` |
 
-Uppercase appears only on field labels (column headers, KPI labels). It never labels a section; section titles are sentence case.
+Nothing in the UI is uppercase. Field labels are sentence case, muted and one size up from the old uppercase labels, and their position next to a value is what marks them as labels. Section titles are sentence case at card-title size.
+
+The menu bar image is the one exception: Rust draws it in bundled JetBrains Mono NL (D-023), and the tray preview in Settings and onboarding uses the same face (`--font-tray`) so it matches. Moving the menu bar to SF needs fixed-width digit cells in the renderer, since `ab_glyph` does not apply the `tnum` feature.
 
 ## Layout and spacing
 
@@ -153,7 +157,7 @@ Each Overview card has an `origin`: CPU `0% 0%`, GPU `100% 0%`, Memory `0% 100%`
 
 ### Card header
 
-Left: an 8 px square swatch in the module accent (2 px radius), then the title at card-title size. Right: either the headline value in mono or a muted subtitle (the Overview uses "10P + 4E", "20-core"). One of the two, not both. Popover cards put the headline value right.
+Left: an 8 px square swatch in the module accent (2 px radius), then the title at card-title size. Right: either the headline value (`.figures-display`) or a muted subtitle (the Overview uses "10P + 4E", "20-core"). One of the two, not both. Popover cards put the headline value right.
 
 ## Motion
 
@@ -162,7 +166,7 @@ Motion tells the reader what changed, and lets a surface settle into place when 
 | Change | Treatment | Duration |
 |---|---|---|
 | A new sample on a streaming chart | Append the point and scroll the whole path with `transform: translateX()` on a wrapping `<g>`. The path `d` is rewritten once per tick, never tweened | Scroll eases over 150 ms (`--ease-tick`), or jumps when motion is reduced |
-| A headline number changes (ring centre, stat-strip figures) | Counts to the new value when it moved 10% or more or changed unit: "10 GB" counts down through the megabytes to "100 MB". Smaller moves, other numbers and a change to or from "—" are replaced in place. No per-digit roll, never a count up from zero on mount. Mono tabular figures keep width stable | 450 ms, ease-out cubic; instant in Performance mode (D-087, D-088) |
+| A headline number changes (ring centre, stat-strip figures) | Counts to the new value when it moved 10% or more or changed unit: "10 GB" counts down through the megabytes to "100 MB". Smaller moves, other numbers and a change to or from "—" are replaced in place. No per-digit roll, never a count up from zero on mount. Tabular figures keep width stable | 450 ms, ease-out cubic; instant in Performance mode (D-087, D-088) |
 | A value changes state (paused to live, pressure turning critical) | The glyph and word remount and fade in | 150 ms |
 | A bar, ring or core tile changes value | `transform: scaleX()` on the bar fill, `stroke-dashoffset` on the ring, background alpha on tiles | 150 ms, `--ease-tick` |
 | A dashboard page opens (navigation, first open) | The header, then each row, fades in and rises 3 px; Overview's cards one by one. 30 ms apart, capped at 8 steps | 280 ms each, once per mount |
@@ -191,10 +195,10 @@ These apply to every live and history chart, in every surface.
 |---|---|
 | Gridlines | 1 px `--color-grid`, `vector-effect: non-scaling-stroke`. Horizontal only, at the tick values. No vertical gridlines on streaming charts |
 | Baseline | 1 px `--color-axis` at y = 0 |
-| Axis labels | Mono 9 to 10 px, `--color-fg-faint` for repeat labels (ticks) and `--color-muted-foreground` when the label is the only statement of scale. Right edge labelled "now" on any chart that ends at the present |
+| Axis labels | SF Pro tabular 9 to 10 px, `--color-fg-faint` for repeat labels (ticks) and `--color-muted-foreground` when the label is the only statement of scale. Right edge labelled "now" on any chart that ends at the present |
 | Y scale | Fixed domain for bounded metrics (0 to 100% for load, 20 to 110 °C for temperature). Autoscaled metrics (network, power, popover CPU at 40%) snap the ceiling to a nice step and only shrink after 60 s below the next step down, so the scale does not jitter each tick. The current ceiling is always labelled (the "40%" corner label on the popover CPU chart) |
 | Lines and areas | 1.5 px line in the accent (ink in light), area fill a vertical gradient of the accent from 40% to 0 |
-| Figures | Every number drawn in or next to a chart uses `.data-mono` |
+| Figures | Every number drawn in or next to a chart uses `.figures`; the card's headline number uses `.figures-display` |
 | Gaps | A missing sample, a sleep period or a series that disappeared is a gap. Gaps are drawn as a hatched band (`repeating-linear-gradient(135deg, …)` in `--color-grid`, 1 px stripes at 7 px) with a label ("Asleep 11:02 to 11:31, not interpolated"). The line breaks at the gap: no segment, no area, no interpolation across it. A hollow dot marks each edge |
 | Min/max envelopes | History charts at a zoom where one pixel covers several buckets draw the avg line plus a 20% min/max band, so a 1 s spike is not hidden by averaging |
 | Color is never the only encoding | Every series has a text label next to it or in a legend with its value. Mirrored network bars label up and down with arrows and words. Stacked power uses position plus a hatch for ANE. Heatmap cells carry a tooltip and an accessible name with the value |
@@ -232,7 +236,7 @@ The status item's highlighted state (a 22 pt tall pill with 5 pt radius) is nati
 
 From opendata's `frontend-design-slop` skill, applied to Kelvo.
 
-- No section kickers. Field labels in mono uppercase are fine (column headers, KPI labels, the "MODULES" and "MENU BAR STYLE" control-group labels in onboarding). A label above a heading that restates it is not.
+- No section kickers. Sentence-case field labels are fine (column headers, KPI labels, the "Modules" and "Menu bar style" control-group labels in onboarding). No uppercase tracked labels anywhere (D-101). A label above a heading that restates it is not.
 - No subtitle that restates the title. Page subtitles carry facts: "Apple M4 Pro · 10 performance + 4 efficiency cores", "On battery · 14.8 W system draw · 6:12 remaining".
 - The 25% zoom test applies to every page. Each page has one dominant region: the stacked lanes on Timeline, the total chart on CPU, the module grid on Overview.
 - The Overview's six identical module cards are a real grid of comparable modules, which is the legitimate case. Do not add a seventh card of a different kind to fill a row.
@@ -289,7 +293,7 @@ Components under `src/app/widgets/` are render-only. They take plain props and c
 | `InlineBar` | Label, value, horizontal bar | yes | `{ label; value: string; fraction: number; accent; rampStep?: 1..4 }` |
 | `StackBar` | Composition bar with legend | yes | `{ segments: { key; label; value: string; fraction; step: 1..4 \| 'hatch' }[]; accent; showLegend }` |
 | `Legend` | Swatch, label, value rows | yes | `{ items: { label; value: string; step: 1..4 \| 'hatch' }[]; accent; columns: 1 \| 2 }` |
-| `StatGrid` | Two or three mono KPI cells with field labels | yes | `{ items: { label; value: string; unit?: string }[] }` |
+| `StatGrid` | Two or three tabular KPI cells with field labels | yes | `{ items: { label; value: string; unit?: string }[] }` |
 | `StatStrip` | Page-level KPI strip above a chart | yes | `{ hero?: { value; unit }; items: { label; value; muted?: boolean; swatch?: step }[] }` |
 | `StreamArea` | Live area or line chart, scrolls with translateX | yes | `{ series: { values: (number \| null)[]; step: 1..4 }[]; tEndMs: number; intervalMs: number; yMax: number \| 'auto'; accent; height; ariaLabel }` |
 | `MirrorBars` | Up bars above a baseline, down below | yes | `{ up: (number \| null)[]; down: (number \| null)[]; intervalMs; accent; ariaLabel }` |
@@ -303,7 +307,7 @@ Components under `src/app/widgets/` are render-only. They take plain props and c
 | `ProcessList` | Compact top-5: initial chip, name, value | yes | `{ rows: { initial; name; value: string }[] }` |
 | `ProcessTable` | Sortable, virtualized process table | no | `{ rows: ProcessRow[]; columns: ColumnId[]; sort: { by; dir }; onSort; onSelect? }` |
 | `InterfaceTable`, `VolumeTable` | Network interfaces and disk volumes | no | `{ rows }` |
-| `InitialChip` | 16 px mono initial for a process | yes | `{ text: string }` |
+| `InitialChip` | 16 px initial for a process | yes | `{ text: string }` |
 | `TimelineLanes` | Lane stack with shared x axis, crosshair and gap bands | no | `{ range: { fromMs; toMs }; tier; lanes: TimelineLaneProps[]; gaps: { fromMs; toMs; kind }[]; annotations; onCursor }` |
 | `TimelineLane` | One metric's line and area with label column | no | `{ metric; label; nowValue; sub; color; points: { tMs; min; avg; max }[]; domain; mirrored?: boolean }` |
 | `CrosshairTooltip` | Values at cursor plus top processes then | no | `{ tMs; resolutionLabel; rows: { label; value; color }[]; processes: { initial; name; value }[] }` |

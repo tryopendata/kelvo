@@ -69,7 +69,7 @@ export function PowerStackCard({ windowMs }: { windowMs: number }) {
       origin="tr"
       title={`Power by component, last ${windowWords(windowMs)}`}
       aside={
-        <span className="data-mono text-[13px]">
+        <span className="figures text-[13px]">
           {formatWatts(now["power.package"])}{" "}
           <span className="text-[11px] text-muted-foreground">package</span>
         </span>

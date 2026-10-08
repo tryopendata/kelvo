@@ -74,8 +74,8 @@ export function LaneTableDialog({
         <DialogHeader>
           <DialogTitle>{lane?.def.label} as a table</DialogTitle>
           <DialogDescription>
-            <span className="data-mono">{dayClock(fromMs)}</span> to{" "}
-            <span className="data-mono">{dayClock(toMs)}</span>, one row per
+            <span className="figures">{dayClock(fromMs)}</span> to{" "}
+            <span className="figures">{dayClock(toMs)}</span>, one row per
             bucket
           </DialogDescription>
         </DialogHeader>
@@ -107,7 +107,7 @@ export function LaneTableDialog({
                     key={`gap-${row.t}`}
                     className="border-border-subtle border-t"
                   >
-                    <td className="data-mono py-1">
+                    <td className="figures py-1">
                       {formatClock(row.band.fromMs)}
                     </td>
                     <td
@@ -119,13 +119,13 @@ export function LaneTableDialog({
                   </tr>
                 ) : (
                   <tr key={row.t} className="border-border-subtle border-t">
-                    <td className="data-mono py-1">{formatClock(row.t)}</td>
+                    <td className="figures py-1">{formatClock(row.t)}</td>
                     {metrics.flatMap((m, i) => {
                       const b = row.values[i];
                       return (["min", "avg", "max"] as const).map((stat) => (
                         <td
                           key={`${m.metric}-${stat}`}
-                          className="data-mono py-1 text-right"
+                          className="figures py-1 text-right"
                         >
                           {formatMetric(m.metric, b?.[stat], units)}
                         </td>

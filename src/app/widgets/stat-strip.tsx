@@ -37,7 +37,7 @@ export function StatStrip({ hero, items, accent }: StatStripProps) {
       {hero && (
         <div className="flex flex-col gap-0.5">
           <dt className={FIELD_LABEL}>{hero.label}</dt>
-          <dd className="data-mono text-[32px] leading-none tracking-[-0.022em]">
+          <dd className="figures-display text-[32px] leading-none tracking-[-0.022em]">
             <NumberTicker text={hero.value} unit={hero.unit} />
             {hero.unit && (
               <span className="text-[15px] text-muted-foreground">
@@ -56,7 +56,7 @@ export function StatStrip({ hero, items, accent }: StatStripProps) {
           </dt>
           <dd
             className={cn(
-              "data-mono text-[15px]",
+              "figures-display text-[15px]",
               item.muted && "text-muted-foreground"
             )}
           >

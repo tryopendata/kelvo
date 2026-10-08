@@ -168,7 +168,7 @@ function Stacked({ text }: { text: string }) {
   return (
     <span
       aria-hidden
-      className="inline-flex w-1.5 flex-col text-center font-mono text-[6px] leading-[6px]"
+      className="inline-flex w-1.5 flex-col text-center font-tray text-[6px] leading-[6px]"
     >
       {text.split("").map((c, i) => (
         // biome-ignore lint/suspicious/noArrayIndexKey: characters of a fixed label
@@ -211,7 +211,7 @@ export function TrayPreview({
       {style === "combined" ? (
         <>
           <CombinedIcon values={values} />
-          <span className="data-mono text-[11px]">
+          <span className="font-tray text-[11px]">
             {formatTemperature(values.temp, { compact: true })}
           </span>
         </>
@@ -225,7 +225,7 @@ export function TrayPreview({
           <span className="inline-flex items-center gap-1">
             <Stacked text="MEM" />
             <GaugeIcon pct={values.mem} />
-            <span className="data-mono text-[11px]">
+            <span className="font-tray text-[11px]">
               {formatPercent(values.mem)}
             </span>
           </span>
@@ -233,25 +233,25 @@ export function TrayPreview({
       ) : (
         <>
           <Stacked text="CPU" />
-          <span className="data-mono text-[11px]">
+          <span className="font-tray text-[11px]">
             {formatPercent(values.cpu)}
           </span>
           <Stacked text="GPU" />
-          <span className="data-mono text-[11px]">
+          <span className="font-tray text-[11px]">
             {formatPercent(values.gpu)}
           </span>
           <Stacked text="MEM" />
-          <span className="data-mono text-[11px]">
+          <span className="font-tray text-[11px]">
             {formatPercent(values.mem)}
           </span>
           <Stacked text="SOC" />
-          <span className="data-mono text-[11px]">
+          <span className="font-tray text-[11px]">
             {formatTemperature(values.temp, { compact: true })}
           </span>
           {values.power !== undefined && (
             <>
               <Stacked text="PWR" />
-              <span className="data-mono text-[11px]">
+              <span className="font-tray text-[11px]">
                 {formatWatts(values.power).replace(" ", "")}
               </span>
             </>

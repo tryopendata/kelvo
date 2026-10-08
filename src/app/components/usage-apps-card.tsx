@@ -188,18 +188,18 @@ function UsageBody({
       {coverage.kind === "partial" && (
         <AppsNote>
           Kelvo started counting at{" "}
-          <span className="data-mono">
+          <span className="figures">
             {formatClockSeconds(coverage.sinceMs)}
           </span>
           , so these figures cover{" "}
-          <span className="data-mono">{formatSpan(coverage.coveredMs)}</span>.
+          <span className="figures">{formatSpan(coverage.coveredMs)}</span>.
         </AppsNote>
       )}
       {coverage.kind === "gaps" && (
         <AppsNote>
           Processes were sampled for{" "}
-          <span className="data-mono">{formatSpan(coverage.coveredMs)}</span> of{" "}
-          <span className="data-mono">{formatSpan(coverage.spanMs)}</span> (the
+          <span className="figures">{formatSpan(coverage.coveredMs)}</span> of{" "}
+          <span className="figures">{formatSpan(coverage.spanMs)}</span> (the
           Mac slept or sampling paused). Averages are over the sampled time.
         </AppsNote>
       )}
@@ -295,8 +295,8 @@ function GpuShortfallNote({ data }: { data: UsageByApp }) {
   return (
     <AppsNote>
       GPU time was measured for{" "}
-      <span className="data-mono">{formatSpan(short.gpuMs)}</span> of the{" "}
-      <span className="data-mono">{formatSpan(short.coveredMs)}</span> sampled.
+      <span className="figures">{formatSpan(short.gpuMs)}</span> of the{" "}
+      <span className="figures">{formatSpan(short.coveredMs)}</span> sampled.
       Averages are over the measured time.
     </AppsNote>
   );
@@ -311,7 +311,7 @@ function Unrecorded({ sinceMs }: { sinceMs: number | null }) {
       ) : (
         <>
           No process data · Kelvo started counting at{" "}
-          <span className="data-mono">{formatClockSeconds(sinceMs)}</span>
+          <span className="figures">{formatClockSeconds(sinceMs)}</span>
         </>
       )}
     </UnrecordedRange>
@@ -332,7 +332,7 @@ function FigureCells({
       key={c.label}
       className={cn(
         APP_CELL,
-        "data-mono text-right",
+        "figures text-right",
         strong && c.ranked && "text-foreground"
       )}
     >
@@ -440,7 +440,7 @@ function ProcessRow({
       <TableCell className={cn(APP_CELL, "pl-[52px]")}>
         <span className="inline-flex min-w-0 items-baseline gap-2">
           <span className="truncate">{p.name}</span>
-          <span className="data-mono text-[11px] text-muted-foreground">
+          <span className="figures text-[11px] text-muted-foreground">
             {p.pid}
           </span>
         </span>

@@ -146,7 +146,7 @@ export function WidgetsChartsSection() {
           title="Power by component, last 10 minutes"
           accent="power"
           aside={
-            <span className="data-mono text-[13px]">
+            <span className="figures text-[13px]">
               10.4 W{" "}
               <span className="text-[11px] text-muted-foreground">package</span>
             </span>

@@ -136,7 +136,7 @@ export function ShareCell({
           fill={muted ? "var(--color-fg-faint)" : "var(--a)"}
           className="inline-block w-10"
         />
-        <span className="data-mono inline-block w-11 text-right">
+        <span className="figures inline-block w-11 text-right">
           {formatPercent(share, { decimals: 1 })}
         </span>
       </span>

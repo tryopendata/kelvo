@@ -14,7 +14,7 @@ export function CollectingNote({
   intervalMs: number;
 }) {
   return (
-    <span className="data-mono text-[11px] text-muted-foreground">
+    <span className="figures text-[11px] text-muted-foreground">
       {collectingHeader(startedMs, intervalMs)}
     </span>
   );
@@ -53,9 +53,9 @@ export function CollectingOverlay({
           Collecting · timeline fills in as you work
         </span>
         <span className="font-normal text-[12px] text-muted-foreground">
-          First <span className="data-mono">{formatDuration(recordedMs)}</span>{" "}
+          First <span className="figures">{formatDuration(recordedMs)}</span>{" "}
           recorded. History is kept for{" "}
-          <span className="data-mono">{retentionDays} days</span> on this Mac
+          <span className="figures">{retentionDays} days</span> on this Mac
           only.
         </span>
       </div>

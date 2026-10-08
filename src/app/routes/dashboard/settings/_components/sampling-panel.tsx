@@ -126,7 +126,7 @@ export function SamplingPanel({
           ) : overhead !== null ? (
             <>
               Kelvo uses about{" "}
-              <span className="data-mono">
+              <span className="figures">
                 {formatPercent(overhead, { decimals: 1 })}
               </span>{" "}
               CPU at {intervalLabel(liveInterval)}, this window included
@@ -166,7 +166,7 @@ export function SamplingPanel({
           `Limited to about ${current.limitedDays} days by the ${limitText} limit`
         }
       >
-        <span className="data-mono text-[12px] text-muted-foreground">
+        <span className="figures text-[12px] text-muted-foreground">
           {current ? `about ${approxSize(current.bytes)}` : MISSING}
         </span>
         <Select
@@ -188,7 +188,7 @@ export function SamplingPanel({
               return (
                 <SelectItem key={d} value={String(d)}>
                   {d} days
-                  <span className="data-mono text-[11px] text-muted-foreground">
+                  <span className="figures text-[11px] text-muted-foreground">
                     {p === null
                       ? MISSING
                       : p.limitedDays === null
@@ -308,7 +308,7 @@ function HistoryOnDisk() {
   const sizeText = size.data === undefined ? MISSING : MB(size.data);
   return (
     <SettingsRow label="History on disk">
-      <span className="data-mono text-[12px] text-fg-subtle">{sizeText}</span>
+      <span className="figures text-[12px] text-fg-subtle">{sizeText}</span>
       <Button
         variant="outline"
         size="sm"

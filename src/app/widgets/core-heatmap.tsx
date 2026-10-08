@@ -132,7 +132,7 @@ export function CoreHeatmap({
         return (
           <div key={core.id} className={cn("contents", first && "[&>*]:mt-2")}>
             <span
-              className="data-mono col-start-1 text-[10px] text-muted-foreground"
+              className="figures col-start-1 text-[10px] text-muted-foreground"
               style={row(k)}
             >
               {core.id}
@@ -148,7 +148,7 @@ export function CoreHeatmap({
               <Cell v={cells[cells.length - 1] ?? null} />
             </div>
             <span
-              className="data-mono col-start-3 text-right text-[11px]"
+              className="figures col-start-3 text-right text-[11px]"
               style={row(k)}
             >
               {core.now == null ? MISSING : `${Math.round(core.now)}%`}
@@ -187,7 +187,7 @@ export function HeatScaleLegend({ accent = "cpu" }: { accent?: Accent }) {
       className="flex items-center gap-1"
       style={accentVars(accent)}
     >
-      <span className="data-mono mr-1 text-[10px] text-fg-faint">0%</span>
+      <span className="figures mr-1 text-[10px] text-fg-faint">0%</span>
       {[8, 35, 65, 95].map((p) => (
         <span
           key={p}
@@ -197,7 +197,7 @@ export function HeatScaleLegend({ accent = "cpu" }: { accent?: Accent }) {
           }}
         />
       ))}
-      <span className="data-mono ml-1 text-[10px] text-fg-faint">100%</span>
+      <span className="figures ml-1 text-[10px] text-fg-faint">100%</span>
     </div>
   );
 }

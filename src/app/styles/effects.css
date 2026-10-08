@@ -1,6 +1,12 @@
-/* Monospace data display with tabular number alignment. Every live figure
-   uses it so widths hold steady as values change each second. */
-.data-mono {
-  font-family: var(--font-mono);
+/* Tabular figures in the UI face (SF Pro). Every live figure uses it so
+   widths hold steady as values change each second. */
+.figures {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Headline figures: card values, hero and stat-strip figures, ring centres
+   and lane "now" values, in SF Pro Rounded. Smaller figures stay `.figures`. */
+.figures-display {
+  font-family: var(--font-rounded);
   font-variant-numeric: tabular-nums;
 }

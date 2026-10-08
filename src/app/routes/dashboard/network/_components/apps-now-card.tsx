@@ -85,7 +85,7 @@ export function AppsNowCard() {
                     {r.name}
                   </span>
                 </TableCell>
-                <TableCell className="data-mono px-3 py-1.75 text-right text-foreground">
+                <TableCell className="figures px-3 py-1.75 text-right text-foreground">
                   {formatRate(r.bps, { units: units.rate })}
                 </TableCell>
               </TableRow>

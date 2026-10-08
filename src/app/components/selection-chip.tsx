@@ -11,9 +11,9 @@ export function SelectionChip({ range }: { range: TimeRange }) {
   const store = useBrushStore();
   return (
     <span className="inline-flex h-6 items-center gap-1.5 rounded-full border border-border bg-btn pl-2.5 text-[11px] text-foreground">
-      <span className="data-mono">{formatClockSeconds(range.fromMs)}</span>
+      <span className="figures">{formatClockSeconds(range.fromMs)}</span>
       <span className="text-muted-foreground">to</span>
-      <span className="data-mono">{formatClockSeconds(range.toMs)}</span>
+      <span className="figures">{formatClockSeconds(range.toMs)}</span>
       <button
         type="button"
         onClick={() => store.getState().clear()}

@@ -94,7 +94,7 @@ export default function TimelineRoute() {
           </h1>
           <span className="font-normal text-[12px] text-muted-foreground">
             {subtitle.lead}
-            <span className="data-mono">{subtitle.times}</span>
+            <span className="figures">{subtitle.times}</span>
           </span>
         </div>
         <SegmentedControl

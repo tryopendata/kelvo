@@ -29,7 +29,7 @@ export function GalleryItem({
       <figcaption className="flex items-baseline gap-2">
         <span className="font-[590] text-[13px]">{name}</span>
         {usedIn && (
-          <span className="data-mono text-[11px] text-muted-foreground">
+          <span className="figures text-[11px] text-muted-foreground">
             {usedIn}
           </span>
         )}

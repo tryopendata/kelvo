@@ -175,7 +175,7 @@ export const CalendarHeatmap = memo(function CalendarHeatmap({
         {HOURS.map((h) => (
           <span
             key={h}
-            className="data-mono text-[9px] text-fg-faint leading-[11px]"
+            className="figures text-[9px] text-fg-faint leading-[11px]"
           >
             {h % 3 === 0 ? String(h).padStart(2, "0") : ""}
           </span>
@@ -207,7 +207,7 @@ export const CalendarHeatmap = memo(function CalendarHeatmap({
                 <th
                   scope="row"
                   className={cn(
-                    "data-mono whitespace-nowrap text-left font-normal text-[10px] leading-[11px]",
+                    "figures whitespace-nowrap text-left font-normal text-[10px] leading-[11px]",
                     r === curRow ? "text-foreground" : "text-muted-foreground"
                   )}
                 >

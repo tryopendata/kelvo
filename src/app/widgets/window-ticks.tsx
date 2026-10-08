@@ -25,7 +25,7 @@ export function WindowTicks({ ticks, className, style }: WindowTicksProps) {
           // biome-ignore lint/suspicious/noArrayIndexKey: fixed tick slots
           key={i}
           className={cn(
-            "data-mono text-[10px]",
+            "figures text-[10px]",
             i === ticks.length - 1 ? "text-muted-foreground" : "text-fg-faint"
           )}
         >

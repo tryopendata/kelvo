@@ -48,7 +48,7 @@ export function CrosshairTooltip({
   return (
     <ChartTooltipShell className="w-[276px]" style={style}>
       <div className="flex items-baseline justify-between">
-        <span className="data-mono text-[12px]">{title}</span>
+        <span className="figures text-[12px]">{title}</span>
         <span className={FIELD_LABEL}>{resolution}</span>
       </div>
       {note ? (
@@ -63,7 +63,7 @@ export function CrosshairTooltip({
               <span className="flex-1 font-normal text-fg-subtle">
                 {r.label}
               </span>
-              <span className="data-mono">{r.value}</span>
+              <span className="figures">{r.value}</span>
             </div>
           ))}
         </div>
@@ -94,7 +94,7 @@ export function CrosshairTooltip({
                   <span className="flex-1 truncate font-normal text-fg-subtle">
                     {p.name}
                   </span>
-                  <span className="data-mono">
+                  <span className="figures">
                     {p.cpu_pct === null ? "—" : `${Math.round(p.cpu_pct)}%`}
                   </span>
                 </div>

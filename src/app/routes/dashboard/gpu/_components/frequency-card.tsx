@@ -54,7 +54,7 @@ export function FrequencyCard({ windowMs }: { windowMs: number }) {
             accent="gpu"
             size={112}
           />
-          <figcaption className="data-mono text-[11px] text-muted-foreground">
+          <figcaption className="figures text-[11px] text-muted-foreground">
             max {maxGhz === null ? MISSING : fixed(maxGhz, 2)}
           </figcaption>
         </figure>

@@ -48,7 +48,7 @@ export function InterfaceTable({ rows, units }: InterfaceTableProps) {
       <TableBody>
         {rows.map((r) => (
           <TableRow key={r.id} className="text-[12px]">
-            <TableCell className="data-mono text-foreground">{r.id}</TableCell>
+            <TableCell className="figures text-foreground">{r.id}</TableCell>
             <TableCell className="font-normal text-fg-subtle">
               {r.disconnected ? (
                 <span className="text-muted-foreground">Disconnected</span>
@@ -56,16 +56,16 @@ export function InterfaceTable({ rows, units }: InterfaceTableProps) {
                 r.kind
               )}
             </TableCell>
-            <TableCell className="data-mono text-right">
+            <TableCell className="figures text-right">
               {formatRate(r.rxBps, { units })}
             </TableCell>
-            <TableCell className="data-mono text-right">
+            <TableCell className="figures text-right">
               {formatRate(r.txBps, { units })}
             </TableCell>
-            <TableCell className="data-mono text-right text-fg-subtle">
+            <TableCell className="figures text-right text-fg-subtle">
               {formatBytes(r.rxBytes)}
             </TableCell>
-            <TableCell className="data-mono text-right text-fg-subtle">
+            <TableCell className="figures text-right text-fg-subtle">
               {formatBytes(r.txBytes)}
             </TableCell>
           </TableRow>
