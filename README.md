@@ -69,8 +69,6 @@ The Timeline puts every module on one chart covering the last hour, 24 hours, 7 
 
 The menu bar can show one combined item or one item per module, each as a number, a graph or a per-core strip.
 
-<img src="https://raw.githubusercontent.com/tryopendata/kelvo/assets/media/tray.webp" alt="The menu bar popover" width="283">
-
 ## Resource use
 
 With only the menu bar showing, Kelvo samples every 2 seconds and uses under 1% of one core. Open a window and it samples every second (adjustable from 0.5 to 60 seconds) and uses 6 to 10%, depending on the page.

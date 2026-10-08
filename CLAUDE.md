@@ -87,6 +87,21 @@ If a fix doesn't resolve the issue after 2 attempts without running a new diagno
 - **A fresh worktree needs `bun install`** before hooks, lint or tests work there.
 - **Lifecycle is orchestrator-owned.** Subagents in a worktree commit and push their branch only — never `ExitWorktree`, `git merge`, or `git worktree remove`.
 
+## README media
+
+The README's recordings live on the orphan `assets` branch under `media/`, not on main,
+so clones stay small; `scripts/install.sh` clones `--single-branch --branch main` so
+installs never fetch them. The README links `raw.githubusercontent.com/tryopendata/kelvo/assets/media/<name>.webp`.
+
+- **Format:** animated WebP from an MP4 screen recording (GIF exports come out 2 to 3 times larger, and gifsicle/ffmpeg can't shrink them). Needs `brew install webp`; Homebrew's ffmpeg has no WebP encoder, so frames go through `img2webp`:
+  ```bash
+  ffmpeg -i in.mp4 frames/%04d.png
+  img2webp -loop 0 -lossy -q 85 -m 4 -d 42 frames/*.png -o name.webp   # -d = 1000 / fps (42 for 24 fps)
+  ```
+  q85 is visually lossless on these UI captures; `-min_size` saves ~1% for much longer encodes.
+- **Replacing one:** commit the new file to `assets` under the same name; main needs no change. The branch has no pre-commit config, so commit and push there with `PRE_COMMIT_ALLOW_NO_CONFIG=1`. Work in a separate worktree (`git worktree add <dir> assets`) so main's checkout is untouched.
+- **Adding one:** commit it to `assets`, then add the image link to `README.md` on main. Retina captures that should render at 1x get an `<img ... width="<half the pixel width>">` tag.
+
 ## Quick Commands
 
 ```bash
