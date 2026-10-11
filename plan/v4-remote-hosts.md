@@ -4,6 +4,12 @@
 
 > Implementation status: the first Mac milestone is merged into main. Automated checks and code review passed; real two-Mac acceptance and overhead measurements remain open in the execution plan. The later roadmap below is not marked complete.
 
+> Testing follow-up (2026-10-11): expanded real socket/SQLite, heartbeat, host recovery and
+> history-isolation coverage passes. The user excluded testing another machine from this
+> pass. An isolated packaged app is built, but native QA remains blocked by computer-use
+> tool access despite user consent. See [the follow-up record](remote-macs-execution.md#single-mac-testing-follow-up-2026-10-11)
+> for verification counts, review status and remaining checks.
+
 This doc covers v4.0 through v4.2. v4.0 ships `kelvo-agent`, the SSH transport, the sync protocol in real use and the Add-host flow. v4.1 adds a native Linux collector set with cgroups and containers. v4.2 adds the fleet view, the host switcher, remote metrics in the menu bar, and alerts evaluated on the agent.
 
 This is the version the v1 one-way doors were built for. Read [architecture.md](architecture.md) items 1 to 5 (series model, host identity, wire format, sync cursors, sources) and its Sync protocol section first; this doc refines them and does not repeat the type sketches. NVIDIA GPUs are out of scope (D-008).

@@ -14,9 +14,9 @@ use std::{
         Arc, Mutex,
         atomic::{AtomicBool, AtomicU32, Ordering},
     },
-    time::{Duration, Instant},
+    time::Duration,
 };
-use tokio::sync::watch;
+use tokio::{sync::watch, time::Instant};
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct ConnectionStatus {
@@ -547,6 +547,120 @@ fn adapt_page_bytes(current: u32, elapsed: Duration) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[tokio::test(start_paused = true)]
+    async fn an_authenticated_but_stalled_application_times_out_and_closes_its_stream() {
+        use crate::ServerProvider;
+        use tokio::io::AsyncReadExt;
+
+        let hello = crate::server::tests::provider().hello();
+        let source = RemoteSource::new(
+            HostRecord::from_identity(hello.host.clone(), false),
+            HostId(uuid::Uuid::nil()),
+            EndpointConfig {
+                lan: Some("fixture".into()),
+                tailscale: None,
+                helper_path: String::new(),
+            },
+            Arc::new(|_| {}),
+            None,
+        );
+        let (client, mut application) = tokio::io::duplex(65536);
+        let session = SshSession::test(client, hello);
+        let live = kelvo_engine::LiveHub::default();
+        let mut events = live.subscribe();
+        let sink = SourceSink { live, store: None };
+        let runner = source.clone();
+        let task = tokio::spawn(async move {
+            let mut control = runner.control.subscribe();
+            session_loop(
+                &runner,
+                &sink,
+                session,
+                &mut control,
+                &mut ConnectionStatus::default(),
+            )
+            .await
+        });
+
+        assert!(matches!(
+            codec::read(&mut application).await.unwrap(),
+            Message::Interest(_)
+        ));
+        let Message::Ping { nonce, t0_ms } = codec::read(&mut application).await.unwrap() else {
+            panic!("a connected source must check application liveness");
+        };
+        codec::write(
+            &mut application,
+            &Message::Pong {
+                nonce,
+                t0_ms,
+                t_remote_ms: 9_000_000,
+            },
+        )
+        .await
+        .unwrap();
+        codec::write(
+            &mut application,
+            &Message::LayoutDef(WireLayout {
+                layout_no: 0,
+                series: vec![kelvo_schema::SeriesKey::bare(
+                    kelvo_schema::MetricId::from_static("cpu.total"),
+                )],
+            }),
+        )
+        .await
+        .unwrap();
+        codec::write(
+            &mut application,
+            &Message::Live(kelvo_proto::LiveFrame {
+                ts_ms: 9_000_000,
+                layout_no: 0,
+                values: vec![42.0],
+                held: vec![42.0],
+                interval_ms: 1000,
+                timeline: 0,
+                holds: vec![2500],
+            }),
+        )
+        .await
+        .unwrap();
+        // An observed sample is the barrier: the first Pong and its preceding bytes
+        // have actually crossed the codec/client loop before virtual time moves.
+        loop {
+            if let Some(BusMsg::Frame(frame)) = events.recv().await {
+                assert_eq!(&*frame.values, &[42.0]);
+                break;
+            }
+        }
+        tokio::time::advance(Duration::from_secs(15)).await;
+        let Message::Ping { nonce: next, .. } = codec::read(&mut application).await.unwrap() else {
+            panic!("the client must recheck liveness after a healthy interval");
+        };
+        assert_ne!(next, nonce);
+        // SSH/the byte stream remains open, but the application no longer answers.
+        // Use virtual runtime time so this exercises the real thirty-second policy
+        // without adding thirty seconds to every verification run.
+        tokio::time::advance(Duration::from_secs(29)).await;
+        tokio::task::yield_now().await;
+        assert!(
+            !task.is_finished(),
+            "a heartbeat may use its full response window"
+        );
+        tokio::time::advance(Duration::from_secs(2)).await;
+        let outcome = tokio::time::timeout(Duration::from_secs(1), task)
+            .await
+            .expect("missing application heartbeat must terminate the session")
+            .unwrap();
+        assert!(
+            matches!(outcome, Err(RemoteError::Transport(message)) if message.contains("application heartbeat timed out"))
+        );
+        let eof = tokio::time::timeout(Duration::from_secs(1), application.read_u8())
+            .await
+            .unwrap()
+            .unwrap_err();
+        assert_eq!(eof.kind(), std::io::ErrorKind::UnexpectedEof);
+    }
+
     #[tokio::test]
     async fn catchup_continues_immediately_after_pages_and_stale_samples_do_not_freeze_clock() {
         use crate::ServerProvider;

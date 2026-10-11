@@ -168,7 +168,21 @@ describe("remote host selection", () => {
     );
     expect(addCall?.args[3]).toEqual(expect.any(String));
     expect(cancelCall?.args[0]).toBe(addCall?.args[3]);
-    expect(await transport.listRemoteHosts()).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+    );
+    expect(
+      screen.queryByRole("heading", { name: "office.local" })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Studio Mac" })
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Add Mac" }));
+    expect(screen.getByLabelText("LAN SSH alias")).toHaveValue("");
+    expect(
+      screen.getByRole("button", { name: "Check connection" })
+    ).toBeDisabled();
     unmount();
     transport.dispose();
   });

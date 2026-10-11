@@ -38,6 +38,20 @@ const running = (page: Page) =>
       document.getAnimations().filter((a) => a.playState === "running").length
   );
 
+/** Live gauges keep transitioning on ticks; only entrance animations must settle. */
+const runningEntrances = (page: Page) =>
+  page.evaluate(() =>
+    document
+      .getAnimations()
+      .filter(
+        (a): a is CSSAnimation =>
+          a instanceof CSSAnimation &&
+          a.playState === "running" &&
+          /lift|fade|swap/.test(a.animationName)
+      )
+      .map((a) => a.animationName)
+  );
+
 const openOverview = async (page: Page) => {
   await page.setViewportSize({ width: 1280, height: 833 });
   await page.goto("/?window=dashboard&theme=dark&ticks=0");
@@ -101,7 +115,14 @@ test("live ticks never replay an entrance", async ({ page }) => {
   await expect(
     page.getByRole("heading", { name: "Overview", exact: true })
   ).toBeVisible();
-  await expect.poll(() => running(page), { timeout: 2000 }).toBe(0);
+  await expect
+    .poll(
+      async () => (await started(page)).filter((n) => /lift/.test(n)).length
+    )
+    .toBeGreaterThan(0);
+  await expect
+    .poll(() => runningEntrances(page), { timeout: 2000 })
+    .toEqual([]);
 
   await page.evaluate(() => {
     (window as unknown as { __anims: string[] }).__anims.length = 0;

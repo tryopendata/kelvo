@@ -69,11 +69,31 @@ Known follow-ups (small, not scheduled):
 | v2.2 WidgetKit dev build | [v2](v2-customization-widgets.md) | Not started | |
 | v2.3 Alerts editor, configurable Overview | [v2](v2-customization-widgets.md) | Not started | |
 | v3.x Native distribution | [v3](v3-native-distribution.md) | Not started | Needs a paid Apple Developer membership |
-| v4.x Remote hosts | [v4](v4-remote-hosts.md) | Mac implementation done; real-device acceptance pending | [Execution and verification gates](remote-macs-execution.md); broader v4 remains future scope |
+| v4.x Remote hosts | [v4](v4-remote-hosts.md) | Mac implementation done; automated testing follow-up complete, native QA blocked | Expanded coverage/review pass on `codex/remote-qa`; native QA blocked by computer-use tool access. Another Mac is excluded from this pass by user instruction. [Execution and verification gates](remote-macs-execution.md); broader v4 remains future scope |
 
 Status values: Not started, In progress, Blocked (say on what), Done (with the verification that proved it).
 
 ## Log
+
+### 2026-10-11 (remote monitoring testing follow-up)
+
+Applied ce:writing-tests in the isolated `codex/remote-qa` worktree. Added seven real
+socket/protocol/SQLite integration tests, a virtual-time application-stall regression,
+four app workflow tests and a browser host lifecycle flow; strengthened cancellation
+coverage. Seven injected faults were caught and restored. `make check` passed: 763 Rust
+tests (29 ignored), 913 frontend tests, lint/type checks and App Store checks. The first
+full browser run exposed an existing motion-test race: 22 live gauge transitions were
+mistaken for unsettled entrance animations. The corrected test still detects a deliberately
+replayed entrance; the full rerun passed (238 passed, 8 existing skips across Chromium
+and WebKit). TypeScript/Biome and `make bindings-check` also passed. Both ce:code-reviewer
+review rounds approved after fixing the native test's settings-restoration guard.
+
+Built and signature-verified the isolated `Kelvo Remote QA.app` and verified its bundled
+helper. Native launch/manual QA and the new opt-in packaged-app acceptance test remain
+unexecuted: the computer-use tool rejects app access despite explicit user consent and
+Any App enabled. The follow-up branch/worktree remain available pending native QA,
+merge and cleanup. Another machine is explicitly outside this testing pass. Full evidence,
+artifact location and the native test command are in [the execution record](remote-macs-execution.md#single-mac-testing-follow-up-2026-10-11).
 
 ### 2026-10-11 (remote Macs implementation, D-104)
 
