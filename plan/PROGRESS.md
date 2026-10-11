@@ -105,9 +105,16 @@ aligned end-to-end CPU/memory accuracy. The Mac still reports lid closed with
 sleep enabled, so the whole-app benchmark guard prevents a valid measurement.
 Desktop/Colima runtime tests remain explicitly unverified under the user's
 OrbStack-first authorization. No waiver of the other acceptance items has been
-received. The reviewed implementation is being committed in its worktree;
-H1–H3, merge and worktree cleanup remain pending the required evidence or an
-explicit scope decision to defer those checks.
+received. The reviewed implementation is committed as `73f485c` in
+`codex/docker-container-monitoring`; commit hooks and `make bindings-check` pass.
+The secret scanner initially misclassified a compact SQL upsert assignment;
+formatting the same query across lines cleared that false positive, and all
+12 scoped Docker store tests passed (one stress test explicitly ignored).
+The development server is stopped and the owned pre-integration backup stash
+`f436d4858268014e8cc68b8fd485aa52e5b8b5ba` is removed now that the integrated work
+is committed. H1–H3, merge and worktree cleanup remain pending the required
+evidence or an explicit scope decision to defer those checks. Main's unrelated
+untracked `plan/container-mocks/` is untouched.
 
 ### 2026-10-11 (Docker final verification after shared sidebar fixes)
 
