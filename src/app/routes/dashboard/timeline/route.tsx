@@ -10,6 +10,7 @@ import { useEvents } from "~/hooks/use-events";
 import { useHistoryHealth } from "~/hooks/use-history-health";
 import { useHostRecord } from "~/hooks/use-host-record";
 import { useHostClock } from "~/lib/host-clock";
+import { DockerTimelineLane } from "~/routes/dashboard/containers/_components/docker-surfaces";
 import { useHost } from "~/stores/host-store";
 import { useSettings } from "~/stores/settings-store";
 import { HeatmapCard } from "./_components/heatmap-card";
@@ -180,6 +181,7 @@ export default function TimelineRoute() {
         onPlotWidth={setPlotPx}
       />
 
+      <DockerTimelineLane from={data.fromMs} to={data.toMs} />
       <HeatmapCard units={units} onOpen={openHour} />
     </div>
   );

@@ -778,6 +778,9 @@ fn incremental_vacuum_returns_space_and_size_counts_the_wal() {
     let w = store.writer();
     let h = host(1);
     w.upsert_host(h.clone()).unwrap();
+    // The fixed schema (including Docker indexes) is not reclaimable history.
+    let baseline =
+        (count(&raw(&store), "PRAGMA page_count") * count(&raw(&store), "PRAGMA page_size")) as u64;
     let l: Arc<[_]> = (0..100)
         .map(|i| key(&format!("cpu.load{{core=P{i}}}")))
         .collect::<Vec<_>>()
@@ -805,7 +808,10 @@ fn incremental_vacuum_returns_space_and_size_counts_the_wal() {
     );
     store.close().unwrap();
     let after = kelvo_store::size_on_disk(&dir.path().join("h.sqlite")).unwrap();
-    assert!(after < db_only / 4, "{after} vs {db_only}");
+    assert!(
+        after.saturating_sub(baseline) < db_only.saturating_sub(baseline) / 4,
+        "{after} vs {db_only}; schema baseline {baseline}"
+    );
 }
 
 #[test]

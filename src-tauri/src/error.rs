@@ -9,6 +9,9 @@ use serde::Serialize;
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error, Serialize, specta::Type)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum CommandError {
+    /// A bounded, sanitized Docker monitoring error.
+    #[error("Docker: {message}")]
+    Docker { message: String },
     /// No host with this id is registered.
     #[error("unknown host {host}")]
     UnknownHost { host: HostId },

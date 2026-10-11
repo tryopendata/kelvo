@@ -117,3 +117,6 @@ pub use source::{
 };
 pub use ticker::{FakeClock, FakeTicker, ThreadTicker, Ticker, leeway_for};
 pub use usage::{USAGE_BUCKET_MS, UsageApp, UsageByApp, UsageKey, UsageProc, UsageTotal};
+
+#[cfg(unix)]
+pub mod docker;

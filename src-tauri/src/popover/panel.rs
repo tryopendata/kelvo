@@ -50,6 +50,7 @@ fn apply_material(win: &WebviewWindow, reduce_transparency: bool) {
 fn set_visible(app: &AppHandle, visible: bool) {
     if let Some(state) = app.try_state::<AppState>() {
         state.live.window_visible(LABEL, visible);
+        state.docker_streams.window_visible(&state, LABEL, visible);
     }
 }
 

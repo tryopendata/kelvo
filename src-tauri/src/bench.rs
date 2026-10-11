@@ -107,8 +107,10 @@ pub fn settings_file(
         return file;
     }
     let menu_bar = std::env::var("KELVO_BENCH_MENU_BAR").unwrap_or_default();
+    let docker_socket = std::env::var("KELVO_BENCH_DOCKER_SOCKET").unwrap_or_default();
     Box::new(MemorySettings(std::sync::Mutex::new(Some(defaults_with(
         &menu_bar,
+        &docker_socket,
     )))))
 }
 
@@ -124,9 +126,13 @@ pub fn settings_file(
 /// does not parse is skipped with a warning; a mode a module does not offer fails the
 /// owner's validation, which falls back to defaults.
 #[cfg_attr(not(feature = "bench"), allow(dead_code))]
-fn defaults_with(menu_bar: &str) -> serde_json::Value {
+fn defaults_with(menu_bar: &str, docker_socket: &str) -> serde_json::Value {
     let mut value = serde_json::to_value(kelvo_schema::settings::Settings::default())
         .unwrap_or(serde_json::Value::Null);
+    if !docker_socket.is_empty() {
+        value["docker"]["enabled"] = serde_json::Value::Bool(true);
+        value["docker"]["selected_engine"] = serde_json::Value::String(docker_socket.to_owned());
+    }
     for pair in menu_bar.split(',').filter(|p| !p.is_empty()) {
         let Some((path, v)) = pair.split_once('=') else {
             tracing::warn!(pair, "KELVO_BENCH_MENU_BAR pairs are group.field=value");
@@ -247,6 +253,7 @@ mod tests {
 
         let value = defaults_with(
             "items.cpu=graph,items.gpu=graph,bars.gpu=false,readouts.power=true,bogus,items.nope=graph",
+            "",
         );
         let s: Settings = serde_json::from_value(value).expect("decodes");
         let d = Settings::default();
@@ -256,6 +263,21 @@ mod tests {
         assert!(!s.menu_bar.bars.gpu && s.menu_bar.bars.cpu);
         assert!(s.menu_bar.readouts.power && s.menu_bar.readouts.temperature);
         assert_eq!(s.sampling.interval_ms, d.sampling.interval_ms);
+    }
+
+    #[test]
+    fn docker_bench_override_only_enables_the_selected_engine() {
+        use kelvo_schema::settings::Settings;
+        let mut settings: Settings =
+            serde_json::from_value(defaults_with("", "/tmp/benchmark-docker.sock"))
+                .expect("decodes");
+        assert!(settings.docker.enabled);
+        assert_eq!(
+            settings.docker.selected_engine.as_deref(),
+            Some("/tmp/benchmark-docker.sock")
+        );
+        settings.docker = Default::default();
+        assert_eq!(settings, Settings::default());
     }
 
     #[cfg(not(feature = "bench"))]

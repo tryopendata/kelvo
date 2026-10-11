@@ -44,7 +44,15 @@ export type ScenarioName =
   | "no-process-gpu"
   | "low-power-mode"
   | "performance-mode"
-  | "vpn";
+  | "vpn"
+  | "docker-0"
+  | "docker-1"
+  | "docker-32"
+  | "docker-128"
+  | "docker-200"
+  | "docker-retained"
+  | "docker-unavailable"
+  | "docker-idle";
 
 export const SCENARIOS: readonly ScenarioName[] = [
   "ssh-untrusted",
@@ -74,6 +82,14 @@ export const SCENARIOS: readonly ScenarioName[] = [
   "low-power-mode",
   "performance-mode",
   "vpn",
+  "docker-0",
+  "docker-1",
+  "docker-32",
+  "docker-128",
+  "docker-200",
+  "docker-retained",
+  "docker-unavailable",
+  "docker-idle",
 ];
 
 /** The schema version the mock's "newer Kelvo" wrote, and the one it reads. */
@@ -263,6 +279,14 @@ export function capabilities(
 /** Plan 6.4 defaults, with every module on so the mock shows all of them. */
 export function defaultSettings(flags: ScenarioFlags): Settings {
   return {
+    docker: {
+      enabled: false,
+      explicit_selection: false,
+      selected_engine: null,
+      monitored_containers: [],
+      show_popover: false,
+      show_tray_count: false,
+    },
     modules: {
       cpu: { enabled: true },
       gpu: { enabled: true },

@@ -21,6 +21,8 @@ use crate::catalog::Module;
 pub struct Settings {
     #[serde(default)]
     pub remote_access: RemoteAccessSettings,
+    #[serde(default)]
+    pub docker: crate::docker::DockerSettings,
     /// One entry per settings module: every [`Module`] except `Sensors`. An entry for a
     /// module this build does not know (a settings file from a newer build) is dropped on
     /// decode (D-040).
@@ -554,6 +556,7 @@ impl Default for Settings {
             })
             .collect();
         Self {
+            docker: crate::docker::DockerSettings::default(),
             modules,
             remote_access: RemoteAccessSettings::default(),
             menu_bar: MenuBarSettings::default(),
@@ -617,6 +620,22 @@ impl Settings {
 
     /// Checks every value against the allowed sets in 6.4.
     pub fn validate(&self) -> Result<(), SettingsError> {
+        if self.docker.monitored_containers.len() > 128
+            || self.docker.monitored_containers.iter().any(|id| {
+                id.is_empty()
+                    || id.len() > 128
+                    || !id
+                        .bytes()
+                        .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+            })
+            || self
+                .docker
+                .selected_engine
+                .as_ref()
+                .is_some_and(|s| !s.starts_with('/') || s.contains("://") || s.len() > 4096)
+        {
+            return Err(SettingsError::Docker);
+        }
         if !SamplingSettings::INTERVALS_MS.contains(&self.sampling.interval_ms) {
             return Err(SettingsError::Interval(self.sampling.interval_ms));
         }
@@ -647,6 +666,8 @@ impl Settings {
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum SettingsError {
+    #[error("invalid Docker local socket or monitored population (maximum 128)")]
+    Docker,
     #[error("sampling interval {0} ms is not one of 500, 1000, 2000, 5000, 10000, 30000, 60000")]
     Interval(u32),
     #[error("retention {0} days is not one of 7, 30, 90")]

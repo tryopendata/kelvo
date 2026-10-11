@@ -43,6 +43,7 @@ mod caps;
 mod catalog;
 mod codes;
 mod compat;
+pub mod docker;
 mod event;
 mod history;
 mod host;

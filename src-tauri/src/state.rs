@@ -57,6 +57,8 @@ use crate::settings::{
 };
 
 pub struct AppState {
+    pub docker: kelvo_engine::docker::DockerHandle,
+    pub docker_streams: crate::docker::DockerStreams,
     /// The local host's id.
     pub local: HostId,
     pub hosts: HostRegistry,
@@ -131,7 +133,16 @@ impl AppState {
                 },
             )
             .context("starting history housekeeping")?;
+        let docker = kelvo_engine::docker::DockerHandle::new(
+            local,
+            current.docker.clone(),
+            std::env::var_os("HOME")
+                .map(std::path::PathBuf::from)
+                .unwrap_or_default(),
+        );
         let state = AppState {
+            docker: docker.clone(),
+            docker_streams: crate::docker::DockerStreams::default(),
             local,
             hosts: HostRegistry::new(),
             live: LiveRegistry::new(),
@@ -154,6 +165,12 @@ impl AppState {
         // A store that cannot take the host goes unavailable here and the source runs
         // live-only; the banner explains (D-064).
         let writer = state.history.register_host(&entry.record());
+        if let Some(writer) = &writer {
+            state
+                .docker
+                .recorder
+                .attach(writer.clone(), data_dir.join(crate::history::DB_FILE));
+        }
         source.seed_alert_history(recent_alerts(
             &state.history,
             local,
@@ -163,6 +180,9 @@ impl AppState {
         warm_live_ring(&state.history, &entry, local, kelvo_engine::wall_ms());
         // Managed before the source starts, so the watcher always finds the state.
         app.manage(state);
+        tauri::async_runtime::spawn(async move {
+            docker.run().await;
+        });
         entry.start(writer).context("starting the local source")?;
 
         let handle = app.clone();
@@ -176,6 +196,7 @@ impl AppState {
 
     /// Stops every source (flushing buckets, closing gaps), then closes the store.
     pub fn shutdown(&self) {
+        self.docker.shutdown();
         self.hosts.stop_all();
         self.history.close();
         tracing::info!("shut down");
@@ -230,22 +251,41 @@ impl AppState {
     /// source is detached first (flushing and closing its gaps in the old file) and
     /// reattached to the new store with its host registered. Blocking.
     pub fn reset_history(&self, app: &AppHandle) -> Result<(), CommandError> {
-        let hosts: Vec<_> = self
-            .hosts
-            .all()
-            .into_iter()
-            .filter(|h| h.record().is_local)
-            .collect();
-        for h in &hosts {
-            h.set_store(None);
+        let result = self.docker.recorder.with_suspended(|| {
+            let docker_generation = self.docker.invalidate_history();
+            self.docker.recorder.detach();
+            self.docker
+                .recorder
+                .reset(docker_generation)
+                .map_err(|message| CommandError::Docker { message })?;
+            let hosts: Vec<_> = self
+                .hosts
+                .all()
+                .into_iter()
+                .filter(|h| h.record().is_local)
+                .collect();
+            for h in &hosts {
+                h.set_store(None);
+            }
+            let health = self
+                .history
+                .reset_and_attach(kelvo_engine::wall_ms(), |history| {
+                    for h in &hosts {
+                        h.set_store(history.register_host(&h.record()));
+                    }
+                })?;
+            Ok::<_, CommandError>(health)
+        });
+        // Reattach only if reset left a usable store. Failed reset still resumes
+        // live history/events in the bounded ring via with_suspended's guard.
+        if let Ok(writer) = self.history.writer()
+            && let Ok(path) = app.path().app_data_dir()
+        {
+            self.docker
+                .recorder
+                .attach(writer, path.join(crate::history::DB_FILE));
         }
-        let health = self
-            .history
-            .reset_and_attach(kelvo_engine::wall_ms(), |history| {
-                for h in &hosts {
-                    h.set_store(history.register_host(&h.record()));
-                }
-            })?;
+        let health = result?;
         // Only on success: the event carries health, and over a failed reset it would
         // tell windows history is back.
         self.emit_history_health(app, health);
@@ -319,6 +359,9 @@ impl SettingsEffects for ShellEffects<'_> {
         let new = &now.settings;
         if old.remote_access != new.remote_access {
             crate::remote::refresh_metrics(self.app);
+        }
+        if old.docker != new.docker {
+            let _ = self.state.docker.configure(new.docker.clone());
         }
         if engine_affecting(old, new) {
             // Queued on the local engine's inbox ahead of anything sent later; the engine
@@ -542,6 +585,11 @@ pub(crate) fn spawn_host_watcher(
                 BusMsg::Status(s) if entry.record().is_local => {
                     if let Some(state) = app.try_state::<AppState>() {
                         state.remotes.controller_battery_changed(s.on_battery);
+                        state.docker.set_power(
+                            s.paused || s.display_idle,
+                            s.interval_ms
+                                .max(if s.performance.is_on() { 2000 } else { 1000 }),
+                        );
                     }
                     if performance != Some(s.performance)
                         && let Some(state) = app.try_state::<AppState>()

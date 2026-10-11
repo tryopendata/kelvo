@@ -31,6 +31,8 @@ pub struct SettingsPatch {
     #[specta(optional)]
     pub remote_access: Option<RemoteAccessPatch>,
     #[specta(optional)]
+    pub docker: Option<kelvo_schema::docker::DockerSettings>,
+    #[specta(optional)]
     pub modules: Option<BTreeMap<Module, ModulePatch>>,
     #[specta(optional)]
     pub menu_bar: Option<MenuBarPatch>,
@@ -274,6 +276,9 @@ impl SettingsPatch {
         }
         if let Some(p) = self.onboarding {
             set(&mut s.onboarding.completed, p.completed);
+        }
+        if let Some(p) = &self.docker {
+            s.docker = p.clone();
         }
         if let Some(p) = self.alerts {
             set(&mut s.alerts.hot_process, p.hot_process);

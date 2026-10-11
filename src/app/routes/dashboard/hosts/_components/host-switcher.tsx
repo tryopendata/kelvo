@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { useLocation, useNavigate } from "react-router";
 import {
   Select,
@@ -8,7 +9,9 @@ import {
 } from "~/components/ui/select";
 import { useHostSelection } from "~/lib/host-selection";
 
-export function HostSwitcher() {
+// Host selection follows its own context; metric-only sidebar updates do not
+// need to rebuild the closed selection menu on every sample.
+export const HostSwitcher = memo(function HostSwitcher() {
   const selection = useHostSelection();
   const navigate = useNavigate();
   const { pathname } = useLocation();
@@ -43,4 +46,4 @@ export function HostSwitcher() {
       </Select>
     </div>
   );
-}
+});

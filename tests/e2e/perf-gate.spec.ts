@@ -33,6 +33,8 @@ interface FrontendBudget {
   cpu1h: ScreenBudget;
   gpu1h: ScreenBudget;
   power1h: ScreenBudget;
+  containers: ScreenBudget;
+  containerDetail: ScreenBudget;
   dashboardOpen: { longTaskMs: number; fillWithinMs: number };
   hiddenResume: { longTaskMs: number };
 }
@@ -122,6 +124,33 @@ test.describe("performance gate", () => {
   );
   // Three samples at most per measure, and the Performance mode case measures twice.
   test.setTimeout(6 * (budget.warmupMs + budget.sampleMs) + 30_000);
+
+  for (const screen of ["containers", "containerDetail"] as const) {
+    test(`${screen} at 1 Hz`, async ({ page }) => {
+      await page.setViewportSize({ width: 1280, height: 900 });
+      const route =
+        screen === "containers"
+          ? "/dashboard/containers"
+          : "/dashboard/containers/mock-orbstack/container-0";
+      const result = await measure(
+        page,
+        `/?route=${route}&scenario=docker-128&theme=dark`,
+        async () => {
+          await expect(
+            page.getByRole("heading", {
+              name: screen === "containers" ? "Containers" : "worker",
+              exact: true,
+            })
+          ).toBeVisible();
+        }
+      );
+      console.log(`[perf] ${screen} ${JSON.stringify(result)}`);
+      expect(result.longTasks).toEqual([]);
+      expect(result.mainThreadMsPerSec).toBeLessThan(
+        budget[screen].mainThreadMsPerSec
+      );
+    });
+  }
 
   test("popover at 1 Hz", async ({ page }) => {
     await page.setViewportSize({ width: 360, height: 760 });

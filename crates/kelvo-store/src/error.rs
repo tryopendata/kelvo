@@ -4,6 +4,8 @@ use kelvo_schema::{GapError, HostId, Tier};
 
 #[derive(Debug, thiserror::Error)]
 pub enum StoreError {
+    #[error("Docker history: {0}")]
+    Docker(String),
     /// Another `Store` holds the writer lock on this file: a second app instance, a dev
     /// build sharing the installed app's data, or (v4) an agent (architecture.md infra 8).
     #[error("history database {} is in use by another Kelvo process", path.display())]

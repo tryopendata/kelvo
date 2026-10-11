@@ -49,6 +49,35 @@ pub struct Reader {
 }
 
 impl Reader {
+    /// Open an independent read-only connection for a worker history request.
+    pub fn open(path: &std::path::Path) -> Result<Self> {
+        let (conn, epoch) = db::open_reader(path)?;
+        Ok(Self::new(conn, epoch))
+    }
+    /// Seed a new process's independent Docker generation/revision counters. Wall
+    /// clock rollback must not strand persistence behind a prior process's counters.
+    pub fn docker_watermark(&self, host: HostId) -> Result<(i64, i64)> {
+        Ok(self.conn.query_row("SELECT coalesce(max(e.generation),0),coalesce(max(e.durable_revision),0) FROM docker_engines e JOIN hosts h ON h.id=e.host_id WHERE h.uuid=?1",[host.to_string()],|r|Ok((r.get(0)?,r.get(1)?)))?)
+    }
+
+    pub fn docker_snapshot(
+        &mut self,
+        host: HostId,
+        daemon: &str,
+    ) -> Result<crate::docker::DockerReadSnapshot<'_>> {
+        crate::docker::read::begin(&self.conn, host, daemon)
+    }
+    pub fn docker_catalog(
+        &mut self,
+        host: HostId,
+        engine: Option<&str>,
+        search: &str,
+        offset: usize,
+        limit: usize,
+    ) -> Result<crate::docker::DockerCatalog> {
+        self.docker_snapshot(host, engine.unwrap_or(""))?
+            .catalog(engine, search, offset, limit)
+    }
     pub(crate) fn new(conn: Connection, epoch: Uuid) -> Self {
         Self {
             conn,

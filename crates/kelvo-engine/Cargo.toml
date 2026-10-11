@@ -18,11 +18,14 @@ kelvo-schema.workspace = true
 kelvo-store.workspace = true
 # The bus is a tokio broadcast channel (architecture.md, Engine). Only the sync
 # primitives are used; the engine thread itself is a plain std thread.
-tokio = { workspace = true, features = ["sync"] }
+tokio = { workspace = true, features = ["sync", "time", "rt", "macros"] }
 # Already in the graph through Tauri. One channel carries ticks, power events, device
 # hints and commands into the engine thread.
 crossbeam-channel = "0.5.17"
 thiserror.workspace = true
+futures-util = "0.3"
+sha2 = "0.10"
+serde_json.workspace = true
 tracing.workspace = true
 # The app shell exports ProcessView, ProcessSort and UsageKey over IPC as they are
 # (D-100). Both already in the graph through kelvo-schema.
@@ -46,7 +49,6 @@ kelvo-collect = { workspace = true, features = ["call-counters"] }
 kelvo-store = { workspace = true, features = ["write-stats"] }
 # Reads row counts and payload sizes for the store write-volume gate.
 rusqlite.workspace = true
-serde_json.workspace = true
 tempfile.workspace = true
 
 [lints]

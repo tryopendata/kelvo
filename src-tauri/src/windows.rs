@@ -47,6 +47,7 @@ fn window_err(e: tauri::Error) -> CommandError {
 fn set_visible(app: &AppHandle, label: &str, visible: bool) {
     if let Some(state) = app.try_state::<AppState>() {
         state.live.window_visible(label, visible);
+        state.docker_streams.window_visible(&state, label, visible);
     }
 }
 

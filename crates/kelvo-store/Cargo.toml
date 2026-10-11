@@ -16,6 +16,8 @@ write-stats = []
 kelvo-schema.workspace = true
 rusqlite.workspace = true
 ciborium.workspace = true
+serde.workspace = true
+sha2 = "0.10.9"
 uuid = { workspace = true, features = ["v4"] }
 thiserror.workspace = true
 tracing.workspace = true

@@ -11,7 +11,7 @@ use uuid::Uuid;
 use crate::error::{Result, StoreError};
 
 /// The schema version this build writes. Bump it with a new step in [`MIGRATIONS`].
-pub const SCHEMA_VERSION: i64 = 5;
+pub const SCHEMA_VERSION: i64 = 6;
 
 /// Page size of new databases. 16 KiB packs wide M1 blobs (250 series = 3,000 B) five to
 /// a page instead of one; measured in D-057.
@@ -239,7 +239,7 @@ ALTER TABLE events ADD COLUMN source_id INTEGER;
 ALTER TABLE events ADD COLUMN source_seq INTEGER;
 CREATE UNIQUE INDEX events_source ON events(host_id, source_epoch, source_id);
 ";
-const MIGRATIONS: &[&str] = &[V1, V2, V3, V4, V5];
+const MIGRATIONS: &[&str] = &[V1, V2, V3, V4, V5, crate::docker::SCHEMA];
 
 /// Opens or creates the database for writing and brings its schema up to date. Returns
 /// the connection and the `db_instance_uuid`.
@@ -484,6 +484,57 @@ pub(crate) fn bucket_rows_sql(tier: Tier) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn drop_docker(conn: &Connection) {
+        conn.execute_batch("PRAGMA foreign_keys=OFF").unwrap();
+        let tables: Vec<String> = conn
+            .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'docker_%'")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        for table in tables {
+            conn.execute_batch(&format!("DROP TABLE {table}")).unwrap();
+        }
+        conn.execute_batch("PRAGMA foreign_keys=ON").unwrap();
+    }
+    #[test]
+    fn docker_migration_failure_rolls_back_and_retries() {
+        for version in [4, 5] {
+            let dir = crate::test_dir("docker-migration");
+            let path = dir.path().join("h.sqlite");
+            let (conn, _) = open_writer(&path, 0).unwrap();
+            drop_docker(&conn);
+            if version == 4 {
+                strip_v5(&conn);
+            }
+            conn.execute_batch(&format!("PRAGMA user_version={version}; UPDATE meta SET value={version} WHERE key='schema_version'"))
+        .unwrap();
+            conn.commit_hook(Some(|| true)).unwrap();
+            assert!(migrate(&conn, version, 0).is_err());
+            assert_eq!(
+                conn.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
+                    .unwrap(),
+                version
+            );
+            assert_eq!(
+                conn.query_row(
+                    "SELECT count(*) FROM sqlite_master WHERE name LIKE 'docker_%'",
+                    [],
+                    |r| r.get::<_, i64>(0)
+                )
+                .unwrap(),
+                0
+            );
+            conn.commit_hook(None::<fn() -> bool>).unwrap();
+            migrate(&conn, version, 0).unwrap();
+            assert_eq!(
+                conn.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
+                    .unwrap(),
+                SCHEMA_VERSION
+            );
+        }
+    }
 
     #[test]
     fn fresh_database_gets_pragmas_schema_and_meta() {
@@ -552,6 +603,7 @@ mod tests {
         // Turn it back into a v1 file that two install identities both marked local.
         let conn = Connection::open(&path).unwrap();
         strip_v5(&conn);
+        drop_docker(&conn);
         conn.execute_batch(
             "DROP TABLE tier_15m;
              DROP TABLE proc_top_15m;
@@ -594,6 +646,7 @@ mod tests {
         drop(open_writer(&path, 0).unwrap());
         let conn = Connection::open(&path).unwrap();
         strip_v5(&conn);
+        drop_docker(&conn);
         conn.execute_batch(
             "DROP TABLE tier_15m;
              DROP TABLE proc_top_15m;
@@ -648,6 +701,7 @@ mod tests {
         drop(open_writer(&path, 0).unwrap());
         let conn = Connection::open(&path).unwrap();
         strip_v5(&conn);
+        drop_docker(&conn);
         conn.execute_batch(
             "DROP TABLE proc_net_10s;
              DROP TABLE proc_net_1m;
@@ -724,7 +778,8 @@ mod tests {
             .unwrap();
         assert!(with_host.len() > NOT_HISTORY.len(), "{with_host:?}");
         for table in &with_host {
-            let history = HISTORY_TABLES.iter().any(|t| t.name == table);
+            let history = HISTORY_TABLES.iter().any(|t| t.name == table)
+                || crate::docker::LIFECYCLE_TABLES.contains(&table.as_str());
             let excluded = NOT_HISTORY.contains(&table.as_str());
             assert!(
                 history != excluded,

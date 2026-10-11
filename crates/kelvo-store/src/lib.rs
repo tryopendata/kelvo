@@ -27,6 +27,7 @@
 mod blob;
 mod db;
 mod disk;
+pub mod docker;
 mod error;
 mod lock;
 mod perms;

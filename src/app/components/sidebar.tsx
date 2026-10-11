@@ -2,6 +2,7 @@ import { Pause } from "lucide-react";
 import {
   type KeyboardEvent,
   type MouseEvent,
+  memo,
   type ReactNode,
   useLayoutEffect,
   useRef,
@@ -23,6 +24,7 @@ const ICONS = {
   battery:
     "M3 7h15a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1zM22 11v2M6 10v4M10 10v4",
   processes: "M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01",
+  containers: "M3 4h7v7H3zM14 4h7v7h-7zM3 15h7v7H3zM14 15h7v7h-7z",
   widgets: "M3 3h7v9H3zM14 3h7v5h-7zM14 12h7v9h-7zM3 16h7v5H3z",
   hosts: "M3 3h18v12H3zM8 21h8M12 15v6",
   settings:
@@ -206,37 +208,16 @@ export function Sidebar({
         data-sidebar-pill
         className="pointer-events-none absolute inset-x-2.5 top-0 h-[30px] rounded-control bg-selected opacity-0 shadow-[inset_0_0_0_1px_var(--color-border)] transition-transform duration-(--motion-fast) ease-out"
       />
-      {/* Room for the traffic lights over the overlay title bar, then the app's
-          name; dragging either moves the window. */}
-      <div aria-hidden data-tauri-drag-region className="h-[30px] shrink-0" />
-      <div
-        data-tauri-drag-region
-        className="mb-2 flex shrink-0 items-center gap-2.5 border-border-subtle border-b px-2 pt-0.5 pb-3"
-      >
-        <KelvoMark className="pointer-events-none size-5" />
-        <span className="pointer-events-none font-[620] text-[18px] leading-none tracking-[-0.02em]">
-          Kelvo
-        </span>
-      </div>
+      <SidebarBrand />
       {hostSwitcher}
       {groups.map((g, gi) => (
-        <ul
+        <SidebarGroup
           key={g.id}
-          className={cn(
-            "m-0 flex list-none flex-col gap-0.5 p-0",
-            gi === 0 ? "pb-2" : "border-border-subtle border-t py-2"
-          )}
-        >
-          {g.entries.map((entry) => (
-            <li key={entry.id}>
-              <SidebarItem
-                entry={entry}
-                current={entry.id === active}
-                onNavigate={onNavigate}
-              />
-            </li>
-          ))}
-        </ul>
+          entries={g.entries}
+          first={gi === 0}
+          active={active}
+          onNavigate={onNavigate}
+        />
       ))}
       <div className="flex-1" />
       <div className="flex flex-col gap-1 border-border-subtle border-t px-2 pt-2.5">
@@ -282,3 +263,52 @@ export function Sidebar({
     </nav>
   );
 }
+
+// The brand and navigation groups do not depend on live sample values.
+const SidebarBrand = memo(function SidebarBrand() {
+  return (
+    <>
+      <div aria-hidden data-tauri-drag-region className="h-[30px] shrink-0" />
+      <div
+        data-tauri-drag-region
+        className="mb-2 flex shrink-0 items-center gap-2.5 border-border-subtle border-b px-2 pt-0.5 pb-3"
+      >
+        <KelvoMark className="pointer-events-none size-5" />
+        <span className="pointer-events-none font-[620] text-[18px] leading-none tracking-[-0.02em]">
+          Kelvo
+        </span>
+      </div>
+    </>
+  );
+});
+
+const SidebarGroup = memo(function SidebarGroup({
+  entries,
+  first,
+  active,
+  onNavigate,
+}: {
+  entries: readonly SidebarEntry[];
+  first: boolean;
+  active: string;
+  onNavigate?: (href: string) => void;
+}) {
+  return (
+    <ul
+      className={cn(
+        "m-0 flex list-none flex-col gap-0.5 p-0",
+        first ? "pb-2" : "border-border-subtle border-t py-2"
+      )}
+    >
+      {entries.map((entry) => (
+        <li key={entry.id}>
+          <SidebarItem
+            entry={entry}
+            current={entry.id === active}
+            onNavigate={onNavigate}
+          />
+        </li>
+      ))}
+    </ul>
+  );
+});

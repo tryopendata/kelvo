@@ -5,6 +5,18 @@ import * as __TAURI_EVENT from "@tauri-apps/api/event";
 
 /** Commands */
 export const commands = {
+	dockerDiscover: () => typedError<DockerEngine[], CommandError>(__TAURI_INVOKE("docker_discover")),
+	dockerConfigure: (settings: DockerSettings) => typedError<DockerSnapshot, CommandError>(__TAURI_INVOKE("docker_configure", { settings })),
+	dockerSnapshot: () => typedError<DockerSnapshot, CommandError>(__TAURI_INVOKE("docker_snapshot")),
+	dockerResume: () => typedError<DockerSnapshot, CommandError>(__TAURI_INVOKE("docker_resume")),
+	dockerSubscribe: (channel: Channel<DockerSnapshot>, visible: boolean) => typedError<number, CommandError>(__TAURI_INVOKE("docker_subscribe", { channel, visible })),
+	dockerUnsubscribe: (stream: number) => typedError<null, CommandError>(__TAURI_INVOKE("docker_unsubscribe", { stream })),
+	dockerDetail: (engineId: string, containerId: string) => typedError<DockerContainer, CommandError>(__TAURI_INVOKE("docker_detail", { engineId, containerId })),
+	dockerRetained: (request: DockerRetainedRequest) => typedError<DockerRetainedPage, CommandError>(__TAURI_INVOKE("docker_retained", { request })),
+	dockerHistory: (request: DockerHistoryRequest) => typedError<DockerHistoryPage, CommandError>(__TAURI_INVOKE("docker_history", { request })),
+	dockerEvents: (request: DockerEventsRequest) => typedError<DockerEventsPage, CommandError>(__TAURI_INVOKE("docker_events", { request })),
+	dockerLogs: (request: DockerLogsRequest, channel: Channel<DockerLogBatch>) => typedError<number, CommandError>(__TAURI_INVOKE("docker_logs", { request, channel })),
+	dockerCloseLogs: (stream: number) => typedError<null, CommandError>(__TAURI_INVOKE("docker_close_logs", { stream })),
 	/**  Every host, the local one first. */
 	listHosts: () => __TAURI_INVOKE<HostRecord[]>("list_hosts"),
 	listRemoteHosts: () => __TAURI_INVOKE<RemoteHostRecord[]>("list_remote_hosts"),
@@ -432,57 +444,278 @@ export type ClusterInfo = {
 	dvfs_mhz: number[],
 };
 
-export type CommandError = 
+export type CommandError =
+/**  A bounded, sanitized Docker monitoring error. */
+{ kind: "docker"; message: string } |
 /**  No host with this id is registered. */
-{ kind: "unknown_host"; host: HostId } | 
+{ kind: "unknown_host"; host: HostId } |
 /**
  *  The host is not this Mac, and the data asked for is kept only on the host it
  *  describes: per-app network bytes are not synced (D-089).
  */
-{ kind: "remote_host"; host: HostId } | 
+{ kind: "remote_host"; host: HostId } |
 /**
  *  There is no history store: it could not be opened at launch, the local host could
  *  not be registered in it, or a reset failed. Kelvo runs live-only. `reason` says
  *  why when it is known; `reset_history` can recover from everything but `locked`.
  */
-{ kind: "history_unavailable"; reason?: HistoryUnavailableReason | null } | 
+{ kind: "history_unavailable"; reason?: HistoryUnavailableReason | null } |
 /**
  *  The database is busy (another writer holds it, or a lock wait timed out). Worth one
  *  retry.
  */
-{ kind: "store_busy"; message: string } | 
+{ kind: "store_busy"; message: string } |
 /**  The database file is damaged. `reset_history` moves it aside and starts a new one. */
-{ kind: "store_corrupt"; message: string } | 
+{ kind: "store_corrupt"; message: string } |
 /**  A newer Kelvo wrote the database; this build cannot read it. */
-{ kind: "store_too_new"; found: number; supported: number } | 
+{ kind: "store_too_new"; found: number; supported: number } |
 /**  Any other history query or write failure. */
-{ kind: "store"; message: string } | 
+{ kind: "store"; message: string } |
 /**  A bug or a crashed worker inside Kelvo (a command's task panicked). Not retryable. */
-{ kind: "internal"; message: string } | 
+{ kind: "internal"; message: string } |
 /**  The settings patch produced settings that fail validation. Nothing changed. */
-{ kind: "invalid_settings"; message: string } | 
+{ kind: "invalid_settings"; message: string } |
 /**  The settings file could not be written. Nothing changed. */
-{ kind: "settings_not_saved"; message: string } | 
+{ kind: "settings_not_saved"; message: string } |
 /**  Registering or unregistering the login item failed. Nothing changed. */
-{ kind: "launch_at_login"; message: string } | 
+{ kind: "launch_at_login"; message: string } |
 /**  An argument is out of range (a negative span, an empty selector list). */
-{ kind: "invalid_argument"; message: string } | 
+{ kind: "invalid_argument"; message: string } |
 /**  A window could not be created or shown. */
-{ kind: "window"; message: string } | 
+{ kind: "window"; message: string } |
 /**
  *  The export file could not be created or written (no permission, disk full). No
  *  partial file is left behind.
  */
-{ kind: "export"; message: string } | 
+{ kind: "export"; message: string } |
 /**
  *  The public address lookup failed: offline, the service unreachable or timing
  *  out, or an answer that is not an address (a captive portal).
  */
 { kind: "public_ip"; message: string };
 
-export type CoreKind = "performance" | "efficiency" | 
+export type CoreKind = "performance" | "efficiency" |
 /**  A core type this build does not know, from a newer peer (D-040). */
 "unknown";
+
+export type DockerAggregate = {
+	monitoring_limit: number,
+	cpu_cores: number | null,
+	working_set_bytes: number | null,
+	capacity_bytes: number | null,
+	cpu_measured: number,
+	memory_measured: number,
+	expected: number,
+	running: number,
+	total: number,
+	monitored: number,
+	partial: boolean,
+	inventory_complete: boolean,
+};
+
+export type DockerContainer = {
+	engine_id: string,
+	id: string,
+	name: string,
+	image: string,
+	project: string | null,
+	service: string | null,
+	lifecycle: DockerLifecycle,
+	health: DockerHealth,
+	restart_count: number | null,
+	metadata_available: boolean,
+	/**
+	 *  Receipt time of the last successful inspect (or confirmed inspect 404),
+	 *  independent of inventory and metric observation timestamps.
+	 */
+	metadata_observed_ms?: number | null,
+	observed_restarts: number,
+	repeated_restarts: boolean,
+	observed_restart_window_ms: number,
+	oom_killed: boolean,
+	explicit_limit_bytes: number | null,
+	cpu_quota: number | null,
+	restart_policy: string | null,
+	ports: string[],
+	mounts: string[],
+	created: string | null,
+	last_seen_ms: number,
+	observed_ms: number | null,
+	interval_ms: number | null,
+	monitored: boolean,
+	metrics: DockerMetrics,
+};
+
+export type DockerCoverage = {
+	start_ms: number,
+	end_ms: number | null,
+	container_id: string | null,
+	reason: string,
+};
+
+export type DockerEngine = {
+	id: string,
+	daemon_id: string | null,
+	runtime: string,
+	context: string | null,
+	socket: string,
+	reachable: boolean,
+	preferred: boolean,
+	error: string | null,
+	api_version: string | null,
+	capacity_bytes: number | null,
+	capacity_observed_ms: number | null,
+};
+
+export type DockerEvent = {
+	id: string,
+	engine_id: string,
+	container_id: string | null,
+	/**  Full nanoseconds are strings at the JS boundary. */
+	time_ns: string,
+	time_ms: number,
+	action: string,
+	name: string | null,
+	exit_code: string | null,
+	attributes: { [key in string]: string },
+};
+
+export type DockerEventsPage = {
+	events: DockerEvent[],
+	next_id: string | null,
+	coverage: DockerCoverage[],
+};
+
+export type DockerEventsRequest = {
+	engine_id: string,
+	container_id: string | null,
+	from_ms: number,
+	to_ms: number,
+	limit: number,
+	before_id: string | null,
+};
+
+export type DockerHealth = "no_check" | "starting" | "healthy" | "unhealthy" | "unknown";
+
+export type DockerHistoryPage = {
+	generation: number,
+	points: DockerHistoryPoint[],
+	coverage: DockerCoverage[],
+	metadata: DockerContainer[],
+	persistence: DockerPersistence,
+};
+
+export type DockerHistoryPoint = {
+	time_ms: number,
+	duration_ms: number,
+	metrics: DockerMetrics,
+	measured_ms: number,
+	expected_ms: number,
+	population_revision: number,
+	revision: number,
+	explicit_limit_bytes: number | null,
+	engine_capacity_bytes: number | null,
+};
+
+export type DockerHistoryRequest = {
+	engine_id: string,
+	container_id: string | null,
+	from_ms: number,
+	to_ms: number,
+	max_points: number,
+};
+
+export type DockerLifecycle = "created" | "running" | "paused" | "restarting" | "exited" | "removing" | "dead" | "removed" | "unknown";
+
+export type DockerLogBatch = {
+	generation: number,
+	lines: string[],
+	truncated: boolean,
+	complete: boolean,
+	error: string | null,
+};
+
+export type DockerLogsRequest = {
+	engine_id: string,
+	container_id: string,
+	follow: boolean,
+};
+
+export type DockerMetrics = {
+	cpu_pct: number | null,
+	working_set_bytes: number | null,
+	raw_memory_bytes: number | null,
+	effective_limit_bytes: number | null,
+	network_rx_bps: number | null,
+	network_tx_bps: number | null,
+	block_read_bps: number | null,
+	block_write_bps: number | null,
+};
+
+export type DockerPersistence = {
+	status: string,
+	logical_bytes: number | null,
+	allowance_bytes: number | null,
+	retained_from_ms: number | null,
+};
+
+export type DockerRetainedEngine = {
+	id: string,
+	runtime: string,
+};
+
+export type DockerRetainedPage = {
+	engines: DockerRetainedEngine[],
+	containers: DockerContainer[],
+	total: number,
+	next_offset: number | null,
+};
+
+/**  Retained metadata browsing never probes or enables a Docker engine. */
+export type DockerRetainedRequest = {
+	engine_id: string | null,
+	search: string,
+	offset: number,
+	limit: number,
+};
+
+export type DockerRuntimeFootprint = {
+	scope: string,
+	explanation: string,
+	cpu_pct: number | null,
+	footprint_bytes: number | null,
+	observed_ms: number | null,
+	processes: string[],
+};
+
+export type DockerSettings = {
+	enabled?: boolean,
+	/**  Canonical Unix socket, persisted independently of the CLI context. */
+	selected_engine?: string | null,
+	monitored_containers?: string[],
+	explicit_selection?: boolean,
+	show_popover?: boolean,
+	show_tray_count?: boolean,
+};
+
+export type DockerSnapshot = {
+	host_id: HostId,
+	generation: number,
+	status: DockerStatus,
+	message: string | null,
+	engine: DockerEngine | null,
+	settings: DockerSettings,
+	containers: DockerContainer[],
+	aggregate: DockerAggregate,
+	runtime: DockerRuntimeFootprint,
+	coverage: DockerCoverage[],
+	observed_ms: number,
+	interval_ms: number,
+	population_revision: number,
+	persistence: DockerPersistence,
+};
+
+export type DockerStatus = "disabled" | "connecting" | "connected" | "idle_suspended" | "paused" | "unavailable" | "permission_denied" | "incompatible";
 
 /**  Returned by `get_edition`. Fixed for the life of the process. */
 export type Edition = {
@@ -518,22 +751,22 @@ export type Event = {
  *  exported to TypeScript with serde phases off, and an event is a whole row, so a kind
  *  from a newer build fails to decode and the reader skips that row (D-083).
  */
-export type EventDetail = 
+export type EventDetail =
 /**  The fastest fan rose by at least the threshold within the window. */
-{ kind: "fans_ramped"; from_rpm: number | null; to_rpm: number | null } | 
+{ kind: "fans_ramped"; from_rpm: number | null; to_rpm: number | null } |
 /**
  *  `thermal.state` changed level and held it. `from` is `None` only when the
  *  previous level was never seen.
  */
-{ kind: "thermal_state"; from: ThermalState | null; to: ThermalState } | 
+{ kind: "thermal_state"; from: ThermalState | null; to: ThermalState } |
 /**  One process stayed above the CPU threshold for the whole duration. */
-{ kind: "sustained_process"; process: string; 
+{ kind: "sustained_process"; process: string;
 /**  Mean CPU (percent of one core) over the run. */
-cpu_pct: number | null; secs: number } | 
+cpu_pct: number | null; secs: number } |
 /**  A power component rose well above its rolling baseline and stayed there. */
-{ kind: "power_spike"; component: PowerComponent; 
+{ kind: "power_spike"; component: PowerComponent;
 /**  Peak watts during the spike so far. */
-watts: number | null; baseline_watts: number | null } | 
+watts: number | null; baseline_watts: number | null } |
 /**  An alert rule fired. */
 { kind: "alert"; rule_id: string; rule_name: string; cause: AlertCause };
 
@@ -549,15 +782,15 @@ export type EventRecorded = {
 };
 
 /**  What `export_csv` did. Cancelling the dialog is not an error. */
-export type ExportOutcome = { kind: "saved"; 
+export type ExportOutcome = { kind: "saved";
 /**  Where the file went. */
-path: string; 
+path: string;
 /**  Bucket rows written, not counting the header or gap rows. */
-rows: number; 
+rows: number;
 /**  Gap rows written. */
-gap_rows: number; 
+gap_rows: number;
 /**  File size. */
-bytes: number } | 
+bytes: number } |
 /**  The user closed the dialog. Nothing was written. */
 { kind: "cancelled" };
 
@@ -584,7 +817,7 @@ export type ExportRequest = {
 /**
  *  An explicit span with no data. Charts split series at gaps; nothing interpolates
  *  across one.
- * 
+ *
  *  `module` is `None` for a whole-host gap and `Some` only for
  *  [`GapReason::ModuleDisabled`] (or a [`GapReason::Unknown`] reason from a newer peer,
  *  which may scope a gap to a module), so charts for other modules ignore it. [`Gap::new`]
@@ -604,34 +837,34 @@ export type Gap = {
  *  Why nothing was measured for a span. Stored as snake_case text in `gaps.reason`
  *  ([`GapReason::as_str`]).
  */
-export type GapReason = 
+export type GapReason =
 /**  The machine slept. Written by the engine on `WillSleep`, closed on `DidWake`. */
-"sleep" | 
+"sleep" |
 /**
  *  Kelvo was not running. Written by the store on startup, from the last persisted
  *  bucket to now.
  */
-"app_not_running" | 
+"app_not_running" |
 /**  The user paused sampling. */
-"paused" | 
+"paused" |
 /**  A module was switched off in Settings. The only reason that sets [`Gap::module`]. */
-"module_disabled" | 
+"module_disabled" |
 /**  (v4) The agent pruned past the controller's cursor. */
-"truncated" | 
+"truncated" |
 /**  (v4) A remote connection dropped. Provisional until sync catches up. */
-"source_offline" | 
+"source_offline" |
 /**
  *  The wall clock stepped (a manual change or an NTP step) while sampling. Covers the
  *  wall-clock span the engine could not persist: a forward step's skipped span, or,
  *  after a backward step, the time until the clock is past what was already written
  *  (D-064).
  */
-"clock_changed" | 
+"clock_changed" |
 /**
  *  A batch of history failed to commit and its rows were lost. Written over the lost
  *  span by the next successful commit (D-064).
  */
-"write_failed" | 
+"write_failed" |
 /**
  *  A reason this build does not know, from a newer peer or a newer build's database
  *  (D-040). Still a gap: charts draw it as a generic gap band. Not in
@@ -687,9 +920,9 @@ export type HeatmapDaySpec = {
 };
 
 /**  The series a heatmap shows. */
-export type HeatmapMetric = 
+export type HeatmapMetric =
 /**  `cpu.total`. */
-"cpu" | 
+"cpu" |
 /**  `thermal.hottest`. */
 "temp";
 
@@ -800,7 +1033,7 @@ export type HistorySeries = {
 	 *  series is sampled at, or the page's `bucket_ms` if that is larger. Consecutive
 	 *  points no more than this apart are one line; further apart, there is a hole
 	 *  between them. `gaps` stays the list of explicit holes.
-	 * 
+	 *
 	 *  The period is the slowest under the current settings (the backed-off base tick,
 	 *  the collector's idle cadence, Performance mode's slowdown), or, when the range
 	 *  starts before the last time a period got faster in this app run (a shorter
@@ -831,16 +1064,16 @@ export type HistorySettings = {
 };
 
 /**  Why history is unavailable, for the banner and for whether `reset_history` can help. */
-export type HistoryUnavailableReason = 
+export type HistoryUnavailableReason =
 /**
  *  Another Kelvo process (a second copy, or an installed build next to a dev build
  *  sharing its data) has the database open. Quit it; a reset cannot help.
  */
-{ kind: "locked" } | 
+{ kind: "locked" } |
 /**  A newer Kelvo wrote the database. */
-{ kind: "too_new"; found: number; supported: number } | 
+{ kind: "too_new"; found: number; supported: number } |
 /**  The database file is damaged. */
-{ kind: "corrupt"; message: string } | 
+{ kind: "corrupt"; message: string } |
 /**  Anything else: an I/O error opening it, or the local host could not be registered. */
 { kind: "failed"; message: string };
 
@@ -906,14 +1139,14 @@ export type HostsChanged = {
  *  A module's status item of its own (D-080). Not every mode is offered for every
  *  module; see [`ItemMode::allowed_for`].
  */
-export type ItemMode = "off" | 
+export type ItemMode = "off" |
 /**  The labelled value: percent, watts, or the read + write or total network rate. */
-"value" | 
+"value" |
 /**
  *  The module's graph: CPU sparkline, GPU history bars, memory fill gauge, network
  *  up and down rates.
  */
-"graph" | 
+"graph" |
 /**  CPU per-core load, P cores then E cores (CPU only). */
 "cores";
 
@@ -942,7 +1175,7 @@ export type ItemsPatch = {
  *  A label set: small, sorted by key, keys unique. The invariant is enforced by every
  *  constructor and by deserialization, so two equal label sets always compare, hash and
  *  display the same.
- * 
+ *
  *  Serialized (CBOR and JSON) as an array of `[key, value]` pairs in key order. Labels
  *  that arrive out of order are sorted on decode; duplicate keys are a decode error.
  */
@@ -950,36 +1183,36 @@ export type Labels = ([string, string])[];
 
 /**
  *  One message on a window's live channel (D-049, D-066).
- * 
+ *
  *  Order on a fresh subscription: the current `Caps` and `Status`; a `Layout` for every
  *  layout the requested history uses; the most recent two minutes as `Backfill` segments
  *  (each after its `Layout` when that differs from the last one sent); then frames, each
  *  preceded by a `Layout` when the layout changes. History older than two minutes follows
  *  as `BackfillEarlier` chunks, newest first, once the first frame is out: each chunk is
  *  older than everything the channel sent before it.
- * 
+ *
  *  After the channel resumes (window shown, display awake, the stream fell behind the
  *  bus): `Caps` and `Status` if they changed, then `Backfill` for exactly the span missed,
  *  in time order and in segments of at most 600 rows (one message each, so applying them
  *  never blocks the webview for long), so `Backfill` rows come after everything already
  *  received.
- * 
+ *
  *  `timeline` on `Backfill` and `Frame` numbers the runs of the host's wall clock: the
  *  host bumps it when its clock is stepped (D-064) and for nothing else. Rows with a
  *  `timeline` other than the one held replace everything held at or after their first
  *  row's time. After a step the channel sends the new timeline from its first row (as far
  *  back as the window's backfill span reaches), so that time is where the step happened.
- * 
+ *
  *  A subscription that named `series` gets only those series: `Layout.series` lists the
  *  matching keys and every row and frame carries values for them alone.
  */
-export type LiveMsg = 
+export type LiveMsg =
 /**
  *  The series of every following `Backfill` and `Frame` with this `layout_no`, in
  *  value order, and each one's catalog kind (`gauge` for a metric this build does not
  *  know). `layout_no` numbers layouts within one engine run.
  */
-({ kind: "layout"; layout_no: number; series: SeriesKey[]; kinds: MetricKind[] }) & { capabilities?: never; held?: never; holds_ms?: never; interval_ms?: never; rows?: never; start_ms?: never; timeline?: never; ts_ms?: never; values?: never } | 
+({ kind: "layout"; layout_no: number; series: SeriesKey[]; kinds: MetricKind[] }) & { capabilities?: never; held?: never; holds_ms?: never; interval_ms?: never; rows?: never; start_ms?: never; timeline?: never; ts_ms?: never; values?: never } |
 /**
  *  Raw measured rows from the engine's one-hour ring: row `i` was taken at about
  *  `start_ms + i * interval_ms`. `null` where a series was not sampled. Segments never
@@ -988,12 +1221,12 @@ export type LiveMsg =
  *  After a restart the ring starts with up to an hour of stored 10 s bucket averages
  *  under their own layout (`layout_no` 4294967295, D-097), so these rows can be that.
  */
-({ kind: "backfill"; layout_no: number; start_ms: number; interval_ms: number; timeline: number; rows: ((number | null)[])[]; holds_ms: number[] }) & { capabilities?: never; held?: never; kinds?: never; series?: never; ts_ms?: never; values?: never } | 
+({ kind: "backfill"; layout_no: number; start_ms: number; interval_ms: number; timeline: number; rows: ((number | null)[])[]; holds_ms: number[] }) & { capabilities?: never; held?: never; kinds?: never; series?: never; ts_ms?: never; values?: never } |
 /**
  *  History older than everything sent so far on this channel, in the same shape as
  *  `Backfill`. Its `layout_no` was announced by an earlier `Layout`.
  */
-({ kind: "backfill_earlier"; layout_no: number; start_ms: number; interval_ms: number; rows: ((number | null)[])[]; holds_ms: number[] }) & { capabilities?: never; held?: never; kinds?: never; series?: never; timeline?: never; ts_ms?: never; values?: never } | 
+({ kind: "backfill_earlier"; layout_no: number; start_ms: number; interval_ms: number; rows: ((number | null)[])[]; holds_ms: number[] }) & { capabilities?: never; held?: never; kinds?: never; series?: never; timeline?: never; ts_ms?: never; values?: never } |
 /**
  *  How long each series' sample stays current in the frames that follow, in
  *  `layout_no` order (D-090). Sent before the first frame and whenever it changes: a
@@ -1001,20 +1234,20 @@ export type LiveMsg =
  *  stream. Two samples of a series further apart than the earlier one's hold have a
  *  gap between them; closer ones are one run.
  */
-({ kind: "holds"; layout_no: number; holds_ms: number[] }) & { capabilities?: never; held?: never; interval_ms?: never; kinds?: never; rows?: never; series?: never; start_ms?: never; timeline?: never; ts_ms?: never; values?: never } | 
+({ kind: "holds"; layout_no: number; holds_ms: number[] }) & { capabilities?: never; held?: never; interval_ms?: never; kinds?: never; rows?: never; series?: never; start_ms?: never; timeline?: never; ts_ms?: never; values?: never } |
 /**
  *  One tick. `values` is what was measured on this tick (`null` for a series not
  *  sampled now); draw charts from it. `held` is the latest value of each series while
  *  it is still current (`null` once stale, D-047); read current numbers and build the
  *  Snapshot from it. Both are in `layout_no` order.
  */
-({ kind: "frame"; ts_ms: number; layout_no: number; timeline: number; values: (number | null)[]; held: (number | null)[] }) & { capabilities?: never; holds_ms?: never; interval_ms?: never; kinds?: never; rows?: never; series?: never; start_ms?: never } | 
+({ kind: "frame"; ts_ms: number; layout_no: number; timeline: number; values: (number | null)[]; held: (number | null)[] }) & { capabilities?: never; holds_ms?: never; interval_ms?: never; kinds?: never; rows?: never; series?: never; start_ms?: never } |
 /**
  *  Process rows, sent only while this window has process interest for the host:
  *  every readable process, or the top rows its [`ProcessView`] asked for, sorted by
  *  the view's first sort key.
  */
-({ kind: "processes"; ts_ms: number; rows: LiveProcess[] }) & { capabilities?: never; held?: never; holds_ms?: never; interval_ms?: never; kinds?: never; layout_no?: never; series?: never; start_ms?: never; timeline?: never; values?: never } | ({ kind: "caps"; capabilities: Capabilities }) & { held?: never; holds_ms?: never; interval_ms?: never; kinds?: never; layout_no?: never; rows?: never; series?: never; start_ms?: never; timeline?: never; ts_ms?: never; values?: never } | 
+({ kind: "processes"; ts_ms: number; rows: LiveProcess[] }) & { capabilities?: never; held?: never; holds_ms?: never; interval_ms?: never; kinds?: never; layout_no?: never; series?: never; start_ms?: never; timeline?: never; values?: never } | ({ kind: "caps"; capabilities: Capabilities }) & { held?: never; holds_ms?: never; interval_ms?: never; kinds?: never; layout_no?: never; rows?: never; series?: never; start_ms?: never; timeline?: never; ts_ms?: never; values?: never } |
 /**  Engine state, sent when it changes. */
 {
 	kind: "status",
@@ -1120,7 +1353,7 @@ export type MenuBarPatch = {
  *  What the menu bar shows (D-102): bars and values in the combined item, and the modules
  *  with a status item of their own. The three are independent; a module that is switched
  *  off shows in none of them, and keeps its choices for when it comes back.
- * 
+ *
  *  A group or field missing from the file takes its default, so a settings file written
  *  before a readout existed still loads; a field from a newer build is ignored. The
  *  fields are filled in by hand-written `Deserialize` impls rather than `#[serde(default)]`,
@@ -1135,7 +1368,7 @@ export type MenuBarSettings = {
 /**
  *  Dotted, stable, lowercase metric name such as `cpu.load` or `power.cpu`. Never reused
  *  for a different meaning; renaming one is a decision entry.
- * 
+ *
  *  Allowed characters are `a-z`, `0-9`, `_` and `.`, with no empty segment. Construct
  *  known IDs with [`MetricId::from_static`] and untrusted ones with [`MetricId::parse`].
  *  Deserialization does not validate: a malformed ID from a peer is simply an unknown
@@ -1144,17 +1377,17 @@ export type MenuBarSettings = {
 export type MetricId = string;
 
 /**  How a metric's values behave over time. */
-export type MetricKind = 
+export type MetricKind =
 /**  A level read at the sample time. */
-"gauge" | 
+"gauge" |
 /**  Per-second rate over the span since the series' previous sample. */
-"rate" | 
+"rate" |
 /**
  *  The mean over the span since the series' previous sample: a counter delta such as
  *  CPU load, residency or energy turned into watts (D-090). A collector that slows
  *  down still covers every second, at a coarser resolution.
  */
-"mean" | 
+"mean" |
 /**
  *  Monotonic counter. Collectors convert counters to rates, so no v1 metric is a
  *  counter; the variant exists for v4 sources that may send raw counters.
@@ -1185,12 +1418,12 @@ export type Millis = number;
 
 /**
  *  A UI and settings module. Every metric belongs to exactly one.
- * 
+ *
  *  Serialized in snake_case (`"cpu"`), the same text the store writes to `gaps.module`.
  *  The UI shows `Power` and `Sensors` as one "Power & Sensors" module; see
  *  [`crate::settings`] for how settings treat the pair.
  */
-export type Module = "cpu" | "gpu" | "memory" | "power" | "sensors" | "network" | "disk" | "battery" | 
+export type Module = "cpu" | "gpu" | "memory" | "power" | "sensors" | "network" | "disk" | "battery" |
 /**
  *  A module this build does not know, sent by a newer peer or written by a newer
  *  build (D-040). Never produced locally and not in [`Module::ALL`]. Consumers skip
@@ -1200,20 +1433,20 @@ export type Module = "cpu" | "gpu" | "memory" | "power" | "sensors" | "network" 
 
 /**
  *  The UI maps these to its three states: data, "not available" and unknown chip.
- * 
+ *
  *  Deserialization is hand-written so that a state added by a newer peer, with or without
  *  content, decodes as [`ModuleCap::Unknown`] instead of failing the whole message
  *  (`#[serde(other)]` only covers content-free values; D-038, D-040).
  */
-export type ModuleCap = 
+export type ModuleCap =
 /**  The module produces `series` series. */
 ({ available: {
 	series: number,
-} }) & { unsupported?: never } | 
+} }) & { unsupported?: never } |
 /**  A collector exists for the module but cannot run. */
-({ unsupported: UnsupportedReason }) & { available?: never } | 
+({ unsupported: UnsupportedReason }) & { available?: never } |
 /**  The host does not have this hardware (no battery on a Mac mini). */
-"not_present" | 
+"not_present" |
 /**
  *  A state this build does not know (D-040). Never produced locally; the UI shows it
  *  like "not available".
@@ -1254,7 +1487,7 @@ export type NetworkAddresses = {
 
 /**
  *  `query_network_by_app`: which apps moved the interface's bytes over a range (D-089).
- * 
+ *
  *  Per direction, outside a clamp, the parts add up to the interface total exactly:
  *  `sum(apps) + other_apps + overhead + system == iface`.
  */
@@ -1337,14 +1570,14 @@ export type OnboardingSettings = {
 	completed: boolean,
 };
 
-export type OsKind = "mac_os" | "linux" | 
+export type OsKind = "mac_os" | "linux" |
 /**  An OS this build does not know, from a newer peer (D-040). */
 "unknown";
 
 /**  Why Performance mode is in effect (D-088). */
-export type PerformanceReason = "off" | 
+export type PerformanceReason = "off" |
 /**  The user turned it on in Settings. */
-"setting" | 
+"setting" |
 /**  macOS Low Power Mode is on and the setting is off. It ends with Low Power Mode. */
 "low_power_mode";
 
@@ -1383,22 +1616,22 @@ export type PowerComponent = "package" | "ane";
  *  What powers the Mac right now (D-092), from the same power-source notification the
  *  battery back-off reacts to. A Mac without a battery is always on `Adapter`.
  */
-export type PowerSource = 
+export type PowerSource =
 /**  Running on the battery. */
-"battery" | 
+"battery" |
 /**  On external power, the battery not charging (full, held at a limit, or no battery). */
-"adapter" | 
+"adapter" |
 /**  On external power and the battery is charging. */
 "charging";
 
-export type ProcessResolution = 
+export type ProcessResolution =
 /**
  *  The top 30 by CPU at one instant (every 10 s, or 30 s in Performance mode; kept
  *  72 hours).
  */
-"snapshot" | 
+"snapshot" |
 /**  The top 5 by CPU averaged over one minute (the last 7 days). */
-"top5_per_minute" | 
+"top5_per_minute" |
 /**
  *  The top 5 by CPU averaged over 15 minutes (older than 7 days, for the rest of the
  *  retention period).
@@ -1409,37 +1642,37 @@ export type ProcessResolution =
  *  Why `process_signal` did not signal. Serialized with a `kind` tag like `CommandError`;
  *  the host variants share `CommandError`'s names and shapes.
  */
-export type ProcessSignalError = 
+export type ProcessSignalError =
 /**  On the refuse list. */
-{ kind: "refused"; refusal: SignalRefusal } | 
+{ kind: "refused"; refusal: SignalRefusal } |
 /**  The process exited before the signal was sent. */
-{ kind: "not_found" } | 
+{ kind: "not_found" } |
 /**  The PID now belongs to a process with a different start time. Nothing was sent. */
-{ kind: "pid_reused" } | 
+{ kind: "pid_reused" } |
 /**  `EPERM`: another user's process. Kelvo never escalates. */
-{ kind: "permission_denied" } | 
+{ kind: "permission_denied" } |
 /**  No host with this id is registered. */
-{ kind: "unknown_host"; host: HostId } | 
+{ kind: "unknown_host"; host: HostId } |
 /**  The host is not this Mac. Signals do not cross the wire in v1 (D-029). */
-{ kind: "remote_host"; host: HostId } | 
+{ kind: "remote_host"; host: HostId } |
 /**
  *  This edition cannot signal processes (the sandboxed App Store build). The UI
  *  learns it up front from `get_edition` and should not offer the actions.
  */
-{ kind: "unavailable" } | 
+{ kind: "unavailable" } |
 /**  The OS failed in a way none of the above covers. */
 { kind: "failed"; message: string };
 
 /**  A descending sort key for [`ProcessView`]. */
-export type ProcessSort = "cpu" | "memory" | "threads" | "wakeups" | "energy" | "disk_read" | "disk_write" | 
+export type ProcessSort = "cpu" | "memory" | "threads" | "wakeups" | "energy" | "disk_read" | "disk_write" |
 /**  Read plus write. */
-"disk_total" | 
+"disk_total" |
 /**  Network receive rate. Rows without a rate rank last. */
-"net_rx" | 
+"net_rx" |
 /**  Network send rate. */
-"net_tx" | 
+"net_tx" |
 /**  Receive plus send. */
-"net_total" | 
+"net_total" |
 /**  Share of the GPU. Rows without a value rank last. */
 "gpu";
 
@@ -1516,21 +1749,21 @@ export type ProcessesAt = {
 };
 
 /**  A value the combined item prints after the bars, with its marker (D-102). */
-export type Readout = 
+export type Readout =
 /**  `cpu.total`. */
-"cpu" | 
+"cpu" |
 /**  `gpu.util`. */
-"gpu" | 
+"gpu" |
 /**  `mem.pressure`. */
-"memory" | 
+"memory" |
 /**  `thermal.hottest`. */
-"temperature" | 
+"temperature" |
 /**  `power.system`. */
-"power" | 
+"power" |
 /**  `net.tx_total` over `net.rx_total`. */
-"network" | 
+"network" |
 /**  % used of the boot volume (`disk.used` / `disk.total`). */
-"disk" | 
+"disk" |
 /**  `battery.charge`. */
 "battery";
 
@@ -1675,7 +1908,7 @@ export type SensorReading = {
 
 /**
  *  One series: a metric plus its labels. Display form `cpu.load{core=7}`.
- * 
+ *
  *  On the wire and over IPC it is a struct `{ metric, labels }`; keys always travel as
  *  strings, never as a store's interned IDs.
  */
@@ -1705,6 +1938,7 @@ export type SeriesStats = {
 
 export type Settings = {
 	remote_access?: RemoteAccessSettings,
+	docker?: DockerSettings,
 	/**
 	 *  One entry per settings module: every [`Module`] except `Sensors`. An entry for a
 	 *  module this build does not know (a settings file from a newer build) is dropped on
@@ -1731,6 +1965,7 @@ export type SettingsChanged = {
 /**  A partial change. Every field is optional; absent fields keep their value. */
 export type SettingsPatch = {
 	remote_access?: RemoteAccessPatch | null,
+	docker?: DockerSettings | null,
 	modules?: Partial<{ [key in Module]: ModulePatch }> | null,
 	menu_bar?: MenuBarPatch | null,
 	sampling?: SamplingPatch | null,
@@ -1751,16 +1986,16 @@ export type SettingsSnapshot = {
 };
 
 /**  What to ask of the process. */
-export type SignalKind = 
+export type SignalKind =
 /**  `NSRunningApplication.terminate` for a regular app, `SIGTERM` otherwise. */
-"quit" | 
+"quit" |
 /**  `NSRunningApplication.forceTerminate` for a regular app, `SIGKILL` otherwise. */
 "force_quit";
 
 /**  Why Kelvo will not signal a process. The UI words it (`process-signal.ts`). */
-export type SignalRefusal = 
+export type SignalRefusal =
 /**  The macOS kernel (pid 0), or a pid kill(2) would treat as a process group. */
-"kernel_task" | "launchd" | "window_server" | "login_window" | 
+"kernel_task" | "launchd" | "window_server" | "login_window" |
 /**  Kelvo itself or one of its helpers. */
 "kelvo";
 
@@ -1812,13 +2047,13 @@ export type ThermalState = "nominal" | "fair" | "serious" | "critical";
  *  synced; [`Tier::Live1s`] is the in-memory ring buffer and the live stream. M1 keeps the
  *  last 7 days; older minutes are rolled down into M15 for the rest of the retention.
  */
-export type Tier = "live1s" | "s10" | "m1" | 
+export type Tier = "live1s" | "s10" | "m1" |
 /**
  *  15-minute buckets: minutes older than the M1 window, rolled down by the store.
  *  Older peers decode it as [`Tier::Unknown`] (D-040); it is synced only when both
  *  sides negotiated [`SyncRowKind::M15`].
  */
-"m15" | 
+"m15" |
 /**
  *  A tier this build does not know, named by a newer peer (D-040). It has no bucket
  *  width and is never persisted; a sync request for it is answered with an error.
@@ -1826,7 +2061,7 @@ export type Tier = "live1s" | "s10" | "m1" |
 "unknown";
 
 /**  Which tier `query_history` reads. */
-export type TierRequest = 
+export type TierRequest =
 /**
  *  10 s buckets while they cover the start of the range (24 h); otherwise 1 min while
  *  minutes cover it (7 days), else 15 min.
@@ -1845,16 +2080,16 @@ export type UnitsPatch = {
 	memory?: MemoryUnit | null,
 };
 
-export type UnsupportedReason = 
+export type UnsupportedReason =
 /**  The sensor map does not know this chip yet ("Share sensor dump"). */
-"unknown_chip" | 
+"unknown_chip" |
 /**
  *  The build cannot hold the entitlement the collector needs ("not available in this
  *  edition").
  */
-"missing_entitlement" | 
+"missing_entitlement" |
 /**  The API is there but reports no such hardware. */
-"no_hardware" | 
+"no_hardware" |
 /**
  *  A reason this build does not know (D-040). The UI shows a generic
  *  "not available".
@@ -1865,9 +2100,9 @@ export type UnsupportedReason =
  *  `check_for_updates`. The updater lands in phase 6; until then the command reports that
  *  no update source is configured, and never makes a network request.
  */
-export type UpdateStatus = 
+export type UpdateStatus =
 /**  "Check for updates automatically" is off; nothing was requested. */
-{ kind: "disabled" } | 
+{ kind: "disabled" } |
 /**  This build has no update source yet. */
 { kind: "not_configured" };
 
@@ -1905,15 +2140,15 @@ export type UsageByApp = {
 };
 
 /**  What `query_usage_by_app` sorts apps by (D-099). */
-export type UsageKey = 
+export type UsageKey =
 /**  Average CPU. */
-"cpu" | 
+"cpu" |
 /**  Average GPU. */
-"gpu" | 
+"gpu" |
 /**  Peak footprint. */
-"memory" | 
+"memory" |
 /**  Bytes read plus written. */
-"disk" | 
+"disk" |
 /**  Joules. */
 "energy";
 

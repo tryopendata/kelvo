@@ -14,6 +14,18 @@ import {
   type CapabilitiesChanged,
   type CommandError,
   commands,
+  type DockerContainer,
+  type DockerEngine,
+  type DockerEventsPage,
+  type DockerEventsRequest,
+  type DockerHistoryPage,
+  type DockerHistoryRequest,
+  type DockerLogBatch,
+  type DockerLogsRequest,
+  type DockerRetainedPage,
+  type DockerRetainedRequest,
+  type DockerSettings,
+  type DockerSnapshot,
   type Edition,
   type Event,
   type EventRecorded,
@@ -87,6 +99,32 @@ export interface Transport {
   /** The window label (`popover`, `dashboard`, `onboarding`). */
   windowLabel(): string;
 
+  dockerRetained(
+    request: DockerRetainedRequest
+  ): Promise<CommandResult<DockerRetainedPage>>;
+  dockerDiscover(): Promise<CommandResult<DockerEngine[]>>;
+  dockerConfigure(
+    settings: DockerSettings
+  ): Promise<CommandResult<DockerSnapshot>>;
+  dockerSnapshot(): Promise<CommandResult<DockerSnapshot>>;
+  dockerSubscribe(
+    onSnapshot: (snapshot: DockerSnapshot) => void
+  ): Promise<{ info: CommandResult<number>; unsubscribe: Unsubscribe }>;
+  dockerDetail(
+    engineId: string,
+    containerId: string
+  ): Promise<CommandResult<DockerContainer>>;
+  dockerHistory(
+    request: DockerHistoryRequest
+  ): Promise<CommandResult<DockerHistoryPage>>;
+  dockerEvents(
+    request: DockerEventsRequest
+  ): Promise<CommandResult<DockerEventsPage>>;
+  dockerLogs(
+    request: DockerLogsRequest,
+    onBatch: (batch: DockerLogBatch) => void
+  ): Promise<{ info: CommandResult<number>; unsubscribe: Unsubscribe }>;
+  dockerResume(): Promise<CommandResult<DockerSnapshot>>;
   listHosts(): Promise<HostRecord[]>;
   listRemoteHosts(): Promise<RemoteHostRecord[]>;
   inspectRemoteSshHost(
@@ -312,6 +350,45 @@ export function createTauriTransport(label: string): Transport {
   return {
     kind: "tauri",
     windowLabel: () => label,
+    dockerRetained: (request) => commands.dockerRetained(request),
+    dockerDiscover: () => commands.dockerDiscover(),
+    dockerConfigure: (settings) => commands.dockerConfigure(settings),
+    dockerSnapshot: () => commands.dockerSnapshot(),
+    async dockerSubscribe(onSnapshot) {
+      let active = true;
+      const channel = new Channel<DockerSnapshot>();
+      channel.onmessage = (snapshot) => {
+        if (active) onSnapshot(snapshot);
+      };
+      const info = await commands.dockerSubscribe(channel, true);
+      return {
+        info,
+        unsubscribe: () => {
+          active = false;
+          if (info.status === "ok") void commands.dockerUnsubscribe(info.data);
+        },
+      };
+    },
+    dockerDetail: (engineId, containerId) =>
+      commands.dockerDetail(engineId, containerId),
+    dockerHistory: (request) => commands.dockerHistory(request),
+    dockerEvents: (request) => commands.dockerEvents(request),
+    async dockerLogs(request, onBatch) {
+      let active = true;
+      const channel = new Channel<DockerLogBatch>();
+      channel.onmessage = (batch) => {
+        if (active) onBatch(batch);
+      };
+      const info = await commands.dockerLogs(request, channel);
+      return {
+        info,
+        unsubscribe: () => {
+          active = false;
+          if (info.status === "ok") void commands.dockerCloseLogs(info.data);
+        },
+      };
+    },
+    dockerResume: () => commands.dockerResume(),
     listHosts: () => commands.listHosts(),
     listRemoteHosts: () => commands.listRemoteHosts(),
     inspectRemoteSshHost: (alias) => commands.inspectRemoteSshHost(alias),

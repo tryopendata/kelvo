@@ -76,6 +76,7 @@ impl State {
 
     pub(super) fn prune(&mut self, now: i64, retention: Retention) -> Result<PruneReport> {
         self.commit()?;
+        self.docker_prune(now, retention.history_ms, retention.max_bytes)?;
         let mut report = PruneReport::default();
         let history_cut = now - retention.history_ms;
         // Whole 15-minute buckets only, so a bucket is never split across two passes.

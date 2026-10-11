@@ -1,0 +1,28 @@
+.container {
+  container-type: inline-size;
+}
+.narrowMemory {
+  display: none;
+}
+.narrow {
+  display: none;
+}
+@container (max-width: 640px) {
+  .state,
+  .restarts {
+    display: none;
+  }
+  .narrow {
+    display: block;
+    color: var(--color-muted-foreground);
+    font-size: 10px;
+  }
+}
+@container (max-width: 420px) {
+  .narrowMemory {
+    display: inline;
+  }
+  .memory {
+    display: none;
+  }
+}

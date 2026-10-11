@@ -5,7 +5,8 @@
 use std::sync::atomic::Ordering;
 use std::time::Instant;
 
-use kelvo_schema::{Gap, GapReason, HostId};
+use crate::docker::DockerOutcome;
+use kelvo_schema::{Gap, GapReason, HostId, lock::LockExt};
 
 #[cfg(feature = "write-stats")]
 use super::WriteStats;
@@ -26,6 +27,7 @@ impl State {
             self.deadline = Some(Instant::now() + self.commit_interval);
         }
         let seq_before = self.next_seq;
+        let docker_loss_before = self.docker_recorded_losses.len();
         self.conn.execute_batch("SAVEPOINT op")?;
         let res = f(self).and_then(|v| {
             if self.next_seq != seq_before {
@@ -46,6 +48,7 @@ impl State {
                     tracing::error!("store savepoint rollback failed: {rb}");
                 }
                 self.next_seq = seq_before;
+                self.docker_recorded_losses.truncate(docker_loss_before);
                 self.clear_caches();
                 Err(e)
             }
@@ -53,14 +56,29 @@ impl State {
     }
 
     pub(super) fn commit(&mut self) -> Result<()> {
-        if !self.lost.is_empty() {
+        let coordination = std::sync::Arc::clone(&self.docker_coordination);
+        let _coordinated = coordination.lock_ok();
+        // Only forget loss evidence after the exact attempted recovery reaches disk.
+
+        if !self.docker_admission.lock_ok().lost.is_empty()
+            && let Err(e) = self.apply(|s| s.docker_write_losses())
+        {
+            tracing::warn!("Docker loss recovery failed: {e}");
+        }
+        let host_loss_recorded = if !self.lost.is_empty() {
             // Rides this batch: once it commits, the lost spans are on record.
             let lost: Vec<(HostId, (i64, i64))> =
                 self.lost.iter().map(|(h, span)| (*h, *span)).collect();
-            if let Err(e) = self.apply(|s| s.write_lost_gaps(&lost)) {
-                tracing::warn!("store: recording lost spans failed: {e}");
+            match self.apply(|s| s.write_lost_gaps(&lost)) {
+                Ok(()) => true,
+                Err(e) => {
+                    tracing::warn!("store: recording lost spans failed: {e}");
+                    false
+                }
             }
-        }
+        } else {
+            true
+        };
         if !self.in_txn {
             return Ok(());
         }
@@ -74,11 +92,33 @@ impl State {
             }
             let _ = self.conn.execute_batch("ROLLBACK");
             self.clear_caches();
+            self.docker_recorded_losses.clear();
+            for p in std::mem::take(&mut self.docker_pending) {
+                self.finish_docker(p, DockerOutcome::Failed, Some(e.to_string()));
+            }
             self.next_seq = db::read_next_seq(&self.conn)?;
             return Err(e.into());
         }
         self.batch_span.clear();
-        self.lost.clear();
+        if host_loss_recorded {
+            self.lost.clear();
+        }
+        {
+            let mut a = self.docker_admission.lock_ok();
+            for loss in std::mem::take(&mut self.docker_recorded_losses) {
+                let key = (loss.host, loss.daemon);
+                if a.lost
+                    .get(&key)
+                    .is_some_and(|v| v.start == loss.start && v.end == loss.end)
+                {
+                    a.lost.remove(&key);
+                }
+            }
+            a.logical_bytes = self.docker_used()?;
+        }
+        for p in std::mem::take(&mut self.docker_pending) {
+            self.finish_docker(p, DockerOutcome::Persisted, None);
+        }
         #[cfg(feature = "write-stats")]
         {
             self.commits += 1;

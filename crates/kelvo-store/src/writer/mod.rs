@@ -41,6 +41,7 @@ use crate::types::{
 };
 
 mod discard;
+mod docker;
 mod intern;
 mod prune;
 mod rows;
@@ -52,6 +53,8 @@ pub use intern::NET_NEW_NAMES_PER_HOUR;
 type Reply<T> = mpsc::SyncSender<Result<T>>;
 
 enum Op {
+    Docker(Box<docker::Pending>),
+    ResetDocker(HostId, i64, Reply<()>),
     UpsertHost(HostRecord, Reply<()>),
     BeginSession(HostId, i64, Reply<SessionStart>),
     Bucket(BucketRow),
@@ -127,6 +130,8 @@ impl WriteStats {
 #[derive(Clone)]
 pub struct Writer {
     tx: mpsc::Sender<Op>,
+    docker_admission: Arc<std::sync::Mutex<docker::Admission>>,
+    docker_coordination: Arc<std::sync::Mutex<()>>,
     /// Low-disk mode: S10 buckets are dropped before they are queued.
     s10_paused: Arc<AtomicBool>,
     /// Test support: every commit fails while set ([`Writer::set_fail_commits`]).
@@ -357,6 +362,11 @@ impl Writer {
     /// What was queued before it commits first, on its own; the discard is then its own
     /// transaction. An error means the discard did not reach the file, and the caller
     /// retries.
+    pub fn discard_from_soon(&self, host: HostId, from_ms: i64) -> Result<()> {
+        let (reply, _rx) = mpsc::sync_channel(1);
+        self.queue(Op::DiscardFrom(host, from_ms, reply))
+    }
+
     pub fn discard_from(&self, host: HostId, from_ms: i64) -> Result<()> {
         self.call(|r| Op::DiscardFrom(host, from_ms, r))
     }
@@ -405,12 +415,16 @@ pub(crate) fn spawn(
     state.prune_batch = prune_batch;
     #[cfg(feature = "write-stats")]
     let fail_commits = Arc::clone(&state.fail_commits);
+    let docker_admission = Arc::clone(&state.docker_admission);
+    let docker_coordination = Arc::clone(&state.docker_coordination);
     let handle = std::thread::Builder::new()
         .name("kelvo-store-writer".into())
         .spawn(move || state.run())?;
     Ok((
         Writer {
             tx,
+            docker_admission,
+            docker_coordination,
             s10_paused: Arc::new(AtomicBool::new(false)),
             #[cfg(feature = "write-stats")]
             fail_commits,
@@ -420,6 +434,10 @@ pub(crate) fn spawn(
 }
 
 struct State {
+    docker_admission: Arc<std::sync::Mutex<docker::Admission>>,
+    docker_coordination: Arc<std::sync::Mutex<()>>,
+    docker_pending: Vec<docker::Pending>,
+    docker_recorded_losses: Vec<docker::Loss>,
     conn: Connection,
     rx: mpsc::Receiver<Op>,
     /// The database file, for measuring its size on disk.
@@ -484,7 +502,22 @@ impl State {
         rx: mpsc::Receiver<Op>,
     ) -> Result<State> {
         let next_seq = db::read_next_seq(&conn)?;
+        let logical_bytes = conn
+            .query_row(
+                "SELECT coalesce(sum(logical_bytes),0) FROM docker_accounting",
+                [],
+                |r| r.get::<_, i64>(0),
+            )?
+            .max(0) as u64;
         Ok(State {
+            docker_admission: Arc::new(std::sync::Mutex::new(docker::Admission {
+                logical_bytes,
+                allowance: crate::docker::allowance(150_000_000),
+                ..Default::default()
+            })),
+            docker_coordination: Arc::new(std::sync::Mutex::new(())),
+            docker_pending: Vec::new(),
+            docker_recorded_losses: Vec::new(),
             conn,
             rx,
             path,
@@ -550,6 +583,10 @@ impl State {
 
     fn handle(&mut self, op: Op) {
         match op {
+            Op::Docker(pending) => self.handle_docker(*pending),
+            Op::ResetDocker(host, generation, r) => {
+                let _ = r.send(self.reset_docker(host, generation));
+            }
             Op::UpsertHost(record, r) => {
                 // Rare, and readers (list_hosts) need it at once: commit with it.
                 let res = self.apply(|s| s.upsert_host(&record));

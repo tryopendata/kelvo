@@ -56,6 +56,15 @@ rm -rf ~/.kelvo
 | Disk | Read and write rates, free space, top processes by disk activity |
 | Battery | Charge, health, cycle count, power in or out, time remaining |
 | Processes | Every process, with CPU, memory, disk, network and GPU columns |
+| Containers (opt-in) | Local Docker CPU, memory and I/O, history, lifecycle evidence and on-demand logs |
+
+Enable monitoring from Containers and choose one local Docker engine. Kelvo reads
+the Unix socket directly and needs no Docker CLI. Up to 128 containers are
+monitored at once; larger inventories show explicit partial coverage. Container
+memory and macOS runtime footprint are separate measurements, and unavailable
+runtime attribution is labelled. Logs stay in memory while viewed. OrbStack has
+been exercised locally; Docker Desktop and Colima runtime validation remains open
+in the [compatibility notes](plan/docker-container-monitoring-compatibility.md).
 
 ![The CPU page](https://raw.githubusercontent.com/tryopendata/kelvo/assets/media/cpu.webp)
 
@@ -81,7 +90,7 @@ Measured on an M3 Max running macOS 27, plugged in, on 2026-10-07:
 | [Stats](https://github.com/exelban/stats) 3.0.20 | Menu bar only, default settings | 4.1% | 149 MB |
 | Activity Monitor | Window open, 5 s updates | 3.9% | 138 MB |
 
-CPU is the kernel's CPU time for the app and its helper processes over 120 seconds; memory is their physical footprint. Each figure is a single run on a machine busy with other builds, and Stats ran its own default modules rather than Kelvo's set. Activity Monitor had its window open, so compare it with Kelvo's 6 to 10% windowed figure, not the menu bar one.
+CPU is the kernel's CPU time for the app and its helper processes over 120 seconds; memory is their physical footprint. These default-setting measurements have Docker monitoring off. Each figure is a single run on a machine busy with other builds, and Stats ran its own default modules rather than Kelvo's set. Activity Monitor had its window open, so compare it with Kelvo's 6 to 10% windowed figure, not the menu bar one.
 
 To measure on your Mac, run `make bench`, or `make bench-vs-stats` to compare against Stats for 10 minutes each. Raw numbers are in [`plan/competitor-benchmarks.md`](plan/competitor-benchmarks.md).
 

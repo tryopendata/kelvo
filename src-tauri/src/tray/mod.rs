@@ -103,7 +103,8 @@ pub fn create(app: &AppHandle) -> anyhow::Result<()> {
         pacer: Pacer::default(),
         retries: Retries::default(),
     };
-    let first = model::build(
+    let first = build_items(
+        app,
         &Readings::default(),
         &TrayHistory::default(),
         &state.settings.settings(),
@@ -182,6 +183,14 @@ fn left_click(tray: &TrayIcon, clicked: Instant) {
         }
         return;
     }
+    if tray.id().as_ref() == "kelvo-containers" {
+        if let Err(error) =
+            windows::open_dashboard(tray.app_handle(), Some("/dashboard/containers"))
+        {
+            tracing::warn!(%error, "opening Containers from the tray");
+        }
+        return;
+    }
     crate::popover::toggle(tray.app_handle(), clicked, tray.id().as_ref());
 }
 
@@ -203,6 +212,26 @@ fn set_label(tray: &TrayIcon, label: String) {
 #[cfg(not(target_os = "macos"))]
 fn set_label(tray: &TrayIcon, label: String) {
     let _ = tray.set_tooltip(Some(label));
+}
+
+/// The same host-driven pacer owns all items; no extra Docker timer or collector.
+fn build_items(
+    app: &AppHandle,
+    readings: &Readings,
+    history: &TrayHistory,
+    settings: &kelvo_schema::Settings,
+    paused: bool,
+    scale: u32,
+) -> Vec<TrayItem> {
+    let mut items = model::build(readings, history, settings, paused, scale);
+    if settings.docker.enabled
+        && settings.docker.show_tray_count
+        && let Some(state) = app.try_state::<AppState>()
+    {
+        let (status, aggregate) = state.docker.glance();
+        items.push(model::docker_item(&status, &aggregate, scale));
+    }
+    items
 }
 
 /// Gives the status item its `autosaveName`, so macOS restores its ⌘-drag position.
@@ -517,7 +546,7 @@ async fn follow(
             () = changed.notified() => {
                 items.retry_now();
                 if !status.display_idle {
-                    let wanted = model::build(&readings, &history, &settings(), status.paused, scale);
+                    let wanted = build_items(app, &readings, &history, &settings(), status.paused, scale);
                     items.show(wanted, Instant::now(), period, false);
                 }
                 continue;
@@ -526,7 +555,7 @@ async fn follow(
                 let now = Instant::now();
                 items.due(now, period);
                 if items.retry_due(now) && !status.display_idle {
-                    let wanted = model::build(&readings, &history, &settings(), status.paused, scale);
+                    let wanted = build_items(app, &readings, &history, &settings(), status.paused, scale);
                     items.show(wanted, now, period, false);
                 }
                 continue;
@@ -544,7 +573,7 @@ async fn follow(
                     readings = series.readings(&f.held);
                     history.record(&readings);
                     let wanted =
-                        model::build(&readings, &history, &settings(), status.paused, scale);
+                        build_items(app, &readings, &history, &settings(), status.paused, scale);
                     items.show(wanted, Instant::now(), period, false);
                 }
             }
@@ -585,7 +614,7 @@ async fn follow(
                     // No frames arrive while paused: draw the paused state now.
                     if !s.display_idle {
                         let wanted =
-                            model::build(&readings, &history, &settings(), s.paused, scale);
+                            build_items(app, &readings, &history, &settings(), s.paused, scale);
                         let period = Pacer::for_status(s);
                         items.show(wanted, Instant::now(), period, true);
                     }

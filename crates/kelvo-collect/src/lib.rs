@@ -788,3 +788,6 @@ mod tests {
         assert_eq!(buf.values.capacity(), cap);
     }
 }
+
+#[cfg(unix)]
+pub mod docker;

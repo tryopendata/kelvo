@@ -93,6 +93,7 @@ import {
   RING_SPAN_MS,
 } from "@core/generated/bindings";
 import { CHART_WINDOWS } from "./live-window";
+import { createMockDocker } from "./mock/docker";
 import { createEmitter } from "./mock/emitter";
 import { mockEvents } from "./mock/events";
 import {
@@ -402,6 +403,10 @@ export function createMockTransport(
   const calls: MockCall[] = [];
   const startMs = now();
   const baseSettings = defaultSettings(flags);
+  if (baseSettings.docker)
+    baseSettings.docker.enabled =
+      (options.scenarios ?? []).some((s) => s.startsWith("docker-")) &&
+      !(options.scenarios ?? []).includes("docker-retained");
   const startInterval = options.intervalMs ?? 1000;
   gen.intervalMs = startInterval;
 
@@ -856,6 +861,7 @@ export function createMockTransport(
   };
 
   const tick = () => {
+    docker.tick();
     if (status.paused || flags.stale) return;
     ticks++;
     if (flags.clockStep && ticks === 11) transport.stepClock(-300_000);
@@ -1045,8 +1051,20 @@ export function createMockTransport(
     });
     return remote;
   };
+  const docker = createMockDocker(
+    options.scenarios ?? [],
+    options.now ?? Date.now,
+    (next) => {
+      settings = {
+        revision: settings.revision + 1,
+        settings: { ...settings.settings, docker: next },
+      };
+      emitters.settings.emit(settings);
+    }
+  );
 
   const transport: MockTransport = {
+    ...docker.methods,
     kind: "mock",
     flags,
     calls,
@@ -1062,6 +1080,7 @@ export function createMockTransport(
       emitters.health.emit({ health });
     },
     dispose() {
+      docker.dispose();
       if (timer !== null) clearInterval(timer);
       timer = null;
       for (const sub of live.values()) {
@@ -1318,6 +1337,7 @@ export function createMockTransport(
       if (windowVisible === visible) return;
       const was = receiving();
       windowVisible = visible;
+      docker.setVisible(receiving());
       // Rust's order (D-094): the tick changes before the stream resumes and
       // after it stops, so the window never gets the background's status.
       updatePower();
@@ -1337,6 +1357,7 @@ export function createMockTransport(
       if (status.display_idle === idle) return;
       const was = receiving();
       status = { ...status, display_idle: idle };
+      docker.setVisible(receiving());
       pushStatus();
       if (!was && receiving()) resume();
     },
@@ -1716,6 +1737,7 @@ export function createMockTransport(
         });
       }
       unavailable = null;
+      docker.resetHistory();
       historyBytes = 4096;
       growth = null;
       transport.setHistoryHealth({

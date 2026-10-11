@@ -19,6 +19,14 @@ call-counters = []
 [dependencies]
 kelvo-schema.workspace = true
 thiserror.workspace = true
+serde_json.workspace = true
+ciborium.workspace = true
+sha2 = "0.10"
+tokio = { workspace = true, features = ["time", "net", "rt", "macros", "io-util"] }
+futures-util = "0.3"
+hyper = { version = "1", features = ["client", "http1"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+bollard = { version = "=0.19.4", default-features = false, features = ["pipe"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 # libc, core-foundation and objc2-foundation match what Tauri already pulls in.
@@ -36,3 +44,6 @@ objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std"
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

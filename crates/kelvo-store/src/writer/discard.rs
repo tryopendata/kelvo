@@ -1,6 +1,6 @@
 //! Discarding a host's rows from a time on, and clearing a host's history.
 
-use kelvo_schema::{HostId, Tier};
+use kelvo_schema::{HostId, Tier, lock::LockExt};
 use rusqlite::params;
 
 use super::State;
@@ -10,6 +10,7 @@ use crate::error::Result;
 impl State {
     pub(super) fn discard_from(&mut self, host: HostId, from: i64) -> Result<()> {
         let host_ref = self.host_ref(host)?;
+        self.docker_discard(host_ref, from)?;
         for table in db::HISTORY_TABLES {
             let Some(col) = table.discard_col else {
                 continue;
@@ -54,6 +55,16 @@ impl State {
                 }
             }
         }
+        self.docker_admission.lock_ok().lost.retain(|(h, _), loss| {
+            if loss.daemon.is_empty() || *h != host {
+                return true;
+            }
+            if loss.start >= from {
+                return false;
+            }
+            loss.end = loss.end.min(from);
+            true
+        });
         self.commit()
     }
 
@@ -61,6 +72,7 @@ impl State {
         self.commit()?;
         self.apply(|s| {
             let host_ref = s.host_ref(host)?;
+            s.docker_reset_rows(host,0)?;
             // Everything up to now is gone: a remote cursor into it must resync.
             let last = s.next_seq - 1;
             for tier in Tier::PERSISTED {

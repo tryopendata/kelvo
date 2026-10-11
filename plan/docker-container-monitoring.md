@@ -1,6 +1,34 @@
 # Docker container monitoring
 
-**Status:** Planned; implementation has not started. **Date:** 2026-10-11.
+**Status:** In progress — proceeding with OrbStack validation and documented Docker Desktop/Colima API surfaces, as authorized by the user. **Date:** 2026-10-11.
+
+Execution workspace: `codex/docker-container-monitoring` in
+`/Users/riley/Projects/vitals-docker-container-monitoring`.
+
+Execution tracking (dependency order): A partial ([evidence](docker-container-monitoring-compatibility.md)); B scoped verification passed;
+C–G implemented, scoped-tested and review-approved on main `4c44aae`; H1–H3
+remain open for final integrated and real-world acceptance. Completion requires each milestone's
+verification evidence, including its real-engine checks and 24-hour soak.
+The user authorized proceeding with OrbStack evidence and the documented common
+Docker Engine API. Docker Desktop/Colima runtime-specific checks remain unverified;
+their absence does not block implementation. Review/fix iterations, merge to main
+and worktree cleanup are authorized after completion and verification.
+
+Progress recorded 2026-10-11: B's Rust DTOs, generated bindings, typed transport/mock
+parity and relational schema/query-plan checks passed scoped verification. The
+pinned client enforces a pre-decode response bound. The complete frontend check
+passes (907 tests), and live OrbStack adapter/worker checks pass. C–G still need
+integrated race, failure and full-suite acceptance. See [PROGRESS.md](PROGRESS.md)
+for verification details and handoff notes; no release milestone is accepted yet.
+Architecture, database and UI re-reviews are approved after all findings were
+fixed, including retained browsing while disabled, hidden-window log cancellation
+and inspection freshness. The overview passed its unchanged 35 ms/s gate at
+27.54 ms/s (detail 20.92 ms/s), with no long tasks. Full automated verification
+passed: `make check` (814 Rust/939 frontend tests), 262 functional browser cases
+and all 10 Chromium performance gates. Remote-host work merged meanwhile is
+preserved; Docker uses schema v6 after the remote sync v5 migration. Hardware,
+population-scale accuracy and 24-hour soak acceptance remain open; no release
+acceptance or merge is claimed.
 
 Add a Containers tab that answers two questions: “How much of my Mac is Docker using?” and “Which container explains it?” Show the selected local engine's container workload alongside the macOS runtime processes that support it, with explicit measurement boundaries. Keep container history and lifecycle evidence so an earlier spike remains explainable.
 
@@ -229,7 +257,8 @@ If irreducible live references leave no room, pause **all Docker persistence**, 
 
 ## 5. Delivery plan and dependencies
 
-The checkboxes below describe future implementation. This planning change does not complete them or change the release sequence.
+The checkboxes track implementation and its required verification. Scoped test
+results are recorded separately from milestone release acceptance.
 
 | Work item | Depends on | Deliverable and exit condition |
 |---|---|---|
@@ -249,12 +278,12 @@ The checkboxes below describe future implementation. This planning change does n
 **Milestone 3 — Glance and correlate:** G–H. Add lightweight surfaces after their source contracts are stable. Repeat H for integrated surfaces, deep links, visibility/cadence and a 24-hour integrated soak alongside the earlier gates. Each prior milestone has already passed its own H gate; optional popover/tray work does not postpone core-tab verification.
 
 - [ ] A — Compatibility and attribution spike
-- [ ] B — Schema and transport contracts
-- [ ] C — Live engine worker
-- [ ] D — Containers tab and detail
-- [ ] E — Persistent history
-- [ ] F — Investigation
-- [ ] G — Integrated surfaces
+- [x] B — Schema and transport contracts (scoped checks passed; full-diff release review pending)
+- [x] C — Live engine worker (scoped protocol/worker tests and architecture review passed)
+- [x] D — Containers tab and detail (scoped browser/keyboard/screenshot checks and UI review passed)
+- [x] E — Persistent history (failure/concurrency/capacity checks and database re-review passed; integrated H acceptance pending)
+- [x] F — Investigation (history/log/event regressions and review passed; real diagnosis acceptance remains H)
+- [x] G — Integrated surfaces (Timeline, popover and tray implemented; scoped checks and review passed)
 - [ ] H1 — Milestone 1 release verification and review fixes
 - [ ] H2 — Milestone 2 release verification and review fixes
 - [ ] H3 — Milestone 3 release verification and review fixes

@@ -10,7 +10,7 @@ This folder is the plan for Kelvo, from the first installable build through remo
 | [v2-customization-widgets.md](v2-customization-widgets.md) | v2.x: widget manifest, composer, floating desktop widgets, WidgetKit dev build |
 | [v3-native-distribution.md](v3-native-distribution.md) | v3.x: Developer ID, notarization, public WidgetKit, App Store evaluation |
 | [v4-remote-hosts.md](v4-remote-hosts.md) | v4.x: `kelvo-agent`, SSH transport, sync, fleet view |
-| [docker-container-monitoring.md](docker-container-monitoring.md) | Planned local Docker tab: aggregate/runtime and per-container stats, history, logs, SQLite design and delivery gates |
+| [docker-container-monitoring.md](docker-container-monitoring.md) | Local Docker tab in implementation: aggregate/runtime and per-container stats, history, logs, SQLite design and delivery gates |
 | [decisions.md](decisions.md) | ADR log: every decision with its reasoning and when to revisit it |
 | [PROGRESS.md](PROGRESS.md) | Implementation progress tracker |
 

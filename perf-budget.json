@@ -27,6 +27,12 @@
     "hiddenResume": {
       "_doc": "Dashboard shown again after half an hour hidden, wide-layout mock: the channel resumes with the 1,800 missed rows in backfill chunks of at most 600 (review #5, D-072). No long task over longTaskMs from the resume on, and the CPU 1 h line has no hole.",
       "longTaskMs": 50
+    },
+    "containers": {
+      "mainThreadMsPerSec": 35
+    },
+    "containerDetail": {
+      "mainThreadMsPerSec": 35
     }
   },
   "engine": {

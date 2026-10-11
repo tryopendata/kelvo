@@ -61,7 +61,7 @@ Known follow-ups (small, not scheduled):
 | Network attribution (per-app history, brush, Apps table) | [D-089](decisions.md) | Done (runs from source) | Live curl within 3%, tray cost +0.04 pp; Chrome/Safari downloads left to manual QA |
 | Sample holds and metric kinds on the live stream | [D-090](decisions.md) | Done | Rust publishes kinds and holds, charts join by them. The client-side data-semantics audit findings were decided and fixed in [D-092](decisions.md); the real app was checked over tray-only history with it (2026-10-06) |
 | Data-boundary follow-ups | [D-092](decisions.md) | Done; real-app check open | Group A done: engine, settings and history facts generated as constants (SAMPLING_PLANS, METRIC_CODES, tiers), process refusal from Rust. Group B done: net/disk totals as catalog metrics (gap when any part is), HostInfo gpu_dvfs_mhz and boot_mounts, LiveStatus primary_iface and power_source, self.cpu Mean, memory composition over mem_total_bytes, overview disk from disk.used, mock held staleness. Group C done: rollups weigh Mean/Rate samples by their span (capped at the previous sample's hold); the engine keeps the last hour of its emitted bucket rows plus the open buckets in `LiveHub`, and `query_history` merges them over the store (from them alone with history unavailable); `HistorySeries.hold_ms` (slowest period under the current settings, or the bucket) drives the timeline's joins, replacing the 1.5x rule and the ring stitching, and Live re-reads history when a bucket closes; `battery_hours` takes local hour boundaries; `seriesStats`, `bucketAverages` and a shared `windowMean` (popover footer, settings overhead) run on the `seriesWindow` grid; the mock has no `utun3`. `complete_to_ms` is not on the wire: the Live window still ends at the open bucket's start. Real app: the Power stack is continuous over tray-only history (2026-10-06). Open: check Timeline Live, the battery bars and history-unavailable in `bun run tauri dev` on real hardware |
-| Local Docker container monitoring | [Docker plan](docker-container-monitoring.md) | Not started (planned) | Product/UX and technical plan reviewed; no collector, route, schema migration or runtime validation implemented |
+| Local Docker container monitoring | [Docker plan](docker-container-monitoring.md) | In progress | User authorized OrbStack validation + documented Desktop/Colima API surfaces; schema/backend, store and frontend implementation underway; unavailable runtime evidence remains explicit |
 | v1.x QA and polish (manual, from source) | [v1](v1-local-monitor.md) | Next | The user runs the dev build day to day; sessions fix batches of filed issues |
 | v1.x Release: distribution, updater, install | [v1](v1-local-monitor.md) | Not started | After QA; the old v1.0 phase 6 distribution items (D-078) |
 | v2.0 Widget manifest and popover composer | [v2](v2-customization-widgets.md) | Not started | |
@@ -74,6 +74,186 @@ Known follow-ups (small, not scheduled):
 Status values: Not started, In progress, Blocked (say on what), Done (with the verification that proved it).
 
 ## Log
+
+### 2026-10-11 (Docker automated verification complete; acceptance outstanding)
+
+Final source verification is green:
+
+- `make check`: 814 Rust tests and 939 frontend tests passed, with formatting,
+  lint, typecheck and App Store compilation/clippy checks. Explicit ignored tests
+  remain separately documented; final installed OrbStack adapter/worker tests
+  were also invoked and passed.
+- Full functional browser suite: 262 passed across Chromium and WebKit. One prior
+  run's popover-resume observation counter reset; the isolated two-browser rerun
+  and complete rerun passed without application or test changes. No source or
+  documentation writes were made during the final browser runs.
+- Performance suite: all 10 Chromium gates passed; 10 intentional WebKit skips.
+  Docker overview/detail: 27.54/20.92 ms/s, CPU: 32.34, GPU: 27.07, Power: 27.67.
+  No long tasks. Every existing threshold and the Docker 35 ms/s limits remain
+  unchanged. Performance mode Overview measured 13.25 versus 36.71 ms/s plain.
+- Generated bindings reproduce byte-for-byte. Architecture, database and UI
+  `ce:code-reviewer` re-reviews are approved with no remaining findings.
+
+Evidence logs: `/tmp/kelvo-docker-final-check-passed.log`,
+`/tmp/kelvo-docker-final-functional-rerun.log`,
+`/tmp/kelvo-docker-final-performance.log`, and final screenshots under
+`/tmp/docker-qa/final/`.
+
+Acceptance still open: a real integrated 24-hour soak; whole-app module-off/on
+overhead and daemon/VM measurements; controlled population-scale timing and
+aligned end-to-end CPU/memory accuracy. The Mac still reports lid closed with
+sleep enabled, so the whole-app benchmark guard prevents a valid measurement.
+Desktop/Colima runtime tests remain explicitly unverified under the user's
+OrbStack-first authorization. No waiver of the other acceptance items has been
+received. The reviewed implementation is being committed in its worktree;
+H1–H3, merge and worktree cleanup remain pending the required evidence or an
+explicit scope decision to defer those checks.
+
+### 2026-10-11 (Docker final verification after shared sidebar fixes)
+
+The shared sidebar correction now passes focused Power timing at 32.98 ms/s
+against the unchanged 35 ms/s limit, with no long tasks. Profiling verified that
+static logo/host-chooser work disappeared and group construction fell, while
+dynamic metric rows kept updating. Host chooser, static group and brand memo
+boundaries preserve route/context changes. Ten host-switch browser cases passed;
+a behavior regression covers live values, active routes, host-specific entries,
+latest navigation callbacks and keyboard movement. Four stale-prop mutations
+failed meaningfully and were restored. UI re-review approved these final changes.
+
+The frozen tree passes `make check`: 814 Rust tests and 939 frontend tests, plus
+lint, formatting, typecheck and App Store checks. Read-only final OrbStack adapter
+and worker tests also passed (API 1.49, both running workloads normalized, disable
+cancellation). The complete functional browser suite and isolated performance
+suite are being rerun. Hardware/scale accuracy and 24-hour acceptance remain open;
+no merge or milestone release acceptance is claimed.
+
+### 2026-10-11 (Docker source frozen after review approvals)
+
+Architecture, database and UI reviewers now report APPROVE with no remaining
+findings. All fixes are restored after negative regression checks. Backend scoped
+checks pass (3 collector and 31 engine Docker tests, shell window dispatch test,
+clippy and generated bindings). Frontend scoped checks pass (25 tests, typecheck,
+32 Docker browser cases before the last metadata correction and 6 refreshed
+screenshot cases afterward). Thirteen UI negative checks failed on their intended
+regressions before restoration. Final screenshot set `/tmp/docker-qa/final/` was
+inspected, including the disabled retained-history browser with Enable above it.
+
+B–G are implemented and scoped-verified; A remains the explicitly limited runtime
+matrix, and H1–H3 remain unaccepted. A fresh full `make check` is running on the
+frozen tree, followed by full browser and isolated performance runs. No commit,
+merge, whole-app hardware result or 24-hour soak completion is claimed yet.
+
+Final `make check` passed: 814 Rust tests (32 explicitly ignored), 938 frontend
+tests, formatting, lint, typecheck and App Store compile/clippy checks. All 262
+functional Chromium/WebKit browser cases passed. Bindings regenerate byte-for-byte
+unchanged. The isolated performance run passed Docker overview (33.96 ms/s) and
+detail (26.70 ms/s), each below the unchanged 35 ms/s limit with no long tasks.
+It passed eight gates and skipped the ten intentionally Chromium-only cases in
+WebKit, but failed existing CPU/Power gates at 35.97/38.45 ms/s against 35.
+
+A same-session comparison reproduced both failures on unchanged main `4c44aae`
+(36.91/37.55 ms/s) and the feature branch (36.09/38.01 ms/s). No long tasks occurred
+in these comparisons. This establishes a baseline failure, not its cause. Shared
+sidebar work is being profiled before any narrow correction; thresholds remain
+unchanged. Final performance acceptance is still open.
+
+Profiling found the closed host chooser rebuilding during metric-only parent
+updates. A memo boundary preserves its own host/router subscriptions; ten
+host-switch browser cases and UI re-review passed. The focused CPU/Power pair
+then passed at 31.47/34.99 ms/s. `make check` passed again afterward. The complete
+single-worker browser rerun measured CPU at 33.34 ms/s but Power at 35.86 ms/s,
+still above 35. Other performance gates passed, including Docker at 31.33 ms/s
+and detail at 23.87 ms/s, with no long tasks. Analysis of sampled JSX callers
+identified repeated static navigation and brand construction; a narrow follow-up
+is being prepared. No threshold or workload fixture has been weakened.
+
+### 2026-10-11 (Docker review fixes and overview performance gate)
+
+The integrated database re-review is approved with no remaining findings. All
+four first-pass persistence/reset findings have regression coverage; the full
+store suite, 12 recorder tests and migration upgrades through v6 pass. The
+architecture re-review caught one further finite-tail boundary error: logs from
+the current second were omitted. The corrected unbounded latest-200 tail keeps
+the captured Follow boundary and counted overlap removal. A filter-aware daemon
+fixture fails under the old cutoff and passes with the fix; 3 collector and 25
+engine Docker tests plus scoped clippy pass. Final architecture approval remains
+pending additional UI-driven lifecycle fixes.
+
+The 128-container changing overview now passes the unchanged 35 ms/s gate at
+31.94 ms/s, with zero long tasks. Profiling identified repeated selection-control
+mounts as live sorting changed page membership. A native checkbox styled with
+existing tokens preserves keyboard behavior and appearance; focused tests,
+typecheck and all 30 Docker browser cases pass. Screenshots are preserved under
+`/tmp/docker-qa/native-checkbox/`.
+
+Independent UI review returned eight fixes: actionable error text, terminal log
+cancellation when windows hide, independent connection/coverage labels, Timeline
+memory and top-container navigation, detail cache invalidation, authoritative
+inspection metadata, retained-detail freshness, and disabled retained-history
+browsing after restart. These are assigned for fixes and re-review. Final
+integrated checks, whole-app hardware measurements and the required 24-hour soak
+remain open; this entry does not record milestone acceptance or merge.
+
+The UI follow-up now includes a bounded retained-history catalog using existing
+tables, with no additional migration or daemon connection. Scoped store checks
+cover database reopen, reset/retention cleanup, host isolation, search and merged
+durable/ring pagination. The shell/recorder integration and disabled-state UI are
+still being validated. Per-subscriber log cancellation now carries a terminal
+outcome so hiding one window can stop that pane without terminating another
+pane's shared pipeline; lifecycle regressions and re-review remain pending.
+
+Database re-review of the new catalog is now approved. Its live-only fallback
+was brought under the same 256-engine limit, with descriptor bytes charged to
+reader snapshot accounting. Store Docker tests passed (13 plus one explicitly
+ignored stress test); the earlier stress run remains recorded below. Work item E
+is implemented and scoped-verified, while full integrated acceptance remains H.
+
+A separate read-only OrbStack oracle compared the Engine API working-set formula
+and effective limits with `docker stats` across two existing workloads and eight
+paired observations. The saved run bracketed CLI reads by API reads over
+2.005–2.074 seconds; maximum working-set deviation outside the bracket was
+0.0129%, and limit difference was 0.023% (human-unit rounding). This is not a
+comparison against sampled product-worker output. CPU windows, end-to-end
+accuracy and the planned 32-container gate remain unverified. Numeric-only
+evidence: `/tmp/docker-memory-oracle.log`.
+
+Architecture re-review approved the backend/shell changes. UI re-review resolved
+seven original findings and caught a remaining inspection-authority race: a newer
+stats snapshot could carry older metadata, and an inspect-time 404 could lose its
+removal evidence. The fix adds an independent metadata observation timestamp,
+preserves removed state and excludes timestamp-only changes from persistence
+fingerprints. Scoped contract/regression tests pass; final UI approval is pending.
+
+The first integrated `make check` stopped at the existing host WAL volume gate
+(6,497,568 bytes/hour versus 6,000,000). Its output recorded 18 commits/hour and
+one event in the ten-minute fixture. A focused rerun passed at 4,331,712 bytes/hour
+with 12 commits/hour and no events, without code or threshold changes. This
+records the observed difference, not an established cause. The full suite will
+be rerun after the final inspection contract is stable.
+
+### 2026-10-11 (Docker review and remote-host integration)
+
+The feature worktree was updated from base `2cdcb9f` to current main `4c44aae`,
+preserving the newly merged remote-host implementation. Textual conflicts were
+resolved by keeping both feature paths; combined bindings regenerate successfully.
+Docker's migration is now v6 after remote sync's v5. Upgrade fixtures and all
+integrated suites must be rechecked against this base. The exact pre-integration
+feature is also preserved in stash `f436d4858268014e8cc68b8fd485aa52e5b8b5ba`
+until integration is verified; it must be removed during final cleanup.
+
+Before this integration, a quiet `make check` passed Rust checks/tests (including
+the allocation gates) and 909 frontend tests. The frontend overview remains over
+its unchanged performance gate at 51.52 ms/s after two scoped optimizations;
+profiling continues on the integrated tree. Other nine performance gates and all
+250 functional e2e cases passed before integration.
+
+The first `ce:code-reviewer` architecture and database passes returned eight fixes:
+mixed tail/Follow stream sharing, retained removed-container detail, failed-session
+backoff, local Docker scope on remote-host views, rollback metadata invalidation,
+available historical tier selection, durable event coverage, and live recording
+after reset failure. These are assigned to the owning implementation agents with
+regression tests and re-review required. No final approval, commit or merge to
+main is claimed; the new base and review fixes require renewed verification.
 
 ### 2026-10-11 (remote monitoring testing follow-up)
 
@@ -100,6 +280,158 @@ artifact location and the native test command are in [the execution record](remo
 ### 2026-10-11 (remote Macs implementation, D-104)
 
 Implemented Hosts setup/selection and live remote dashboards over persistent direct SSH, with LAN preference and Tailscale fallback, bundled helper/app setup, explicit host trust, reconnect/clock handling and isolated bounded history mirrors. The ce:code-reviewer fix iterations concluded APPROVE. `make check` passed (755 Rust tests, 28 existing ignored; 909 frontend tests), and the full browser rerun passed (236 passed, 8 existing skips). The ad-hoc signed debug bundle and helper were verified. Merged to main at `a702cc4` after the requested review/fix loop; the feature worktree, dev server and branch are removed, and the signed app is preserved. `make bindings-check` and commit hooks passed. Real two-Mac setup, route/sleep recovery and overhead measurements remain open in [the execution record](remote-macs-execution.md). This does not complete the broader v4 roadmap.
+### 2026-10-11 (Docker contracts and implementation underway)
+
+The user authorized using the verified OrbStack installation while implementing
+Docker Desktop/Colima against their documented common Docker Engine API; missing
+runtime-specific tests remain explicitly unverified. Rust Docker DTOs are now on
+disk, shared across backend, storage and frontend work. B is in progress, not
+accepted yet: generated bindings, transport parity and schema/query validation
+must still pass. The adapter is addressing pre-decode response bounds; SQLite
+work uses composite ownership foreign keys and entity-local weighted buckets;
+the UI follows the existing dense table and separate runtime-footprint design.
+
+An initial `make check` populated the worktree build cache and passed Rust checks
+and tests, then stopped on formatting in concurrently edited frontend files.
+That run is not final verification. Full checks, browser validation and review/fix
+iterations will run after integration. Merge to main and worktree cleanup are
+authorized only after the implementation is complete and verified.
+
+Frontend scoped checks subsequently passed: 6 unit tests (log byte/line handling,
+sorting/filtering and subscription cancellation) and 11 Chromium e2e cases
+(setup, partial populations, back-state restoration, keyboard ordering/grouping,
+removed details, 0/1/32/128/200 fixtures, accessibility, narrow/reduced-motion).
+These are intermediate results; bindings/typecheck and the complete suite remain
+pending. The first overview screenshot was compared with Processes: table columns
+fit, but the supporting chart was too tall and row emphasis too heavy; tightening
+those is in progress. Native browser control could not proceed because OS
+permissions were unavailable, so visual inspection uses test-generated screenshots.
+
+Backend scoped verification then passed `cargo check -p kelvo` and generated the
+typed bindings with `make bindings`. Three collector fixtures passed (closed GET
+allowlist, raw response byte cap/socket close, quiet event stream surviving an
+idle interval above two seconds). A read-only live OrbStack test passed negotiated
+API 1.49, inventory, inspect and stats with CPU/memory/cache fields; this verifies
+the adapter path, not ±5% metric accuracy or unsupported runtimes. Error messages
+were sanitized and event identity uses canonical CBOR with SHA-256 consistently.
+
+Intermediate performance: the 128-row overview measured 64.84 ms/s (above the
+proposed 35 ms/s gate); detail measured 22.81 ms/s. Table rendering is being
+bounded/optimized; thresholds are unchanged and final measurements must run on a
+quiet machine without binding-regeneration reloads. Storage review identified
+partial coarse-bucket replacement, unaccounted metadata memory, dependency replay
+and event-pagination issues; fixes and failure/concurrency tests are in progress.
+
+Five focused store integration tests now pass: durable receipt/snapshot visibility
+through a concurrent commit; weighted minute/15-minute equivalence; full-nanosecond
+event deduplication and cursor rollback; reset/discard/prune plus stale generation
+rejection; 128-entity ownership/query-plan checks and cap rejection/resumption.
+The bridge's population dependencies, metadata replay, as-of limits, auxiliary
+memory accounting and merged event pagination were corrected; targeted regression
+tests and shell reset integration are still underway. Worker review also requested
+vacancy filling for automatic populations, stopped-container metadata, actual
+observation intervals and no removal inference from an incomplete inventory.
+
+Frontend verification expanded to 28 Docker e2e cases across Chromium and WebKit,
+7 focused unit tests and a passing TypeScript check. Preserved screenshots at
+`/tmp/docker-qa/` were inspected in dark/light/narrow modes. The updated changing-
+metric 128-container overview measured 28.76 ms/s with no long tasks, within the
+unchanged 35 ms/s proposal; final rechecks follow checkbox/responsive cleanup.
+Inventory rendering uses 32-row pages while search/grouping still cover the full
+inventory. Deliberate visual differences from Processes: two-line rows for image
+and health/limits, a separate runtime disclosure, and state under the name when
+narrow. Native checkbox styling and a narrow-table span mismatch were corrected.
+
+Seven focused storage integrations and 38 store library tests now pass, including
+shared host/Docker commit-failure coverage and released pending reservations.
+Population revisions preserve exact JS-safe integers; merged event pagination uses
+full nanoseconds plus canonical identity. Final bridge/fault tests, repository
+gates, full-diff review and soak/overhead evidence remain pending.
+
+The root full frontend gate `bun run check` passed: Biome checked 483 files,
+TypeScript passed, and all **907 tests in 141 files** passed. The live OrbStack
+worker normalized both running containers within 1.12 seconds and cancelled on
+disable. B's schema/transport contract work is marked complete at scoped-check
+level; C–G remain under integration and fault verification. No release milestone,
+full-diff review, 24-hour soak or overhead acceptance is claimed from these results.
+
+Seven history-bridge regressions passed, covering negative acknowledgements and
+released pins, metadata retry, population boundaries, nonaligned ranges, coarse
+bucket merge, event pagination, reset races and metadata churn. The release-mode
+128-container storage stress test offered 112,094,704 logical bytes across 300
+cycles (metadata and event churn included): 283 batches admitted, 17 rejected,
+peak 37,451,240 bytes against the 37,500,000-byte allowance, no pending reservations
+after commits, and clean foreign keys. Actual database/WAL/SHM size fell from
+29,257,352 to 17,481,728 bytes after maintenance; pressure shortened retention as
+designed. The test also exposed an expensive repeated full-history reclamation
+scan, replaced with indexed oldest-row selection and bounded metadata cleanup.
+
+The isolated release diagnostic completed 60 seconds with Docker disabled:
+0.003–0.010% process CPU and 12.8 MB peak RSS. A six-minute background OrbStack
+run is underway to cross the normal five-minute commit boundary. These headless
+checks exclude WebKit and daemon/VM costs and are not whole-app budget or soak
+acceptance. Final contracts now distinguish unavailable inspection metadata from
+a verified absence of an explicit memory limit.
+
+Final frontend verification passed all 908 tests in 141 files, TypeScript and
+Biome. All 250 functional browser tests passed across Chromium/WebKit (performance
+tests are running separately). Nine deliberate frontend mutations produced the
+expected regression failures, then the restored eight focused tests passed.
+The first integrated Rust run hit three existing process-allocation gates while
+the browser suite launched processes (1.20–1.27 allocations/tick against 1.0,
+18–19 new process rows during those measurements); a quiet rerun is pending,
+with thresholds unchanged. Final inspection identified open-bucket shutdown
+flushing and engine-identity/loss-overflow accounting gaps; fixes precede review.
+
+The six-minute isolated OrbStack background run completed with both running
+containers measured throughout. Mean process CPU was 0.0758% of one core, peak
+RSS 17,268,736 bytes, maximum observed history-query latency 6.44 ms, and peak
+pending writes 30. The normal five-minute commit reduced that queue to one;
+the final logical history estimate was 288,718 bytes and WAL 2,789,392 bytes.
+This is short-run worker/store evidence on two existing containers, excluding
+the app/WebKit coalition and daemon/VM cost. It is not 24-hour or population-scale
+overhead acceptance. A timing clarification is pending on retaining the plan's
+24-hour pre-merge gate versus explicitly deferring that soak; no waiver assumed.
+
+Final shutdown/storage edge fixes passed 11 Docker store tests and eight recorder
+tests, with all-target Clippy clean. Each of the three new regressions was
+revert-verified: engine-identity admission beyond the bound, overflow loss
+coverage, and final open-bucket shutdown persistence. The bounded identity
+ledger retains at most 256 generation records with their bytes accounted, and
+loss overflow preserves a conservative span instead of silently dropping it.
+
+The complete performance run passed nine gates; WebKit correctly skipped its ten
+CDP-only cases. Containers overview failed at 65.08 ms/s with repeated long tasks
+after the final selection-control styling change. Memoizing unchanged selection
+controls reduced it to 54.83 ms/s, still above the unchanged 35 ms/s gate; profiling
+and correction continue. Detail passed at 24.56 ms/s. These failures are not waived.
+
+### 2026-10-11 (Docker monitoring execution started)
+
+Created `/Users/riley/Projects/vitals-docker-container-monitoring` from `2cdcb9f`
+on `codex/docker-container-monitoring`. Work item A is partial; the plan's
+dependency graph and per-milestone verification gates remain in force. Original
+checkout and untracked local mock PDFs are untouched. No feature acceptance is
+claimed by creating the workspace.
+
+[Compatibility evidence](docker-container-monitoring-compatibility.md) records
+OrbStack 2.2.3 / Engine 29.4.0 Unix API negotiation, inventory, socket ownership
+and process measurement access. A bounded read-only developer probe reproduces
+the API check. Desktop and Colima were not available in the inspected locations;
+Desktop attribution and Resource Saver behavior remain unverified. Probe fault
+checks cover response caps, deadlines, invalid versions and endpoint allowlisting.
+No application feature or release gate is complete. The user subsequently
+authorized proceeding with OrbStack evidence and documented Docker Desktop/Colima
+API surfaces. Backend, store and frontend implementation have begun; unavailable
+runtime checks remain explicit. Review/fix iterations, merge and cleanup are
+authorized on completion; no merge or worktree cleanup has occurred.
+
+The full four-file spike diff passed `ce:code-reviewer` with no findings.
+Independent fake Unix-server checks covered redaction, request sequence, invalid
+and unsupported API versions, response shape/count/byte limits and the total
+deadline. Real OrbStack and absent-Desktop probes were reproduced. This scoped
+verification does not replace `make check`, e2e, real-runtime acceptance or soak
+gates for the application implementation, which has not begun.
 
 ### 2026-10-11 (Docker container monitoring plan)
 

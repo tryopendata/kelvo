@@ -293,6 +293,7 @@ pub struct Labeled {
 /// shifts every item to its left, which reads as jitter.
 pub fn min_chars(label: &str) -> usize {
     match label {
+        "CTR" => 11,        // running/total plus partial marker, through 10,000 inventory rows
         "PWR" => 5,         // "14.8W"
         "NET" | "DSK" => 6, // "38.4MB"
         _ => 3,             // "18%", "61°"
@@ -427,6 +428,7 @@ pub struct TrayContent {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum ItemKey {
     Combined,
+    Docker,
     Own(Module),
 }
 
@@ -436,6 +438,7 @@ impl ItemKey {
     pub fn id(self) -> &'static str {
         match self {
             ItemKey::Combined => "kelvo",
+            ItemKey::Docker => "kelvo-containers",
             ItemKey::Own(m) => match m {
                 Module::Cpu => "kelvo-cpu",
                 Module::Gpu => "kelvo-gpu",
@@ -816,3 +819,83 @@ pub fn build(
 }
 #[cfg(test)]
 mod tests;
+
+/// The optional count consumes the worker's inventory/coverage, never a tray collector.
+pub fn docker_item(
+    status: &kelvo_schema::docker::DockerStatus,
+    aggregate: &kelvo_schema::docker::DockerAggregate,
+    scale: u32,
+) -> TrayItem {
+    use kelvo_schema::docker::DockerStatus;
+    let (text, accessibility) = if *status == DockerStatus::Connected {
+        (
+            format!(
+                "{}/{}{}",
+                aggregate.running,
+                aggregate.total,
+                if aggregate.partial { "*" } else { "" }
+            ),
+            format!(
+                "Containers, {} running of {} total{}",
+                aggregate.running,
+                aggregate.total,
+                if aggregate.partial {
+                    ", partial monitored population"
+                } else {
+                    ""
+                }
+            ),
+        )
+    } else {
+        let state = match status {
+            DockerStatus::Disabled => "monitoring off",
+            DockerStatus::Connecting => "connecting",
+            DockerStatus::IdleSuspended => "suspended for runtime sleep",
+            DockerStatus::Paused => "paused",
+            DockerStatus::Unavailable => "engine unavailable",
+            DockerStatus::PermissionDenied => "socket permission denied",
+            DockerStatus::Incompatible => "incompatible API",
+            DockerStatus::Connected => "connected",
+        };
+        (DASH.to_owned(), format!("Containers, {state}"))
+    };
+    let mut frame = TrayFrame::empty(scale);
+    frame.values.push(Labeled { label: "CTR", text });
+    TrayItem {
+        key: ItemKey::Docker,
+        content: TrayContent {
+            frame,
+            accessibility,
+        },
+    }
+}
+
+#[cfg(test)]
+mod docker_tests {
+    use super::*;
+    use kelvo_schema::docker::{DockerAggregate, DockerStatus};
+    #[test]
+    fn count_distinguishes_partial_inventory_and_unavailable_data() {
+        let aggregate = DockerAggregate {
+            running: 150,
+            total: 200,
+            partial: true,
+            ..Default::default()
+        };
+        let item = docker_item(&DockerStatus::Connected, &aggregate, 2);
+        assert_eq!(item.content.frame.values[0].text, "150/200*");
+        assert!(
+            item.content
+                .accessibility
+                .contains("partial monitored population")
+        );
+        let unavailable = docker_item(&DockerStatus::Unavailable, &aggregate, 2);
+        assert_eq!(unavailable.content.frame.values[0].text, DASH);
+        assert!(
+            unavailable
+                .content
+                .accessibility
+                .contains("engine unavailable")
+        );
+    }
+}

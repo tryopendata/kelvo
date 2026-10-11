@@ -6,6 +6,8 @@ import {
 } from "react-router";
 import { useWindowAppearance } from "~/hooks/use-window-appearance";
 import BatteryRoute from "~/routes/dashboard/battery/route";
+import ContainerDetailRoute from "~/routes/dashboard/containers/detail-route";
+import ContainersRoute from "~/routes/dashboard/containers/route";
 import CpuRoute from "~/routes/dashboard/cpu/route";
 import DiskRoute from "~/routes/dashboard/disk/route";
 import GpuRoute from "~/routes/dashboard/gpu/route";
@@ -65,6 +67,11 @@ export function appRoutes({
             { path: "disk", element: <DiskRoute /> },
             { path: "battery", element: <BatteryRoute /> },
             { path: "processes", element: <ProcessesRoute /> },
+            { path: "containers", element: <ContainersRoute /> },
+            {
+              path: "containers/:engineId/:containerId",
+              element: <ContainerDetailRoute />,
+            },
             { path: "settings", element: <SettingsRoute /> },
             { path: "hosts", element: <HostsRoute /> },
             ...PENDING_PAGES.map((page) => ({

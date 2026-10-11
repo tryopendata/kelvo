@@ -9,6 +9,7 @@ import { useNow } from "~/hooks/use-now";
 import { useScaledWindow } from "~/hooks/use-scaled-window";
 import { useTransport } from "~/lib/transport-context";
 import { cn } from "~/lib/utils";
+import { DockerPopoverSummary } from "~/routes/dashboard/containers/_components/docker-surfaces";
 import { useHost } from "~/stores/host-store";
 import { useSampling } from "~/stores/live-selectors";
 import {
@@ -86,6 +87,7 @@ export default function PopoverRoute() {
           stale && "opacity-50"
         )}
       >
+        <DockerPopoverSummary />
         {slots.map((slot) => {
           if (slot.kind === "unavailable") {
             return (

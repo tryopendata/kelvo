@@ -7,6 +7,7 @@ mod addresses;
 mod bench;
 mod calibration;
 mod commands;
+mod docker;
 pub mod edition;
 mod error;
 mod export;
@@ -58,6 +59,10 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
         // a different shape per direction, so nothing is lost (D-048).
         .disable_serde_phases()
         .commands(collect_commands![
+            docker::docker_discover, docker::docker_configure, docker::docker_snapshot,
+            docker::docker_resume, docker::docker_subscribe, docker::docker_unsubscribe,
+            docker::docker_detail, docker::docker_retained, docker::docker_history, docker::docker_events,
+            docker::docker_logs, docker::docker_close_logs,
             commands::list_hosts,
             remote::list_remote_hosts,
             remote::inspect_remote_ssh_host,
@@ -144,7 +149,18 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
 
 /// Writes the TypeScript bindings for `builder` to [`BINDINGS_PATH`].
 pub fn export_bindings(builder: &Builder<tauri::Wry>) -> Result<(), specta_typescript::Error> {
-    builder.export(Typescript::default(), BINDINGS_PATH)
+    builder.export(Typescript::default(), BINDINGS_PATH)?;
+    // Specta emits spaces after union separators. Normalize generation itself so
+    // freshly added variants pass the repository whitespace gate reproducibly.
+    let exported = std::fs::read_to_string(BINDINGS_PATH)?;
+    let clean = exported
+        .lines()
+        .map(str::trim_end)
+        .collect::<Vec<_>>()
+        .join("\n")
+        + "\n";
+    std::fs::write(BINDINGS_PATH, clean)?;
+    Ok(())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -228,6 +244,7 @@ pub fn run() {
                 windows::destroyed(window.label());
                 if let Some(state) = window.try_state::<AppState>() {
                     state.live.window_closed(window.label());
+                    state.docker_streams.window_closed(&state, window.label());
                 }
             }
             _ => {}

@@ -35,6 +35,8 @@
 #                              (KELVO_BENCH_DEFAULTS), so a setting left in the file
 #                              cannot spoil the run (D-073)
 #   MENU_BAR="items.cpu=graph" menu bar choices on top of the defaults (KELVO_BENCH_MENU_BAR, D-102)
+#   DOCKER_SOCKET=/absolute/path/to/docker.sock enables read-only Docker monitoring
+#                              in the isolated bench identity; empty leaves it off
 #
 # Each scenario also prints the tray's drawn frames per minute inside the measured window
 # (scripts/tray-frames.py) and what one drawn frame costs: main-thread ms (main % × 600 /
@@ -118,6 +120,7 @@ run_scenario() {
   stop_app
   open -n --env "KELVO_BENCH_SCENARIO=$(route_of "$name")" \
     --env "KELVO_BENCH_DEFAULTS=$defaults" --env "KELVO_BENCH_MENU_BAR=${MENU_BAR:-}" \
+    --env "KELVO_BENCH_DOCKER_SOCKET=${DOCKER_SOCKET:-}" \
     --env "RUST_LOG=info,kelvo_lib::tray=debug" --env "KELVO_BENCH_TRAY_COUNTERS_MS=5000" \
     "$APP"
   for _ in $(seq 1 50); do

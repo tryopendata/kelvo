@@ -1,8 +1,10 @@
 import { formatPercent, formatWatts } from "@core/format";
 import type { UiModule } from "@core/module-state";
+import { useCallback } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { PerformanceExplainer } from "~/components/performance-explainer";
 import { Sidebar, type SidebarEntry } from "~/components/sidebar";
+import { useIsLocalHost } from "~/hooks/use-is-local-host";
 import { useModuleStates } from "~/hooks/use-module-states";
 import { HostSwitcher } from "~/routes/dashboard/hosts/_components/host-switcher";
 import {
@@ -18,6 +20,48 @@ import {
 import { useSettings } from "~/stores/settings-store";
 import { version } from "../../../../../package.json";
 import { batteryBackoff } from "../_lib/sampling-status";
+
+const NAV_ENTRIES: readonly SidebarEntry[] = [
+  {
+    id: "overview",
+    href: "/dashboard/overview",
+    label: "Overview",
+    icon: "overview" as const,
+  },
+  {
+    id: "timeline",
+    href: "/dashboard/timeline",
+    label: "Timeline",
+    icon: "timeline" as const,
+  },
+];
+const LOCAL_TOOLS: readonly SidebarEntry[] = [
+  {
+    id: "hosts",
+    href: "/dashboard/hosts",
+    label: "Hosts",
+    icon: "hosts" as const,
+  },
+  {
+    id: "processes",
+    href: "/dashboard/processes",
+    label: "Processes",
+    icon: "processes" as const,
+  },
+  {
+    id: "containers",
+    href: "/dashboard/containers",
+    label: "Containers",
+    icon: "containers" as const,
+  },
+  {
+    id: "settings",
+    href: "/dashboard/settings",
+    label: "Settings",
+    icon: "settings" as const,
+  },
+];
+const REMOTE_TOOLS = LOCAL_TOOLS.filter((entry) => entry.id !== "containers");
 
 /** MB/s, no space ("38.4M", "220M"). */
 export function compactRate(bps: number | null): string | undefined {
@@ -37,7 +81,9 @@ export const sum = (a: number | null, b: number | null) =>
  * value. Network and Disk show the sum of both directions.
  */
 export function LiveSidebar() {
+  const local = useIsLocalHost();
   const navigate = useNavigate();
+  const onNavigate = useCallback((href: string) => navigate(href), [navigate]);
   const { pathname } = useLocation();
   const states = useModuleStates();
   const configuredMs = useSettings((s) => s.sampling.interval_ms);
@@ -78,20 +124,7 @@ export function LiveSidebar() {
   const groups = [
     {
       id: "nav",
-      entries: [
-        {
-          id: "overview",
-          href: "/dashboard/overview",
-          label: "Overview",
-          icon: "overview" as const,
-        },
-        {
-          id: "timeline",
-          href: "/dashboard/timeline",
-          label: "Timeline",
-          icon: "timeline" as const,
-        },
-      ],
+      entries: NAV_ENTRIES,
     },
     {
       id: "modules",
@@ -127,26 +160,7 @@ export function LiveSidebar() {
     },
     {
       id: "tools",
-      entries: [
-        {
-          id: "hosts",
-          href: "/dashboard/hosts",
-          label: "Hosts",
-          icon: "hosts" as const,
-        },
-        {
-          id: "processes",
-          href: "/dashboard/processes",
-          label: "Processes",
-          icon: "processes" as const,
-        },
-        {
-          id: "settings",
-          href: "/dashboard/settings",
-          label: "Settings",
-          icon: "settings" as const,
-        },
-      ],
+      entries: local ? LOCAL_TOOLS : REMOTE_TOOLS,
     },
   ];
 
@@ -166,7 +180,7 @@ export function LiveSidebar() {
         }),
       }}
       version={version}
-      onNavigate={(href) => navigate(href)}
+      onNavigate={onNavigate}
       footerNote={
         <PerformanceExplainer
           reason={sampling.performance}

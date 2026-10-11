@@ -467,8 +467,24 @@ pub async fn clear_history(app: AppHandle, host: HostId) -> Result<ByteCount, Co
         // The engine's rows not committed yet and its open buckets go too: before the
         // store clears the host, so a bucket closing meanwhile holds only what came after
         // (the clear deletes it either way), and again after, for what it emitted then.
+        let docker_generation = if host == state.local {
+            state.docker.recorder.suspend();
+            Some(state.docker.invalidate_history())
+        } else {
+            None
+        };
         entry.forget_recent_rows();
-        writer.clear_host(host, kelvo_engine::wall_ms())?;
+        let cleared = writer.clear_host(host, kelvo_engine::wall_ms());
+        if let Some(generation) = docker_generation {
+            if cleared.is_ok() {
+                let reset = state.docker.recorder.reset(generation);
+                state.docker.recorder.resume();
+                reset.map_err(|message| CommandError::Docker { message })?;
+            } else {
+                state.docker.recorder.resume();
+            }
+        }
+        cleared?;
         entry.forget_recent_rows();
         tracing::info!(%host, "history cleared");
         if let Some(health) = state.history_for(host)?.clear_trim() {
