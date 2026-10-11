@@ -5,7 +5,8 @@
 > Implementation status: the first Mac milestone is merged into main. Automated checks and code review passed; real two-Mac acceptance and overhead measurements remain open in the execution plan. The later roadmap below is not marked complete.
 
 > Testing follow-up (2026-10-11): expanded real socket/SQLite, heartbeat, host recovery and
-> history-isolation coverage passes. The user excluded testing another machine from this
+> history-isolation coverage passes and is merged into main at `9e69367` following
+> explicit user authorization. The user excluded testing another machine from this
 > pass. An isolated packaged app is built, but native QA remains blocked by computer-use
 > tool access despite user consent. See [the follow-up record](remote-macs-execution.md#single-mac-testing-follow-up-2026-10-11)
 > for verification counts, review status and remaining checks.

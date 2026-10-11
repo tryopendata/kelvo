@@ -69,7 +69,7 @@ Known follow-ups (small, not scheduled):
 | v2.2 WidgetKit dev build | [v2](v2-customization-widgets.md) | Not started | |
 | v2.3 Alerts editor, configurable Overview | [v2](v2-customization-widgets.md) | Not started | |
 | v3.x Native distribution | [v3](v3-native-distribution.md) | Not started | Needs a paid Apple Developer membership |
-| v4.x Remote hosts | [v4](v4-remote-hosts.md) | Mac implementation done; automated testing follow-up complete, native QA blocked | Expanded coverage/review pass on `codex/remote-qa`; native QA blocked by computer-use tool access. Another Mac is excluded from this pass by user instruction. [Execution and verification gates](remote-macs-execution.md); broader v4 remains future scope |
+| v4.x Remote hosts | [v4](v4-remote-hosts.md) | Mac implementation and automated testing follow-up merged; native QA unverified | Expanded coverage/review pass, merged at `9e69367` with explicit user authorization. Native QA blocked by computer-use tool access; another Mac excluded from this pass. [Execution and verification gates](remote-macs-execution.md); broader v4 remains future scope |
 
 Status values: Not started, In progress, Blocked (say on what), Done (with the verification that proved it).
 
@@ -91,8 +91,10 @@ review rounds approved after fixing the native test's settings-restoration guard
 Built and signature-verified the isolated `Kelvo Remote QA.app` and verified its bundled
 helper. Native launch/manual QA and the new opt-in packaged-app acceptance test remain
 unexecuted: the computer-use tool rejects app access despite explicit user consent and
-Any App enabled. The follow-up branch/worktree remain available pending native QA,
-merge and cleanup. Another machine is explicitly outside this testing pass. Full evidence,
+Any App enabled. The user explicitly authorized integration based on the passing tests;
+the follow-up is merged into main at `9e69367`. Its branch and worktree are removed;
+the QA app and verification artifacts are preserved. Another machine is explicitly
+outside this testing pass. Full evidence,
 artifact location and the native test command are in [the execution record](remote-macs-execution.md#single-mac-testing-follow-up-2026-10-11).
 
 ### 2026-10-11 (remote Macs implementation, D-104)

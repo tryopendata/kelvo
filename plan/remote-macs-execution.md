@@ -120,9 +120,9 @@ explicit aliases and follows their existing SSH configuration.
 
 ## Single-Mac testing follow-up (2026-10-11)
 
-Status: automated coverage and review complete on `codex/remote-qa` in
-`/private/tmp/kelvo-remote-qa`; native QA blocked by computer-use tool access.
-The branch/worktree remain available for that check before merge and cleanup.
+Status: automated coverage and review complete; merged into main at `9e69367`.
+The user explicitly authorized merge, cleanup and push based on the passing tests.
+Native QA remains unverified because computer-use tool access was blocked.
 The user requested ce:writing-tests and packaged-app manual QA, then explicitly excluded
 testing against another machine. This pass prioritizes real protocol/socket/SQLite
 integration, user-visible failure/retry/cancellation/removal flows, and a packaged app
@@ -145,7 +145,7 @@ claimed as verified. Results and discovered fixes are recorded below.
   metrics. The scoped remote suite passed 8/8; fourteen screenshots were captured.
 - [x] Seven fault injections made the new assertions fail as intended: leaked process
   subscriptions, cancellation-unsafe framing, disabled slow-write timeout, disabled
-  application heartbeat timeout, local history used for a remote host, and a removal
+  application heartbeat timeout, local history used for a remote host, a removal
   error hidden by closing its dialog, and an entrance replay during live ticks. All
   injected faults were restored.
 - [x] `make check`: 763 Rust tests passed (29 ignored, including the new opt-in native
@@ -174,9 +174,11 @@ claimed as verified. Results and discovered fixes are recorded below.
   no remaining findings.
 
 Logs and browser artifacts are preserved under `/private/tmp/kelvo-remote-qa-artifacts/`.
-The execution skill's merge gate ("Nothing proceeds to merge until all checks pass")
-is retained: native acceptance is still pending, so this follow-up is not marked fully
-complete or merged. Another Mac is not required to finish this pass.
+The user's explicit integration instruction supersedes the earlier hold for native QA.
+All executed checks pass; integration does not mark the unrun native checks as verified.
+Another Mac is not required for those checks. The `codex/remote-qa` branch and its
+worktree have been removed; the isolated app and verification artifacts remain at the
+artifact path above. Unrelated worktrees and untracked planning assets were preserved.
 
 The native acceptance test is compiled but deliberately ignored by the default suite.
 After launching the isolated QA app, run:
