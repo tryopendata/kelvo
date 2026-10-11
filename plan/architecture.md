@@ -569,6 +569,10 @@ Accumulators sit between the sampler and the store. Each persisted tier has an a
 
 The bus is a `tokio::sync::broadcast` channel per host carrying `Arc<LiveFrame>` plus layout and capability changes, process rows and status changes. A slow subscriber lags rather than blocking the engine. A window's stream that lags catches up from the ring with exactly the span it missed. Every source publishes through its host's `LiveHub` (D-066), which records each message before it goes on the bus: the 1-hour ring buffer of raw frames used to backfill windows, the latest frame (whose time is "now" on that source's clock) and the latest status. The ring lives with the host, not in the engine, so a v4 `RemoteSource` backfills windows the same way.
 
+## Planned local Docker extension
+
+[Docker container monitoring](docker-container-monitoring.md) adds an independently clocked local worker, live hub and entity-local history tables in the existing SQLite database ([D-103](decisions.md#d-103-local-docker-monitoring-has-its-own-clock-and-history)). It preserves physical HostId and the crate dependency direction. Docker observations cannot be injected into host-tick blobs: they need their own coverage, weighted rollups, retention admission and commit-acknowledged ring/database merge. The feature plan defines the schema and failure/lifecycle contract; none of this extension is implemented yet. The v4 remote container collectors remain a separate scope.
+
 ## Store
 
 ### Tiers and retention

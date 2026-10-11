@@ -273,6 +273,7 @@ From opendata's `frontend-design-slop` skill, applied to Kelvo.
 | Disk page | `/dashboard/disk` | `StatStrip`, `MirrorBars`, `VolumeTable`, `ProcessTable` | v1.0 |
 | Battery page | `/dashboard/battery` | `RingStatCard`, `BatteryHistoryBars`, `StatStrip` | v1.0 |
 | Processes page | `/dashboard/processes` | `ProcessTable` (full), `SearchField`, `SegmentedControl`, `ProcessActions` (row action and context menu with Quit and Force Quit), `Dialog`, toast | v1.0 |
+| Containers overview and detail (planned) | `/dashboard/containers`, `/dashboard/containers/:engineId/:containerId` | Existing PageHeader, SectionCard, SearchField and SegmentedControl; new container table, coverage status, history/detail and bounded log pane. See [Docker UX plan](docker-container-monitoring.md#2-experience-and-visual-direction) | Independently staged; not implemented |
 | WidgetKit widgets | SwiftUI extension `native/KelvoWidgets` | SwiftUI views reading the widget feed | v2.2 dev build; v3 signed public build |
 | Alerts editor | `/dashboard/alerts` | `RuleList`, `RuleEditor` | v2.3 (first built-in rule in v1.2 has no editor) |
 | Hosts fleet view | `/dashboard/hosts` | `HostCard`, `Sparkline`, `HostSwitcher` | v4.2 |
