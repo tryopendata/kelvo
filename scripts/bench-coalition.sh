@@ -76,7 +76,7 @@ if [ -z "${NO_BUILD:-}" ]; then
     # comparing engine changes.
     config="{\"identifier\":\"$ID\",\"build\":{\"beforeBuildCommand\":\"\",\"frontendDist\":\"$DIST\"}}"
   fi
-  (cd "$ROOT" && bun tauri build --bundles app --features bench --config "$config")
+  (cd "$ROOT" && bun run build:app --bundles app --features bench --config "$config")
 fi
 caffeinate -di -w $$ &
 (cd "$ROOT" && cargo build --quiet --release -p kelvo-collect --example coalition)

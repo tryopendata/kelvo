@@ -60,6 +60,7 @@ fn to_message(read: CursorRead) -> Message {
                 .gaps
                 .into_iter()
                 .map(|g| WireGap {
+                    source_id: g.source_id,
                     seq: g.seq,
                     start_ms: g.gap.start_ms,
                     end_ms: g.gap.end_ms,
@@ -71,6 +72,7 @@ fn to_message(read: CursorRead) -> Message {
                 .events
                 .into_iter()
                 .map(|e| WireEvent {
+                    source_id: e.source_id,
                     seq: e.seq,
                     ts_ms: e.ts_ms,
                     kind: e.kind,
@@ -121,6 +123,7 @@ fn from_wire(p: SyncPage, kinds: SyncKinds) -> CursorPage {
             .gaps
             .into_iter()
             .map(|g| PageGap {
+                source_id: g.source_id,
                 seq: g.seq,
                 gap: Gap {
                     start_ms: g.start_ms,
@@ -134,6 +137,7 @@ fn from_wire(p: SyncPage, kinds: SyncKinds) -> CursorPage {
             .events
             .into_iter()
             .map(|e| PageEvent {
+                source_id: e.source_id,
                 seq: e.seq,
                 ts_ms: e.ts_ms,
                 kind: e.kind,
@@ -200,6 +204,8 @@ fn sync_kinds(
             .resume_cursor(host, tier, h.db_instance_uuid, kinds)
             .unwrap();
         let Message::SyncRequest(req) = wire(Message::SyncRequest(SyncRequest {
+            from_ms: None,
+            max_bytes: None,
             tier,
             after,
             max_rows,
@@ -478,6 +484,7 @@ fn gaps_for_unknown_modules_are_skipped_on_ingest() {
         rows: vec![],
         gaps: vec![
             WireGap {
+                source_id: None,
                 seq: 1,
                 start_ms: T0,
                 end_ms: Some(T0 + MIN),
@@ -485,6 +492,7 @@ fn gaps_for_unknown_modules_are_skipped_on_ingest() {
                 reason: GapReason::ModuleDisabled,
             },
             WireGap {
+                source_id: None,
                 seq: 2,
                 start_ms: T0,
                 end_ms: Some(T0 + MIN),
@@ -677,4 +685,257 @@ fn rolled_down_minutes_sync_as_their_own_kind() {
     let run = sync_kinds(&mut a, &old_ctl, &h, Tier::M15, 50, old);
     assert!(run.pages.iter().all(|p| p.rows.is_empty()));
     assert_eq!(count(&raw(&old_ctl), "SELECT count(*) FROM tier_15m"), 0);
+}
+
+#[test]
+fn stable_source_rows_update_and_replay_durably() {
+    let dir = temp_dir("stable-source");
+    let mirror = open(&dir, "mirror.sqlite");
+    let h = host(2);
+    let w = mirror.writer();
+    w.upsert_host(h.clone()).unwrap();
+    let mut page = CursorPage {
+        tier: Tier::M1,
+        epoch: Uuid::new_v4(),
+        kinds: SyncKinds::ALL,
+        layouts: vec![],
+        rows: vec![],
+        gaps: vec![PageGap {
+            source_id: Some(7),
+            seq: 1,
+            gap: Gap::host(T0, None, GapReason::Paused).unwrap(),
+        }],
+        events: vec![PageEvent {
+            source_id: Some(9),
+            seq: 2,
+            ts_ms: T0,
+            kind: "annotation".into(),
+            payload: vec![1],
+        }],
+        last_seq: 2,
+        more: false,
+    };
+    w.ingest_page_durable(h.id, page.clone()).unwrap();
+    // A separate reader observes committed rows and cursor without an explicit flush.
+    assert_eq!(
+        mirror
+            .reader()
+            .unwrap()
+            .cursor(h.id, Tier::M1)
+            .unwrap()
+            .unwrap()
+            .0
+            .seq,
+        2
+    );
+    let old = page.clone();
+    page.gaps[0].gap.end_ms = Some(T0 + MIN);
+    page.gaps[0].seq = 3;
+    page.events[0].payload = vec![2];
+    page.events[0].seq = 4;
+    page.last_seq = 4;
+    w.ingest_page_durable(h.id, page.clone()).unwrap();
+    w.ingest_page_durable(h.id, old).unwrap();
+    let conn = raw(&mirror);
+    let gap: (i64, Option<i64>) = conn
+        .query_row("SELECT count(*), max(end_ts) FROM gaps", [], |r| {
+            Ok((r.get(0)?, r.get(1)?))
+        })
+        .unwrap();
+    assert_eq!(gap, (1, Some(T0 + MIN)));
+    let events: (i64, Vec<u8>) = conn
+        .query_row("SELECT count(*), payload FROM events", [], |r| {
+            Ok((r.get(0)?, r.get(1)?))
+        })
+        .unwrap();
+    assert_eq!(events, (1, vec![2]));
+    assert_eq!(
+        mirror
+            .reader()
+            .unwrap()
+            .cursor(h.id, Tier::M1)
+            .unwrap()
+            .unwrap()
+            .0
+            .seq,
+        4
+    );
+    // Same source row IDs in a new epoch are new rows, preserving old history.
+    page.epoch = Uuid::new_v4();
+    w.ingest_page_durable(h.id, page).unwrap();
+    assert_eq!(
+        conn.query_row("SELECT count(*) FROM gaps", [], |r| r.get::<_, i64>(0))
+            .unwrap(),
+        2,
+        "new source epoch preserves the old gap even if its natural key matches"
+    );
+    assert_eq!(
+        conn.query_row("SELECT count(*) FROM events", [], |r| r.get::<_, i64>(0))
+            .unwrap(),
+        2
+    );
+}
+
+#[test]
+fn mirror_pruning_does_not_synthesize_incomplete_coarse_buckets() {
+    let dir = temp_dir("mirror-prune");
+    let mirror = open(&dir, "mirror.sqlite");
+    let h = host(2);
+    let w = mirror.writer();
+    w.upsert_host(h.clone()).unwrap();
+    w.write_bucket(bucket(h.id, Tier::M1, T0, &layout(&["cpu.total"]), 3.0))
+        .unwrap();
+    let report = w.prune_mirror(T0 + 8 * DAY, Retention::default()).unwrap();
+    assert_eq!(report.m15_written, 0);
+    assert_eq!(report.m1_rows, 1);
+    assert_eq!(
+        raw(&mirror)
+            .query_row("SELECT count(*) FROM tier_15m", [], |r| r.get::<_, i64>(0))
+            .unwrap(),
+        0
+    );
+}
+
+#[test]
+fn bounded_export_keeps_open_gaps_and_filters_old_buckets() {
+    let dir = temp_dir("bounded-export");
+    let store = open(&dir, "source.sqlite");
+    let h = host(1);
+    let w = store.writer();
+    w.upsert_host(h.clone()).unwrap();
+    for ts in [T0, T0 + MIN] {
+        w.write_bucket(bucket(h.id, Tier::M1, ts, &layout(&["cpu.total"]), 3.0))
+            .unwrap();
+    }
+    w.flush().unwrap();
+    let CursorRead::Page(page) = store
+        .reader()
+        .unwrap()
+        .read_after_since(h.id, Tier::M1, None, 2000, SyncKinds::ALL, Some(T0 + MIN))
+        .unwrap()
+    else {
+        panic!("page expected")
+    };
+    assert_eq!(page.rows.len(), 1);
+    assert_eq!(page.rows[0].bucket_ts, T0 + MIN);
+}
+
+#[test]
+fn rejected_page_commits_neither_rows_nor_cursor() {
+    let dir = temp_dir("atomic-page");
+    let mirror = open(&dir, "mirror.sqlite");
+    let h = host(2);
+    let w = mirror.writer();
+    w.upsert_host(h.clone()).unwrap();
+    w.flush().unwrap();
+    let page = CursorPage {
+        tier: Tier::M1,
+        epoch: Uuid::new_v4(),
+        kinds: SyncKinds::ALL,
+        layouts: vec![],
+        rows: vec![],
+        gaps: vec![PageGap {
+            source_id: Some(1),
+            seq: 1,
+            gap: Gap::host(T0, Some(T0 + MIN), GapReason::Paused).unwrap(),
+        }],
+        events: vec![PageEvent {
+            source_id: Some(-1),
+            seq: 2,
+            ts_ms: T0,
+            kind: "annotation".into(),
+            payload: vec![],
+        }],
+        last_seq: 2,
+        more: false,
+    };
+    assert!(w.ingest_page_durable(h.id, page).is_err());
+    w.flush().unwrap();
+    assert!(
+        mirror
+            .reader()
+            .unwrap()
+            .cursor(h.id, Tier::M1)
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(
+        raw(&mirror)
+            .query_row("SELECT count(*) FROM gaps", [], |r| r.get::<_, i64>(0))
+            .unwrap(),
+        0
+    );
+}
+
+#[test]
+fn exported_identity_survives_update_and_is_not_reused_after_pruning() {
+    let dir = temp_dir("export-identity");
+    let store = open(&dir, "source.sqlite");
+    let h = host(1);
+    let w = store.writer();
+    w.upsert_host(h.clone()).unwrap();
+    w.open_gap(h.id, T0, None, GapReason::Paused).unwrap();
+    w.flush().unwrap();
+    let read = || {
+        let CursorRead::Page(p) = store
+            .reader()
+            .unwrap()
+            .read_after(h.id, Tier::M1, None, 2000, SyncKinds::ALL)
+            .unwrap()
+        else {
+            panic!("page")
+        };
+        p
+    };
+    let first = read().gaps[0].clone();
+    w.close_gap(h.id, GapReason::Paused, None, Some(T0), T0 + MIN)
+        .unwrap();
+    w.flush().unwrap();
+    let closed = read().gaps[0].clone();
+    assert_eq!(first.source_id, closed.source_id);
+    assert!(closed.seq > first.seq);
+    w.prune(T0 + 40 * DAY, Retention::default()).unwrap();
+    w.open_gap(h.id, T0 + 41 * DAY, None, GapReason::Paused)
+        .unwrap();
+    w.flush().unwrap();
+    assert_ne!(read().gaps[0].source_id, first.source_id);
+}
+
+#[test]
+fn mirror_budget_can_trim_recent_data_without_changing_local_retention() {
+    let dir = temp_dir("mirror-budget");
+    let store = open(&dir, "mirror.sqlite");
+    let h = host(2);
+    let w = store.writer();
+    w.upsert_host(h.clone()).unwrap();
+    w.flush().unwrap();
+    let mut retention = Retention::mirror_default();
+    // Fixed SQLite tables cannot be shrunk, but the imported payload can be.
+    retention.max_bytes = kelvo_store::size_on_disk(store.path()).unwrap() + 32_768;
+    let page = CursorPage {
+        tier: Tier::M1,
+        epoch: Uuid::new_v4(),
+        kinds: SyncKinds::ALL,
+        layouts: vec![],
+        rows: vec![],
+        gaps: vec![],
+        events: vec![PageEvent {
+            source_id: Some(1),
+            seq: 1,
+            ts_ms: T0,
+            kind: "annotation".into(),
+            payload: vec![42; 512 * 1024],
+        }],
+        last_seq: 1,
+        more: false,
+    };
+    w.ingest_page_durable(h.id, page).unwrap();
+    let report = w.prune_mirror(T0 + MIN, retention).unwrap();
+    assert_eq!(report.cap_trim.unwrap().events, 1);
+    assert_eq!(
+        raw(&store)
+            .query_row("SELECT count(*) FROM events", [], |r| r.get::<_, i64>(0))
+            .unwrap(),
+        0
+    );
 }

@@ -30,6 +30,7 @@ import {
   useState,
 } from "react";
 import { createStore, type StoreApi, useStore } from "zustand";
+import { useHostClock } from "~/lib/host-clock";
 import { useTransport } from "~/lib/transport-context";
 
 export interface HostLiveState extends HostLive {
@@ -138,6 +139,9 @@ function useLiveSubscription(
   const { backfillMs } = request;
   // Selectors by value: a new array with the same series is no resubscribe.
   const seriesKey = JSON.stringify(request.series ?? null);
+  const clock = useHostClock();
+  const clockRef = useRef(clock);
+  clockRef.current = clock;
   const seriesRef = useRef(request.series);
   seriesRef.current = request.series;
 
@@ -261,7 +265,7 @@ function useLiveSubscription(
       const interval = s.status?.interval_ms ?? 1000;
       let backfill = backfillMs;
       if (s.lastTsMs !== null) {
-        const missed = Date.now() - s.lastTsMs + 2 * interval;
+        const missed = clockRef.current() - s.lastTsMs + 2 * interval;
         if (missed < RECENT_MS) backfill = Math.min(backfillMs, missed);
         else s.clearRows();
       }

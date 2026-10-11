@@ -43,6 +43,7 @@ import {
   TableRow,
 } from "~/components/ui/table";
 import { useEdition } from "~/hooks/use-edition";
+import { useIsLocalHost } from "~/hooks/use-is-local-host";
 import { type QuitFlow, useQuitFlow } from "~/hooks/use-quit-flow";
 import { heldFor, useRangeScope } from "~/hooks/use-range-scope";
 import { useUsageByApp } from "~/hooks/use-usage-by-app";
@@ -82,7 +83,21 @@ export interface UsageTableConfig {
  * running process has its own. After the apps come "Other apps" and
  * "System and other", so additive columns add up to the host's figure.
  */
-export function UsageAppsCard({
+export function UsageAppsCard(props: {
+  windowMs: number;
+  config: UsageTableConfig;
+}) {
+  const local = useIsLocalHost();
+  return local ? (
+    <LocalUsageAppsCard {...props} />
+  ) : (
+    <p className="text-[12px] text-muted-foreground">
+      Historical use by app is available on the monitored Mac.
+    </p>
+  );
+}
+
+function LocalUsageAppsCard({
   windowMs,
   config,
 }: {

@@ -39,6 +39,41 @@ impl State {
             .collect::<rusqlite::Result<_>>()?)
     }
 
+    /// Dedicated mirrors contain source-authoritative tiers only. Never derive a
+    /// coarse bucket from a partially received page of fine buckets.
+    pub(super) fn prune_mirror(&mut self, now: i64, retention: Retention) -> Result<PruneReport> {
+        self.commit()?;
+        let mut report = PruneReport::default();
+        for host in self.host_refs()? {
+            for (tier, keep) in [
+                (Tier::S10, retention.s10_ms),
+                (Tier::M1, retention.m1_keep_ms()),
+                (Tier::M15, retention.history_ms),
+            ] {
+                let cut = now.saturating_sub(keep);
+                let table = db::tier_table(tier)?;
+                let (count, seq) = self.delete_batched(table, "bucket_ts", host, cut)?;
+                self.mark_pruned(host, tier, seq, cut)?;
+                match tier {
+                    Tier::S10 => report.s10_rows += count,
+                    Tier::M1 => report.m1_rows += count,
+                    _ => report.m15_rows += count,
+                }
+            }
+            let cut = now.saturating_sub(retention.history_ms);
+            report.gaps += self.delete_batched("gaps", "end_ts", host, cut)?.0;
+            report.events += self.delete_batched("events", "ts", host, cut)?.0;
+        }
+        self.incremental_vacuum()?;
+        self.checkpoint_truncate()?;
+        let size = crate::size_on_disk(&self.path)?;
+        if size > retention.max_bytes {
+            report.cap_trim = Some(self.trim_to_cap(now, retention, size, true)?);
+        }
+        report.size_bytes = crate::size_on_disk(&self.path)?;
+        Ok(report)
+    }
+
     pub(super) fn prune(&mut self, now: i64, retention: Retention) -> Result<PruneReport> {
         self.commit()?;
         let mut report = PruneReport::default();
@@ -110,7 +145,7 @@ impl State {
         self.checkpoint_truncate()?;
         let size = crate::size_on_disk(&self.path)?;
         if size > retention.max_bytes {
-            report.cap_trim = Some(self.trim_to_cap(now, retention, size)?);
+            report.cap_trim = Some(self.trim_to_cap(now, retention, size, false)?);
         }
         report.size_bytes = crate::size_on_disk(&self.path)?;
         Ok(report)
@@ -121,11 +156,20 @@ impl State {
     /// start of history to a cutoff, so the trimmed span is "before history began", never
     /// a hole in the middle; the `pruned` marks move to the cutoff so a cursor behind it
     /// gets `Truncated` (D-041).
-    fn trim_to_cap(&mut self, now: i64, retention: Retention, size_before: u64) -> Result<CapTrim> {
+    fn trim_to_cap(
+        &mut self,
+        now: i64,
+        retention: Retention,
+        size_before: u64,
+        mirror: bool,
+    ) -> Result<CapTrim> {
         let low_water = retention.low_water_bytes();
-        let floor = Tier::M15
-            .bucket_start(now - CAP_TRIM_KEEP_MS)
-            .unwrap_or(now - CAP_TRIM_KEEP_MS);
+        let keep = if mirror { 0 } else { CAP_TRIM_KEEP_MS };
+        let floor = if mirror {
+            now.saturating_add(1)
+        } else {
+            Tier::M15.bucket_start(now - keep).unwrap_or(now - keep)
+        };
         let mut trim = CapTrim {
             size_before,
             ..CapTrim::default()
@@ -135,16 +179,28 @@ impl State {
             if used <= low_water {
                 break;
             }
-            let (oldest, newest): (Option<i64>, Option<i64>) = self.conn.query_row(
+            let range_sql = if mirror {
+                "SELECT min(t), max(t) FROM (
+                   SELECT min(bucket_ts) AS t FROM tier_10s UNION ALL
+                   SELECT max(bucket_ts) FROM tier_10s UNION ALL
+                   SELECT min(bucket_ts) FROM tier_1m UNION ALL
+                   SELECT max(bucket_ts) FROM tier_1m UNION ALL
+                   SELECT min(bucket_ts) FROM tier_15m UNION ALL
+                   SELECT max(bucket_ts) FROM tier_15m UNION ALL
+                   SELECT min(ts) FROM events UNION ALL SELECT max(ts) FROM events UNION ALL
+                   SELECT min(end_ts) FROM gaps UNION ALL SELECT max(end_ts) FROM gaps
+                 )"
+            } else {
                 "SELECT min(t), max(t) FROM (
                    SELECT min(bucket_ts) AS t FROM tier_1m UNION ALL
                    SELECT max(bucket_ts) FROM tier_1m UNION ALL
                    SELECT min(bucket_ts) FROM tier_15m UNION ALL
                    SELECT max(bucket_ts) FROM tier_15m
-                 )",
-                [],
-                |r| Ok((r.get(0)?, r.get(1)?)),
-            )?;
+                 )"
+            };
+            let (oldest, newest): (Option<i64>, Option<i64>) =
+                self.conn
+                    .query_row(range_sql, [], |r| Ok((r.get(0)?, r.get(1)?)))?;
             let (Some(oldest), Some(newest)) = (oldest, newest) else {
                 break;
             };

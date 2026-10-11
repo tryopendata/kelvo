@@ -6,8 +6,10 @@ import {
 import { historyKeys } from "@core/query-keys";
 import { unwrap } from "@core/transport";
 import { useQuery } from "@tanstack/react-query";
+import { useCallback } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { useNextBoundary } from "~/hooks/use-next-boundary";
+import { useHostClock } from "~/lib/host-clock";
 import { useTransport } from "~/lib/transport-context";
 import { type HostLiveState, useHost, useHostId } from "~/stores/host-store";
 
@@ -41,10 +43,11 @@ export function useBatteryDetail(): BatteryDetail {
  * The bars' local hour boundaries, moving on when the current hour closes.
  */
 function useHourStarts(): number[] {
-  return useNextBoundary(currentHourStarts, lastStart);
+  const clock = useHostClock();
+  const read = useCallback(() => batteryHourStarts(new Date(clock())), [clock]);
+  return useNextBoundary(read, lastStart);
 }
 
-const currentHourStarts = () => batteryHourStarts(new Date());
 const lastStart = (starts: number[]) => starts[starts.length - 1] as number;
 
 /**

@@ -8,6 +8,7 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import { useEffect } from "react";
+import { useHostClock } from "~/lib/host-clock";
 import { useTransport } from "~/lib/transport-context";
 import { useHostId } from "~/stores/host-store";
 
@@ -47,6 +48,7 @@ export function useEvents(
   spanMs: number,
   endMs: number | null
 ): readonly Event[] {
+  const now = useHostClock();
   const transport = useTransport();
   const hostId = useHostId();
   const queryClient = useQueryClient();
@@ -55,7 +57,7 @@ export function useEvents(
     queryKey: historyKeys.events(hostId, spanMs, endMs),
     queryFn: async () => {
       const recent = recentEvents(transport);
-      const from = (endMs ?? Date.now()) - spanMs;
+      const from = (endMs ?? now()) - spanMs;
       // Live reads have no end: whatever lands while the read is in flight
       // is in the answer, in `recent`, or arrives as a push.
       const to = endMs ?? Number.MAX_SAFE_INTEGER;

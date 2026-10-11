@@ -4,6 +4,7 @@ import {
   ChartTooltipShell,
   SeriesSwatch,
 } from "~/components/charts/chart-tooltip";
+import { useIsLocalHost } from "~/hooks/use-is-local-host";
 import { InitialChip } from "~/widgets/initial-chip";
 import type { Accent } from "~/widgets/lib/accent";
 import { FIELD_LABEL } from "~/widgets/lib/classes";
@@ -42,6 +43,7 @@ export function CrosshairTooltip({
   note,
   style,
 }: CrosshairTooltipProps) {
+  const local = useIsLocalHost();
   const top = [...(processes?.rows ?? [])]
     .sort((a, b) => (b.cpu_pct ?? -1) - (a.cpu_pct ?? -1))
     .slice(0, TOP);
@@ -68,7 +70,7 @@ export function CrosshairTooltip({
           ))}
         </div>
       )}
-      {!note && (
+      {!note && local && (
         <>
           <div className="h-px bg-border" />
           <div className="flex justify-between">

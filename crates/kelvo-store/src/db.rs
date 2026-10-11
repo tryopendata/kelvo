@@ -11,7 +11,7 @@ use uuid::Uuid;
 use crate::error::{Result, StoreError};
 
 /// The schema version this build writes. Bump it with a new step in [`MIGRATIONS`].
-pub const SCHEMA_VERSION: i64 = 4;
+pub const SCHEMA_VERSION: i64 = 5;
 
 /// Page size of new databases. 16 KiB packs wide M1 blobs (250 series = 3,000 B) five to
 /// a page instead of one; measured in D-057.
@@ -225,7 +225,21 @@ CREATE UNIQUE INDEX proc_net_15m_key ON proc_net_15m (host_id, bucket_ts);
 ";
 
 /// `MIGRATIONS[i]` takes the schema from version `i` to `i + 1`.
-const MIGRATIONS: &[&str] = &[V1, V2, V3, V4];
+const V5: &str = "
+ALTER TABLE gaps ADD COLUMN export_id INTEGER;
+UPDATE gaps SET export_id = seq;
+ALTER TABLE gaps ADD COLUMN source_epoch TEXT;
+ALTER TABLE gaps ADD COLUMN source_id INTEGER;
+ALTER TABLE gaps ADD COLUMN source_seq INTEGER;
+CREATE UNIQUE INDEX gaps_source ON gaps(host_id, source_epoch, source_id);
+ALTER TABLE events ADD COLUMN export_id INTEGER;
+UPDATE events SET export_id = seq;
+ALTER TABLE events ADD COLUMN source_epoch TEXT;
+ALTER TABLE events ADD COLUMN source_id INTEGER;
+ALTER TABLE events ADD COLUMN source_seq INTEGER;
+CREATE UNIQUE INDEX events_source ON events(host_id, source_epoch, source_id);
+";
+const MIGRATIONS: &[&str] = &[V1, V2, V3, V4, V5];
 
 /// Opens or creates the database for writing and brings its schema up to date. Returns
 /// the connection and the `db_instance_uuid`.
@@ -515,6 +529,21 @@ mod tests {
         ));
     }
 
+    fn strip_v5(conn: &Connection) {
+        conn.execute_batch(
+            "DROP INDEX gaps_source; DROP INDEX events_source;
+            ALTER TABLE gaps DROP COLUMN source_epoch;
+            ALTER TABLE gaps DROP COLUMN source_id;
+            ALTER TABLE gaps DROP COLUMN source_seq;
+            ALTER TABLE gaps DROP COLUMN export_id;
+            ALTER TABLE events DROP COLUMN source_epoch;
+            ALTER TABLE events DROP COLUMN source_id;
+            ALTER TABLE events DROP COLUMN source_seq;
+            ALTER TABLE events DROP COLUMN export_id;",
+        )
+        .unwrap();
+    }
+
     #[test]
     fn v1_databases_keep_their_newest_local_host() {
         let dir = crate::test_dir("db-v1-locals");
@@ -522,6 +551,7 @@ mod tests {
         drop(open_writer(&path, 0).unwrap());
         // Turn it back into a v1 file that two install identities both marked local.
         let conn = Connection::open(&path).unwrap();
+        strip_v5(&conn);
         conn.execute_batch(
             "DROP TABLE tier_15m;
              DROP TABLE proc_top_15m;
@@ -563,6 +593,7 @@ mod tests {
         let path = dir.path().join("h.sqlite");
         drop(open_writer(&path, 0).unwrap());
         let conn = Connection::open(&path).unwrap();
+        strip_v5(&conn);
         conn.execute_batch(
             "DROP TABLE tier_15m;
              DROP TABLE proc_top_15m;
@@ -616,6 +647,7 @@ mod tests {
         let path = dir.path().join("h.sqlite");
         drop(open_writer(&path, 0).unwrap());
         let conn = Connection::open(&path).unwrap();
+        strip_v5(&conn);
         conn.execute_batch(
             "DROP TABLE proc_net_10s;
              DROP TABLE proc_net_1m;
@@ -633,10 +665,10 @@ mod tests {
 
         let (conn, _) = open_writer(&path, 0).unwrap();
         let get = |sql: &str| -> i64 { conn.query_row(sql, [], |r| r.get(0)).unwrap() };
-        assert_eq!(get("PRAGMA user_version"), 4);
+        assert_eq!(get("PRAGMA user_version"), SCHEMA_VERSION);
         assert_eq!(
             get("SELECT value FROM meta WHERE key = 'schema_version'"),
-            4
+            SCHEMA_VERSION
         );
         for table in ["proc_snap", "proc_top_1m", "proc_top_15m", "proc_names"] {
             assert_eq!(

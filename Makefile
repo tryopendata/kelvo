@@ -50,7 +50,7 @@ dev-web:
 	bun run dev:fast
 
 build:
-	bun run tauri build
+	bun run build:app
 
 test: rust-test
 	bun run test

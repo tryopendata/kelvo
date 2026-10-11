@@ -18,6 +18,8 @@ import type {
 import { trayStyleMenuBar } from "@core/settings-patch";
 
 export type ScenarioName =
+  | "ssh-untrusted"
+  | "multi-host"
   | "default"
   | "sleep-gap"
   | "unknown-chip"
@@ -45,6 +47,8 @@ export type ScenarioName =
   | "vpn";
 
 export const SCENARIOS: readonly ScenarioName[] = [
+  "ssh-untrusted",
+  "multi-host",
   "default",
   "sleep-gap",
   "unknown-chip",
@@ -286,10 +290,12 @@ export function defaultSettings(flags: ScenarioFlags): Settings {
     general: {
       launch_at_login: true,
       show_in_dock: false,
+      show_menu_bar: true,
       appearance: "system",
       check_updates: true,
       chart_window: "15m",
     },
+    remote_access: { enabled: false },
     onboarding: { completed: true },
     alerts: { hot_process: false, thermal_serious: false },
   };

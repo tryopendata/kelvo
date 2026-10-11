@@ -55,6 +55,9 @@ fn set_visible(app: &AppHandle, visible: bool) {
 
 /// Creates the panel hidden, so the first open only has to show it. Runs in `setup`.
 pub fn create(app: &AppHandle) -> anyhow::Result<()> {
+    if app.get_webview_window(LABEL).is_some() {
+        return Ok(());
+    }
     app.manage(Popover::default());
     // Hidden from the start: no frames until the first show (D-049).
     set_visible(app, false);
@@ -120,6 +123,12 @@ fn anchor(app: &AppHandle, tray_id: &str) -> Option<(Rect, Rect)> {
 /// Left click on the status item `tray_id` (there is one per own-item module, D-080), at
 /// `clicked`. Shows the panel under it, or hides it if it is showing.
 pub fn toggle(app: &AppHandle, clicked: Instant, tray_id: &str) {
+    if app.get_webview_window(LABEL).is_none()
+        && let Err(e) = create(app)
+    {
+        tracing::warn!("creating popover: {e}");
+        return;
+    }
     let Ok(panel) = app.get_webview_panel(LABEL) else {
         tracing::warn!("tray click before the popover exists");
         return;

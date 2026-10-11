@@ -1110,3 +1110,25 @@ pub struct AppGroupWidgetFeed { container: PathBuf } // v3, Developer ID builds
 The v2.2 bundling path builds the Xcode widget target from `beforeBundleCommand` with `xcodebuild`, signs the `.appex` first, embeds it at `PlugIns/KelvoWidgets.appex` through `bundle.macOS.files`, and signs the outer app with the same identity. That identity must be stable (a self-signed code-signing certificate or the Personal Team "Apple Development" certificate), not ad-hoc, because WidgetKit caches the extension by signing identity and ad-hoc cdhash churn drops the widget from the gallery after rebuilds. `CFBundleVersion` is bumped on every build to avoid stale renders from chronod, and the app has to launch once before its widgets appear in the gallery. Details live in [v2-customization-widgets.md](v2-customization-widgets.md).
 
 A local launchd daemon is also deferred. The in-process engine is right for v1, since launch at login covers continuity. With WidgetKit now in v2.2, widgets go stale whenever the app is not running; that is the trigger to reconsider a helper, recorded in D-014.
+
+
+## Remote Mac milestone (D-104)
+
+The macOS milestone in [remote-macs-execution.md](remote-macs-execution.md) refines
+v4 without replacing the local collector. `kelvo-remote` depends on schema, proto,
+store and engine; `kelvo-remote-helper` depends on remote. The Tauri shell supplies
+the existing engine/history through a `ServerProvider`. SSH carries the framed CBOR
+session over stdio to an owner-only local Unix socket; no network listener is added.
+
+Each remote source writes to its own mirror database, never to the local history
+writer. The source requests authoritative S10/M1/M15 tiers and never rolls a partial
+mirror into new aggregates. Transient recent rows fill the source's uncommitted tail;
+committed rows replace only the same tier, bucket timestamp and series layout. Event
+and gap IDs are stable within the source database epoch; sequence numbers remain
+mutation revisions and resume cursors. Mirrors commit rows and cursor together.
+
+Local windows and remote sessions aggregate their interest on the local HostEntry;
+closing one viewer cannot suppress another viewer's demand. Unselected connections
+receive five-second summaries. Selected charts and process views request only their
+visible data. Route retries, control sockets and mirror errors remain independent
+of local sampling. Settings, alerts, process control and menu-bar output remain local.

@@ -1,6 +1,7 @@
 import { appKeys, hostKeys } from "@core/query-keys";
 import { unwrap } from "@core/transport";
 import { useQuery } from "@tanstack/react-query";
+import { useIsLocalHost } from "~/hooks/use-is-local-host";
 import { useTransport } from "~/lib/transport-context";
 import { useHostId } from "~/stores/host-store";
 
@@ -27,12 +28,13 @@ const PUBLIC_STALE_MS = 10 * 60_000;
  * network changed while the popover was closed is caught on open.
  */
 export function useAddresses(primary: string | null) {
+  const isLocal = useIsLocalHost();
   const transport = useTransport();
   const hostId = useHostId();
   const local = useQuery({
     queryKey: hostKeys.networkAddresses(hostId, primary),
     queryFn: () => unwrap(transport.getNetworkAddresses(hostId)),
-    enabled: primary !== null,
+    enabled: isLocal && primary !== null,
     refetchInterval: LOCAL_REFRESH_MS,
     refetchOnWindowFocus: "always",
   });
@@ -41,7 +43,7 @@ export function useAddresses(primary: string | null) {
   const publicIp = useQuery({
     queryKey: appKeys.publicIp(primary, lan, egress),
     queryFn: () => unwrap(transport.getPublicIp()),
-    enabled: primary !== null && lan !== null,
+    enabled: isLocal && primary !== null && lan !== null,
     staleTime: PUBLIC_STALE_MS,
     gcTime: PUBLIC_STALE_MS,
     refetchInterval: PUBLIC_STALE_MS,

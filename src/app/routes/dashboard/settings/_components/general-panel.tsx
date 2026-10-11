@@ -55,6 +55,16 @@ export function GeneralPanel({ general }: { general: Settings["general"] }) {
           onCheckedChange={(on) => write({ general: { launch_at_login: on } })}
         />
       </SettingsRow>
+      <SettingsRow
+        label="Show menu-bar icon"
+        sub="Open Kelvo from Finder to show its dashboard when hidden."
+      >
+        <Switch
+          checked={general.show_menu_bar}
+          aria-label="Show menu-bar icon"
+          onCheckedChange={(on) => write({ general: { show_menu_bar: on } })}
+        />
+      </SettingsRow>
       <SettingsRow label="Show in Dock">
         <Switch
           checked={general.show_in_dock}
@@ -85,10 +95,7 @@ export function GeneralPanel({ general }: { general: Settings["general"] }) {
           </SelectContent>
         </Select>
       </SettingsRow>
-      <SettingsRow
-        label="Check for updates automatically"
-        sub="The only network request Kelvo makes"
-      >
+      <SettingsRow label="Check for updates automatically">
         <Switch
           checked={general.check_updates}
           aria-label="Check for updates automatically"

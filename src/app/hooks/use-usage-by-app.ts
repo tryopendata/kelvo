@@ -3,6 +3,7 @@ import type { UsageByApp, UsageKey } from "@core/generated/bindings";
 import { historyKeys } from "@core/query-keys";
 import { unwrap } from "@core/transport";
 import { usageFinal } from "@core/usage-rows";
+import { useIsLocalHost } from "~/hooks/use-is-local-host";
 import { useRangeQuery } from "~/lib/range-query";
 
 /** Apps a usage table asks for: every app a search could find, in practice. */
@@ -18,7 +19,8 @@ export function useUsageByApp(
   by: UsageKey,
   { keepPrevious = false }: { keepPrevious?: boolean } = {}
 ) {
-  return useRangeQuery<UsageByApp>(range, {
+  const local = useIsLocalHost();
+  return useRangeQuery<UsageByApp>(local ? range : null, {
     key: (hostId, fromMs, toMs) =>
       historyKeys.usageByApp(hostId, by, USAGE_LIMIT, fromMs, toMs),
     fetch: (transport, hostId, fromMs, toMs) =>

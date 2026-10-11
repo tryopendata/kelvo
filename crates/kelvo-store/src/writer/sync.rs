@@ -105,12 +105,47 @@ impl State {
                 report.gaps_skipped += 1;
                 continue;
             }
-            if self.upsert_gap(host_ref, &g.gap)? {
+            let changed = if let Some(source_id) = g.source_id {
+                if source_id <= 0 {
+                    return Err(StoreError::Corrupt("invalid source gap id".into()));
+                }
+                let seq = self.alloc_seq();
+                self.conn.execute(
+                    "INSERT INTO gaps(host_id,start_ts,end_ts,module,reason,seq,source_epoch,source_id,source_seq,export_id)
+                     VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?6)
+                     ON CONFLICT(host_id,source_epoch,source_id) DO UPDATE SET
+                       start_ts=excluded.start_ts,end_ts=excluded.end_ts,module=excluded.module,
+                       reason=excluded.reason,seq=excluded.seq,source_seq=excluded.source_seq
+                     WHERE excluded.source_seq > gaps.source_seq",
+                    params![host_ref,g.gap.start_ms,g.gap.end_ms,g.gap.module.map(Module::as_str),
+                        g.gap.reason.as_str(),seq,page.epoch.to_string(),source_id,g.seq],
+                )? > 0
+            } else {
+                self.upsert_gap(host_ref, &g.gap)?
+            };
+            if changed {
                 report.gaps_written += 1;
             }
         }
         for e in &page.events {
-            if self.upsert_event(host_ref, e.ts_ms, &e.kind, &e.payload)? {
+            let changed = if let Some(source_id) = e.source_id {
+                if source_id <= 0 {
+                    return Err(StoreError::Corrupt("invalid source event id".into()));
+                }
+                let seq = self.alloc_seq();
+                self.conn.execute(
+                    "INSERT INTO events(host_id,ts,kind,payload,seq,source_epoch,source_id,source_seq,export_id)
+                     VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?5)
+                     ON CONFLICT(host_id,source_epoch,source_id) DO UPDATE SET
+                       ts=excluded.ts,kind=excluded.kind,payload=excluded.payload,
+                       seq=excluded.seq,source_seq=excluded.source_seq
+                     WHERE excluded.source_seq > events.source_seq",
+                    params![host_ref,e.ts_ms,e.kind,e.payload,seq,page.epoch.to_string(),source_id,e.seq],
+                )? > 0
+            } else {
+                self.upsert_event(host_ref, e.ts_ms, &e.kind, &e.payload)?
+            };
+            if changed {
                 report.events_written += 1;
             }
         }
@@ -118,7 +153,7 @@ impl State {
             .prepare_cached(
                 "INSERT INTO cursors (host_id, tier, epoch, seq, kinds) VALUES (?1, ?2, ?3, ?4, ?5)
                  ON CONFLICT (host_id, tier) DO UPDATE
-                   SET epoch = excluded.epoch, seq = excluded.seq, kinds = excluded.kinds",
+                   SET epoch = excluded.epoch, seq = CASE WHEN epoch = excluded.epoch AND kinds = excluded.kinds THEN max(seq, excluded.seq) ELSE excluded.seq END, kinds = excluded.kinds",
             )?
             .execute(params![
                 host_ref,

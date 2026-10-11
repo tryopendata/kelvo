@@ -29,6 +29,8 @@ use crate::ipc::SettingsSnapshot;
 #[serde(default)]
 pub struct SettingsPatch {
     #[specta(optional)]
+    pub remote_access: Option<RemoteAccessPatch>,
+    #[specta(optional)]
     pub modules: Option<BTreeMap<Module, ModulePatch>>,
     #[specta(optional)]
     pub menu_bar: Option<MenuBarPatch>,
@@ -44,6 +46,13 @@ pub struct SettingsPatch {
     pub onboarding: Option<OnboardingPatch>,
     #[specta(optional)]
     pub alerts: Option<AlertsPatch>,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Deserialize, specta::Type)]
+#[serde(default)]
+pub struct RemoteAccessPatch {
+    #[specta(optional)]
+    pub enabled: Option<bool>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Deserialize, specta::Type)]
@@ -154,6 +163,8 @@ pub struct UnitsPatch {
 #[serde(default)]
 pub struct GeneralPatch {
     #[specta(optional)]
+    pub show_menu_bar: Option<bool>,
+    #[specta(optional)]
     pub launch_at_login: Option<bool>,
     #[specta(optional)]
     pub show_in_dock: Option<bool>,
@@ -250,7 +261,11 @@ impl SettingsPatch {
             set(&mut s.units.network, p.network);
             set(&mut s.units.memory, p.memory);
         }
+        if let Some(p) = self.remote_access {
+            set(&mut s.remote_access.enabled, p.enabled);
+        }
         if let Some(p) = self.general {
+            set(&mut s.general.show_menu_bar, p.show_menu_bar);
             set(&mut s.general.launch_at_login, p.launch_at_login);
             set(&mut s.general.show_in_dock, p.show_in_dock);
             set(&mut s.general.appearance, p.appearance);

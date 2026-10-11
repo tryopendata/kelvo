@@ -20,6 +20,8 @@ mod notify;
 mod platform;
 pub mod popover;
 pub mod process_signal;
+pub mod remote;
+pub mod remote_network;
 pub mod settings;
 pub mod state;
 pub mod tray;
@@ -57,6 +59,15 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
         .disable_serde_phases()
         .commands(collect_commands![
             commands::list_hosts,
+            remote::list_remote_hosts,
+            remote::inspect_remote_ssh_host,
+            remote::accept_remote_ssh_host,
+            remote::prepare_remote_host,
+            remote::add_remote_host,
+            remote::cancel_remote_setup,
+            remote::update_remote_host,
+            remote::remove_remote_host,
+            remote::retry_remote_host,
             commands::get_host,
             commands::get_capabilities,
             commands::subscribe_live,
@@ -151,7 +162,8 @@ pub fn run() {
         // First, so a second launch hands over before it opens anything: the running
         // instance shows its dashboard and the new process exits (one writer per history
         // file, architecture.md infra 8; the store's lock is the backstop).
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            if args.iter().any(|arg| arg == "--remote-setup" || arg == "--background") { return; }
             if let Err(e) = windows::open_dashboard(app, None) {
                 tracing::warn!("showing the dashboard for a second launch: {e}");
             }
@@ -187,11 +199,17 @@ pub fn run() {
             AppState::start(app.handle())?;
             app.manage(windows::DashboardLifecycle::default());
             tray::create(app.handle())?;
-            #[cfg(target_os = "macos")]
-            popover::create(app.handle())?;
+            remote::start(app.handle())?;
             match bench::scenario() {
                 Some(scenario) => bench::start(app.handle(), scenario),
-                None => windows::show_onboarding_if_needed(app.handle())?,
+                None => {
+                    if !std::env::args().any(|a| a == "--remote-setup" || a == "--background") && !platform::launched_at_login() {
+                        windows::show_onboarding_if_needed(app.handle())?;
+                        if app.state::<AppState>().settings.settings().onboarding.completed {
+                            windows::open_dashboard(app.handle(),None)?;
+                        }
+                    }
+                },
             }
             Ok(())
         })
@@ -244,7 +262,14 @@ pub fn run() {
         RunEvent::ExitRequested {
             code: None, api, ..
         } => api.prevent_exit(),
+        #[cfg(target_os = "macos")]
+        RunEvent::Reopen { .. } => {
+            if let Err(e) = windows::open_dashboard(app, None) {
+                tracing::warn!("reopening dashboard: {e}");
+            }
+        }
         RunEvent::Exit => {
+            remote::shutdown(app);
             if let Some(state) = app.try_state::<AppState>() {
                 state.shutdown();
             }

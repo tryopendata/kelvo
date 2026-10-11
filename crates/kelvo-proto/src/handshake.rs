@@ -80,7 +80,17 @@ pub enum HandshakeError {
 
 /// The features this build offers: every `SyncPage` row kind it knows.
 pub fn local_features() -> BTreeSet<String> {
-    SyncKinds::ALL.features().map(str::to_string).collect()
+    SyncKinds::ALL
+        .features()
+        .chain([
+            "rows.stable-ids",
+            "live.metadata",
+            "live.interest",
+            "live.summary",
+            "live.recent",
+        ])
+        .map(str::to_string)
+        .collect()
 }
 
 /// Picks the protocol version and feature set for a connection, or explains why the two

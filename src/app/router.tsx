@@ -9,6 +9,7 @@ import BatteryRoute from "~/routes/dashboard/battery/route";
 import CpuRoute from "~/routes/dashboard/cpu/route";
 import DiskRoute from "~/routes/dashboard/disk/route";
 import GpuRoute from "~/routes/dashboard/gpu/route";
+import HostsRoute from "~/routes/dashboard/hosts/route";
 import MemoryRoute from "~/routes/dashboard/memory/route";
 import NetworkRoute from "~/routes/dashboard/network/route";
 import OverviewRoute from "~/routes/dashboard/overview/route";
@@ -65,6 +66,7 @@ export function appRoutes({
             { path: "battery", element: <BatteryRoute /> },
             { path: "processes", element: <ProcessesRoute /> },
             { path: "settings", element: <SettingsRoute /> },
+            { path: "hosts", element: <HostsRoute /> },
             ...PENDING_PAGES.map((page) => ({
               path: page,
               element: <PendingPageRoute />,

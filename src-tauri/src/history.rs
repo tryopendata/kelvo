@@ -155,6 +155,18 @@ impl History {
         (*self.health.lock_ok()).into()
     }
 
+    /// Remote mirrors use their own pruning policy, but expose the same history
+    /// health as the local store. No local-engine pause or global budget is changed.
+    pub(crate) fn record_mirror_prune(
+        &self,
+        report: &kelvo_store::PruneReport,
+        now_ms: i64,
+        retention: &Retention,
+    ) {
+        let mut health = self.health.lock_ok();
+        *health = kelvo_engine::next_health(*health, Some(report), false, now_ms, retention);
+    }
+
     /// Forgets the trim after the history was cleared. Returns the new health when it
     /// changed, for `history-health-changed`.
     pub fn clear_trim(&self) -> Option<HistoryHealth> {

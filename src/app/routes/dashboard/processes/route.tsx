@@ -13,6 +13,7 @@ import { SectionCard } from "~/components/section-card";
 import { SegmentedControl } from "~/components/segmented-control";
 import { useEdition } from "~/hooks/use-edition";
 import { useElementSize } from "~/hooks/use-element-size";
+import { useIsLocalHost } from "~/hooks/use-is-local-host";
 import {
   useProcessGpu,
   useProcessInterest,
@@ -53,6 +54,7 @@ const FULL_TABLE_GPU: ProcessView = { ...FULL_TABLE_PORTS, gpu: true };
  * a hover action and the row's context menu, each behind a confirm dialog.
  */
 export default function ProcessesRoute() {
+  const local = useIsLocalHost();
   const processNetwork = useProcessNetwork();
   const processGpu = useProcessGpu();
   const [chosen, setChosen] = useState<ColumnSet>("cpu");
@@ -74,7 +76,8 @@ export default function ProcessesRoute() {
   const units = useUnits();
   const flow = useQuitFlow();
   // The App Store edition has no Quit or Force Quit (D-065).
-  const canSignal = useEdition()?.process_signal === true;
+  const edition = useEdition();
+  const canSignal = local && edition?.process_signal === true;
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<ProcessSort>(COLUMN_SETS.cpu.sort);
   // The table's sort, unless it names a column the shown set does not have.

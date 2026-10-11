@@ -75,6 +75,8 @@ import type {
   PerformanceReason,
   ProcessSort,
   ProcessView,
+  RemoteHostConfig,
+  RemoteHostRecord,
   SeriesKey,
   SeriesSelector,
   Settings,
@@ -130,6 +132,8 @@ import { INTERVALS_MS, menuBarOf, SIZE_LIMITS_MB } from "./settings-patch";
 import type { CommandResult, Transport } from "./transport";
 
 export interface MockTransportOptions {
+  /** A bounded setup delay for cancellation tests. */
+  remoteSetupDelayMs?: number;
   scenarios?: readonly ScenarioName[];
   windowLabel?: string;
   /** Clock for frame timestamps. Defaults to `Date.now`. */
@@ -385,6 +389,12 @@ const err = (error: CommandError): CommandResult<never> => ({
 export function createMockTransport(
   options: MockTransportOptions = {}
 ): MockTransport {
+  const remotes = new Map<
+    string,
+    { record: RemoteHostRecord; peer: MockTransport }
+  >();
+  const trustedAliases = new Set<string>();
+  const setups = new Map<string, () => void>();
   const flags = scenarioFlags(options.scenarios ?? ["default"]);
   const now = options.now ?? (() => Date.now());
   const label = options.windowLabel ?? "dashboard";
@@ -998,6 +1008,44 @@ export function createMockTransport(
   /** `hostCommand` checks for a command that reads or writes the store. */
   const STORE = { needsHistory: true } as const;
 
+  const allHosts = () => [
+    hostRecord(flags, startMs),
+    ...[...remotes.values()].map(({ record }) => ({
+      ...hostRecord(flags, startMs),
+      id: record.config.id,
+      is_local: false,
+      display_name: record.config.name,
+    })),
+  ];
+  const addRemote = (config: RemoteHostConfig): RemoteHostRecord => {
+    const saved = {
+      ...config,
+      id: config.id || `remote-${config.lan ?? config.tailscale}`,
+    };
+    const remote: RemoteHostRecord = {
+      config: saved,
+      status: {
+        state: saved.enabled ? "connected" : "disabled",
+        route: saved.lan ? "lan" : "tailscale",
+        last_seen_ms: now(),
+        error: null,
+        sync: "current",
+        clock_offset_ms: 120000,
+        cpu_pct: 18,
+        memory_pct: 42,
+      },
+    };
+    remotes.set(saved.id, {
+      record: remote,
+      peer: createMockTransport({
+        ...options,
+        scenarios: ["no-battery", "no-fans"],
+        now: () => now() + 120000,
+      }),
+    });
+    return remote;
+  };
+
   const transport: MockTransport = {
     kind: "mock",
     flags,
@@ -1021,22 +1069,142 @@ export function createMockTransport(
         if (sub.queueTimer !== null) clearTimeout(sub.queueTimer);
       }
       live.clear();
+      for (const remote of remotes.values()) remote.peer.dispose();
+      for (const cancel of setups.values()) cancel();
       for (const e of Object.values(emitters)) e.clear();
     },
 
+    async inspectRemoteSshHost(alias) {
+      record("inspect_remote_ssh_host", alias);
+      return ok({
+        token: alias,
+        alias,
+        hostname: alias,
+        port: 22,
+        fingerprints: ["256 SHA256:exampleMockHostFingerprint (ED25519)"],
+      });
+    },
+    async acceptRemoteSshHost(token) {
+      record("accept_remote_ssh_host", token);
+      trustedAliases.add(token);
+      return ok(null);
+    },
+    async listRemoteHosts() {
+      return [...remotes.values()].map((r) => r.record);
+    },
+    async prepareRemoteHost(lan, tailscale) {
+      record("prepare_remote_host", lan, tailscale);
+      if (!lan && !tailscale)
+        return err({
+          kind: "invalid_argument",
+          message: "Enter at least one SSH alias",
+        });
+      if (
+        options.scenarios?.includes("ssh-untrusted") &&
+        !trustedAliases.has(lan ?? tailscale ?? "")
+      )
+        return err({
+          kind: "invalid_argument",
+          message:
+            "Host key verification failed: verify the SSH host fingerprint.",
+        });
+      return ok({
+        installed: true,
+        compatible: true,
+        host_id: `remote-${lan ?? tailscale}`,
+        name: lan ?? tailscale ?? "Remote Mac",
+        message: null,
+      });
+    },
+    async cancelRemoteSetup(setupId) {
+      record("cancel_remote_setup", setupId);
+      setups.get(setupId)?.();
+      return ok(null);
+    },
+    async addRemoteHost(config, install, showMenuBar, setupId) {
+      record("add_remote_host", config, install, showMenuBar, setupId);
+      if (options.remoteSetupDelayMs) {
+        const cancelled = await new Promise<boolean>((resolve) => {
+          const timer = setTimeout(() => {
+            setups.delete(setupId);
+            resolve(false);
+          }, options.remoteSetupDelayMs);
+          setups.set(setupId, () => {
+            clearTimeout(timer);
+            setups.delete(setupId);
+            resolve(true);
+          });
+        });
+        if (cancelled)
+          return err({
+            kind: "invalid_argument",
+            message: "Setup cancelled. Remote settings were restored.",
+          });
+      }
+      const result = addRemote(config);
+      transport.emitHostsChanged();
+      return ok(result);
+    },
+    async updateRemoteHost(config) {
+      const remote = remotes.get(config.id);
+      if (!remote) return err({ kind: "unknown_host", host: config.id });
+      remote.record = {
+        ...remote.record,
+        config,
+        status: {
+          ...remote.record.status,
+          state: config.enabled ? "connected" : "disabled",
+        },
+      };
+      transport.emitHostsChanged();
+      return ok(remote.record);
+    },
+    async removeRemoteHost(id, deleteMirror) {
+      record("remove_remote_host", id, deleteMirror);
+      remotes.get(id)?.peer.dispose();
+      remotes.delete(id);
+      transport.emitHostsChanged();
+      return ok(null);
+    },
+    async retryRemoteHost(id) {
+      const remote = remotes.get(id);
+      if (!remote) return err({ kind: "unknown_host", host: id });
+      remote.record.status.state = "connected";
+      return ok(null);
+    },
     async listHosts() {
       record("list_hosts");
-      return [hostRecord(flags, startMs)];
+      return allHosts();
     },
     async getHost(host) {
+      const remote = remotes.get(host);
+      if (remote)
+        return ok({
+          ...hostRecord(flags, startMs),
+          id: host,
+          is_local: false,
+          display_name: remote.record.config.name,
+        });
       return hostCommand("get_host", host, [host], {}, () =>
         ok(hostRecord(flags, startMs))
       );
     },
     async getCapabilities(host) {
+      const remote = remotes.get(host);
+      if (remote) return remote.peer.getCapabilities(MOCK_HOST_ID);
       return hostCommand("get_capabilities", host, [host], {}, () => ok(caps));
     },
     async subscribeLive(host, onMsg, opts = {}) {
+      const remote = remotes.get(host);
+      if (remote) {
+        record(
+          "subscribe_live",
+          host,
+          opts.backfillMs ?? 60000,
+          opts.series ?? null
+        );
+        return remote.peer.subscribeLive(MOCK_HOST_ID, onMsg, opts);
+      }
       const backfillMs = Math.min(opts.backfillMs ?? 60_000, RING_SPAN_MS);
       record("subscribe_live", host, backfillMs, opts.series ?? null);
       const bad = unknownHost(host);
@@ -1097,6 +1265,14 @@ export function createMockTransport(
       };
     },
     async setProcessInterest(host, interested, view, stream) {
+      const remote = remotes.get(host);
+      if (remote)
+        return remote.peer.setProcessInterest(
+          MOCK_HOST_ID,
+          interested,
+          view,
+          stream
+        );
       const args = [host, interested, view, stream];
       return hostCommand("set_process_interest", host, args, {}, () => {
         const wasActive = interestActive();
@@ -1182,11 +1358,14 @@ export function createMockTransport(
       gen.trayOnly = !receiving();
     },
     emitHostsChanged() {
-      const hosts = [hostRecord(flags, startMs)];
+      const hosts = allHosts();
       emitters.hosts.emit({ hosts });
     },
     processInterest: () => (interestActive() ? interest : null),
     async queryHistory(request) {
+      const remote = remotes.get(request.host);
+      if (remote)
+        return remote.peer.queryHistory({ ...request, host: MOCK_HOST_ID });
       return hostCommand("query_history", request.host, [request], {}, () => {
         if (request.selectors.length === 0 || request.to_ms < request.from_ms) {
           return err({
@@ -1302,6 +1481,14 @@ export function createMockTransport(
       });
     },
     async querySeriesStats(host, metrics, fromMs, toMs) {
+      const remote = remotes.get(host);
+      if (remote)
+        return remote.peer.querySeriesStats(
+          MOCK_HOST_ID,
+          metrics,
+          fromMs,
+          toMs
+        );
       const args = [host, metrics, fromMs, toMs];
       const checks = {
         range: [fromMs, toMs],
@@ -1344,6 +1531,8 @@ export function createMockTransport(
     },
 
     async queryEvents(host, fromMs, toMs) {
+      const remote = remotes.get(host);
+      if (remote) return remote.peer.queryEvents(MOCK_HOST_ID, fromMs, toMs);
       const args = [host, fromMs, toMs];
       return hostCommand("query_events", host, args, STORE, () =>
         ok(events.filter((e) => e.ts_ms >= fromMs && e.ts_ms < toMs))
@@ -1356,6 +1545,9 @@ export function createMockTransport(
     },
 
     async queryHeatmap(request) {
+      const remote = remotes.get(request.host);
+      if (remote)
+        return remote.peer.queryHeatmap({ ...request, host: MOCK_HOST_ID });
       return hostCommand("query_heatmap", request.host, [request], STORE, () =>
         request.days.some((d) => d.hour_starts.length !== 25)
           ? err({
@@ -1367,6 +1559,8 @@ export function createMockTransport(
     },
 
     async batteryHours(host, hourStartsMs) {
+      const remote = remotes.get(host);
+      if (remote) return remote.peer.batteryHours(MOCK_HOST_ID, hourStartsMs);
       const args = [host, hourStartsMs];
       return hostCommand("battery_hours", host, args, {}, () => {
         const hours = mockBatteryHours(host, hourStartsMs, historyPage);
@@ -1474,11 +1668,15 @@ export function createMockTransport(
       return ok(settings);
     },
     async historySize(host) {
+      const remote = remotes.get(host);
+      if (remote) return remote.peer.historySize(MOCK_HOST_ID);
       return hostCommand("history_size", host, [host], STORE, () =>
         ok(historyBytes)
       );
     },
     async historyGrowth(host) {
+      const remote = remotes.get(host);
+      if (remote) return remote.peer.historyGrowth(MOCK_HOST_ID);
       return hostCommand("history_growth", host, [host], STORE, () =>
         ok(growth)
       );
@@ -1499,6 +1697,8 @@ export function createMockTransport(
       });
     },
     async historyHealth(host) {
+      const remote = remotes.get(host);
+      if (remote) return remote.peer.historyHealth(MOCK_HOST_ID);
       return hostCommand("history_health", host, [host], STORE, () =>
         ok(health)
       );
@@ -1601,6 +1801,15 @@ export function createMockTransport(
     onWindowAppearanceChanged: emitters.appearance.on,
   };
 
+  if (options.scenarios?.includes("multi-host"))
+    addRemote({
+      id: "remote-studio",
+      name: "Studio Mac",
+      lan: "studio.local",
+      tailscale: "studio-tailnet",
+      enabled: true,
+      mirror_budget_mb: 100,
+    });
   return transport;
 }
 
@@ -1635,6 +1844,10 @@ export function applyPatch(s: Settings, patch: SettingsPatch): Settings {
     history: pick(s.history, patch.history),
     units: pick(s.units, patch.units),
     general: pick(s.general, patch.general),
+    remote_access: pick(
+      s.remote_access ?? { enabled: false },
+      patch.remote_access
+    ),
     onboarding: pick(s.onboarding, patch.onboarding),
     alerts: pick(s.alerts ?? NO_ALERTS, patch.alerts),
   };

@@ -572,6 +572,9 @@ pub fn build(
     paused: bool,
     scale: u32,
 ) -> Vec<TrayItem> {
+    if !settings.general.show_menu_bar {
+        return Vec::new();
+    }
     let unit_t = settings.units.temperature;
     let unit_n = settings.units.network;
     let mb = &settings.menu_bar;

@@ -80,8 +80,8 @@ impl State {
                 let seq = self.alloc_seq();
                 self.conn
                     .prepare_cached(
-                        "INSERT INTO gaps (host_id, start_ts, end_ts, module, reason, seq)
-                         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                        "INSERT INTO gaps (host_id, start_ts, end_ts, module, reason, seq, export_id)
+                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)",
                     )?
                     .execute(params![
                         host_ref,
@@ -191,7 +191,7 @@ impl State {
                 let seq = self.alloc_seq();
                 self.conn
                     .prepare_cached(
-                        "INSERT INTO events (host_id, ts, kind, payload, seq) VALUES (?1, ?2, ?3, ?4, ?5)",
+                        "INSERT INTO events (host_id, ts, kind, payload, seq, export_id) VALUES (?1, ?2, ?3, ?4, ?5, ?5)",
                     )?
                     .execute(params![host_ref, ts_ms, kind, payload, seq])?;
                 Ok(true)

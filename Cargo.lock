@@ -2061,6 +2061,8 @@ dependencies = [
  "block2",
  "core-foundation",
  "kelvo-engine",
+ "kelvo-proto",
+ "kelvo-remote",
  "kelvo-schema",
  "kelvo-store",
  "libc",
@@ -2142,6 +2144,34 @@ dependencies = [
  "serde",
  "thiserror 2.0.21",
  "uuid",
+]
+
+[[package]]
+name = "kelvo-remote"
+version = "0.1.0"
+dependencies = [
+ "kelvo-engine",
+ "kelvo-proto",
+ "kelvo-schema",
+ "kelvo-store",
+ "libc",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "kelvo-remote-helper"
+version = "0.1.0"
+dependencies = [
+ "kelvo-remote",
+ "serde_json",
+ "tempfile",
+ "tokio",
 ]
 
 [[package]]
@@ -4542,6 +4572,7 @@ dependencies = [
  "libc",
  "mio",
  "pin-project-lite",
+ "signal-hook-registry",
  "socket2",
  "tokio-macros",
  "windows-sys 0.61.2",

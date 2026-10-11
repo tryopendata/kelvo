@@ -77,7 +77,7 @@ build_and_install() {
   say "installing JavaScript dependencies."
   bun install --frozen-lockfile </dev/null
   say "building Kelvo. The first build takes about five minutes."
-  APPLE_SIGNING_IDENTITY=- bun run tauri build --bundles app </dev/null
+  APPLE_SIGNING_IDENTITY=- bun run build:app --bundles app </dev/null
 
   local built="$SRC/target/release/bundle/macos/Kelvo.app"
   codesign --verify --deep --strict "$built"

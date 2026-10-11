@@ -77,7 +77,7 @@ fi
 parallel=""
 [[ " $CASES " == *" tray"* ]] && parallel=1
 build() {
-  (cd "$ROOT" && bun tauri build --bundles app --features bench --config "{\"identifier\":\"$1\"}")
+  (cd "$ROOT" && bun run build:app --bundles app --features bench --config "{\"identifier\":\"$1\"}")
 }
 if [ -z "${NO_BUILD:-}" ]; then
   if [ -n "$parallel" ]; then

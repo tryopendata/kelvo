@@ -3,6 +3,7 @@ import { probeHistory } from "@core/history-probe";
 import { historyKeys } from "@core/query-keys";
 import { useQuery } from "@tanstack/react-query";
 import { useHistoryHealth } from "~/hooks/use-history-health";
+import { useHostClock } from "~/lib/host-clock";
 import { useTransport } from "~/lib/transport-context";
 import { useHostId } from "~/stores/host-store";
 import { lastWakeMs, pageMax } from "../_lib/history";
@@ -18,13 +19,14 @@ const REFRESH_MS = 10 * 60_000;
  * alone, which is no 24 h maximum. Callers fall back to the bar's floor.
  */
 export function useMax24h(module: Module, metric: string): number | undefined {
+  const clock = useHostClock();
   const transport = useTransport();
   const hostId = useHostId();
   const unavailable = useHistoryHealth().error?.kind === "history_unavailable";
   const { data } = useQuery({
     queryKey: historyKeys.maxima(hostId, module, metric),
     queryFn: async () => {
-      const now = Date.now();
+      const now = clock();
       const page = await probeHistory(transport, {
         host: hostId,
         metric,
@@ -45,12 +47,13 @@ export function useMax24h(module: Module, metric: string): number | undefined {
  * there is none in that span (or history is unavailable).
  */
 export function useLastWake(): number | null {
+  const clock = useHostClock();
   const transport = useTransport();
   const hostId = useHostId();
   const { data } = useQuery({
     queryKey: historyKeys.lastWake(hostId),
     queryFn: async () => {
-      const now = Date.now();
+      const now = clock();
       const page = await probeHistory(transport, {
         host: hostId,
         metric: "cpu.total",

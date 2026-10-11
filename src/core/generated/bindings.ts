@@ -7,6 +7,15 @@ import * as __TAURI_EVENT from "@tauri-apps/api/event";
 export const commands = {
 	/**  Every host, the local one first. */
 	listHosts: () => __TAURI_INVOKE<HostRecord[]>("list_hosts"),
+	listRemoteHosts: () => __TAURI_INVOKE<RemoteHostRecord[]>("list_remote_hosts"),
+	inspectRemoteSshHost: (alias: string) => typedError<RemoteSshHostTrust, CommandError>(__TAURI_INVOKE("inspect_remote_ssh_host", { alias })),
+	acceptRemoteSshHost: (token: string) => typedError<null, CommandError>(__TAURI_INVOKE("accept_remote_ssh_host", { token })),
+	prepareRemoteHost: (lan: string | null, tailscale: string | null) => typedError<RemoteHostPreparation, CommandError>(__TAURI_INVOKE("prepare_remote_host", { lan, tailscale })),
+	addRemoteHost: (config: RemoteHostConfig, install: boolean, showMenuBar: boolean, setupId: string) => typedError<RemoteHostRecord, CommandError>(__TAURI_INVOKE("add_remote_host", { config, install, showMenuBar, setupId })),
+	cancelRemoteSetup: (setupId: string) => typedError<null, CommandError>(__TAURI_INVOKE("cancel_remote_setup", { setupId })),
+	updateRemoteHost: (config: RemoteHostConfig) => typedError<RemoteHostRecord, CommandError>(__TAURI_INVOKE("update_remote_host", { config })),
+	removeRemoteHost: (id: string, deleteMirror: boolean) => typedError<null, CommandError>(__TAURI_INVOKE("remove_remote_host", { id, deleteMirror })),
+	retryRemoteHost: (id: string) => typedError<null, CommandError>(__TAURI_INVOKE("retry_remote_host", { id })),
 	getHost: (host: HostId) => typedError<HostRecord, CommandError>(__TAURI_INVOKE("get_host", { host })),
 	getCapabilities: (host: HostId) => typedError<Capabilities, CommandError>(__TAURI_INVOKE("get_capabilities", { host })),
 	/**
@@ -631,6 +640,7 @@ export type GapReason =
 "unknown";
 
 export type GeneralPatch = {
+	show_menu_bar?: boolean | null,
 	launch_at_login?: boolean | null,
 	show_in_dock?: boolean | null,
 	appearance?: Appearance | null,
@@ -639,6 +649,7 @@ export type GeneralPatch = {
 };
 
 export type GeneralSettings = {
+	show_menu_bar?: boolean,
 	launch_at_login: boolean,
 	show_in_dock: boolean,
 	appearance: Appearance,
@@ -1546,6 +1557,61 @@ export type ReadoutsPatch = {
 	battery?: boolean | null,
 };
 
+export type RemoteAccessPatch = {
+	enabled?: boolean | null,
+};
+
+export type RemoteAccessSettings = {
+	enabled: boolean,
+};
+
+export type RemoteHostConfig = {
+	id: string,
+	name: string,
+	lan: string | null,
+	tailscale: string | null,
+	enabled: boolean,
+	mirror_budget_mb: number,
+};
+
+export type RemoteHostPreparation = {
+	installed: boolean,
+	compatible: boolean,
+	host_id: string | null,
+	name: string,
+	message: string | null,
+};
+
+export type RemoteHostRecord = {
+	config: RemoteHostConfig,
+	status: RemoteHostStatus,
+};
+
+export type RemoteHostStatus = {
+	state: RemoteState,
+	route: RemoteRoute | null,
+	last_seen_ms: number | null,
+	error: string | null,
+	sync: RemoteSync,
+	clock_offset_ms: number | null,
+	cpu_pct: number | null,
+	memory_pct: number | null,
+};
+
+export type RemoteRoute = "lan" | "tailscale";
+
+export type RemoteSshHostTrust = {
+	token: string,
+	alias: string,
+	hostname: string,
+	port: number,
+	fingerprints: string[],
+};
+
+export type RemoteState = "connecting" | "connected" | "offline" | "disabled" | "error";
+
+export type RemoteSync = "idle" | "catching_up" | "current" | "unavailable";
+
 export type SamplingPatch = {
 	interval_ms?: number | null,
 	slow_on_battery?: boolean | null,
@@ -1638,6 +1704,7 @@ export type SeriesStats = {
 };
 
 export type Settings = {
+	remote_access?: RemoteAccessSettings,
 	/**
 	 *  One entry per settings module: every [`Module`] except `Sensors`. An entry for a
 	 *  module this build does not know (a settings file from a newer build) is dropped on
@@ -1663,6 +1730,7 @@ export type SettingsChanged = {
 
 /**  A partial change. Every field is optional; absent fields keep their value. */
 export type SettingsPatch = {
+	remote_access?: RemoteAccessPatch | null,
 	modules?: Partial<{ [key in Module]: ModulePatch }> | null,
 	menu_bar?: MenuBarPatch | null,
 	sampling?: SamplingPatch | null,

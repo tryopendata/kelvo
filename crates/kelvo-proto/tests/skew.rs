@@ -151,6 +151,9 @@ fn samples() -> Vec<(&'static str, Message)> {
         (
             "live",
             Message::Live(LiveFrame {
+                interval_ms: 0,
+                timeline: 0,
+                holds: Vec::new(),
                 ts_ms: 1_790_000_000_000,
                 layout_no: 1,
                 values: vec![12.5, 40.0, 61.25],
@@ -161,6 +164,9 @@ fn samples() -> Vec<(&'static str, Message)> {
         (
             "live_held",
             Message::Live(LiveFrame {
+                interval_ms: 0,
+                timeline: 0,
+                holds: Vec::new(),
                 ts_ms: 1_790_000_001_000,
                 layout_no: 1,
                 values: vec![13.0, 41.0, 61.5],
@@ -170,8 +176,14 @@ fn samples() -> Vec<(&'static str, Message)> {
         (
             "live_processes",
             Message::LiveProcesses(LiveProcesses {
+                gpu_span_ms: None,
                 ts_ms: 1_790_000_000_000,
                 rows: vec![WireProcess {
+                    ports: None,
+                    interval_s: 0.0,
+                    energy_j: 0.0,
+                    app: None,
+                    app_main: false,
                     pid: 812,
                     start_time_us: 1_789_990_000_000_000,
                     name: "kernel_task".into(),
@@ -194,6 +206,8 @@ fn samples() -> Vec<(&'static str, Message)> {
         (
             "sync_request",
             Message::SyncRequest(SyncRequest {
+                from_ms: None,
+                max_bytes: None,
                 tier: Tier::M1,
                 after: Some(Cursor { epoch, seq: 41_200 }),
                 max_rows: 500,
@@ -213,6 +227,7 @@ fn samples() -> Vec<(&'static str, Message)> {
                 }],
                 gaps: vec![
                     WireGap {
+                        source_id: None,
                         seq: 41_202,
                         start_ms: 1_790_000_100_000,
                         end_ms: Some(1_790_003_700_000),
@@ -220,6 +235,7 @@ fn samples() -> Vec<(&'static str, Message)> {
                         reason: GapReason::Sleep,
                     },
                     WireGap {
+                        source_id: None,
                         seq: 41_203,
                         start_ms: 1_790_003_800_000,
                         end_ms: None,
@@ -228,6 +244,7 @@ fn samples() -> Vec<(&'static str, Message)> {
                     },
                 ],
                 events: vec![WireEvent {
+                    source_id: None,
                     seq: 41_204,
                     ts_ms: 1_790_000_050_000,
                     kind: "fans_ramped".into(),
@@ -241,6 +258,8 @@ fn samples() -> Vec<(&'static str, Message)> {
         (
             "sync_request_m15",
             Message::SyncRequest(SyncRequest {
+                from_ms: None,
+                max_bytes: None,
                 tier: Tier::M15,
                 after: Some(Cursor { epoch, seq: 900 }),
                 max_rows: 500,
@@ -296,7 +315,7 @@ fn fixtures_dir() -> PathBuf {
 
 #[test]
 fn every_variant_round_trips() {
-    for (name, msg) in samples() {
+    for (name, msg) in samples().into_iter().chain(remote_samples()) {
         let body = encode_message(&msg).unwrap();
         assert_eq!(decode_message(&body).unwrap(), msg, "{name}");
     }
@@ -398,6 +417,7 @@ fn raw_serde_other_rejects_unknown_variant_content() {
 fn known_tag_list_matches_the_enum() {
     let tags: BTreeSet<String> = samples()
         .into_iter()
+        .chain(remote_samples())
         .map(|(_, msg)| {
             let v: Value = ciborium::from_reader(encode_message(&msg).unwrap().as_slice()).unwrap();
             let Value::Map(m) = v else {
@@ -419,6 +439,10 @@ fn known_tag_list_matches_the_enum() {
         | Message::Pong { .. }
         | Message::Subscribe { .. }
         | Message::Unsubscribe
+        | Message::Interest(_)
+        | Message::SourceStatus(_)
+        | Message::RecentRequest { .. }
+        | Message::RecentRows { .. }
         | Message::LayoutDef(_)
         | Message::Live(_)
         | Message::LiveProcesses(_)
@@ -468,6 +492,9 @@ fn live_frame_with_unknown_metric_is_accepted_and_ignored() {
         ],
     });
     let frame = Message::Live(LiveFrame {
+        interval_ms: 0,
+        timeline: 0,
+        holds: Vec::new(),
         ts_ms: 1_000,
         layout_no: 3,
         values: vec![12.0, 99.0, f32::NAN],
@@ -515,6 +542,9 @@ fn held_values_are_additive() {
         c: V1Frame,
     }
     let new = Message::Live(LiveFrame {
+        interval_ms: 0,
+        timeline: 0,
+        holds: Vec::new(),
         ts_ms: 5,
         layout_no: 2,
         values: vec![1.0],
@@ -615,6 +645,11 @@ fn host_facts_are_additive() {
 #[test]
 fn process_rates_round_trip_and_are_additive() {
     let row = |net: Option<(f32, f32)>, gpu: Option<f32>| WireProcess {
+        ports: None,
+        interval_s: 0.0,
+        energy_j: 0.0,
+        app: None,
+        app_main: false,
         pid: 4242,
         start_time_us: 1_789_990_000_000_000,
         name: "curl".into(),
@@ -632,6 +667,7 @@ fn process_rates_round_trip_and_are_additive() {
         gpu_pct: gpu,
     };
     let msg = Message::LiveProcesses(LiveProcesses {
+        gpu_span_ms: None,
         ts_ms: 1_790_000_000_000,
         rows: vec![
             row(Some((6_220_000.0, 41_000.0)), Some(37.5)),
@@ -670,6 +706,9 @@ fn known_values_rejects_mismatched_frames() {
     let catalog = Catalog::builtin();
     let l = layout();
     let wrong_no = LiveFrame {
+        interval_ms: 0,
+        timeline: 0,
+        holds: Vec::new(),
         ts_ms: 0,
         layout_no: 9,
         values: vec![0.0; 3],
@@ -677,6 +716,9 @@ fn known_values_rejects_mismatched_frames() {
     };
     assert!(wrong_no.known_values(&l, &catalog).is_err());
     let wrong_len = LiveFrame {
+        interval_ms: 0,
+        timeline: 0,
+        holds: Vec::new(),
         ts_ms: 0,
         layout_no: 1,
         values: vec![0.0; 2],
@@ -781,4 +823,44 @@ fn bucket_stats_by_index() {
     let row = &page.rows[0];
     assert_eq!(row.stat(1), Some((0.0, 100.0, 41.5)));
     assert_eq!(row.stat(3), None);
+}
+
+fn remote_samples() -> Vec<(&'static str, Message)> {
+    vec![
+        (
+            "interest",
+            Message::Interest(kelvo_proto::RemoteInterest {
+                detail: true,
+                process_period_ms: Some(1000),
+                network_processes: true,
+                gpu_processes: false,
+                port_processes: true,
+            }),
+        ),
+        (
+            "source_status",
+            Message::SourceStatus(kelvo_proto::SourceStatus {
+                interval_ms: 1000,
+                history_available: true,
+                ..Default::default()
+            }),
+        ),
+        (
+            "recent_request",
+            Message::RecentRequest {
+                from_ms: 1000,
+                to_ms: 2000,
+            },
+        ),
+        (
+            "recent_rows",
+            Message::RecentRows {
+                epoch: Uuid::from_u128(3),
+                tier: Tier::S10,
+                complete_to_ms: 2000,
+                layouts: vec![],
+                rows: vec![],
+            },
+        ),
+    ]
 }

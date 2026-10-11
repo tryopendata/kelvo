@@ -203,6 +203,15 @@ impl Retention {
     pub const DAY_MS: i64 = 24 * 3_600_000;
     /// The default cap: the 150 MB budget for 30 days (architecture.md, Budget math).
     pub const DEFAULT_MAX_BYTES: u64 = 150 * 1_000_000;
+    /// Default independent remote-mirror budget.
+    pub const MIRROR_MAX_BYTES: u64 = 100 * 1_000_000;
+
+    pub fn mirror_default() -> Self {
+        Self {
+            max_bytes: Self::MIRROR_MAX_BYTES,
+            ..Self::default()
+        }
+    }
 
     /// Minutes are kept this long before they are rolled into 15-minute buckets.
     pub const M1_WINDOW_MS: i64 = 7 * Self::DAY_MS;
@@ -365,12 +374,16 @@ pub struct PageRow {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct PageGap {
+    /// Stable source row identity, namespaced by the page epoch.
+    pub source_id: Option<i64>,
     pub seq: i64,
     pub gap: Gap,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct PageEvent {
+    /// Stable source row identity; `seq` changes when its contents change.
+    pub source_id: Option<i64>,
     pub seq: i64,
     pub ts_ms: i64,
     pub kind: String,

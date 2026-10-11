@@ -39,3 +39,7 @@ pub fn reduce_transparency() -> bool {
 }
 
 pub fn observe_reduce_transparency(_on_change: impl Fn(bool) + 'static) {}
+
+pub fn launched_at_login() -> bool {
+    false
+}

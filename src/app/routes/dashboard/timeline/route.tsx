@@ -9,6 +9,7 @@ import { Button } from "~/components/ui/button";
 import { useEvents } from "~/hooks/use-events";
 import { useHistoryHealth } from "~/hooks/use-history-health";
 import { useHostRecord } from "~/hooks/use-host-record";
+import { useHostClock } from "~/lib/host-clock";
 import { useHost } from "~/stores/host-store";
 import { useSettings } from "~/stores/settings-store";
 import { HeatmapCard } from "./_components/heatmap-card";
@@ -38,6 +39,7 @@ const available = (cap: ModuleCap | undefined) =>
  * the range control shows none selected and Live returns to 24h.
  */
 export default function TimelineRoute() {
+  const clock = useHostClock();
   const [view, setView] = useState<TimelineView>({ span: "24h", endMs: null });
   const live = view.endMs === null;
   const caps = useHost((s) => s.capabilities);
@@ -77,9 +79,7 @@ export default function TimelineRoute() {
   }, []);
 
   const step = (direction: -1 | 1) =>
-    setView((v) =>
-      stepView(v.span, v.endMs ?? data.toMs, direction, Date.now())
-    );
+    setView((v) => stepView(v.span, v.endMs ?? data.toMs, direction, clock()));
 
   return (
     <div ref={topRef} className="flex flex-col gap-4">

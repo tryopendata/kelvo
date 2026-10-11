@@ -207,7 +207,7 @@ jobs:
           retention-days: 7
 
       - name: Tauri debug build
-        run: bun tauri build --debug
+        run: bun run build:app --debug
 
       # Kelvo has no runtime dependencies to install (D-058): fail if the app links
       # anything outside /System/Library/ and /usr/lib/.

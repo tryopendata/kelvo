@@ -10,6 +10,7 @@ import {
 import { useState } from "react";
 import { toast } from "sonner";
 import { useMarkProcessSignalUnavailable } from "~/hooks/use-edition";
+import { useIsLocalHost } from "~/hooks/use-is-local-host";
 import { useTransport } from "~/lib/transport-context";
 import { useHostId } from "~/stores/host-store";
 
@@ -46,6 +47,7 @@ export interface QuitFlow {
  * another user" and offers nothing more; there is no escalation.
  */
 export function useQuitFlow(): QuitFlow {
+  const local = useIsLocalHost();
   const transport = useTransport();
   const hostId = useHostId();
   const [pending, setPending] = useState<QuitRequest | null>(null);
@@ -53,7 +55,7 @@ export function useQuitFlow(): QuitFlow {
   const markUnavailable = useMarkProcessSignalUnavailable();
 
   const confirm = async () => {
-    if (!pending || busy) return;
+    if (!local || !pending || busy) return;
     const { target, kind } = pending;
     setBusy(true);
     let result: ProcessSignalResult;
@@ -91,7 +93,7 @@ export function useQuitFlow(): QuitFlow {
     pending,
     busy,
     request: (p, kind) => {
-      if (refusalReason(p) !== null) return;
+      if (!local || refusalReason(p) !== null) return;
       setPending({ target: signalTarget(p), kind });
     },
     cancel: () => {

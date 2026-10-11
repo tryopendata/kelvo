@@ -261,6 +261,7 @@ fn sync_page_with_unknown_enums_decodes() {
     };
     assert_eq!(p.tier, Tier::M1);
     let g = |seq, module, reason| WireGap {
+        source_id: None,
         seq,
         start_ms: 1_790_000_100_000,
         end_ms: Some(1_790_000_200_000),

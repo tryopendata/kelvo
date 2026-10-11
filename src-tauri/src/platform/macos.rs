@@ -180,6 +180,25 @@ pub fn observe_reduce_transparency(on_change: impl Fn(bool) + 'static) {
     std::mem::forget(token);
 }
 
+/// SMAppService launches carry an open-application Apple event, not a CLI flag.
+/// https://developer.apple.com/documentation/coreservices/keyaelaunchedasloginitem
+pub fn launched_at_login() -> bool {
+    let manager = objc2_foundation::NSAppleEventManager::sharedAppleEventManager();
+    manager.currentAppleEvent().is_some_and(|event| {
+        // SAFETY: selectors/signatures are Foundation's NSAppleEventDescriptor API;
+        // AEEventID and AEKeyword are UInt32, and the property is a retained object.
+        unsafe {
+            let event_id: u32 = objc2::msg_send![&*event, eventID];
+            let property: Option<objc2::rc::Retained<objc2_foundation::NSAppleEventDescriptor>> =
+                objc2::msg_send![&*event,paramDescriptorForKeyword:u32::from_be_bytes(*b"prdt")];
+            event_id == u32::from_be_bytes(*b"oapp")
+                && property.is_some_and(|property| {
+                    property.enumCodeValue() == u32::from_be_bytes(*b"lgit")
+                })
+        }
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use uuid::Uuid;

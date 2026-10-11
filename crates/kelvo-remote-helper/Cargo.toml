@@ -1,0 +1,19 @@
+[package]
+name = "kelvo-remote-helper"
+description = "Private socket to SSH stdio bridge; never collects or owns history"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+kelvo-remote = { path = "../kelvo-remote" }
+tokio = { workspace = true, features = ["rt", "macros", "io-std", "io-util", "net"] }
+serde_json.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+tokio = { workspace = true, features = ["process", "time"] }
+
+[lints]
+workspace = true

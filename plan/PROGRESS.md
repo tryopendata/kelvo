@@ -68,11 +68,15 @@ Known follow-ups (small, not scheduled):
 | v2.2 WidgetKit dev build | [v2](v2-customization-widgets.md) | Not started | |
 | v2.3 Alerts editor, configurable Overview | [v2](v2-customization-widgets.md) | Not started | |
 | v3.x Native distribution | [v3](v3-native-distribution.md) | Not started | Needs a paid Apple Developer membership |
-| v4.x Remote hosts | [v4](v4-remote-hosts.md) | Not started | |
+| v4.x Remote hosts | [v4](v4-remote-hosts.md) | Mac implementation done; real-device acceptance pending | [Execution and verification gates](remote-macs-execution.md); broader v4 remains future scope |
 
 Status values: Not started, In progress, Blocked (say on what), Done (with the verification that proved it).
 
 ## Log
+
+### 2026-10-11 (remote Macs implementation, D-104)
+
+Implemented Hosts setup/selection and live remote dashboards over persistent direct SSH, with LAN preference and Tailscale fallback, bundled helper/app setup, explicit host trust, reconnect/clock handling and isolated bounded history mirrors. The ce:code-reviewer fix iterations concluded APPROVE. `make check` passed (755 Rust tests, 28 existing ignored; 909 frontend tests), and the full browser rerun passed (236 passed, 8 existing skips). The ad-hoc signed debug bundle and helper were verified. Main integration was explicitly requested after review; real two-Mac setup, route/sleep recovery and overhead measurements remain open in [the execution record](remote-macs-execution.md). This does not complete the broader v4 roadmap.
 
 ### 2026-10-08 (menu bar readouts, D-102)
 

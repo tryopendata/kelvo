@@ -14,6 +14,7 @@ import { SectionCard } from "~/components/section-card";
 import { WindowControl } from "~/components/window-control";
 import { useChartWindow } from "~/hooks/use-chart-window";
 import { useGapBands } from "~/hooks/use-gap-bands";
+import { useIsLocalHost } from "~/hooks/use-is-local-host";
 import { useProcessNetwork } from "~/hooks/use-process-interest";
 import { useHeld, useLayout } from "~/hooks/use-ring";
 import { useUnits } from "~/hooks/use-units";
@@ -55,6 +56,7 @@ const TOTALS: readonly RangeTotal[] = [
  * (D-091); the default is 15m.
  */
 export default function NetworkRoute() {
+  const local = useIsLocalHost();
   // Null until settings load: the page waits rather than draw a span it would
   // redo, and the Apps card reads nothing.
   const windowMs = useChartWindow()?.windowMs ?? null;
@@ -91,7 +93,7 @@ export default function NetworkRoute() {
           subtitle={
             <>
               {networkSubtitle(primary, link)}
-              <AddressLine primary={primary} />
+              {local && <AddressLine primary={primary} />}
             </>
           }
           actions={<WindowControl />}
@@ -142,7 +144,11 @@ export default function NetworkRoute() {
               </SectionCard>
               {perProcess &&
                 history !== null &&
-                (history ? <AppsCard windowMs={windowMs} /> : <AppsNowCard />)}
+                (history && local ? (
+                  <AppsCard windowMs={windowMs} />
+                ) : (
+                  <AppsNowCard />
+                ))}
             </div>
             <SectionCard
               accent="net"

@@ -37,6 +37,10 @@ import {
   type NetworkByApp,
   type ProcessesAt,
   type ProcessView,
+  type RemoteHostConfig,
+  type RemoteHostPreparation,
+  type RemoteHostRecord,
+  type RemoteSshHostTrust,
   type SensorDump,
   type SeriesSelector,
   type SeriesStats,
@@ -84,6 +88,30 @@ export interface Transport {
   windowLabel(): string;
 
   listHosts(): Promise<HostRecord[]>;
+  listRemoteHosts(): Promise<RemoteHostRecord[]>;
+  inspectRemoteSshHost(
+    alias: string
+  ): Promise<CommandResult<RemoteSshHostTrust>>;
+  acceptRemoteSshHost(token: string): Promise<CommandResult<null>>;
+  prepareRemoteHost(
+    lan: string | null,
+    tailscale: string | null
+  ): Promise<CommandResult<RemoteHostPreparation>>;
+  addRemoteHost(
+    config: RemoteHostConfig,
+    install: boolean,
+    showMenuBar: boolean,
+    setupId: string
+  ): Promise<CommandResult<RemoteHostRecord>>;
+  cancelRemoteSetup(setupId: string): Promise<CommandResult<null>>;
+  updateRemoteHost(
+    config: RemoteHostConfig
+  ): Promise<CommandResult<RemoteHostRecord>>;
+  removeRemoteHost(
+    id: string,
+    deleteMirror: boolean
+  ): Promise<CommandResult<null>>;
+  retryRemoteHost(id: string): Promise<CommandResult<null>>;
   getHost(host: HostId): Promise<CommandResult<HostRecord>>;
   getCapabilities(host: HostId): Promise<CommandResult<Capabilities>>;
   /**
@@ -285,6 +313,18 @@ export function createTauriTransport(label: string): Transport {
     kind: "tauri",
     windowLabel: () => label,
     listHosts: () => commands.listHosts(),
+    listRemoteHosts: () => commands.listRemoteHosts(),
+    inspectRemoteSshHost: (alias) => commands.inspectRemoteSshHost(alias),
+    acceptRemoteSshHost: (token) => commands.acceptRemoteSshHost(token),
+    prepareRemoteHost: (lan, tailscale) =>
+      commands.prepareRemoteHost(lan, tailscale),
+    addRemoteHost: (config, install, showMenuBar, setupId) =>
+      commands.addRemoteHost(config, install, showMenuBar, setupId),
+    cancelRemoteSetup: (setupId) => commands.cancelRemoteSetup(setupId),
+    updateRemoteHost: (config) => commands.updateRemoteHost(config),
+    removeRemoteHost: (id, deleteMirror) =>
+      commands.removeRemoteHost(id, deleteMirror),
+    retryRemoteHost: (id) => commands.retryRemoteHost(id),
     getHost: (host) => commands.getHost(host),
     getCapabilities: (host) => commands.getCapabilities(host),
     async subscribeLive(host, onMsg, options = {}) {

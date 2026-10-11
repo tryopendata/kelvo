@@ -4,6 +4,7 @@ import { useLocation, useNavigate } from "react-router";
 import { PerformanceExplainer } from "~/components/performance-explainer";
 import { Sidebar, type SidebarEntry } from "~/components/sidebar";
 import { useModuleStates } from "~/hooks/use-module-states";
+import { HostSwitcher } from "~/routes/dashboard/hosts/_components/host-switcher";
 import {
   useBattery,
   useCpu,
@@ -128,6 +129,12 @@ export function LiveSidebar() {
       id: "tools",
       entries: [
         {
+          id: "hosts",
+          href: "/dashboard/hosts",
+          label: "Hosts",
+          icon: "hosts" as const,
+        },
+        {
           id: "processes",
           href: "/dashboard/processes",
           label: "Processes",
@@ -145,6 +152,7 @@ export function LiveSidebar() {
 
   return (
     <Sidebar
+      hostSwitcher={<HostSwitcher />}
       groups={groups}
       active={pathname.split("/")[2] ?? "overview"}
       status={{

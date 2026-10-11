@@ -81,6 +81,8 @@ enum Op {
         bucket: NetBucket,
     },
     IngestPage(HostId, CursorPage, Reply<IngestReport>),
+    IngestPageDurable(HostId, CursorPage, Reply<IngestReport>),
+    PruneMirror(i64, Retention, Reply<PruneReport>),
     RecordTruncation(HostId, Tier, i64, Reply<Option<Gap>>),
     Prune(i64, Retention, Reply<PruneReport>),
     SetS10Paused(bool, i64, Reply<()>),
@@ -281,6 +283,16 @@ impl Writer {
     /// Controller side of sync: stores a page from a remote host's database under `host`,
     /// remapping its series keys to local IDs, and advances the `(host, tier)` cursor to
     /// `(page.epoch, page.last_seq)` in the same transaction. Replaying a page is harmless.
+    /// Atomically commits a page and its cursor before returning success.
+    pub fn ingest_page_durable(&self, host: HostId, page: CursorPage) -> Result<IngestReport> {
+        self.call(|r| Op::IngestPageDurable(host, page, r))
+    }
+
+    /// Retention for a dedicated remote mirror; never creates derived rollups.
+    pub fn prune_mirror(&self, now_ms: i64, retention: Retention) -> Result<PruneReport> {
+        self.call(|r| Op::PruneMirror(now_ms, retention, r))
+    }
+
     pub fn ingest_page(&self, host: HostId, page: CursorPage) -> Result<IngestReport> {
         self.call(|r| Op::IngestPage(host, page, r))
     }
@@ -622,6 +634,15 @@ impl State {
                     widen(&mut self.batch_span, host, bucket_ts, bucket_ts + width);
                 }
                 log_queued("network bucket", res);
+            }
+            Op::IngestPageDurable(host, page, r) => {
+                let result = self
+                    .apply(|s| s.ingest_page(host, &page))
+                    .and_then(|report| self.commit().map(|()| report));
+                let _ = r.send(result);
+            }
+            Op::PruneMirror(now, retention, r) => {
+                let _ = r.send(self.prune_mirror(now, retention));
             }
             Op::IngestPage(host, page, r) => {
                 let _ = r.send(self.apply(|s| s.ingest_page(host, &page)));

@@ -107,6 +107,7 @@ See [README](README.md) for the roadmap and [architecture.md](architecture.md) f
 | D-100 | The engine's process view and usage key carry their own IPC derives | Accepted |
 | D-101 | SF Pro for the UI, SF Pro Rounded for headline figures; no monospace or uppercase labels | Accepted |
 | D-102 | Menu bar settings: bars, readouts after the bars, and separate items as three independent choices | Accepted |
+| D-104 | Remote Macs reuse the app and isolate mirrored history | Accepted |
 
 ---
 
@@ -3218,3 +3219,29 @@ The combined menu bar item printed one number, the hottest temperature. Watts, m
 - The bench presets (`KELVO_BENCH_MENU_BAR`) are `group.field=value` pairs under `/menu_bar/`.
 - `tray-layout.ts` copies the renderer's geometry constants for the preview and the width estimate; it matched the Rust images within a point at 50, 151 and 383 pt. A geometry change in `render.rs` needs the same change there.
 - Readout order is fixed; reordering, choosing the disk volume and per-readout colour are out of scope.
+
+
+## D-104: Remote Macs reuse the app and isolate mirrored history
+
+Accepted 2026-10-11, following the remote Macs plan and ce:devils-advocate review.
+
+The macOS app serves its existing engine/store over an opt-in owner-only Unix socket.
+A bundled stdio helper transports framed CBOR through system SSH; a separate same-UID
+control socket enables setup before serving is on. No second collector or TCP listener.
+LAN/Tailscale aliases race with 500 ms preference for LAN. RemoteSource feeds the
+existing host bus. Each remote mirror has a separate SQLite database, durable ingest
+commits and retention-only pruning; local history is never affected by mirror pruning.
+
+Negotiated additions to the wire: live interval/timeline/holds, Summary subscriptions,
+process interest, source status, recent rollup snapshots and bounded/floored sync requests.
+Gaps/events carry stable source row IDs namespaced by DB epoch, with seq as revision.
+Old fixtures continue decoding via defaulted/omitted optional fields. New remote peers
+require the semantic feature set before enabling live or durable sync. Session generations
+reject old replies. Remote timestamps remain authoritative; receipt age is monotonic.
+
+Remote control and historical process/per-app attribution are excluded. Mac users
+install/reuse the full app; future Linux agents can reuse the session implementation.
+Approved new crate edges: kelvo-remote -> {schema,proto,store,engine}; the helper ->
+kelvo-remote; app shell -> kelvo-remote and proto for the serving adapter.
+
+Revisit for multi-user system daemons or cross-platform agents, not for this milestone.

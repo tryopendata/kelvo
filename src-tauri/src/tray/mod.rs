@@ -111,7 +111,7 @@ pub fn create(app: &AppHandle) -> anyhow::Result<()> {
         scale,
     );
     items.show(first, Instant::now(), Pacer::for_status(&status), true);
-    if items.shown.is_empty() {
+    if items.shown.is_empty() && state.settings.settings().general.show_menu_bar {
         anyhow::bail!("no status item could be created");
     }
 
@@ -535,7 +535,7 @@ async fn follow(
         let Some(msg) = msg else { break };
         match msg {
             BusMsg::Frame(f) => {
-                if status.display_idle {
+                if status.display_idle || !settings().general.show_menu_bar {
                     idle_frames += 1;
                 } else {
                     if series.layout_no != Some(f.layout.layout_no) {

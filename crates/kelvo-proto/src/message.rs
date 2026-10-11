@@ -31,6 +31,19 @@ pub enum Message {
         tiers: Vec<LiveTier>,
     },
     Unsubscribe,
+    Interest(RemoteInterest),
+    SourceStatus(SourceStatus),
+    RecentRequest {
+        from_ms: i64,
+        to_ms: i64,
+    },
+    RecentRows {
+        epoch: Uuid,
+        tier: Tier,
+        complete_to_ms: i64,
+        layouts: Vec<WireLayout>,
+        rows: Vec<WireBucket>,
+    },
     /// Session-scoped layout number to series keys.
     LayoutDef(WireLayout),
     Live(LiveFrame),
@@ -95,6 +108,7 @@ pub struct HelloAck {
 #[serde(rename_all = "snake_case")]
 pub enum LiveTier {
     Live1s,
+    Summary,
     /// A live tier this build does not know, asked for by a newer peer (D-040). Not
     /// served; the rest of the subscription still is.
     #[serde(other)]
@@ -113,6 +127,12 @@ pub struct WireLayout {
 /// One tick of live values.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct LiveFrame {
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub interval_ms: u32,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub timeline: u32,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub holds: Vec<u32>,
     /// Remote clock, authoritative for that host.
     pub ts_ms: i64,
     pub layout_no: u32,
@@ -130,6 +150,8 @@ pub struct LiveFrame {
 /// One sample of process rows (`Message::LiveProcesses`).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct LiveProcesses {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gpu_span_ms: Option<i64>,
     /// Remote clock.
     pub ts_ms: i64,
     pub rows: Vec<WireProcess>,
@@ -140,6 +162,16 @@ pub struct LiveProcesses {
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct WireProcess {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ports: Option<Vec<u16>>,
+    #[serde(skip_serializing_if = "is_zero_f32")]
+    pub interval_s: f32,
+    #[serde(skip_serializing_if = "is_zero_f32")]
+    pub energy_j: f32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub app: Option<String>,
+    #[serde(skip_serializing_if = "is_false")]
+    pub app_main: bool,
     pub pid: i32,
     /// Process start, microseconds since the Unix epoch; with `pid` it names the process.
     pub start_time_us: i64,
@@ -177,6 +209,10 @@ pub struct HostSummary {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SyncRequest {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from_ms: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_bytes: Option<u32>,
     /// A persisted tier ([`Tier::is_persisted`]).
     pub tier: Tier,
     /// `None` means from the earliest row.
@@ -232,6 +268,8 @@ impl WireBucket {
 /// A gap row.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WireGap {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_id: Option<i64>,
     pub seq: i64,
     pub start_ms: i64,
     pub end_ms: Option<i64>,
@@ -244,6 +282,8 @@ pub struct WireGap {
 /// pass through; `payload` is the store's CBOR blob, carried as a CBOR byte string.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WireEvent {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_id: Option<i64>,
     pub seq: i64,
     pub ts_ms: i64,
     pub kind: String,
@@ -331,4 +371,44 @@ mod cbor_bytes {
         }
         d.deserialize_byte_buf(V)
     }
+}
+
+fn is_zero(v: &u32) -> bool {
+    *v == 0
+}
+fn is_zero_f32(v: &f32) -> bool {
+    *v == 0.0
+}
+fn is_false(v: &bool) -> bool {
+    !*v
+}
+
+/// Viewer interest only; never remote mutation of sampler settings.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct RemoteInterest {
+    pub detail: bool,
+    pub process_period_ms: Option<u32>,
+    pub network_processes: bool,
+    pub gpu_processes: bool,
+    pub port_processes: bool,
+}
+
+/// Source state independent of the engine implementation.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SourceStatus {
+    pub interval_ms: u32,
+    pub paused: bool,
+    pub asleep: bool,
+    pub on_battery: bool,
+    pub low_power_mode: bool,
+    pub backed_off: bool,
+    pub backgrounded: bool,
+    pub display_idle: bool,
+    pub history_held_until: Option<i64>,
+    pub performance: kelvo_schema::PerformanceReason,
+    pub power_source: kelvo_schema::PowerSource,
+    pub primary_iface: Option<String>,
+    pub history_available: bool,
 }

@@ -19,6 +19,8 @@ use crate::catalog::Module;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, specta::Type)]
 pub struct Settings {
+    #[serde(default)]
+    pub remote_access: RemoteAccessSettings,
     /// One entry per settings module: every [`Module`] except `Sensors`. An entry for a
     /// module this build does not know (a settings file from a newer build) is dropped on
     /// decode (D-040).
@@ -36,6 +38,11 @@ pub struct Settings {
     /// Absent from a settings file written before v1.2: both alerts off.
     #[serde(default)]
     pub alerts: AlertSettings,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+pub struct RemoteAccessSettings {
+    pub enabled: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
@@ -450,6 +457,8 @@ pub enum MemoryUnit {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 pub struct GeneralSettings {
+    #[serde(default = "default_show_menu_bar")]
+    pub show_menu_bar: bool,
     pub launch_at_login: bool,
     pub show_in_dock: bool,
     pub appearance: Appearance,
@@ -529,6 +538,10 @@ pub const SETTINGS_MODULES: [Module; 7] = [
     Module::Battery,
 ];
 
+fn default_show_menu_bar() -> bool {
+    true
+}
+
 impl Default for Settings {
     fn default() -> Self {
         let modules = SETTINGS_MODULES
@@ -542,6 +555,7 @@ impl Default for Settings {
             .collect();
         Self {
             modules,
+            remote_access: RemoteAccessSettings::default(),
             menu_bar: MenuBarSettings::default(),
             sampling: SamplingSettings {
                 interval_ms: 1000,
@@ -559,6 +573,7 @@ impl Default for Settings {
                 memory: MemoryUnit::Decimal,
             },
             general: GeneralSettings {
+                show_menu_bar: true,
                 launch_at_login: true,
                 show_in_dock: false,
                 appearance: Appearance::System,

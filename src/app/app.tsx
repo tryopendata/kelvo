@@ -1,12 +1,16 @@
 import { RING_SPAN_MS, type SeriesSelector } from "@core/generated/bindings";
+import { hostClock } from "@core/host-clock";
 import { scaledWindowMs, slowestIntervalMs } from "@core/live-window";
-import { hostKeys } from "@core/query-keys";
+import { historyKeys, hostKeys } from "@core/query-keys";
 import type { Transport } from "@core/transport";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { RouterProvider } from "react-router";
 import { Toaster } from "~/components/ui/sonner";
 import { TooltipProvider } from "~/components/ui/tooltip";
+import { useRemoteHosts } from "~/hooks/use-remote-hosts";
+import { HostClockContext } from "~/lib/host-clock";
+import { HostSelectionContext } from "~/lib/host-selection";
 import { QueryProvider } from "~/lib/query";
 import { TransportProvider, useTransport } from "~/lib/transport-context";
 import { type AppRouterOptions, createAppRouter } from "~/router";
@@ -93,6 +97,14 @@ function usePopoverBackfill(enabled: boolean): number | null {
 /** Waits for the host list, then scopes a live store to the local host. */
 function LocalHost({ router }: { router: ReturnType<typeof createAppRouter> }) {
   const transport = useTransport();
+  const queryClient = useQueryClient();
+  const [selected, setSelected] = useState<string | null>(null);
+  const [pathname, setPathname] = useState(router.state.location.pathname);
+  useEffect(
+    () => router.subscribe((state) => setPathname(state.location.pathname)),
+    [router]
+  );
+  const remotes = useRemoteHosts();
   const { data: hosts, error } = useQuery({
     queryKey: hostKeys.list(),
     queryFn: () => transport.listHosts(),
@@ -108,18 +120,52 @@ function LocalHost({ router }: { router: ReturnType<typeof createAppRouter> }) {
   const label = transport.windowLabel();
   const popoverBackfill = usePopoverBackfill(label === "popover");
   const local = hosts?.find((h) => h.is_local) ?? hosts?.[0];
-  if (!local) return null;
+  const active =
+    transport.windowLabel() === "dashboard" &&
+    pathname !== "/dashboard/settings" &&
+    pathname !== "/dashboard/hosts"
+      ? (hosts?.find((host) => host.id === selected) ?? local)
+      : local;
+  const offset =
+    remotes.data?.find((remote) => remote.config.id === active?.id)?.status
+      .clock_offset_ms ?? 0;
+  const now = useMemo(
+    () => (active?.is_local ? () => Date.now() : hostClock(offset)),
+    [active?.is_local, offset]
+  );
+  const previousClock = useRef<{ host: string; offset: number } | null>(null);
+  useEffect(() => {
+    const previous = previousClock.current;
+    previousClock.current = active ? { host: active.id, offset } : null;
+    if (
+      active &&
+      !active.is_local &&
+      previous?.host === active.id &&
+      Math.abs(previous.offset - offset) >= 1000
+    ) {
+      void queryClient.invalidateQueries({
+        queryKey: historyKeys.host(active.id),
+      });
+    }
+  }, [active, offset, queryClient]);
+  if (!local || !active) return null;
   // The popover waits for settings so its first subscribe asks for enough.
   if (label === "popover" && popoverBackfill === null) return null;
   return (
-    <HostStoreProvider
-      key={local.id}
-      hostId={local.id}
-      backfillMs={popoverBackfill ?? BACKFILL_MS_BY_WINDOW[label]}
-      series={SERIES_BY_WINDOW[label]}
+    <HostSelectionContext.Provider
+      value={{ hosts: hosts ?? [], selected: active.id, select: setSelected }}
     >
-      <RouterProvider router={router} />
-    </HostStoreProvider>
+      <HostClockContext.Provider value={now}>
+        <HostStoreProvider
+          key={`${active.id}:${JSON.stringify(remotes.data?.find((remote) => remote.config.id === active.id)?.config ?? null)}`}
+          hostId={active.id}
+          backfillMs={popoverBackfill ?? BACKFILL_MS_BY_WINDOW[label]}
+          series={SERIES_BY_WINDOW[label]}
+        >
+          <RouterProvider router={router} />
+        </HostStoreProvider>
+      </HostClockContext.Provider>
+    </HostSelectionContext.Provider>
   );
 }
 

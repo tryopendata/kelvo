@@ -2,6 +2,7 @@ import type { HeatmapMetric } from "@core/generated/bindings";
 import { historyUnavailable } from "@core/history-state";
 import { memo, useCallback, useState } from "react";
 import { SegmentedControl } from "~/components/segmented-control";
+import { useHostClock } from "~/lib/host-clock";
 import { Card } from "~/widgets/card";
 import { useHeatmap } from "../_hooks/use-heatmap";
 import type { LaneUnits } from "../_lib/format";
@@ -45,6 +46,7 @@ export const HeatmapCard = memo(function HeatmapCard({
   units,
   onOpen,
 }: HeatmapCardProps) {
+  const clock = useHostClock();
   const [metric, setMetric] = useState<HeatmapMetric>("cpu");
   const { rows, current, hourMs, loading, error } = useHeatmap(metric);
   const scale = HEATMAP_SCALES[metric];
@@ -61,10 +63,10 @@ export const HeatmapCard = memo(function HeatmapCard({
         heatmapCellView(
           row.hourStarts[hour] as number,
           row.hourStarts[hour + 1] as number,
-          Date.now()
+          clock()
         )
       ),
-    [onOpen]
+    [onOpen, clock]
   );
 
   return (

@@ -129,9 +129,9 @@ pub async fn query_history(
     blocking(app, move |state| {
         let entry = state.host(request.host)?;
         let (host, from_ms, to_ms) = (request.host, recent_from(request.from_ms), request.to_ms);
-        state.history.history(
+        state.history_for(host)?.history(
             &request,
-            || entry.recent_rows(host, from_ms, to_ms),
+            || state.recent_rows(host, from_ms, to_ms),
             |key, bucket_ms| entry.history_hold_ms(key, bucket_ms, request.from_ms),
         )
     })
@@ -150,13 +150,13 @@ pub async fn battery_hours(
     hour_starts_ms: Vec<Millis>,
 ) -> Result<Vec<BatteryHour>, CommandError> {
     blocking(app, move |state| {
-        let entry = state.host(host)?;
+        state.host(host)?;
         let starts: Vec<i64> = hour_starts_ms.iter().map(|m| m.0).collect();
         let from_ms = recent_from(starts.first().copied().unwrap_or(0));
         let to_ms = starts.last().copied().unwrap_or(0);
         state
-            .history
-            .battery_hours(host, &starts, || entry.recent_rows(host, from_ms, to_ms))
+            .history_for(host)?
+            .battery_hours(host, &starts, || state.recent_rows(host, from_ms, to_ms))
     })
     .await
 }
@@ -179,7 +179,9 @@ pub async fn query_events(
 ) -> Result<Vec<Event>, CommandError> {
     blocking(app, move |state| {
         state.host(host)?;
-        state.history.read(|r| r.events(host, from_ms.0, to_ms.0))
+        state
+            .history_for(host)?
+            .read(|r| r.events(host, from_ms.0, to_ms.0))
     })
     .await
 }
@@ -195,9 +197,9 @@ pub async fn query_processes_at(
     t_ms: Millis,
 ) -> Result<Option<ProcessesAt>, CommandError> {
     blocking(app, move |state| {
-        state.host(host)?;
+        state.local_host(host)?;
         Ok(state
-            .history
+            .history_for(host)?
             .read(|r| r.processes_at(host, t_ms.0))?
             .map(Into::into))
     })
@@ -304,13 +306,13 @@ pub async fn query_series_stats(
     to_ms: Millis,
 ) -> Result<SeriesStats, CommandError> {
     blocking(app, move |state| {
-        let entry = state.host(host)?;
-        let now_ms = kelvo_engine::wall_ms();
+        state.host(host)?;
+        let now_ms = state.host_now(host);
         let recent_start = recent_from(from_ms.0);
         state
-            .history
+            .history_for(host)?
             .series_stats(host, &metrics, from_ms.0, to_ms.0, now_ms, || {
-                entry.recent_rows(host, recent_start, to_ms.0)
+                state.recent_rows(host, recent_start, to_ms.0)
             })
             .map(crate::usage::series_stats)
     })
@@ -357,7 +359,7 @@ pub async fn query_heatmap(
         let cells = request.cells()?;
         let series = request.metric.series();
         let hours = state
-            .history
+            .history_for(request.host)?
             .read(|r| r.heatmap(request.host, &series, &cells))?;
         Ok(request.days(&hours))
     })
@@ -382,7 +384,8 @@ pub async fn export_csv(
         state.host(request.host)?;
         let query = request.to_query()?;
         // No dialog when there is nothing to export from.
-        state.history.writer()?;
+        let history = state.history_for(request.host)?;
+        history.writer()?;
         let picked = dialogs
             .dialog()
             .file()
@@ -396,7 +399,7 @@ pub async fn export_csv(
         let path = picked.into_path().map_err(|e| CommandError::Export {
             message: format!("the chosen location is not a file path: {e}"),
         })?;
-        crate::export::write_csv(&state.history, &query, &path)
+        crate::export::write_csv(&history, &query, &path)
     })
     .await
 }
@@ -427,7 +430,7 @@ pub fn update_settings(
 pub async fn history_size(app: AppHandle, host: HostId) -> Result<ByteCount, CommandError> {
     blocking(app, move |state| {
         state.host(host)?;
-        Ok(ByteCount(state.history.size_on_disk()?))
+        Ok(ByteCount(state.history_for(host)?.size_on_disk()?))
     })
     .await
 }
@@ -444,9 +447,9 @@ pub async fn history_growth(
 ) -> Result<Option<HistoryGrowth>, CommandError> {
     blocking(app, move |state| {
         state.host(host)?;
-        let now = kelvo_engine::wall_ms();
+        let now = state.host_now(host);
         let growth = state
-            .history
+            .history_for(host)?
             .read(|r| r.history_growth(now, &kelvo_store::Retention::default()))?;
         Ok(growth.map(HistoryGrowth::from))
     })
@@ -459,8 +462,8 @@ pub async fn history_growth(
 pub async fn clear_history(app: AppHandle, host: HostId) -> Result<ByteCount, CommandError> {
     let app_handle = app.clone();
     blocking(app, move |state| {
-        let entry = state.host(host)?;
-        let writer = state.history.writer()?;
+        let entry = state.local_host(host)?;
+        let writer = state.history_for(host)?.writer()?;
         // The engine's rows not committed yet and its open buckets go too: before the
         // store clears the host, so a bucket closing meanwhile holds only what came after
         // (the clear deletes it either way), and again after, for what it emitted then.
@@ -468,10 +471,10 @@ pub async fn clear_history(app: AppHandle, host: HostId) -> Result<ByteCount, Co
         writer.clear_host(host, kelvo_engine::wall_ms())?;
         entry.forget_recent_rows();
         tracing::info!(%host, "history cleared");
-        if let Some(health) = state.history.clear_trim() {
+        if let Some(health) = state.history_for(host)?.clear_trim() {
             state.emit_history_health(&app_handle, health);
         }
-        Ok(ByteCount(state.history.size_on_disk()?))
+        Ok(ByteCount(state.history_for(host)?.size_on_disk()?))
     })
     .await
 }
@@ -487,8 +490,8 @@ pub async fn history_health(app: AppHandle, host: HostId) -> Result<HistoryHealt
     // command would wait for it on the main thread, freezing the tray and every window.
     blocking(app, move |state| {
         state.host(host)?;
-        state.history.writer()?;
-        Ok(state.history.health())
+        state.history_for(host)?.writer()?;
+        Ok(state.history_for(host)?.health())
     })
     .await
 }

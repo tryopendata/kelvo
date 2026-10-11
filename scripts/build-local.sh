@@ -11,7 +11,7 @@ APP="$ROOT/target/release/bundle/macos/Kelvo.app"
 DEST="$HOME/Desktop/Kelvo.app"
 
 cd "$ROOT"
-APPLE_SIGNING_IDENTITY=- bun run tauri build --bundles app
+APPLE_SIGNING_IDENTITY=- bun run build:app --bundles app
 
 codesign --verify --deep --strict "$APP"
 

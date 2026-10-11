@@ -399,6 +399,22 @@ impl Reader {
         max_rows: u32,
         kinds: SyncKinds,
     ) -> Result<CursorRead> {
+        self.read_after_since(host, tier, after, max_rows, kinds, None)
+    }
+
+    /// Cursor export bounded by a source-clock retention floor. Gaps overlapping the
+    /// floor are included, including open gaps. Limits are clamped to 1..=2000.
+    pub fn read_after_since(
+        &mut self,
+        host: HostId,
+        tier: Tier,
+        after: Option<Cursor>,
+        max_rows: u32,
+        kinds: SyncKinds,
+        from_ms: Option<i64>,
+    ) -> Result<CursorRead> {
+        let max_rows = max_rows.clamp(1, 2000);
+        let floor = from_ms.unwrap_or(i64::MIN);
         let host_ref = self.host_ref(host)?;
         let table = tier_table(tier)?;
         let after_seq = match after {
@@ -431,8 +447,8 @@ impl Reader {
 
         enum Item {
             Row(i64, u32, Vec<u8>),
-            Gap(Gap),
-            Event(i64, String, Vec<u8>),
+            Gap(i64, Gap),
+            Event(i64, i64, String, Vec<u8>),
         }
         let mut items: Vec<(i64, Item)> = Vec::new();
         let bucket_kind = if tier == Tier::M15 {
@@ -445,9 +461,9 @@ impl Reader {
                 .conn
                 .prepare_cached(&format!(
                     "SELECT seq, bucket_ts, layout_id, blob FROM {table}
-                     WHERE host_id = ?1 AND seq > ?2 ORDER BY seq LIMIT ?3"
+                     WHERE host_id = ?1 AND seq > ?2 AND bucket_ts >= ?4 ORDER BY seq LIMIT ?3"
                 ))?
-                .query_map(params![host_ref, after_seq, limit], |r| {
+                .query_map(params![host_ref, after_seq, limit, floor], |r| {
                     Ok((r.get(0)?, Item::Row(r.get(1)?, r.get(2)?, r.get(3)?)))
                 })?
                 .collect::<rusqlite::Result<_>>()?;
@@ -456,11 +472,11 @@ impl Reader {
             let gaps = self
                 .conn
                 .prepare_cached(
-                    "SELECT start_ts, end_ts, module, reason, seq FROM gaps
-                     WHERE host_id = ?1 AND seq > ?2 ORDER BY seq LIMIT ?3",
+                    "SELECT start_ts, end_ts, module, reason, seq, export_id FROM gaps
+                     WHERE host_id = ?1 AND seq > ?2 AND (end_ts IS NULL OR end_ts >= ?4) ORDER BY seq LIMIT ?3",
                 )?
-                .query_map(params![host_ref, after_seq, limit], |r| {
-                    Ok((r.get(4)?, Item::Gap(gap_from_row(r)?)))
+                .query_map(params![host_ref, after_seq, limit, floor], |r| {
+                    Ok((r.get(4)?, Item::Gap(r.get(5)?, gap_from_row(r)?)))
                 })?
                 .collect::<rusqlite::Result<Vec<_>>>()?;
             items.extend(gaps);
@@ -469,11 +485,14 @@ impl Reader {
             let events = self
                 .conn
                 .prepare_cached(
-                    "SELECT seq, ts, kind, payload FROM events
-                     WHERE host_id = ?1 AND seq > ?2 ORDER BY seq LIMIT ?3",
+                    "SELECT seq, export_id, ts, kind, payload FROM events
+                     WHERE host_id = ?1 AND seq > ?2 AND ts >= ?4 ORDER BY seq LIMIT ?3",
                 )?
-                .query_map(params![host_ref, after_seq, limit], |r| {
-                    Ok((r.get(0)?, Item::Event(r.get(1)?, r.get(2)?, r.get(3)?)))
+                .query_map(params![host_ref, after_seq, limit, floor], |r| {
+                    Ok((
+                        r.get(0)?,
+                        Item::Event(r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?),
+                    ))
                 })?
                 .collect::<rusqlite::Result<Vec<_>>>()?;
             items.extend(events);
@@ -516,8 +535,13 @@ impl Reader {
                         stats: blob::unpack_f32s(&stats)?,
                     });
                 }
-                Item::Gap(gap) => page.gaps.push(PageGap { seq, gap }),
-                Item::Event(ts_ms, kind, payload) => page.events.push(PageEvent {
+                Item::Gap(source_id, gap) => page.gaps.push(PageGap {
+                    source_id: Some(source_id),
+                    seq,
+                    gap,
+                }),
+                Item::Event(source_id, ts_ms, kind, payload) => page.events.push(PageEvent {
+                    source_id: Some(source_id),
                     seq,
                     ts_ms,
                     kind,

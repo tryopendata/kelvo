@@ -3,6 +3,7 @@ import { hostKeys } from "@core/query-keys";
 import { CommandFailure, unwrap } from "@core/transport";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
+import { useIsLocalHost } from "~/hooks/use-is-local-host";
 import { useTransport } from "~/lib/transport-context";
 import { useHostId } from "~/stores/host-store";
 
@@ -15,6 +16,7 @@ export function useHistoryHealth(): {
   health: HistoryHealth | undefined;
   error: CommandError | null;
 } {
+  const local = useIsLocalHost();
   const transport = useTransport();
   const hostId = useHostId();
   const queryClient = useQueryClient();
@@ -24,11 +26,13 @@ export function useHistoryHealth(): {
     queryFn: () => unwrap(transport.historyHealth(hostId)),
     staleTime: Number.POSITIVE_INFINITY,
     retry: false,
+    refetchInterval: local ? false : 60000,
   });
 
   useEffect(
     () =>
       transport.onHistoryHealthChanged((e) => {
+        if (!local) return;
         const key = hostKeys.historyHealth(hostId);
         // The event carries health, not availability. Over a cached
         // `history_unavailable` it would hide the banner, so ask the command
@@ -39,7 +43,7 @@ export function useHistoryHealth(): {
         }
         queryClient.setQueryData(key, e.health);
       }),
-    [transport, queryClient, hostId]
+    [transport, queryClient, hostId, local]
   );
 
   return {

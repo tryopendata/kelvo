@@ -27,7 +27,8 @@ pub use codec::{
 pub use handshake::{HandshakeError, Negotiated, Offer, local_features, negotiate};
 pub use message::{
     ErrorCode, Hello, HelloAck, HostSummary, LayoutMismatch, LiveFrame, LiveProcesses, LiveTier,
-    Message, SyncPage, SyncRequest, WireBucket, WireEvent, WireGap, WireLayout, WireProcess,
+    Message, RemoteInterest, SourceStatus, SyncPage, SyncRequest, WireBucket, WireEvent, WireGap,
+    WireLayout, WireProcess,
 };
 
 /// The protocol version this build speaks.

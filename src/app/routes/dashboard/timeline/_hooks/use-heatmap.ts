@@ -4,8 +4,9 @@ import { HISTORY_COMMIT_MS } from "@core/history-state";
 import { historyKeys } from "@core/query-keys";
 import { type CommandFailure, unwrap } from "@core/transport";
 import { useQuery } from "@tanstack/react-query";
-import { useMemo } from "react";
+import { useCallback, useMemo } from "react";
 import { useNextBoundary } from "~/hooks/use-next-boundary";
+import { useHostClock } from "~/lib/host-clock";
 import { useTransport } from "~/lib/transport-context";
 import { useHostId } from "~/stores/host-store";
 import { currentCell, type HeatmapRow, heatmapRows } from "../_lib/heatmap";
@@ -25,10 +26,10 @@ export function localHourStart(ms: number): number {
  * with the 1 Hz frames.
  */
 export function useLocalHour(): number {
-  return useNextBoundary(currentHourStart, nextHourStart);
+  const clock = useHostClock();
+  const read = useCallback(() => localHourStart(clock()), [clock]);
+  return useNextBoundary(read, nextHourStart);
 }
-
-const currentHourStart = () => localHourStart(Date.now());
 
 function nextHourStart(hour: number): number {
   const next = new Date(hour);

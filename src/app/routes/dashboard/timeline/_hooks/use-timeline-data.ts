@@ -10,6 +10,8 @@ import { historyKeys, type RangeSpec } from "@core/query-keys";
 import { type CommandFailure, unwrap } from "@core/transport";
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useIsLocalHost } from "~/hooks/use-is-local-host";
+import { useHostClock } from "~/lib/host-clock";
 import { useTransport } from "~/lib/transport-context";
 import { useHost, useHostId } from "~/stores/host-store";
 import { type Bucket, combineSeries } from "../_lib/buckets";
@@ -75,6 +77,7 @@ export function useTimelineData(
   /** Width of the plot column; picks the bucket for 7d and 30d. */
   plotPx = 0
 ): TimelineData {
+  const clock = useHostClock();
   const transport = useTransport();
   const hostId = useHostId();
   const queryClient = useQueryClient();
@@ -102,7 +105,7 @@ export function useTimelineData(
       queryFn: () => {
         const w = historyWindow(
           view.span,
-          view.endMs ?? Date.now(),
+          view.endMs ?? clock(),
           requestBucket
         );
         return unwrap(
@@ -136,7 +139,7 @@ export function useTimelineData(
   const liveEdge = useHost((s) =>
     s.lastTsMs === null ? null : Math.floor(s.lastTsMs / bucketMs) * bucketMs
   );
-  const [mountedAt] = useState(() => Date.now());
+  const [mountedAt] = useState(() => clock());
   const toMs =
     view.endMs ?? liveEdge ?? Math.floor(mountedAt / bucketMs) * bucketMs;
   const fromMs = toMs - spanMs;
@@ -154,7 +157,8 @@ export function useTimelineData(
     // The first frame lands in the bucket the page was read in.
     if (prev.edge === null || prev.bucketMs !== bucketMs) return;
     if (prev.edge === liveEdge) return;
-    const nowMs = Date.now();
+    const nowMs = clock();
+    const requestedAt = Date.now();
     const keepFromMs = historyWindow(view.span, nowMs, requestBucket).fromMs;
     lanes.forEach((lane, i) => {
       const queryKey = keys[i];
@@ -162,7 +166,11 @@ export function useTimelineData(
       const state = queryClient.getQueryState<HistoryPage>(queryKey);
       // Not read yet, or being read: that read is through now.
       if (!state?.data || state.fetchStatus === "fetching") return;
-      const tail = tailRange(state.data, state.dataUpdatedAt, nowMs);
+      const tail = tailRange(
+        state.data,
+        state.dataUpdatedAt + nowMs - requestedAt,
+        nowMs
+      );
       if (!tail) {
         void queryClient.refetchQueries({ queryKey, exact: true });
         return;
@@ -186,15 +194,16 @@ export function useTimelineData(
           }
           const now = queryClient.getQueryState<HistoryPage>(queryKey);
           // A newer read (a whole refetch) landed meanwhile: it wins.
-          if (!now?.data || now.dataUpdatedAt > nowMs) return;
+          if (!now?.data || now.dataUpdatedAt > requestedAt) return;
           queryClient.setQueryData<HistoryPage>(
             queryKey,
             mergeTail(now.data, res.data, tail.fromMs, keepFromMs),
-            { updatedAt: nowMs }
+            { updatedAt: requestedAt }
           );
         });
     });
   }, [
+    clock,
     live,
     liveEdge,
     bucketMs,
@@ -281,7 +290,8 @@ export function useProcessesAt(
   const hostId = useHostId();
   // Start and width settle together: a range switch changes both, and the
   // old start at the new width is a bucket nobody asked for.
-  const bucket = bucketT === null ? null : `${bucketT}:${bucketMs}`;
+  const local = useIsLocalHost();
+  const bucket = bucketT === null || !local ? null : `${bucketT}:${bucketMs}`;
   const settledBucket = useDebounced(bucket, 50);
   const [t, ms] = (settledBucket ?? "-1:0").split(":").map(Number) as [
     number,

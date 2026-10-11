@@ -6,6 +6,7 @@ import type {
 } from "@core/generated/bindings";
 import { SegmentedControl } from "~/components/segmented-control";
 import { SettingsPanel, SettingsRow } from "~/components/settings-row";
+import { Switch } from "~/components/ui/switch";
 import { useWriteSettings } from "~/hooks/use-write-settings";
 import { useSettings } from "~/stores/settings-store";
 import { AlertsPanel } from "./_components/alerts-panel";
@@ -66,6 +67,7 @@ function UnitsPanel({ units }: { units: Settings["units"] }) {
  */
 export default function SettingsRoute() {
   const settings = useSettings((s) => s);
+  const write = useWriteSettings();
   return (
     <div className="flex flex-col gap-5">
       <h1 className="font-[590] text-[22px] tracking-[-0.022em]">Settings</h1>
@@ -86,6 +88,20 @@ export default function SettingsRoute() {
             />
             <UnitsPanel units={settings.units} />
             <GeneralPanel general={settings.general} />
+            <SettingsPanel title="Remote monitoring">
+              <SettingsRow
+                label="Allow remote monitoring"
+                sub="Other Macs signed in over SSH as your user can view this Mac while Kelvo is running."
+              >
+                <Switch
+                  aria-label="Allow remote monitoring"
+                  checked={settings.remote_access?.enabled ?? false}
+                  onCheckedChange={(enabled) =>
+                    write({ remote_access: { enabled } })
+                  }
+                />
+              </SettingsRow>
+            </SettingsPanel>
           </div>
         </div>
       )}

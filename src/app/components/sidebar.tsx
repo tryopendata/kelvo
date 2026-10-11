@@ -24,6 +24,7 @@ const ICONS = {
     "M3 7h15a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1zM22 11v2M6 10v4M10 10v4",
   processes: "M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01",
   widgets: "M3 3h7v9H3zM14 3h7v5h-7zM14 12h7v9h-7zM3 16h7v5H3z",
+  hosts: "M3 3h18v12H3zM8 21h8M12 15v6",
   settings:
     "M21 4h-7M10 4H3M21 12h-9M8 12H3M21 20h-5M12 20H3M14 2v4M8 10v4M16 18v4",
 } as const;
@@ -64,6 +65,7 @@ export interface SidebarProps {
   onNavigate?: (href: string) => void;
   /** A second footer line under the sampling state (the Performance mode marker). */
   footerNote?: ReactNode;
+  hostSwitcher?: ReactNode;
 }
 
 function intervalLabel(ms: number): string {
@@ -133,6 +135,7 @@ export function Sidebar({
   version,
   onNavigate,
   footerNote,
+  hostSwitcher,
 }: SidebarProps) {
   const navRef = useRef<HTMLElement>(null);
   const pillRef = useRef<HTMLDivElement>(null);
@@ -215,6 +218,7 @@ export function Sidebar({
           Kelvo
         </span>
       </div>
+      {hostSwitcher}
       {groups.map((g, gi) => (
         <ul
           key={g.id}

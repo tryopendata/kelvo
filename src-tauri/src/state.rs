@@ -62,7 +62,8 @@ pub struct AppState {
     pub hosts: HostRegistry,
     pub live: LiveRegistry,
     pub settings: SettingsOwner,
-    pub history: History,
+    pub history: Arc<History>,
+    pub remotes: crate::remote::RemoteManager,
     appearance: Mutex<WindowAppearance>,
     /// History housekeeping; woken early when the retention or size limit changes.
     housekeeping: HousekeepingHandle,
@@ -135,7 +136,8 @@ impl AppState {
             hosts: HostRegistry::new(),
             live: LiveRegistry::new(),
             settings,
-            history,
+            history: Arc::new(history),
+            remotes: crate::remote::RemoteManager::default(),
             appearance: Mutex::new(WindowAppearance {
                 // Seeded from the saved setting, so windows open without motion when the
                 // user turned the mode on (D-088). Low Power Mode arrives with the
@@ -179,6 +181,31 @@ impl AppState {
         tracing::info!("shut down");
     }
 
+    pub fn history_for(&self, host: HostId) -> Result<Arc<History>, CommandError> {
+        if host == self.local {
+            Ok(self.history.clone())
+        } else {
+            self.remotes.history(host)
+        }
+    }
+
+    pub fn host_now(&self, host: HostId) -> i64 {
+        if host == self.local {
+            kelvo_engine::wall_ms()
+        } else {
+            self.remotes.now_ms(host)
+        }
+    }
+
+    pub fn recent_rows(&self, host: HostId, from: i64, to: i64) -> Vec<kelvo_store::BucketRow> {
+        if host == self.local {
+            self.host(host)
+                .map_or_else(|_| Vec::new(), |h| h.recent_rows(host, from, to))
+        } else {
+            self.remotes.recent(host, from, to)
+        }
+    }
+
     pub fn host(&self, host: HostId) -> Result<Arc<HostEntry>, CommandError> {
         self.hosts.get(host)
     }
@@ -203,7 +230,12 @@ impl AppState {
     /// source is detached first (flushing and closing its gaps in the old file) and
     /// reattached to the new store with its host registered. Blocking.
     pub fn reset_history(&self, app: &AppHandle) -> Result<(), CommandError> {
-        let hosts = self.hosts.all();
+        let hosts: Vec<_> = self
+            .hosts
+            .all()
+            .into_iter()
+            .filter(|h| h.record().is_local)
+            .collect();
         for h in &hosts {
             h.set_store(None);
         }
@@ -285,6 +317,9 @@ impl SettingsEffects for ShellEffects<'_> {
 
     fn committed(&self, old: &Settings, now: &SettingsSnapshot) {
         let new = &now.settings;
+        if old.remote_access != new.remote_access {
+            crate::remote::refresh_metrics(self.app);
+        }
         if engine_affecting(old, new) {
             // Queued on the local engine's inbox ahead of anything sent later; the engine
             // applies it before its next tick. The sampling settings are this Mac's;
@@ -457,7 +492,10 @@ fn reconcile_login_item(wanted: bool) {
 /// Follows one host's bus for the app's own needs: the `capabilities-changed` and
 /// `event-recorded` events, alert notifications, `chip_known`, and Performance mode for window
 /// appearance. The latest frame is the hub's.
-fn spawn_host_watcher(app: AppHandle, entry: Arc<HostEntry>) {
+pub(crate) fn spawn_host_watcher(
+    app: AppHandle,
+    entry: Arc<HostEntry>,
+) -> tauri::async_runtime::JoinHandle<()> {
     let mut sub = entry.bus().subscribe();
     tauri::async_runtime::spawn(async move {
         let mut performance = None;
@@ -472,7 +510,8 @@ fn spawn_host_watcher(app: AppHandle, entry: Arc<HostEntry>) {
                     if unknown_chip && entry.update_record(|r| r.info.chip_known = false) {
                         tracing::info!(%host, "chip not mapped for sensors");
                         if let Some(state) = app.try_state::<AppState>() {
-                            if let Ok(w) = state.history.writer()
+                            if let Ok(history) = state.history_for(host)
+                                && let Ok(w) = history.writer()
                                 && let Err(e) = w.upsert_host(entry.record())
                             {
                                 tracing::warn!("updating the host record: {e}");
@@ -501,6 +540,9 @@ fn spawn_host_watcher(app: AppHandle, entry: Arc<HostEntry>) {
                     }
                 }
                 BusMsg::Status(s) if entry.record().is_local => {
+                    if let Some(state) = app.try_state::<AppState>() {
+                        state.remotes.controller_battery_changed(s.on_battery);
+                    }
                     if performance != Some(s.performance)
                         && let Some(state) = app.try_state::<AppState>()
                     {
@@ -511,7 +553,7 @@ fn spawn_host_watcher(app: AppHandle, entry: Arc<HostEntry>) {
                 _ => {}
             }
         }
-    });
+    })
 }
 
 #[cfg(test)]
