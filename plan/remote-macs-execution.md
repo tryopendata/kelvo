@@ -1,6 +1,6 @@
 # Remote Macs implementation
 
-Status: implementation and automated verification complete; real-device acceptance pending. Implementation base: a0eee11. Developed on codex/remote-macs and approved for main integration by the user.
+Status: implementation and automated verification complete, merged into main at a702cc4; real-device acceptance pending. Implementation commit: 6a914c0 (base a0eee11). The codex/remote-macs branch and worktree have been removed.
 
 Execution follows ce:executing-plans (installed CE 4.3.0): isolated worktree,
 subsystem agents, dependency gates, automated and real-device verification, mandatory
@@ -67,6 +67,11 @@ checks remain required; do not substitute mocked results or mark them complete w
   sysctl restrictions had caused the initial hardware identity test failure.
 - Fifteen reviewer fault injections proved regression checks fail with the bug restored;
   all mutations were removed and restored tests passed. The final review verdict is APPROVE.
+- `make bindings-check` and all commit hooks passed. Main integration preserved the
+  concurrent Docker planning changes (D-103); remote monitoring is D-104. The final
+  documentation review also approved the resolved merge and architecture summary.
+- Merged to main at a702cc4. Removed the feature worktree, its dev server and branch;
+  retained the signed app at the artifact path above. Unrelated work was preserved.
 
 ## Setup behavior
 
