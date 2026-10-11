@@ -107,6 +107,7 @@ See [README](README.md) for the roadmap and [architecture.md](architecture.md) f
 | D-100 | The engine's process view and usage key carry their own IPC derives | Accepted |
 | D-101 | SF Pro for the UI, SF Pro Rounded for headline figures; no monospace or uppercase labels | Accepted |
 | D-102 | Menu bar settings: bars, readouts after the bars, and separate items as three independent choices | Accepted |
+| D-103 | Local Docker monitoring has its own clock and history | Planned |
 
 ---
 
@@ -3218,3 +3219,25 @@ The combined menu bar item printed one number, the hottest temperature. Watts, m
 - The bench presets (`KELVO_BENCH_MENU_BAR`) are `group.field=value` pairs under `/menu_bar/`.
 - `tray-layout.ts` copies the renderer's geometry constants for the preview and the width estimate; it matched the Rust images within a point at 50, 151 and 383 pt. A geometry change in `render.rs` needs the same change there.
 - Readout order is fixed; reordering, choosing the disk volume and per-readout colour are out of scope.
+
+## D-103: Local Docker monitoring has its own clock and history
+
+Status: Planned, 2026-10-11. No feature implementation or schema migration has shipped.
+
+### Context
+
+The [Docker monitoring plan](docker-container-monitoring.md) needs independently timed container observations, historical identities and limits, event evidence and a Docker-specific storage allowance. Current host frames share one timestamp and store layouts as host-wide blobs. Putting container samples in those blobs would prevent independent retention and misrepresent asynchronous sampling. A single engine-wide Docker layout would also churn whenever containers start or disappear.
+
+### Decision
+
+Keep the physical host identity, existing SQLite/WAL database and single writer. Add a dedicated Docker worker/live hub and entity-local bucket tables with immutable metric layouts, relational layout/population membership, as-of metadata and explicit coverage. Preserve weighted sums and duration through every rollup. Coordinate database read snapshots with ring revisions and durable commit acknowledgements, and retain referenced metadata until both persistence and snapshot readers release it.
+
+Track Docker transaction/loss scopes alongside host scopes: isolated Docker operation failures affect Docker only, while a failed shared commit reports every affected domain. Enforce the Docker logical allowance continuously, including pending writes, at `min(256 MiB, total history budget / 4)`, with pruning toward 80% and a bounded live-only fallback. The existing global file limit remains authoritative. Clear, discard, prune and migration tests must cover the new relational dependencies.
+
+### Consequences
+
+This adds explicit store lifecycle and query work, but preserves independent sampling and retention without a second database or server dependency. The default 150,000,000-byte history budget leaves 37,500,000 logical bytes for Docker, so 30 days is a maximum age rather than a guarantee. Runtime-process footprint and container working set stay separate measurements in the UI. API support, idle behavior, physical attribution and measured capacity remain release gates.
+
+### Revisit when
+
+The compatibility spike cannot establish usable local runtime attribution or sleep-safe monitoring; measured churn cannot fit bounded history with useful retention; or a separately approved multi-engine/remote feature needs a different ownership model. Changes to physical host identity or wire semantics still require the existing one-way-door review.

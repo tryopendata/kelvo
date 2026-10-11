@@ -1,6 +1,6 @@
 # Kelvo plan
 
-This folder is the plan for Kelvo, from the first installable build through remote host monitoring. Start here, then read the doc for the version you are working on. Nothing in this folder is implemented yet; the repo is still the `create-tauri-app` scaffold.
+This folder is the plan for Kelvo, from the first installable build through remote host monitoring. Start here, then read the doc for the version you are working on. The app now runs from source; use [PROGRESS.md](PROGRESS.md) to distinguish implemented work, QA follow-ups and future plans.
 
 | Doc | What it covers |
 |---|---|
@@ -10,6 +10,7 @@ This folder is the plan for Kelvo, from the first installable build through remo
 | [v2-customization-widgets.md](v2-customization-widgets.md) | v2.x: widget manifest, composer, floating desktop widgets, WidgetKit dev build |
 | [v3-native-distribution.md](v3-native-distribution.md) | v3.x: Developer ID, notarization, public WidgetKit, App Store evaluation |
 | [v4-remote-hosts.md](v4-remote-hosts.md) | v4.x: `kelvo-agent`, SSH transport, sync, fleet view |
+| [docker-container-monitoring.md](docker-container-monitoring.md) | Planned local Docker tab: aggregate/runtime and per-container stats, history, logs, SQLite design and delivery gates |
 | [decisions.md](decisions.md) | ADR log: every decision with its reasoning and when to revisit it |
 | [PROGRESS.md](PROGRESS.md) | Implementation progress tracker |
 
@@ -77,6 +78,8 @@ Each row is a major version. Minor versions inside each are listed in the versio
 | v2.x | Customization and widgets | v2.0 widget manifest and popover composer; v2.1 floating desktop widgets; v2.2 WidgetKit dev build (personal use); v2.3 alert editor, configurable Overview, per-widget history | Widget manifest with generated TS and Swift types, `WidgetFeedSink` trait with a file implementation, board window lifecycle | Popover renders from saved layouts; board windows within the per-display budget; WidgetKit widgets survive rebuilds on the dev's own Mac |
 | v3.x | Native distribution | Developer ID signing and notarization in CI, hardened runtime, official Homebrew cask, signed updates, public WidgetKit via Team-ID-prefixed App Group, App Store evaluation | `AppGroupWidgetFeed`, signing pipeline, `appstore` edition build | Notarized builds from CI; WidgetKit installs for users with no prompts; go/no-go on the App Store recorded in D-015 |
 | v4.x | Remote hosts | `kelvo-agent` for macOS and Linux, Add-host flow over SSH, live stream and cursor sync, Linux collectors (cgroups, containers), fleet view and host switcher, remote alerts | `RemoteSource`, per-host mirrors with disk budgets, `HostSummary` in use | Agent under 0.3% CPU and 30 MB; sync survives drops, reinstalls and pruning without interpolating; fleet view works for offline hosts |
+
+The [Docker container monitoring plan](docker-container-monitoring.md) is an independently staged local feature. It adds one selected local engine, a Containers tab and historical investigation; release placement is not assigned. The v4 remote Linux container work remains separate.
 
 ## 8. Architecture at a glance
 
