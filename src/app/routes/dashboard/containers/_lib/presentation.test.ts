@@ -1,10 +1,6 @@
 import { mockContainer } from "@core/mock/docker";
 import { describe, expect, it } from "vitest";
-import {
-  filterContainers,
-  sortedContainers,
-  withInspection,
-} from "./presentation";
+import { filterContainers, sortedContainers } from "./presentation";
 
 describe("container view shaping", () => {
   it("searches official project, image and name without dropping exited rows", () => {
@@ -30,21 +26,4 @@ describe("container view shaping", () => {
       missing.id,
     ]);
   });
-});
-
-it("accepts fresh inspection metadata for old records without a metadata timestamp", () => {
-  const legacy = mockContainer(0, 1000);
-  delete legacy.metadata_observed_ms;
-  const inspected = {
-    ...mockContainer(0, 2000),
-    explicit_limit_bytes: 4_000_000,
-  };
-  expect(withInspection(legacy, inspected)?.explicit_limit_bytes).toBe(
-    4_000_000
-  );
-  const missingStamp = { ...inspected };
-  delete missingStamp.metadata_observed_ms;
-  expect(withInspection(legacy, missingStamp)?.explicit_limit_bytes).toBe(
-    legacy.explicit_limit_bytes
-  );
 });

@@ -1,10 +1,14 @@
 import type { DockerContainer } from "@core/generated/bindings";
 import { mockContainer } from "@core/mock/docker";
-import { act, screen, within } from "@testing-library/react";
+import { act, fireEvent, screen, within } from "@testing-library/react";
 import { renderWithProviders } from "@tests/test-utils";
-import { useState } from "react";
-import { expect, it } from "vitest";
-import { ContainerTable } from "./container-table";
+import { type ComponentProps, type ReactNode, useState } from "react";
+import { expect, it, vi } from "vitest";
+import {
+  ContainerIdentity,
+  ContainerMemory,
+  ContainerTable,
+} from "./container-table";
 
 it("holds identity while focused as values update, then explicitly reorders", async () => {
   const first = mockContainer(0, 1000);
@@ -140,4 +144,135 @@ it("keeps selection controls current after metric ticks and population changes",
   ).toBeDisabled();
   result.unmount();
   result.transport.dispose();
+});
+
+it("memoizes identity and memory cells until their displayed fields change", () => {
+  let update: ((row: DockerContainer) => void) | undefined;
+  // Spy on the real memo bodies, leaving both comparators and rendering intact.
+  const identity = vi.spyOn(
+    ContainerIdentity as unknown as {
+      type: (props: ComponentProps<typeof ContainerIdentity>) => ReactNode;
+    },
+    "type"
+  );
+  const memory = vi.spyOn(
+    ContainerMemory as unknown as {
+      type: (props: ComponentProps<typeof ContainerMemory>) => ReactNode;
+    },
+    "type"
+  );
+  const onMonitored = () => {};
+  function Harness() {
+    const [row, setRow] = useState(mockContainer(0, 1000));
+    update = setRow;
+    return (
+      <table>
+        <tbody>
+          <tr>
+            <ContainerIdentity
+              row={row}
+              monitoringFull={false}
+              onMonitored={onMonitored}
+              back="/"
+              scroll={0}
+            />
+            <ContainerMemory row={row} io={false} />
+          </tr>
+        </tbody>
+      </table>
+    );
+  }
+  const result = renderWithProviders(<Harness />, {
+    transportOptions: { historyRows: 1 },
+  });
+  identity.mockClear();
+  memory.mockClear();
+  const tick = { ...mockContainer(0, 1000), observed_ms: 2000 };
+  act(() => update?.(tick));
+  expect(identity).toHaveBeenCalledTimes(0);
+  expect(memory).toHaveBeenCalledTimes(0);
+  const renamed = { ...tick, name: "Renamed worker" };
+  act(() => update?.(renamed));
+  expect(screen.getByRole("link", { name: "Renamed worker" })).toBeVisible();
+  expect(identity).toHaveBeenCalledTimes(1);
+  expect(memory).toHaveBeenCalledTimes(0);
+  act(() => update?.({ ...renamed, explicit_limit_bytes: 4_000_000 }));
+  expect(screen.getByText("/ 4.0 MB")).toBeVisible();
+  expect(identity).toHaveBeenCalledTimes(1);
+  expect(memory).toHaveBeenCalledTimes(1);
+  identity.mockRestore();
+  memory.mockRestore();
+  result.unmount();
+  result.transport.dispose();
+});
+
+it("counts projects across pages and sorts the displayed I/O column", () => {
+  const rows = Array.from({ length: 40 }, (_, index) => ({
+    ...mockContainer(index, 1000),
+    project: "Whole project",
+  }));
+  const result = renderWithProviders(
+    <ContainerTable
+      rows={rows}
+      sort="cpu"
+      onSort={() => {}}
+      grouped
+      io
+      collapsed={[]}
+      onCollapse={() => {}}
+      onMonitored={() => {}}
+      monitoringFull={false}
+      page={1}
+    />,
+    { transportOptions: { historyRows: 1 } }
+  );
+  expect(
+    screen.getByRole("button", { name: /Whole project.*40 containers/ })
+  ).toBeVisible();
+  expect(screen.getByRole("columnheader", { name: /Network/ })).toHaveAttribute(
+    "aria-sort",
+    "descending"
+  );
+  const links = within(screen.getByRole("table")).getAllByRole("link");
+  // I/O rows are sorted by their combined displayed receive/send rates.
+  const expected = [...rows]
+    .sort(
+      (a, b) =>
+        (b.metrics.network_rx_bps ?? -1) +
+          (b.metrics.network_tx_bps ?? -1) -
+          ((a.metrics.network_rx_bps ?? -1) +
+            (a.metrics.network_tx_bps ?? -1)) || a.id.localeCompare(b.id)
+    )
+    .slice(32);
+  expect(links.map((link) => link.textContent)).toEqual(
+    expected.map((row) => row.name)
+  );
+  result.unmount();
+  result.transport.dispose();
+});
+
+it("captures the current main scroll position through a scroll event", async () => {
+  const main = document.createElement("main");
+  document.body.append(main);
+  const result = renderWithProviders(
+    <ContainerTable
+      rows={[mockContainer(0, 1000)]}
+      sort="name"
+      onSort={() => {}}
+      grouped={false}
+      io={false}
+      collapsed={[]}
+      onCollapse={() => {}}
+      onMonitored={() => {}}
+      monitoringFull={false}
+    />,
+    { transportOptions: { historyRows: 1 } }
+  );
+  main.scrollTop = 240;
+  fireEvent.scroll(main);
+  fireEvent.click(screen.getByRole("link", { name: "worker" }));
+  expect(result.router.state.location.state).toMatchObject({ scroll: 240 });
+  result.unmount();
+  result.transport.dispose();
+  main.remove();
 });

@@ -214,3 +214,78 @@ export function settingsInvalidation(
     return false;
   };
 }
+
+export const dockerKeys = {
+  retained: (
+    host: string,
+    engine: string | null,
+    search: string,
+    offset: number,
+    generation: number
+  ) =>
+    [
+      "history",
+      host,
+      "docker",
+      "retained",
+      engine,
+      search,
+      offset,
+      generation,
+    ] as const,
+  detail: (
+    host: string,
+    engine: string,
+    container: string,
+    generation: number
+  ) =>
+    [
+      "history",
+      host,
+      "docker",
+      engine,
+      container,
+      "detail",
+      generation,
+    ] as const,
+  history: (
+    engine: string,
+    container: string | null,
+    from: number,
+    to: number,
+    host: string,
+    generation: number
+  ) =>
+    [
+      "history",
+      host,
+      "docker",
+      engine,
+      container,
+      "history",
+      from,
+      to,
+      generation,
+    ] as const,
+  events: (
+    engine: string,
+    container: string | null,
+    from: number,
+    to: number,
+    host: string,
+    generation: number,
+    beforeId: string | null
+  ) =>
+    [
+      "history",
+      host,
+      "docker",
+      engine,
+      container,
+      "events",
+      from,
+      to,
+      generation,
+      beforeId,
+    ] as const,
+};

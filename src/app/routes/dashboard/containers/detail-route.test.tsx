@@ -48,42 +48,55 @@ it.each([false, true])(
     };
     inventory.metrics = { ...inventory.metrics, cpu_pct: 3 };
     let metricsTick = false;
+    let inspected = false;
+    let publish: (() => void) | undefined;
     const subscribe = transport.dockerSubscribe;
     transport.dockerSubscribe = (cb) =>
-      subscribe((snapshot) =>
-        cb({
-          ...snapshot,
-          observed_ms: metricsTick ? Date.now() + 10_000 : snapshot.observed_ms,
-          containers: [
-            {
-              ...inventory,
-              observed_ms: metricsTick
-                ? Date.now() + 10_000
-                : inventory.observed_ms,
-              metrics: { ...inventory.metrics, cpu_pct: metricsTick ? 7 : 3 },
-            },
-          ],
-        })
-      );
+      subscribe((snapshot) => {
+        publish = () =>
+          cb({
+            ...snapshot,
+            observed_ms: metricsTick
+              ? Date.now() + 10_000
+              : snapshot.observed_ms,
+            containers: [
+              {
+                ...inventory,
+                ...(inspected
+                  ? {
+                      metadata_available: true,
+                      explicit_limit_bytes: 4_000_000,
+                      ports: ["8080 → 80/tcp"],
+                    }
+                  : {}),
+                observed_ms: metricsTick
+                  ? Date.now() + 10_000
+                  : inventory.observed_ms,
+                metrics: { ...inventory.metrics, cpu_pct: metricsTick ? 7 : 3 },
+              },
+            ],
+          });
+        publish();
+      });
     let failed = false;
-    transport.dockerDetail = async () =>
-      failed
-        ? {
-            status: "error",
-            error: {
-              kind: "docker",
-              message: "Inspection socket disconnected",
-            },
-          }
-        : {
-            status: "ok",
-            data: {
-              ...mockContainer(0, 2000),
-              explicit_limit_bytes: 4_000_000,
-              ports: ["8080 → 80/tcp"],
-              metrics: { ...inventory.metrics, cpu_pct: 999 },
-            },
-          };
+    transport.dockerDetail = async () => {
+      if (failed)
+        return {
+          status: "error",
+          error: { kind: "docker", message: "Inspection socket disconnected" },
+        };
+      inspected = true;
+      publish?.();
+      return {
+        status: "ok",
+        data: {
+          ...inventory,
+          metadata_available: true,
+          explicit_limit_bytes: 4_000_000,
+          ports: ["8080 → 80/tcp"],
+        },
+      };
+    };
     const result = renderWithProviders(detailView, { transport, route });
     await screen.findByText(/Charged memory/, { selector: "span" });
     await result.user.click(
@@ -110,9 +123,7 @@ it.each([false, true])(
     );
     expect(
       screen.getByText(/Charged memory/, { selector: "span" })
-    ).toHaveTextContent(
-      metadataAvailable ? "No explicit limit" : "Limit unavailable"
-    );
+    ).toHaveTextContent("4.0 MB");
     result.unmount();
     transport.dispose();
   }
@@ -242,36 +253,44 @@ it("drops retained detail when the Docker generation changes", async () => {
   transport.dispose();
 });
 
-it("honors newer inspect removal evidence while inventory still contains running metrics", async () => {
+it("renders Rust-reconciled removal evidence from the stream", async () => {
   const transport = createMockTransport({
     scenarios: ["docker-32"],
     historyRows: 1,
   });
   const inventory = mockContainer(0, 1000);
   const subscribe = transport.dockerSubscribe;
-  transport.dockerSubscribe = (cb) =>
-    subscribe((snapshot) => cb({ ...snapshot, containers: [inventory] }));
-  transport.dockerDetail = async () => ({
-    status: "ok",
-    data: {
-      ...inventory,
-      lifecycle: "removed",
-      metadata_available: false,
-      metadata_observed_ms: 2000,
-      observed_ms: null,
-      interval_ms: null,
-      metrics: {
-        cpu_pct: null,
-        working_set_bytes: null,
-        raw_memory_bytes: null,
-        effective_limit_bytes: null,
-        network_rx_bps: null,
-        network_tx_bps: null,
-        block_read_bps: null,
-        block_write_bps: null,
-      },
+  let publish: (() => void) | undefined;
+  const removed = {
+    ...inventory,
+    lifecycle: "removed",
+    metadata_available: false,
+    metadata_observed_ms: 2000,
+    observed_ms: null,
+    interval_ms: null,
+    metrics: {
+      cpu_pct: null,
+      working_set_bytes: null,
+      raw_memory_bytes: null,
+      effective_limit_bytes: null,
+      network_rx_bps: null,
+      network_tx_bps: null,
+      block_read_bps: null,
+      block_write_bps: null,
     },
-  });
+  } as const;
+  let inspected = false;
+  transport.dockerSubscribe = (cb) =>
+    subscribe((snapshot) => {
+      publish = () =>
+        cb({ ...snapshot, containers: [inspected ? removed : inventory] });
+      publish();
+    });
+  transport.dockerDetail = async () => {
+    inspected = true;
+    publish?.();
+    return { status: "ok", data: removed };
+  };
   const result = renderWithProviders(detailView, { transport, route });
   expect(
     await screen.findByText(/Removed container · retained history/)

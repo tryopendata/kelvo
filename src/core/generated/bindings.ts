@@ -621,6 +621,8 @@ export type DockerHistoryPoint = {
 	metrics: DockerMetrics,
 	measured_ms: number,
 	expected_ms: number,
+	/**  Complete measured coverage of this bucket. */
+	covered: boolean,
 	population_revision: number,
 	revision: number,
 	explicit_limit_bytes: number | null,
@@ -720,6 +722,8 @@ export type DockerSnapshot = {
 	runtime: DockerRuntimeFootprint,
 	coverage: DockerCoverage[],
 	observed_ms: number,
+	/**  Publication clock; observation time advances only when data arrives. */
+	now_ms: number,
 	interval_ms: number,
 	population_revision: number,
 	persistence: DockerPersistence,

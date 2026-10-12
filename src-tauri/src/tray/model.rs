@@ -850,7 +850,7 @@ pub fn docker_item(
         let state = match status {
             DockerStatus::Disabled => "monitoring off",
             DockerStatus::Connecting => "connecting",
-            DockerStatus::IdleSuspended => "suspended for runtime sleep",
+            DockerStatus::IdleSuspended => "paused · no running containers",
             DockerStatus::Paused => "paused",
             DockerStatus::Unavailable => "engine unavailable",
             DockerStatus::PermissionDenied => "socket permission denied",
