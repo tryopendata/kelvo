@@ -168,6 +168,7 @@ async fn dial(
                 .lock()
                 .map(|b| String::from_utf8_lossy(&b).trim().to_string())
                 .unwrap_or_default();
+            tracing::debug!(?other, %detail, "remote handshake failed");
             let error = if detail.contains("Permission denied")
                 || detail.contains("Host key verification failed")
                 || detail.contains("REMOTE HOST IDENTIFICATION")
@@ -177,7 +178,7 @@ async fn dial(
                 RemoteError::Transport(format!(
                     "{alias}: {}",
                     if detail.is_empty() {
-                        format!("handshake failed: {other:?}")
+                        handshake_failure(&other).to_string()
                     } else {
                         detail
                     }
@@ -212,6 +213,22 @@ async fn dial(
         child: Some(child),
         _stderr: Some(task),
     })
+}
+
+fn handshake_failure(
+    outcome: &std::result::Result<Result<Message>, tokio::time::error::Elapsed>,
+) -> &'static str {
+    match outcome {
+        Err(_) => "The other Mac did not answer in time.",
+        Ok(Err(RemoteError::Io(error))) if error.kind() == std::io::ErrorKind::UnexpectedEof => {
+            "The connection closed before Kelvo could start on the other Mac."
+        }
+        Ok(Err(RemoteError::Io(_))) => {
+            "The connection failed while Kelvo was starting on the other Mac."
+        }
+        Ok(Err(_)) => "The other Mac sent an invalid Kelvo greeting.",
+        Ok(Ok(_)) => "The other Mac did not send a Kelvo greeting.",
+    }
 }
 
 /// Concurrent routes with a bounded preference grace. Futures own SSH children and
@@ -271,6 +288,41 @@ fn combine(a: RemoteError, b: RemoteError) -> RemoteError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[tokio::test(start_paused = true)]
+    async fn handshake_failures_use_plain_sentences() {
+        let timeout = tokio::time::timeout(
+            Duration::from_secs(1),
+            std::future::pending::<Result<Message>>(),
+        )
+        .await;
+        assert_eq!(
+            handshake_failure(&timeout),
+            "The other Mac did not answer in time."
+        );
+        let eof = Ok(Err(RemoteError::Io(
+            std::io::ErrorKind::UnexpectedEof.into(),
+        )));
+        assert_eq!(
+            handshake_failure(&eof),
+            "The connection closed before Kelvo could start on the other Mac."
+        );
+        let io = Ok(Err(RemoteError::Io(
+            std::io::ErrorKind::ConnectionReset.into(),
+        )));
+        assert_eq!(
+            handshake_failure(&io),
+            "The connection failed while Kelvo was starting on the other Mac."
+        );
+        let invalid = Ok(Err(RemoteError::Protocol("bad frame".into())));
+        assert_eq!(
+            handshake_failure(&invalid),
+            "The other Mac sent an invalid Kelvo greeting."
+        );
+        assert_eq!(
+            handshake_failure(&Ok(Ok(Message::Unknown))),
+            "The other Mac did not send a Kelvo greeting."
+        );
+    }
     #[tokio::test]
     async fn prefers_lan_within_grace_and_drops_loser() {
         let drops = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
@@ -307,9 +359,9 @@ mod tests {
         assert_eq!(selected.route, Route::Lan);
         assert_eq!(drops.load(std::sync::atomic::Ordering::SeqCst), 1);
     }
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn dead_lan_does_not_delay_tailscale_until_timeout() {
-        let start = std::time::Instant::now();
+        let start = tokio::time::Instant::now();
         let selected = race_routes(
             async {
                 tokio::time::sleep(Duration::from_secs(5)).await;
@@ -322,7 +374,7 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(selected, Route::Tailscale);
-        assert!(start.elapsed() < Duration::from_millis(300));
+        assert_eq!(start.elapsed(), Duration::from_millis(20));
     }
     #[tokio::test]
     async fn mismatching_routes_are_rejected() {

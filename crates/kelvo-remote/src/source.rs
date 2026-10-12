@@ -319,12 +319,7 @@ async fn session_loop(
     let kinds = session.negotiated.sync_kinds();
     let (mut messages, task) = codec::reader_task(session.reader);
     let _reader = codec::AbortOnDrop(task);
-    let layouts = HashMap::<u32, Arc<FrameLayout>>::new();
-    let source_timeline = None;
-    let timeline = source.next_timeline.fetch_add(1, Ordering::Relaxed);
     let initial = control.borrow_and_update().clone();
-    let retry = initial.retry;
-    let network = initial.network;
     codec::write(&mut session.writer, &Message::Interest(initial.interest)).await?;
     codec::write(
         &mut session.writer,
@@ -336,50 +331,35 @@ async fn session_loop(
     .await?;
     let mut timer = tokio::time::interval(Duration::from_secs(1));
     timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-    let last_sync = Instant::now() - Duration::from_secs(600);
-    let last_ping = Instant::now();
-    let ping_nonce = 0u64;
-    let outstanding_ping = Some((0u64, Instant::now()));
-    let page_bytes = 16 * 1024;
-    let unpruned_bytes = 0usize;
-    let unpruned_pages = 0usize;
-    let tiers = [Tier::S10, Tier::M1, Tier::M15];
-    let next_tier = 0;
-    let in_flight: Option<(Tier, Option<Cursor>, Instant)> = None;
-    let history_available = false;
-    let history_failed = false;
-    let floors = HashMap::<Tier, i64>::new();
-    let restart_cursor = HashSet::<Tier>::new();
-    let last_recent = Instant::now() - Duration::from_secs(60);
     let (promotion_tx, mut promotion_rx) = tokio::sync::mpsc::channel(1);
-    let promotion_task: Option<codec::AbortOnDrop> = None;
-    let recent_pending = false;
-    let clock_ready = false;
     let mut state = Session {
-        layouts,
-        source_timeline,
-        timeline,
-        retry,
-        network,
-        last_sync,
-        last_ping,
-        ping_nonce,
-        outstanding_ping,
-        page_bytes,
-        unpruned_bytes,
-        unpruned_pages,
-        tiers,
-        next_tier,
-        in_flight,
-        history_available,
-        history_failed,
-        floors,
-        restart_cursor,
-        last_recent,
+        layouts: HashMap::new(),
+        summary_layout: None,
+        source_timeline: None,
+        timeline: source.next_timeline.fetch_add(1, Ordering::Relaxed),
+        retry: initial.retry,
+        network: initial.network,
+        last_sync: Instant::now() - Duration::from_secs(600),
+        last_ping: Instant::now(),
+        ping_nonce: 0,
+        outstanding_ping: Some((0, Instant::now())),
+        page_bytes: 16 * 1024,
+        unpruned_bytes: 0,
+        unpruned_pages: 0,
+        tiers: [Tier::S10, Tier::M1, Tier::M15],
+        next_tier: 0,
+        in_flight: None,
+        timed_out: HashMap::new(),
+        history_available: false,
+        history_failed: false,
+        floors: HashMap::new(),
+        restart_cursor: HashSet::new(),
+        last_recent: Instant::now() - Duration::from_secs(60),
         promotion_tx,
-        promotion_task,
-        recent_pending,
-        clock_ready,
+        promotion_task: None,
+        recent_pending: false,
+        recent_timed_out: None,
+        clock_ready: false,
         epoch,
         kinds,
         source,
@@ -414,6 +394,7 @@ enum SessionAction {
 }
 struct Session<'a> {
     layouts: HashMap<u32, Arc<FrameLayout>>,
+    summary_layout: Option<Arc<FrameLayout>>,
     source_timeline: Option<u32>,
     timeline: u32,
     retry: u64,
@@ -428,6 +409,8 @@ struct Session<'a> {
     tiers: [Tier; 3],
     next_tier: usize,
     in_flight: Option<(Tier, Option<Cursor>, Instant)>,
+    /// Tiers whose request timed out, and when: a late reply is dropped, not misread.
+    timed_out: HashMap<Tier, Instant>,
     history_available: bool,
     history_failed: bool,
     floors: HashMap<Tier, i64>,
@@ -436,6 +419,7 @@ struct Session<'a> {
     promotion_tx: tokio::sync::mpsc::Sender<Result<SshSession>>,
     promotion_task: Option<codec::AbortOnDrop>,
     recent_pending: bool,
+    recent_timed_out: Option<Instant>,
     clock_ready: bool,
     epoch: uuid::Uuid,
     kinds: SyncKinds,
@@ -448,6 +432,12 @@ struct Session<'a> {
 }
 impl Session<'_> {
     async fn request_sync(&mut self) -> Result<bool> {
+        // No wire request IDs: never overlap requests for a tier awaiting a late reply.
+        while self.next_tier < self.tiers.len()
+            && self.timed_out.contains_key(&self.tiers[self.next_tier])
+        {
+            self.next_tier += 1;
+        }
         if self.clock_ready
             && self.source.clock.now_ms().is_some()
             && self.history_available
@@ -610,10 +600,19 @@ impl Session<'_> {
                     return Err(RemoteError::Protocol("summary too large".into()));
                 }
                 self.status.last_seen_ms = Some(kelvo_engine::wall_ms());
-                let layout = Arc::new(FrameLayout {
-                    layout_no: u32::MAX - 1,
-                    series: summary.headline.iter().map(|(k, _)| k.clone()).collect(),
-                });
+                let series: Arc<[_]> = summary.headline.iter().map(|(k, _)| k.clone()).collect();
+                let layout = match &self.summary_layout {
+                    Some(layout) if layout.series == series => layout.clone(),
+                    _ => {
+                        let layout = Arc::new(FrameLayout {
+                            layout_no: self.source.next_layout.fetch_add(1, Ordering::Relaxed),
+                            series,
+                        });
+                        self.summary_layout = Some(layout.clone());
+                        self.sink.live.publish(BusMsg::Layout(layout.clone()));
+                        layout
+                    }
+                };
                 let held: Arc<[f32]> = summary.headline.iter().map(|(_, v)| *v).collect();
                 self.sink.live.publish(BusMsg::Frame(Arc::new(LiveFrame {
                     ts_ms: summary.ts_ms,
@@ -679,10 +678,21 @@ impl Session<'_> {
                 }
             }
             Message::SyncPage(page) => {
+                if self.timed_out.remove(&page.tier).is_some() {
+                    tracing::debug!(tier = ?page.tier, "dropping late sync page");
+                    return Ok(SessionAction::Continue);
+                }
+                if !self
+                    .in_flight
+                    .as_ref()
+                    .is_some_and(|(tier, _, _)| *tier == page.tier)
+                {
+                    return Err(RemoteError::Transport("unsolicited sync page".into()));
+                }
                 let (tier, after, requested) = self
                     .in_flight
                     .take()
-                    .ok_or_else(|| RemoteError::Protocol("unsolicited sync page".into()))?;
+                    .ok_or_else(|| RemoteError::Transport("unsolicited sync page".into()))?;
                 if page.epoch != self.epoch {
                     return Err(RemoteError::Transport(
                         "source history was reset; reconnecting".into(),
@@ -749,10 +759,21 @@ impl Session<'_> {
                 earliest_ts_ms,
                 epoch: remote_epoch,
             } => {
+                if self.timed_out.remove(&tier).is_some() {
+                    tracing::debug!(?tier, "dropping late truncation");
+                    return Ok(SessionAction::Continue);
+                }
+                if !self
+                    .in_flight
+                    .as_ref()
+                    .is_some_and(|(expected, _, _)| *expected == tier)
+                {
+                    return Err(RemoteError::Transport("unsolicited truncation".into()));
+                }
                 let expected = self
                     .in_flight
                     .take()
-                    .ok_or_else(|| RemoteError::Protocol("unsolicited truncation".into()))?;
+                    .ok_or_else(|| RemoteError::Transport("unsolicited truncation".into()))?;
                 if remote_epoch != self.epoch {
                     return Err(RemoteError::Transport(
                         "source history was reset; reconnecting".into(),
@@ -777,8 +798,12 @@ impl Session<'_> {
                 layouts,
                 rows,
             } => {
+                if self.recent_timed_out.take().is_some() {
+                    tracing::debug!("dropping late recent snapshot");
+                    return Ok(SessionAction::Continue);
+                }
                 if !self.recent_pending {
-                    return Err(RemoteError::Protocol("unsolicited recent snapshot".into()));
+                    return Err(RemoteError::Transport("unsolicited recent snapshot".into()));
                 }
                 self.recent_pending = false;
                 if remote_epoch != self.epoch {
@@ -794,6 +819,10 @@ impl Session<'_> {
                 }
             }
             Message::Error { message, .. } => {
+                if !self.timed_out.is_empty() || self.recent_timed_out.is_some() {
+                    // Errors have no tier either, so reconnect rather than misattribute one.
+                    return Err(RemoteError::Transport(message));
+                }
                 if self.recent_pending {
                     self.recent_pending = false;
                 } else {
@@ -812,6 +841,16 @@ impl Session<'_> {
         Ok(SessionAction::Continue)
     }
     async fn tick(&mut self) -> Result<SessionAction> {
+        // A reply that never arrives would otherwise park its tier (or recent history)
+        // for the rest of the session; reconnecting resynchronizes the stream.
+        let lost = Duration::from_secs(120);
+        if self.timed_out.values().any(|at| at.elapsed() > lost)
+            || self.recent_timed_out.is_some_and(|at| at.elapsed() > lost)
+        {
+            return Err(RemoteError::Transport(
+                "a history reply never arrived; reconnecting".into(),
+            ));
+        }
         if self
             .outstanding_ping
             .is_some_and(|(_, sent)| sent.elapsed() > Duration::from_secs(30))
@@ -835,6 +874,7 @@ impl Session<'_> {
         }
         if self.recent_pending && self.last_recent.elapsed() > Duration::from_secs(30) {
             self.recent_pending = false;
+            self.recent_timed_out = Some(Instant::now());
             self.status.history_error = Some("recent history request timed out".into());
         }
         if self
@@ -843,7 +883,9 @@ impl Session<'_> {
             .is_some_and(|(_, _, at)| at.elapsed() > Duration::from_secs(30))
         {
             self.history_failed = true;
-            self.in_flight = None;
+            if let Some((tier, _, _)) = self.in_flight.take() {
+                self.timed_out.insert(tier, Instant::now());
+            }
             self.next_tier = self.tiers.len();
             self.last_sync = Instant::now();
             self.status.history_error = Some("history request timed out".into());
@@ -883,6 +925,7 @@ impl Session<'_> {
             && self.last_recent.elapsed() >= Duration::from_secs(30)
             && self.in_flight.is_none()
             && !self.recent_pending
+            && self.recent_timed_out.is_none()
             && self.next_tier >= self.tiers.len()
         {
             let now = self
@@ -918,6 +961,277 @@ fn adapt_page_bytes(current: u32, elapsed: Duration) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn fixture_source(mirror: Option<Arc<dyn MirrorSink>>) -> Arc<RemoteSource> {
+        use crate::ServerProvider;
+        let hello = crate::server::tests::provider().hello();
+        RemoteSource::new(
+            HostRecord::from_identity(hello.host, false),
+            HostId(uuid::Uuid::nil()),
+            EndpointConfig {
+                lan: Some("fixture".into()),
+                tailscale: None,
+                helper_path: String::new(),
+            },
+            Arc::new(|_| {}),
+            mirror,
+        )
+    }
+    fn fixture_session<'a>(
+        source: &'a Arc<RemoteSource>,
+        sink: &'a SourceSink,
+        control: &'a mut watch::Receiver<ControlState>,
+        status: &'a mut ConnectionStatus,
+        writer: &'a mut std::pin::Pin<Box<dyn tokio::io::AsyncWrite + Send>>,
+    ) -> Session<'a> {
+        Session {
+            layouts: HashMap::new(),
+            summary_layout: None,
+            source_timeline: None,
+            timeline: 1,
+            retry: 0,
+            network: 0,
+            last_sync: Instant::now(),
+            last_ping: Instant::now(),
+            ping_nonce: 0,
+            outstanding_ping: None,
+            page_bytes: 16384,
+            unpruned_bytes: 0,
+            unpruned_pages: 0,
+            tiers: [Tier::S10, Tier::M1, Tier::M15],
+            next_tier: 0,
+            in_flight: None,
+            timed_out: HashMap::new(),
+            history_available: true,
+            history_failed: false,
+            floors: HashMap::new(),
+            restart_cursor: HashSet::new(),
+            last_recent: Instant::now(),
+            promotion_tx: tokio::sync::mpsc::channel(1).0,
+            promotion_task: None,
+            recent_pending: false,
+            recent_timed_out: None,
+            clock_ready: true,
+            epoch: uuid::Uuid::from_u128(2),
+            kinds: SyncKinds::default(),
+            source,
+            sink,
+            control,
+            status,
+            writer,
+            route: Route::Lan,
+        }
+    }
+    struct CountingMirror(AtomicU32);
+    impl MirrorSink for CountingMirror {
+        fn cursor(
+            &self,
+            _: Tier,
+            _: uuid::Uuid,
+            _: SyncKinds,
+        ) -> std::result::Result<Option<Cursor>, String> {
+            Ok(None)
+        }
+        fn ingest(&self, _: SyncPage, _: SyncKinds) -> std::result::Result<(), String> {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }
+    }
+    fn page(tier: Tier) -> Message {
+        Message::SyncPage(SyncPage {
+            tier,
+            epoch: uuid::Uuid::from_u128(2),
+            layouts: vec![],
+            rows: vec![],
+            gaps: vec![],
+            events: vec![],
+            last_seq: 1,
+            more: false,
+        })
+    }
+    #[tokio::test(start_paused = true)]
+    async fn late_history_replies_are_dropped_and_next_sync_succeeds() {
+        let mirror = Arc::new(CountingMirror(AtomicU32::new(0)));
+        let source = fixture_source(Some(mirror.clone()));
+        source.clock.observe(9_000_000);
+        let sink = SourceSink {
+            live: Default::default(),
+            store: None,
+        };
+        let mut control = source.control.subscribe();
+        let mut status = ConnectionStatus::default();
+        let (client, mut peer) = tokio::io::duplex(65536);
+        let (mut reader, writer) = tokio::io::split(client);
+        let mut writer: std::pin::Pin<Box<dyn tokio::io::AsyncWrite + Send>> = Box::pin(writer);
+        let mut session = fixture_session(&source, &sink, &mut control, &mut status, &mut writer);
+        session.request_sync().await.unwrap();
+        assert!(
+            matches!(codec::read(&mut peer).await.unwrap(), Message::SyncRequest(r) if r.tier == Tier::S10)
+        );
+        tokio::time::advance(Duration::from_secs(31)).await;
+        session.tick().await.unwrap();
+        codec::write(&mut peer, &page(Tier::S10)).await.unwrap();
+        let reply = codec::read(&mut reader).await;
+        session.incoming(Some(reply)).await.unwrap();
+        assert_eq!(
+            mirror.0.load(Ordering::SeqCst),
+            0,
+            "late page must not be ingested"
+        );
+        tokio::time::advance(Duration::from_secs(60)).await;
+        session.outstanding_ping = None;
+        session.last_ping = Instant::now();
+        session.tick().await.unwrap();
+        session.request_sync().await.unwrap();
+        // The timeout tick also sent a heartbeat; drain it before the next request.
+        assert!(matches!(
+            codec::read(&mut peer).await.unwrap(),
+            Message::Ping { .. }
+        ));
+        assert!(
+            matches!(codec::read(&mut peer).await.unwrap(), Message::SyncRequest(r) if r.tier == Tier::S10)
+        );
+        codec::write(&mut peer, &page(Tier::S10)).await.unwrap();
+        let reply = codec::read(&mut reader).await;
+        session.incoming(Some(reply)).await.unwrap();
+        assert_eq!(mirror.0.load(Ordering::SeqCst), 1);
+        assert!(!session.history_failed);
+    }
+    #[tokio::test(start_paused = true)]
+    async fn a_reply_that_never_arrives_reconnects_instead_of_parking_the_tier() {
+        let source = fixture_source(None);
+        let sink = SourceSink {
+            live: Default::default(),
+            store: None,
+        };
+        let mut control = source.control.subscribe();
+        let mut status = ConnectionStatus::default();
+        let mut writer: std::pin::Pin<Box<dyn tokio::io::AsyncWrite + Send>> =
+            Box::pin(tokio::io::sink());
+        let mut session = fixture_session(&source, &sink, &mut control, &mut status, &mut writer);
+        session.in_flight = Some((Tier::M1, None, Instant::now()));
+        tokio::time::advance(Duration::from_secs(31)).await;
+        session.tick().await.unwrap();
+        session.outstanding_ping = None;
+        tokio::time::advance(Duration::from_secs(60)).await;
+        session.last_ping = Instant::now();
+        session.tick().await.unwrap();
+        tokio::time::advance(Duration::from_secs(61)).await;
+        session.outstanding_ping = None;
+        session.last_ping = Instant::now();
+        let error = session
+            .tick()
+            .await
+            .err()
+            .expect("lost reply must reconnect");
+        assert!(error.retryable(), "{error}");
+    }
+    #[tokio::test(start_paused = true)]
+    async fn late_truncation_and_recent_snapshot_are_dropped_but_unsolicited_replies_retry() {
+        let source = fixture_source(None);
+        let sink = SourceSink {
+            live: Default::default(),
+            store: None,
+        };
+        let mut control = source.control.subscribe();
+        let mut status = ConnectionStatus::default();
+        let mut writer: std::pin::Pin<Box<dyn tokio::io::AsyncWrite + Send>> =
+            Box::pin(tokio::io::sink());
+        let mut session = fixture_session(&source, &sink, &mut control, &mut status, &mut writer);
+        session.in_flight = Some((Tier::M1, None, Instant::now()));
+        session.recent_pending = true;
+        tokio::time::advance(Duration::from_secs(31)).await;
+        session.tick().await.unwrap();
+        let truncated = Message::Truncated {
+            tier: Tier::M1,
+            earliest_ts_ms: 1,
+            epoch: session.epoch,
+        };
+        session.incoming(Some(Ok(truncated.clone()))).await.unwrap();
+        assert!(session.floors.is_empty());
+        let recent = Message::RecentRows {
+            epoch: session.epoch,
+            tier: Tier::S10,
+            complete_to_ms: 0,
+            layouts: vec![],
+            rows: vec![],
+        };
+        session.incoming(Some(Ok(recent.clone()))).await.unwrap();
+        for reply in [truncated, recent, page(Tier::S10)] {
+            let error = session.incoming(Some(Ok(reply))).await.err().unwrap();
+            assert!(matches!(error, RemoteError::Transport(_)));
+            assert!(error.retryable());
+        }
+    }
+    #[tokio::test]
+    async fn summary_layout_reuses_arc_and_announces_changed_label_keys_before_frame() {
+        use kelvo_schema::{MetricId, SeriesKey};
+        let source = fixture_source(None);
+        let sink = SourceSink {
+            live: Default::default(),
+            store: None,
+        };
+        let mut events = sink.live.subscribe();
+        let mut control = source.control.subscribe();
+        let mut status = ConnectionStatus::default();
+        let mut writer: std::pin::Pin<Box<dyn tokio::io::AsyncWrite + Send>> =
+            Box::pin(tokio::io::sink());
+        let mut session = fixture_session(&source, &sink, &mut control, &mut status, &mut writer);
+        let key = SeriesKey::new(
+            MetricId::from_static("net.rx"),
+            kelvo_schema::Labels::single("iface", "en0"),
+        );
+        let summary = |ts_ms, headline| {
+            Message::HostSummary(kelvo_proto::HostSummary {
+                ts_ms,
+                online: true,
+                headline,
+            })
+        };
+        session
+            .incoming(Some(Ok(summary(1, vec![(key.clone(), 10.0)]))))
+            .await
+            .unwrap();
+        let Some(BusMsg::Layout(first)) = events.recv().await else {
+            panic!("layout must precede frame")
+        };
+        let Some(BusMsg::Frame(frame)) = events.recv().await else {
+            panic!("expected frame")
+        };
+        assert!(Arc::ptr_eq(&first, &frame.layout));
+        session
+            .incoming(Some(Ok(summary(5001, vec![(key.clone(), 20.0)]))))
+            .await
+            .unwrap();
+        let Some(BusMsg::Frame(frame)) = events.recv().await else {
+            panic!("same keys must reuse layout")
+        };
+        assert!(
+            Arc::ptr_eq(&first, &frame.layout),
+            "same summaries must occupy one ring segment"
+        );
+        let segments = sink.live.backfill(0);
+        assert_eq!(segments.len(), 1);
+        assert_eq!(segments[0].rows.len(), 2);
+        let mut vpn = key.clone();
+        vpn.labels = kelvo_schema::Labels::single("iface", "utun0");
+        session
+            .incoming(Some(Ok(summary(
+                10001,
+                vec![(key.clone(), 30.0), (vpn.clone(), 40.0)],
+            ))))
+            .await
+            .unwrap();
+        let Some(BusMsg::Layout(next)) = events.recv().await else {
+            panic!("changed keys need a Layout before the frame")
+        };
+        assert_ne!(first.layout_no, next.layout_no);
+        let Some(BusMsg::Frame(frame)) = events.recv().await else {
+            panic!("expected frame")
+        };
+        assert!(Arc::ptr_eq(&next, &frame.layout));
+        assert_eq!(&*frame.layout.series, &[key, vpn]);
+        assert_eq!(&*frame.held, &[30.0, 40.0]);
+    }
     #[tokio::test(start_paused = true)]
     async fn an_authenticated_but_stalled_application_times_out_and_closes_its_stream() {
         use crate::ServerProvider;

@@ -53,7 +53,7 @@ pub async fn serve_metrics(
         tokio::select! {
             _=shutdown.changed()=>break,
             accepted=listener.accept()=>{
-                accept_metrics(accepted, &provider, &mut sessions)?;
+                accept_metrics(accepted, &provider, &mut sessions).await?;
             },
             _=sessions.join_next(),if !sessions.is_empty()=>{}
         }
@@ -62,12 +62,19 @@ pub async fn serve_metrics(
     while sessions.join_next().await.is_some() {}
     Ok(())
 }
-fn accept_metrics(
+async fn accept_metrics(
     accepted: std::io::Result<(tokio::net::UnixStream, tokio::net::unix::SocketAddr)>,
     provider: &Arc<dyn ServerProvider>,
     sessions: &mut tokio::task::JoinSet<()>,
 ) -> Result<()> {
-    let (stream, _) = accepted?;
+    let (stream, _) = match accepted {
+        Ok(connection) => connection,
+        Err(error) => {
+            tracing::warn!(%error, "remote metrics socket accept failed; retrying");
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            return Ok(());
+        }
+    };
     if socket::same_uid(&stream).is_err() || sessions.len() >= 16 {
         return Ok(());
     }
@@ -522,6 +529,23 @@ pub(crate) mod tests {
             codec::read(client).await.unwrap(),
             Message::SourceStatus(_)
         ));
+    }
+    #[tokio::test(start_paused = true)]
+    async fn accept_error_backs_off_and_keeps_serving() {
+        let provider: Arc<dyn ServerProvider> = provider();
+        let mut sessions = tokio::task::JoinSet::new();
+        let start = tokio::time::Instant::now();
+        for _ in 0..2 {
+            accept_metrics(
+                Err(std::io::Error::from_raw_os_error(libc::EMFILE)),
+                &provider,
+                &mut sessions,
+            )
+            .await
+            .unwrap();
+        }
+        assert_eq!(start.elapsed(), std::time::Duration::from_millis(200));
+        assert!(sessions.is_empty());
     }
     #[tokio::test]
     async fn live_stream_preserves_timing_layout_and_releases_interest_on_disconnect() {

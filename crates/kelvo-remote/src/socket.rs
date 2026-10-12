@@ -112,7 +112,7 @@ pub async fn serve_control(
         tokio::select! {
             _=shutdown.changed()=>break,
             accepted=listener.accept()=>{
-                accept_control(accepted, &handler, &mut sessions)?;
+                accept_control(accepted, &handler, &mut sessions).await?;
             },
             _=sessions.join_next(),if !sessions.is_empty()=>{}
         }
@@ -121,12 +121,19 @@ pub async fn serve_control(
     while sessions.join_next().await.is_some() {}
     Ok(())
 }
-fn accept_control(
+async fn accept_control(
     accepted: std::io::Result<(UnixStream, tokio::net::unix::SocketAddr)>,
     handler: &Arc<dyn Fn(ControlRequest) -> ControlResponse + Send + Sync>,
     sessions: &mut tokio::task::JoinSet<()>,
 ) -> Result<()> {
-    let (socket, _) = accepted?;
+    let (socket, _) = match accepted {
+        Ok(connection) => connection,
+        Err(error) => {
+            tracing::warn!(%error, "remote control socket accept failed; retrying");
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            return Ok(());
+        }
+    };
     if same_uid(&socket).is_err() {
         return Ok(());
     }
@@ -188,6 +195,24 @@ pub async fn control_request(path: &Path, request: &ControlRequest) -> Result<Co
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[tokio::test(start_paused = true)]
+    async fn accept_error_backs_off_and_keeps_serving() {
+        let handler: Arc<dyn Fn(ControlRequest) -> ControlResponse + Send + Sync> =
+            Arc::new(|_| unreachable!("no client was accepted"));
+        let mut sessions = tokio::task::JoinSet::new();
+        let start = tokio::time::Instant::now();
+        for _ in 0..2 {
+            accept_control(
+                Err(std::io::Error::from_raw_os_error(libc::EMFILE)),
+                &handler,
+                &mut sessions,
+            )
+            .await
+            .unwrap();
+        }
+        assert_eq!(start.elapsed(), std::time::Duration::from_millis(200));
+        assert!(sessions.is_empty());
+    }
     #[tokio::test]
     async fn control_is_private_and_roundtrips() {
         let dir = tempfile::tempdir_in("/tmp").unwrap();
