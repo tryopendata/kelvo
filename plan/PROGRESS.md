@@ -114,10 +114,9 @@ Final source verification is green:
 - Generated bindings reproduce byte-for-byte. Architecture, database and UI
   `ce:code-reviewer` re-reviews are approved with no remaining findings.
 
-Evidence logs: `/tmp/kelvo-docker-final-check-passed.log`,
-`/tmp/kelvo-docker-final-functional-rerun.log`,
-`/tmp/kelvo-docker-final-performance.log`, and final screenshots under
-`/tmp/docker-qa/final/`.
+The full check, functional browser rerun and performance-gate logs, and the
+final screenshots, were kept in temporary files that did not survive; the
+results are summarized above.
 
 Acceptance still open: a real integrated 24-hour soak; whole-app module-off/on
 overhead and daemon/VM measurements; controlled population-scale timing and
@@ -162,7 +161,7 @@ checks pass (3 collector and 31 engine Docker tests, shell window dispatch test,
 clippy and generated bindings). Frontend scoped checks pass (25 tests, typecheck,
 32 Docker browser cases before the last metadata correction and 6 refreshed
 screenshot cases afterward). Thirteen UI negative checks failed on their intended
-regressions before restoration. Final screenshot set `/tmp/docker-qa/final/` was
+regressions before restoration. The final screenshot set was
 inspected, including the disabled retained-history browser with Enable above it.
 
 B–G are implemented and scoped-verified; A remains the explicitly limited runtime
@@ -210,8 +209,8 @@ The 128-container changing overview now passes the unchanged 35 ms/s gate at
 31.94 ms/s, with zero long tasks. Profiling identified repeated selection-control
 mounts as live sorting changed page membership. A native checkbox styled with
 existing tokens preserves keyboard behavior and appearance; focused tests,
-typecheck and all 30 Docker browser cases pass. Screenshots are preserved under
-`/tmp/docker-qa/native-checkbox/`.
+typecheck and all 30 Docker browser cases pass. Screenshots of the native checkbox were
+inspected.
 
 Independent UI review returned eight fixes: actionable error text, terminal log
 cancellation when windows hide, independent connection/coverage labels, Timeline
@@ -241,8 +240,8 @@ paired observations. The saved run bracketed CLI reads by API reads over
 2.005–2.074 seconds; maximum working-set deviation outside the bracket was
 0.0129%, and limit difference was 0.023% (human-unit rounding). This is not a
 comparison against sampled product-worker output. CPU windows, end-to-end
-accuracy and the planned 32-container gate remain unverified. Numeric-only
-evidence: `/tmp/docker-memory-oracle.log`.
+accuracy and the planned 32-container gate remain unverified. The numeric
+evidence was a temporary log; the figures above are its summary.
 
 Architecture re-review approved the backend/shell changes. UI re-review resolved
 seven original findings and caught a remaining inspection-authority race: a newer
@@ -360,8 +359,8 @@ vacancy filling for automatic populations, stopped-container metadata, actual
 observation intervals and no removal inference from an incomplete inventory.
 
 Frontend verification expanded to 28 Docker e2e cases across Chromium and WebKit,
-7 focused unit tests and a passing TypeScript check. Preserved screenshots at
-`/tmp/docker-qa/` were inspected in dark/light/narrow modes. The updated changing-
+7 focused unit tests and a passing TypeScript check. Screenshots were
+inspected in dark/light/narrow modes. The updated changing-
 metric 128-container overview measured 28.76 ms/s with no long tasks, within the
 unchanged 35 ms/s proposal; final rechecks follow checkbox/responsive cleanup.
 Inventory rendering uses 32-row pages while search/grouping still cover the full

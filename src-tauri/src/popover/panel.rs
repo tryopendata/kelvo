@@ -54,7 +54,9 @@ fn set_visible(app: &AppHandle, visible: bool) {
     }
 }
 
-/// Creates the panel hidden, so the first open only has to show it. Runs in `setup`.
+/// Creates the panel hidden during setup, so the first open only has to show it.
+/// Remote setup and background launches defer creation to the first tray click;
+/// `toggle` also uses this as a fallback whenever the panel is missing.
 pub fn create(app: &AppHandle) -> anyhow::Result<()> {
     if app.get_webview_window(LABEL).is_some() {
         return Ok(());

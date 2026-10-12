@@ -38,18 +38,39 @@ const running = (page: Page) =>
       document.getAnimations().filter((a) => a.playState === "running").length
   );
 
-/** Live gauges keep transitioning on ticks; only entrance animations must settle. */
-const runningEntrances = (page: Page) =>
+/** All running motion except the explicitly bounded live-value transitions. */
+const unexpectedRunning = (page: Page) =>
   page.evaluate(() =>
     document
       .getAnimations()
-      .filter(
-        (a): a is CSSAnimation =>
-          a instanceof CSSAnimation &&
-          a.playState === "running" &&
-          /lift|fade|swap/.test(a.animationName)
+      .filter((a) => a.playState === "running")
+      .filter((a) => {
+        if (!(a instanceof CSSTransition)) return true;
+        const target = (a.effect as KeyframeEffect | null)?.target;
+        if (!(target instanceof Element)) return true;
+        const timing = a.effect?.getTiming();
+        if (timing?.iterations !== 1 || timing.duration !== 150) return true;
+        // RingGauge: each live reading tweens arc length and segment rotation.
+        const ring =
+          target.matches("main svg circle") &&
+          target.classList.contains(
+            "transition-[stroke-dashoffset,transform]"
+          ) &&
+          ["stroke-dashoffset", "transform"].includes(a.transitionProperty);
+        // InlineBar's MeterTrack: each live reading tweens the fill scale.
+        const bar =
+          target.matches("main span.origin-left") &&
+          target.classList.contains("transition-transform") &&
+          a.transitionProperty === "transform";
+        return !(ring || bar);
+      })
+      .map((a) =>
+        a instanceof CSSAnimation
+          ? a.animationName
+          : a instanceof CSSTransition
+            ? a.transitionProperty
+            : a.constructor.name
       )
-      .map((a) => a.animationName)
   );
 
 const openOverview = async (page: Page) => {
@@ -108,6 +129,7 @@ test("navigating replays the page entrance and slides the sidebar pill", async (
 });
 
 test("live ticks never replay an entrance", async ({ page }) => {
+  await page.clock.install();
   await page.emulateMedia({ reducedMotion: "no-preference" });
   await recordAnimations(page);
   await page.setViewportSize({ width: 1280, height: 833 });
@@ -121,17 +143,18 @@ test("live ticks never replay an entrance", async ({ page }) => {
     )
     .toBeGreaterThan(0);
   await expect
-    .poll(() => runningEntrances(page), { timeout: 2000 })
+    .poll(() => unexpectedRunning(page), { timeout: 2000 })
     .toEqual([]);
 
   await page.evaluate(() => {
     (window as unknown as { __anims: string[] }).__anims.length = 0;
   });
   // Three ticks of fresh values re-render every card.
-  await page.waitForTimeout(3000);
+  await page.clock.runFor(3000);
   expect((await started(page)).filter((n) => /lift|fade|swap/.test(n))).toEqual(
     []
   );
+  expect(await unexpectedRunning(page)).toEqual([]);
   for (const opacity of await sectionOpacities(page)) expect(opacity).toBe("1");
 });
 
