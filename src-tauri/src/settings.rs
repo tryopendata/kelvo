@@ -335,6 +335,11 @@ pub trait SettingsFile: Send + Sync {
 
 /// What an update does besides storing the settings. Implemented by the app shell; tests
 /// record the calls.
+///
+/// Both methods run under the settings lock, which is not reentrant. They must not call
+/// [`SettingsOwner::get`], `settings` or `update`, directly or through anything they call:
+/// that deadlocks the thread (the main thread, for most updates). Read from the arguments
+/// instead. Debug builds panic on such a read.
 pub trait SettingsEffects {
     /// Runs before the change is saved. An error aborts the update with nothing changed
     /// (registering the login item can fail).
@@ -342,6 +347,27 @@ pub trait SettingsEffects {
     /// Runs after the change is committed, still under the settings lock: reconfigure the
     /// engine, the Dock and the theme, then emit `settings-changed`.
     fn committed(&self, old: &Settings, now: &SettingsSnapshot);
+}
+
+std::thread_local! {
+    /// Set while this thread runs a [`SettingsEffects`] callback under the settings lock.
+    static IN_EFFECTS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Marks the current thread as inside an effects callback until dropped, including on `?`.
+struct EffectsScope;
+
+impl EffectsScope {
+    fn enter() -> Self {
+        IN_EFFECTS.with(|f| f.set(true));
+        Self
+    }
+}
+
+impl Drop for EffectsScope {
+    fn drop(&mut self) {
+        IN_EFFECTS.with(|f| f.set(false));
+    }
 }
 
 /// The key the settings object is stored under in the store file.
@@ -398,6 +424,10 @@ impl SettingsOwner {
     }
 
     fn lock(&self) -> MutexGuard<'_, Current> {
+        debug_assert!(
+            !IN_EFFECTS.with(std::cell::Cell::get),
+            "settings read from inside a SettingsEffects callback deadlocks"
+        );
         self.current.lock_ok()
     }
 
@@ -428,6 +458,7 @@ impl SettingsOwner {
                 settings: new,
             });
         }
+        let _scope = EffectsScope::enter();
         effects.prepare(&c.settings, &new)?;
         let value = serde_json::to_value(&new).map_err(|e| CommandError::SettingsNotSaved {
             message: e.to_string(),
@@ -557,6 +588,25 @@ mod tests {
             }),
             ..SettingsPatch::default()
         }
+    }
+
+    /// An effect that breaks the contract by reading the settings it is called under.
+    struct Reentrant<'a>(&'a SettingsOwner);
+
+    impl SettingsEffects for Reentrant<'_> {
+        fn prepare(&self, _old: &Settings, _new: &Settings) -> Result<(), CommandError> {
+            Ok(())
+        }
+        fn committed(&self, _old: &Settings, _now: &SettingsSnapshot) {
+            let _ = self.0.settings();
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "inside a SettingsEffects callback")]
+    fn reading_settings_from_an_effect_panics_instead_of_deadlocking() {
+        let owner = SettingsOwner::load(Box::new(MemFile::default()));
+        let _ = owner.update(&interval(2000), &Reentrant(&owner));
     }
 
     #[test]
