@@ -75,6 +75,21 @@ Status values: Not started, In progress, Blocked (say on what), Done (with the v
 
 ## Log
 
+### 2026-10-12 (shared agent guidance)
+
+Added generated `AGENTS.md`, Antigravity rule files, and a shared skill link from
+the existing Claude sources, which remain unchanged. `make agent-config` updates
+the outputs; pre-commit and Linux CI check for drift. Maintenance instructions
+live in `scripts/agent-config/README.md`.
+
+Two `ce:code-reviewer` reviews covered synchronization and harness integration.
+Fixed hardcoded test inventory counts and a Python 3.9 portability issue, with
+both failures reproduced before the fixes. All 17 synchronizer tests pass on
+Python 3.9 and 3.13; `make check` passes, including 939 frontend tests. Native
+Codex prompt previews discover the guidance and skill from the root and
+`src/app/`. Antigravity runtime discovery remains unverified because its CLI is
+not installed; rule conversion is covered by the synchronizer tests.
+
 ### 2026-10-11 (Docker merged; remaining acceptance deferred)
 
 After the outstanding acceptance checks below were reported, the user explicitly

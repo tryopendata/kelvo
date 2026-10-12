@@ -1,4 +1,5 @@
 .PHONY: help install dev dev-web build test test-e2e test-fill test-read-perf lint format fix typecheck check rust-fmt rust-check rust-test rust-linux-check appstore-check check-deps deny perf bench bench-perf-mode bench-vs-stats bindings bindings-check e2e-perf hooks clean stub-dist
+.PHONY: agent-config agent-config-check agent-config-test
 
 LINUX_CRATES := -p kelvo-schema -p kelvo-proto -p kelvo-store -p kelvo-engine -p kelvo-collect
 
@@ -7,6 +8,9 @@ help:
 	@echo ""
 	@echo "Setup:"
 	@echo "  make install       Install JS deps and git hooks"
+	@echo "  make agent-config  Regenerate shared agent guidance from Claude sources"
+	@echo "  make agent-config-check  Check shared agent guidance for drift (read-only)"
+	@echo "  make agent-config-test   Test the agent config synchronizer"
 	@echo ""
 	@echo "Development:"
 	@echo "  make dev           Full app (tauri dev: Vite on :1420 + Rust)"
@@ -39,6 +43,15 @@ help:
 install:
 	bun install
 	uvx pre-commit install --install-hooks -t pre-commit -t commit-msg -t pre-push
+
+agent-config:
+	python3 scripts/agent-config/sync.py
+
+agent-config-check:
+	python3 scripts/agent-config/sync.py --check
+
+agent-config-test:
+	python3 -B -m unittest discover -s scripts/agent-config -p 'test_*.py' -v
 
 hooks:
 	uvx pre-commit install --install-hooks -t pre-commit -t commit-msg -t pre-push

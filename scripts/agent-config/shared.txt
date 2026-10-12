@@ -1,0 +1,15 @@
+# Canonical Claude guidance exposed to other harnesses.
+# Format: skill:<directory> or rule:<path under .claude/rules/>.
+# Commands are indexed directly from .claude/commands/*.md.
+# After changes, run make agent-config and commit the generated outputs.
+skill:frontend-design-slop
+rule:data-boundary.md
+rule:frontend/error-handling.md
+rule:frontend/motion.md
+rule:frontend/react.md
+rule:frontend/styling.md
+rule:frontend/testing.md
+rule:generated-bindings.md
+rule:rust.md
+rule:testing.md
+rule:verification.md

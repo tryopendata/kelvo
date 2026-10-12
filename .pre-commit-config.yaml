@@ -39,6 +39,18 @@ repos:
         # --verbose makes a failure print the allowed type list.
         args: [--verbose, feat, fix, docs, style, refactor, test, chore, ci, perf, build, revert]
 
+  # Shared guidance stays derived from Claude sources. Check only: never rewrite
+  # generated files during a commit. Include symlinks when selecting this hook.
+  - repo: local
+    hooks:
+      - id: agent-config-sync
+        name: Check shared agent config (run make agent-config)
+        entry: python3 scripts/agent-config/sync.py --check
+        language: system
+        files: '^(CLAUDE\.md$|AGENTS\.md$|\.claude/(skills|rules|commands)/|\.agents/|scripts/agent-config/)'
+        types: []
+        pass_filenames: false
+
   # Frontend hooks (Biome, TypeScript). Biome formats, sorts imports and
   # Tailwind classes, and lints (including the boundary rules) in one pass;
   # biome.json's files.includes already skips src/core/generated/.
