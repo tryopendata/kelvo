@@ -188,6 +188,23 @@ impl RemoteManager {
             })
     }
 }
+impl From<kelvo_remote::RemoteError> for CommandError {
+    fn from(error: kelvo_remote::RemoteError) -> Self {
+        use kelvo_remote::RemoteError;
+        let message = error.to_string();
+        match error {
+            RemoteError::Authentication(_) => Self::RemoteAuth { message },
+            RemoteError::HostKey(_) => Self::HostKeyUnknown { message },
+            RemoteError::Incompatible(_) => Self::RemoteIncompatible { message },
+            RemoteError::Identity(_) => Self::RemoteIdentity { message },
+            RemoteError::Transport(_)
+            | RemoteError::Io(_)
+            | RemoteError::Codec(_)
+            | RemoteError::Protocol(_) => Self::RemoteUnreachable { message },
+        }
+    }
+}
+
 fn failure(e: impl std::fmt::Display) -> CommandError {
     CommandError::Internal {
         message: e.to_string(),
@@ -831,7 +848,7 @@ pub async fn inspect_remote_ssh_host(
 ) -> Result<RemoteSshHostTrust, CommandError> {
     let candidate = kelvo_remote::trust::inspect_host(&alias)
         .await
-        .map_err(failure)?;
+        .map_err(CommandError::from)?;
     let token = Uuid::new_v4().to_string();
     let prompt = RemoteSshHostTrust {
         token: token.clone(),
@@ -866,7 +883,7 @@ pub async fn accept_remote_ssh_host(app: AppHandle, token: String) -> Result<(),
     }
     kelvo_remote::trust::accept_host(&candidate)
         .await
-        .map_err(failure)
+        .map_err(CommandError::from)
 }
 
 async fn probe_routes(
@@ -896,11 +913,37 @@ async fn probe_routes(
     while let Some(result) = attempts.join_next().await {
         match result {
             Ok(Ok(found)) => return Ok(found),
-            Ok(Err(e)) => errors.push(e.to_string()),
-            Err(e) => errors.push(e.to_string()),
+            Ok(Err(e)) => errors.push(CommandError::from(e)),
+            Err(e) => errors.push(failure(e)),
         }
     }
-    Err(failure(errors.join("\n")))
+    Err(most_actionable(errors).unwrap_or_else(|| failure("No SSH route is configured")))
+}
+
+/// When every route fails, report the error the user can act on (an unknown host key
+/// before a refused connection), keeping the other routes' messages beside it.
+fn most_actionable(errors: Vec<CommandError>) -> Option<CommandError> {
+    let rank = |e: &CommandError| match e {
+        CommandError::HostKeyUnknown { .. } => 0,
+        CommandError::RemoteAuth { .. } => 1,
+        CommandError::RemoteIncompatible { .. } | CommandError::RemoteIdentity { .. } => 2,
+        _ => 3,
+    };
+    let messages: Vec<String> = errors.iter().map(ToString::to_string).collect();
+    let mut best = errors.into_iter().min_by_key(rank)?;
+    if messages.len() > 1 {
+        let joined = messages.join("\n");
+        match &mut best {
+            CommandError::HostKeyUnknown { message }
+            | CommandError::RemoteAuth { message }
+            | CommandError::RemoteIncompatible { message }
+            | CommandError::RemoteIdentity { message }
+            | CommandError::RemoteUnreachable { message }
+            | CommandError::Internal { message } => *message = joined,
+            _ => {}
+        }
+    }
+    Some(best)
 }
 
 async fn wait_for_control(alias: &str, helper: &str) -> Result<ControlResponse, CommandError> {
@@ -1045,13 +1088,13 @@ pub async fn add_remote_host(
         if let Some(existing) = probe.app_path.as_deref() {
             let transaction = kelvo_remote::install::update_app(&alias, bundle, existing)
                 .await
-                .map_err(failure)?;
+                .map_err(CommandError::from)?;
             probe = transaction.probe.clone();
             update = Some(transaction);
         } else {
             probe = kelvo_remote::install::install_app(&alias, bundle)
                 .await
-                .map_err(failure)?;
+                .map_err(CommandError::from)?;
         }
     }
     let app_path = probe
@@ -1065,7 +1108,7 @@ pub async fn add_remote_host(
         check_setup_cancel(&cancel)?;
         kelvo_remote::install::launch(&alias, &app_path)
             .await
-            .map_err(failure)?;
+            .map_err(CommandError::from)?;
         let snapshot = setup_step(&mut cancel, wait_for_control(&alias, &helper)).await?;
         let host = snapshot
             .host
@@ -1089,7 +1132,7 @@ pub async fn add_remote_host(
             },
         )
         .await
-        .map_err(failure)?;
+        .map_err(CommandError::from)?;
         if !response.ok {
             return Err(failure(response.message));
         }
@@ -1105,7 +1148,7 @@ pub async fn add_remote_host(
                 Some(expected),
             )
             .await
-            .map_err(failure)
+            .map_err(CommandError::from)
         })
         .await?;
         let mut record = HostRecord::from_identity(session.hello.host.clone(), false);
@@ -1123,7 +1166,7 @@ pub async fn add_remote_host(
         )?;
         if let Err(error) = save(&app) {
             let id = host_id(&config.id)?;
-            discard_host(&state, id);
+            discard_host_async(&app, id).await?;
             return Err(error);
         }
         let id = host_id(&config.id)?;
@@ -1170,7 +1213,8 @@ pub async fn add_remote_host(
                 {
                     Ok(response) if response.ok => {}
                     other => {
-                        recovery.push(format!("Settings restoration needs attention: {other:?}"))
+                        tracing::warn!("remote settings restoration failed: {other:?}");
+                        recovery.push("Kelvo could not restore the previous settings on the other Mac. Check its settings and try again.".into())
                     }
                 }
             }
@@ -1186,6 +1230,13 @@ pub async fn add_remote_host(
             }
         }
     }
+}
+
+async fn discard_host_async(app: &AppHandle, id: HostId) -> Result<(), CommandError> {
+    let app = app.clone();
+    tokio::task::spawn_blocking(move || discard_host(&app.state::<AppState>(), id))
+        .await
+        .map_err(failure)
 }
 
 fn discard_host(state: &AppState, id: HostId) {
@@ -1225,9 +1276,9 @@ pub async fn update_remote_host(
     let mut saved = previous.clone();
     saved.config = config.clone();
     saved.record.display_name = config.name.clone();
-    discard_host(&state, id);
+    discard_host_async(&app, id).await?;
     if let Err(error) = register(&app, saved).and_then(|()| save(&app)) {
-        discard_host(&state, id);
+        discard_host_async(&app, id).await?;
         if let Err(restore) = register(&app, previous) {
             return Err(failure(format!(
                 "{error}; restoring the previous connection failed: {restore}"
@@ -1256,13 +1307,73 @@ pub async fn retry_remote_host(app: AppHandle, id: String) -> Result<(), Command
     source.retry();
     Ok(())
 }
+fn stop_sharing_request() -> ControlRequest {
+    ControlRequest::Configure {
+        allow_remote_monitoring: false,
+        show_menu_bar_icon: None,
+        launch_at_login: None,
+    }
+}
+
+/// Bounded so removing an offline Mac doesn't hang on SSH.
+async fn stop_remote_sharing(saved: &SavedHost) -> Result<(), CommandError> {
+    let attempt = async {
+        let (alias, _) =
+            probe_routes(saved.config.lan.clone(), saved.config.tailscale.clone()).await?;
+        configure_stop_sharing(|request| async move {
+            kelvo_remote::install::configure(&alias, &saved.helper_path, &request)
+                .await
+                .map_err(CommandError::from)
+        })
+        .await
+    };
+    tokio::time::timeout(std::time::Duration::from_secs(15), attempt)
+        .await
+        .map_err(|_| CommandError::RemoteUnreachable {
+            message: "The other Mac did not answer.".into(),
+        })?
+}
+
+async fn configure_stop_sharing<
+    F: std::future::Future<Output = Result<ControlResponse, CommandError>>,
+>(
+    configure: impl FnOnce(ControlRequest) -> F,
+) -> Result<(), CommandError> {
+    let response = configure(stop_sharing_request()).await?;
+    if response.ok {
+        Ok(())
+    } else {
+        Err(CommandError::RemoteUnreachable {
+            message: response.message,
+        })
+    }
+}
+
+/// A remote settings failure must never prevent completing the local removal.
+async fn finish_removal(
+    stop_sharing: bool,
+    configure: impl std::future::Future<Output = Result<(), CommandError>>,
+    remove: impl std::future::Future<Output = Result<(), CommandError>>,
+) -> Result<Option<String>, CommandError> {
+    let warning = if stop_sharing {
+        configure.await.err().map(|error| {
+            format!("The Mac was removed, but Kelvo could not stop sharing on it. Turn off Allow remote monitoring in Kelvo on that Mac. {error}")
+        })
+    } else {
+        None
+    };
+    remove.await?;
+    Ok(warning)
+}
+
 #[tauri::command]
 #[specta::specta]
 pub async fn remove_remote_host(
     app: AppHandle,
     id: String,
     delete_mirror: bool,
-) -> Result<(), CommandError> {
+    stop_sharing: bool,
+) -> Result<Option<String>, CommandError> {
     let state = app.state::<AppState>();
     let _guard = state.remotes.operation.lock().await;
     let id = host_id(&id)?;
@@ -1279,7 +1390,12 @@ pub async fn remove_remote_host(
         state.remotes.saved.lock_ok().insert(id, previous);
         return Err(error);
     }
-    discard_host(&state, id);
+    let warning = finish_removal(
+        stop_sharing,
+        stop_remote_sharing(&previous),
+        discard_host_async(&app, id),
+    )
+    .await?;
     state.emit_hosts_changed(&app);
     if delete_mirror {
         let dir = data_dir(&app)?.join("mirrors").join(id.to_string());
@@ -1287,9 +1403,113 @@ pub async fn remove_remote_host(
             std::fs::remove_dir_all(dir).map_err(failure)?;
         }
     }
-    Ok(())
+    Ok(warning)
 }
 
 #[cfg(test)]
 #[path = "remote_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+mod command_regressions {
+    use super::*;
+
+    #[test]
+    fn route_failures_report_the_actionable_error_with_every_message() {
+        let error = most_actionable(vec![
+            CommandError::RemoteUnreachable {
+                message: "lan: Connection refused".into(),
+            },
+            CommandError::HostKeyUnknown {
+                message: "tailscale: Host key verification failed.".into(),
+            },
+        ])
+        .unwrap();
+        let CommandError::HostKeyUnknown { message } = error else {
+            panic!("expected host_key_unknown, got {error:?}");
+        };
+        assert!(message.contains("Connection refused"));
+        assert!(message.contains("Host key verification failed"));
+    }
+
+    #[test]
+    fn remote_errors_preserve_actionable_kinds() {
+        use kelvo_remote::RemoteError;
+        for (error, kind) in [
+            (RemoteError::Authentication("login".into()), "remote_auth"),
+            (RemoteError::HostKey("unknown".into()), "host_key_unknown"),
+            (
+                RemoteError::Incompatible("arm64".into()),
+                "remote_incompatible",
+            ),
+            (
+                RemoteError::Identity("different Mac".into()),
+                "remote_identity",
+            ),
+            (
+                RemoteError::Transport("offline".into()),
+                "remote_unreachable",
+            ),
+            (
+                RemoteError::Protocol("invalid".into()),
+                "remote_unreachable",
+            ),
+            (
+                RemoteError::Io(std::io::Error::other("offline")),
+                "remote_unreachable",
+            ),
+        ] {
+            let value = serde_json::to_value(CommandError::from(error)).unwrap();
+            assert_eq!(value["kind"], kind);
+            assert!(!value["message"].as_str().unwrap().is_empty());
+        }
+    }
+
+    #[tokio::test]
+    async fn stopping_sharing_preserves_login_and_removes_even_if_configure_fails() {
+        for fail in [false, true] {
+            let hosts = Mutex::new(std::collections::HashMap::from([("mac", true)]));
+            let remote_settings = &Mutex::new((true, true));
+            let result = finish_removal(
+                true,
+                configure_stop_sharing(|request| async move {
+                    let ControlRequest::Configure {
+                        allow_remote_monitoring,
+                        launch_at_login,
+                        show_menu_bar_icon,
+                    } = request
+                    else {
+                        panic!("expected configure")
+                    };
+                    assert!(launch_at_login.is_none());
+                    assert!(show_menu_bar_icon.is_none());
+                    if fail {
+                        return Err(CommandError::RemoteUnreachable {
+                            message: "offline".into(),
+                        });
+                    }
+                    remote_settings.lock_ok().0 = allow_remote_monitoring;
+                    let (sharing, login) = *remote_settings.lock_ok();
+                    Ok(ControlResponse {
+                        ok: true,
+                        message: "Sharing stopped".into(),
+                        host: None,
+                        allow_remote_monitoring: Some(sharing),
+                        show_menu_bar_icon: None,
+                        launch_at_login: Some(login),
+                    })
+                }),
+                async {
+                    hosts.lock_ok().remove("mac");
+                    Ok(())
+                },
+            )
+            .await
+            .unwrap();
+            assert!(hosts.lock_ok().is_empty());
+            assert_eq!(remote_settings.lock_ok().0, fail);
+            assert!(remote_settings.lock_ok().1, "launch at login stays on");
+            assert_eq!(result.is_some(), fail);
+        }
+    }
+}

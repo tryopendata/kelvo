@@ -9,6 +9,21 @@ use serde::Serialize;
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error, Serialize, specta::Type)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum CommandError {
+    /// SSH login to the other Mac failed (key, agent or account).
+    #[error("{message}")]
+    RemoteAuth { message: String },
+    /// The other Mac's host key isn't trusted yet, or needs checking in Terminal.
+    #[error("{message}")]
+    HostKeyUnknown { message: String },
+    /// The other Mac can't run this Kelvo (architecture, macOS or protocol version).
+    #[error("{message}")]
+    RemoteIncompatible { message: String },
+    /// The Mac that answered is not the one this host was added as.
+    #[error("{message}")]
+    RemoteIdentity { message: String },
+    /// The other Mac could not be reached, or the connection broke.
+    #[error("{message}")]
+    RemoteUnreachable { message: String },
     /// A bounded, sanitized Docker monitoring error.
     #[error("Docker: {message}")]
     Docker { message: String },

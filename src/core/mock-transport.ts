@@ -1123,7 +1123,7 @@ export function createMockTransport(
         !trustedAliases.has(lan ?? tailscale ?? "")
       )
         return err({
-          kind: "invalid_argument",
+          kind: "host_key_unknown",
           message:
             "Host key verification failed: verify the SSH host fingerprint.",
         });
@@ -1178,8 +1178,8 @@ export function createMockTransport(
       transport.emitHostsChanged();
       return ok(remote.record);
     },
-    async removeRemoteHost(id, deleteMirror) {
-      record("remove_remote_host", id, deleteMirror);
+    async removeRemoteHost(id, deleteMirror, stopSharing) {
+      record("remove_remote_host", id, deleteMirror, stopSharing);
       remotes.get(id)?.peer.dispose();
       remotes.delete(id);
       transport.emitHostsChanged();

@@ -21,6 +21,10 @@ pub struct InstallProbe {
 /// Execute a fixed setup command using the same strict SSH policy as live sessions.
 /// Output is bounded; stalled helpers are killed through Command::kill_on_drop.
 pub async fn run_remote(alias: &str, command: &str) -> Result<String> {
+    run_remote_with_timeout(alias, command, Duration::from_secs(30)).await
+}
+
+async fn run_remote_with_timeout(alias: &str, command: &str, timeout: Duration) -> Result<String> {
     let mut cmd = ssh_command(alias)?;
     cmd.arg(command)
         .stdin(Stdio::null())
@@ -35,7 +39,7 @@ pub async fn run_remote(alias: &str, command: &str) -> Result<String> {
         .stderr
         .take()
         .ok_or_else(|| RemoteError::Transport("missing stderr".into()))?;
-    tokio::time::timeout(Duration::from_secs(30), async {
+    setup_timeout(timeout, async {
         let mut output = Vec::new();
         let mut errors = Vec::new();
         let mut stdout = stdout.take(65537);
@@ -52,15 +56,39 @@ pub async fn run_remote(alias: &str, command: &str) -> Result<String> {
             return Err(RemoteError::Protocol("setup output exceeded bound".into()));
         }
         if !status.success() {
-            return Err(RemoteError::Transport(
+            return Err(setup_ssh_error(
                 String::from_utf8_lossy(&errors).trim().to_string(),
             ));
         }
         String::from_utf8(output).map_err(|e| RemoteError::Protocol(e.to_string()))
     })
     .await
-    .map_err(|_| RemoteError::Transport("setup command timed out".into()))?
 }
+
+async fn setup_timeout<T>(
+    timeout: Duration,
+    operation: impl std::future::Future<Output = Result<T>>,
+) -> Result<T> {
+    tokio::time::timeout(timeout, operation)
+        .await
+        .map_err(|_| RemoteError::Transport("setup command timed out".into()))?
+}
+const RESTORE_TIMEOUT: Duration = Duration::from_secs(600);
+
+fn setup_ssh_error(message: String) -> RemoteError {
+    let lower = message.to_ascii_lowercase();
+    if lower.contains("host key verification failed")
+        || lower.contains("remote host identification has changed")
+        || lower.contains("no host key is known")
+    {
+        RemoteError::HostKey(message)
+    } else if lower.contains("permission denied") || lower.contains("authentication failed") {
+        RemoteError::Authentication(message)
+    } else {
+        RemoteError::Transport(message)
+    }
+}
+
 pub async fn probe(alias: &str) -> Result<InstallProbe> {
     let text=run_remote(alias,r#"printf '%s\n' "$(uname -s)" "$(sw_vers -productVersion)" "$(uname -m)" "$(id -un)" "$(stat -f '%Su' /dev/console)"; for app in "$HOME/Applications/Kelvo.app" /Applications/Kelvo.app; do if [ -d "$app" ]; then printf '%s\n' "$app"; if [ -x "$app/Contents/MacOS/kelvo-remote-helper" ]; then printf '%s\n' "$app/Contents/MacOS/kelvo-remote-helper"; fi; break; fi; done"#).await?;
     let mut lines = text.lines();
@@ -247,9 +275,31 @@ async fn restore_bundle(
     data: &str,
     data_backup: &str,
 ) -> Result<()> {
-    run_remote(alias, &restore_script(app, backup, data, data_backup, true)).await?;
+    restore_bundle_with_runner(
+        app,
+        backup,
+        data,
+        data_backup,
+        |command, timeout| async move { run_remote_with_timeout(alias, &command, timeout).await },
+    )
+    .await
+}
+
+async fn restore_bundle_with_runner<F: std::future::Future<Output = Result<String>>>(
+    app: &str,
+    backup: &str,
+    data: &str,
+    data_backup: &str,
+    run: impl FnOnce(String, Duration) -> F,
+) -> Result<()> {
+    run(
+        restore_script(app, backup, data, data_backup, true),
+        RESTORE_TIMEOUT,
+    )
+    .await?;
     Ok(())
 }
+
 fn restore_script(
     app: &str,
     backup: &str,
@@ -386,6 +436,48 @@ impl Drop for ArchiveCleanup {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[tokio::test(start_paused = true)]
+    async fn restoration_can_outlast_standard_setup_timeout() {
+        let result = restore_bundle_with_runner(
+            "/Applications/Kelvo.app",
+            "/Applications/Kelvo.app.backup",
+            "/data",
+            "/snapshot",
+            |_, timeout| {
+                setup_timeout(timeout, async {
+                    tokio::time::sleep(Duration::from_secs(31)).await;
+                    Ok("restored".into())
+                })
+            },
+        )
+        .await;
+        result.unwrap();
+        assert!(
+            setup_timeout(Duration::from_secs(30), async {
+                tokio::time::sleep(Duration::from_secs(31)).await;
+                Ok(())
+            })
+            .await
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn setup_distinguishes_host_trust_from_login_and_connectivity() {
+        assert!(matches!(
+            setup_ssh_error("Host key verification failed.".into()),
+            RemoteError::HostKey(_)
+        ));
+        assert!(matches!(
+            setup_ssh_error("Permission denied (publickey).".into()),
+            RemoteError::Authentication(_)
+        ));
+        assert!(matches!(
+            setup_ssh_error("Connection refused".into()),
+            RemoteError::Transport(_)
+        ));
+    }
+
     #[test]
     fn restoring_after_database_migration_restores_both_binary_and_data() {
         let dir = tempfile::tempdir().unwrap();

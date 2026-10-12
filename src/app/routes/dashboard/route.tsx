@@ -1,13 +1,16 @@
+import type { RemoteHostRecord } from "@core/generated/bindings";
+import { connectionLabel } from "@core/remote-hosts";
 import { type RefObject, useEffect, useLayoutEffect, useRef } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router";
 import { useRemoteHosts } from "~/hooks/use-remote-hosts";
+import { HostClockContext } from "~/lib/host-clock";
+import { useHostSelection } from "~/lib/host-selection";
 import { pageEnter } from "~/lib/motion/enter";
 import { useTransport } from "~/lib/transport-context";
 import { cn } from "~/lib/utils";
-import { useHostId } from "~/stores/host-store";
+import { HostStoreProvider, useHostId } from "~/stores/host-store";
 import { useSampling } from "~/stores/live-selectors";
 import { LiveSidebar } from "./_components/live-sidebar";
-import { connectionLabel } from "./hosts/route";
 
 /**
  * An open dashboard window follows `navigate-requested`: Rust sends it when
@@ -48,13 +51,27 @@ function useScrollTopOnNavigate(ref: RefObject<HTMLElement | null>) {
  * intervals) dims the page's values to 50% until the next frame. Each page's
  * sections lift in on navigation (`pageEnter`); the sidebar stays put.
  */
+const localNow = () => Date.now();
+function selectConnection(hosts: RemoteHostRecord[]) {
+  return hosts.map((host) => ({
+    ...host,
+    status: {
+      ...host.status,
+      last_seen_ms: null,
+      cpu_pct: null,
+      memory_pct: null,
+    },
+  }));
+}
+
 export default function DashboardLayout() {
   useNavigateRequests();
   const mainRef = useRef<HTMLElement>(null);
   useScrollTopOnNavigate(mainRef);
   const sampling = useSampling();
   const hostId = useHostId();
-  const remote = useRemoteHosts().data?.find(
+  const local = useHostSelection()?.hosts.find((host) => host.is_local);
+  const remote = useRemoteHosts(selectConnection).data?.find(
     (host) => host.config.id === hostId
   );
   const { pathname } = useLocation();
@@ -91,7 +108,15 @@ export default function DashboardLayout() {
             )}
           </div>
         )}
-        <Outlet />
+        {!metricPage && local && local.id !== hostId ? (
+          <HostClockContext.Provider value={localNow}>
+            <HostStoreProvider hostId={local.id}>
+              <Outlet />
+            </HostStoreProvider>
+          </HostClockContext.Provider>
+        ) : (
+          <Outlet />
+        )}
       </main>
     </div>
   );

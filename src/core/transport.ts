@@ -147,8 +147,9 @@ export interface Transport {
   ): Promise<CommandResult<RemoteHostRecord>>;
   removeRemoteHost(
     id: string,
-    deleteMirror: boolean
-  ): Promise<CommandResult<null>>;
+    deleteMirror: boolean,
+    stopSharing: boolean
+  ): Promise<CommandResult<string | null>>;
   retryRemoteHost(id: string): Promise<CommandResult<null>>;
   getHost(host: HostId): Promise<CommandResult<HostRecord>>;
   getCapabilities(host: HostId): Promise<CommandResult<Capabilities>>;
@@ -399,8 +400,8 @@ export function createTauriTransport(label: string): Transport {
       commands.addRemoteHost(config, install, showMenuBar, setupId),
     cancelRemoteSetup: (setupId) => commands.cancelRemoteSetup(setupId),
     updateRemoteHost: (config) => commands.updateRemoteHost(config),
-    removeRemoteHost: (id, deleteMirror) =>
-      commands.removeRemoteHost(id, deleteMirror),
+    removeRemoteHost: (id, deleteMirror, stopSharing) =>
+      commands.removeRemoteHost(id, deleteMirror, stopSharing),
     retryRemoteHost: (id) => commands.retryRemoteHost(id),
     getHost: (host) => commands.getHost(host),
     getCapabilities: (host) => commands.getCapabilities(host),

@@ -22,8 +22,10 @@ pub use transport::{EndpointConfig, Route, SshSession, connect, ssh_command};
 pub enum RemoteError {
     #[error("{0}")]
     Transport(String),
-    #[error("authentication or host trust requires attention: {0}")]
+    #[error("SSH authentication requires attention: {0}")]
     Authentication(String),
+    #[error("SSH host-key verification requires attention: {0}")]
+    HostKey(String),
     #[error("incompatible remote: {0}")]
     Incompatible(String),
     #[error("remote host identity does not match: {0}")]
@@ -39,7 +41,11 @@ impl RemoteError {
     pub fn retryable(&self) -> bool {
         !matches!(
             self,
-            Self::Authentication(_) | Self::Incompatible(_) | Self::Identity(_) | Self::Protocol(_)
+            Self::Authentication(_)
+                | Self::HostKey(_)
+                | Self::Incompatible(_)
+                | Self::Identity(_)
+                | Self::Protocol(_)
         )
     }
 }

@@ -1,4 +1,8 @@
-import { RING_SPAN_MS, type SeriesSelector } from "@core/generated/bindings";
+import {
+  type RemoteHostRecord,
+  RING_SPAN_MS,
+  type SeriesSelector,
+} from "@core/generated/bindings";
 import { hostClock } from "@core/host-clock";
 import { scaledWindowMs, slowestIntervalMs } from "@core/live-window";
 import { historyKeys, hostKeys } from "@core/query-keys";
@@ -94,17 +98,27 @@ function usePopoverBackfill(enabled: boolean): number | null {
   return fixed.current;
 }
 
+function selectClockOffsets(hosts: RemoteHostRecord[]) {
+  return hosts.map((host) => ({
+    id: host.config.id,
+    offset: host.status.clock_offset_ms ?? 0,
+  }));
+}
+
 /** Waits for the host list, then scopes a live store to the local host. */
-function LocalHost({ router }: { router: ReturnType<typeof createAppRouter> }) {
+export function LocalHost({
+  router,
+}: {
+  router: ReturnType<typeof createAppRouter>;
+}) {
   const transport = useTransport();
   const queryClient = useQueryClient();
   const [selected, setSelected] = useState<string | null>(null);
-  const [pathname, setPathname] = useState(router.state.location.pathname);
-  useEffect(
-    () => router.subscribe((state) => setPathname(state.location.pathname)),
+  const remotes = useRemoteHosts(selectClockOffsets);
+  const routerView = useMemo(
+    () => <RouterProvider router={router} />,
     [router]
   );
-  const remotes = useRemoteHosts();
   const { data: hosts, error } = useQuery({
     queryKey: hostKeys.list(),
     queryFn: () => transport.listHosts(),
@@ -121,14 +135,18 @@ function LocalHost({ router }: { router: ReturnType<typeof createAppRouter> }) {
   const popoverBackfill = usePopoverBackfill(label === "popover");
   const local = hosts?.find((h) => h.is_local) ?? hosts?.[0];
   const active =
-    transport.windowLabel() === "dashboard" &&
-    pathname !== "/dashboard/settings" &&
-    pathname !== "/dashboard/hosts"
+    label === "dashboard"
       ? (hosts?.find((host) => host.id === selected) ?? local)
       : local;
   const offset =
-    remotes.data?.find((remote) => remote.config.id === active?.id)?.status
-      .clock_offset_ms ?? 0;
+    remotes.data?.find((remote) => remote.id === active?.id)?.offset ?? 0;
+  const selection = useMemo(
+    () =>
+      active && hosts
+        ? { hosts, selected: active.id, select: setSelected }
+        : null,
+    [hosts, active]
+  );
   const now = useMemo(
     () => (active?.is_local ? () => Date.now() : hostClock(offset)),
     [active?.is_local, offset]
@@ -152,17 +170,15 @@ function LocalHost({ router }: { router: ReturnType<typeof createAppRouter> }) {
   // The popover waits for settings so its first subscribe asks for enough.
   if (label === "popover" && popoverBackfill === null) return null;
   return (
-    <HostSelectionContext.Provider
-      value={{ hosts: hosts ?? [], selected: active.id, select: setSelected }}
-    >
+    <HostSelectionContext.Provider value={selection}>
       <HostClockContext.Provider value={now}>
         <HostStoreProvider
-          key={`${active.id}:${JSON.stringify(remotes.data?.find((remote) => remote.config.id === active.id)?.config ?? null)}`}
+          key={active.id}
           hostId={active.id}
           backfillMs={popoverBackfill ?? BACKFILL_MS_BY_WINDOW[label]}
           series={SERIES_BY_WINDOW[label]}
         >
-          <RouterProvider router={router} />
+          {routerView}
         </HostStoreProvider>
       </HostClockContext.Provider>
     </HostSelectionContext.Provider>
