@@ -116,6 +116,7 @@ pub struct DockerAdapter {
     client: Docker,
     pub engine: DockerEngine,
     permits: std::sync::Arc<tokio::sync::Semaphore>,
+    detail_permits: std::sync::Arc<tokio::sync::Semaphore>,
 }
 impl DockerAdapter {
     pub async fn connect(mut engine: DockerEngine) -> Result<Self, DockerError> {
@@ -201,6 +202,7 @@ impl DockerAdapter {
             client,
             engine,
             permits: std::sync::Arc::new(tokio::sync::Semaphore::new(8)),
+            detail_permits: std::sync::Arc::new(tokio::sync::Semaphore::new(2)),
         })
     }
     pub async fn refresh_capacity(&mut self) -> Result<(), DockerError> {
@@ -209,6 +211,20 @@ impl DockerAdapter {
         self.engine.capacity_bytes = info.mem_total.filter(|v| *v > 0).map(|v| v as f64);
         self.engine.capacity_observed_ms = Some(now_ms());
         Ok(())
+    }
+    /// Idle probe: one bounded list request, no inspection or stats.
+    pub async fn has_running_containers(&self) -> Result<bool, DockerError> {
+        let list = finite(self.client.list_containers(Some(ListContainersOptions {
+            all: false,
+            limit: Some(1),
+            filters: Some(std::collections::HashMap::from([(
+                "status".into(),
+                vec!["running".into()],
+            )])),
+            ..Default::default()
+        })))
+        .await?;
+        Ok(!list.is_empty())
     }
     pub async fn inventory(&self) -> Result<(Vec<DockerContainer>, bool), DockerError> {
         let _permit = self.permits.try_acquire().map_err(|_| DockerError::Busy)?;
@@ -289,11 +305,28 @@ impl DockerAdapter {
         containers.truncate(retained);
         Ok((containers, complete))
     }
-    pub async fn inspect(&self, mut row: DockerContainer) -> Result<DockerContainer, DockerError> {
+    pub async fn inspect(&self, row: DockerContainer) -> Result<DockerContainer, DockerError> {
+        let _permit = self.permits.try_acquire().map_err(|_| DockerError::Busy)?;
+        self.inspect_unpooled(row).await
+    }
+    /// UI requests cannot take collection permits or create partial stats cycles.
+    pub async fn inspect_detail(
+        &self,
+        row: DockerContainer,
+    ) -> Result<DockerContainer, DockerError> {
+        let _permit = tokio::time::timeout(Duration::from_secs(2), self.detail_permits.acquire())
+            .await
+            .map_err(|_| DockerError::Timeout)?
+            .map_err(|_| DockerError::Busy)?;
+        self.inspect_unpooled(row).await
+    }
+    async fn inspect_unpooled(
+        &self,
+        mut row: DockerContainer,
+    ) -> Result<DockerContainer, DockerError> {
         if !valid_id(&row.id) {
             return Err(DockerError::Invalid);
         }
-        let _permit = self.permits.try_acquire().map_err(|_| DockerError::Busy)?;
         let c = finite(
             self.client
                 .inspect_container(&row.id, None::<InspectContainerOptions>),
@@ -587,6 +620,106 @@ fn read_json(path: &Path) -> Option<serde_json::Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn engine(socket: &Path) -> DockerEngine {
+        DockerEngine {
+            id: "fixture".into(),
+            socket: socket.to_string_lossy().into(),
+            runtime: "fixture".into(),
+            context: None,
+            daemon_id: None,
+            reachable: false,
+            preferred: false,
+            error: None,
+            api_version: None,
+            capacity_bytes: None,
+            capacity_observed_ms: None,
+        }
+    }
+    fn row() -> DockerContainer {
+        DockerContainer {
+            engine_id: "fixture".into(),
+            id: "container".into(),
+            name: "container".into(),
+            image: "image".into(),
+            project: None,
+            service: None,
+            lifecycle: DockerLifecycle::Running,
+            health: DockerHealth::Unknown,
+            restart_count: None,
+            metadata_available: false,
+            metadata_observed_ms: None,
+            observed_restarts: 0,
+            repeated_restarts: false,
+            observed_restart_window_ms: 300000,
+            oom_killed: false,
+            explicit_limit_bytes: None,
+            cpu_quota: None,
+            restart_policy: None,
+            ports: vec![],
+            mounts: vec![],
+            created: None,
+            last_seen_ms: 0,
+            observed_ms: None,
+            interval_ms: None,
+            monitored: true,
+            metrics: DockerMetrics::default(),
+        }
+    }
+    fn denied_client() -> Docker {
+        Docker::connect_with_custom_transport(
+            |_request: BollardRequest| async {
+                Err(bollard::errors::Error::IOError {
+                    err: std::io::Error::from(std::io::ErrorKind::PermissionDenied),
+                })
+            },
+            Some("http://localhost"),
+            2,
+            API_DEFAULT_VERSION,
+        )
+        .unwrap()
+    }
+    #[tokio::test]
+    async fn custom_transport_preserves_permission_denied() {
+        let result = finite(denied_client().negotiate_version()).await;
+        assert!(
+            matches!(result, Err(DockerError::PermissionDenied)),
+            "{result:?}"
+        );
+    }
+    #[tokio::test]
+    async fn socket_eacces_is_permission_denied() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let socket = dir.path().join("docker.sock");
+        let _listener = tokio::net::UnixListener::bind(&socket).unwrap();
+        // Deny directory traversal too: macOS need not enforce socket mode bits.
+        std::fs::set_permissions(&socket, std::fs::Permissions::from_mode(0o000)).unwrap();
+        std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o000)).unwrap();
+        let result = DockerAdapter::connect(engine(&socket)).await;
+        std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
+        assert!(
+            matches!(result, Err(DockerError::PermissionDenied)),
+            "{}",
+            result.err().unwrap()
+        );
+    }
+    #[tokio::test]
+    async fn detail_inspection_has_capacity_during_eight_stats_requests() {
+        let adapter = DockerAdapter {
+            client: denied_client(),
+            engine: engine(Path::new("/fixture.sock")),
+            permits: std::sync::Arc::new(tokio::sync::Semaphore::new(8)),
+            detail_permits: std::sync::Arc::new(tokio::sync::Semaphore::new(2)),
+        };
+        // Hold the same leases as eight in-flight stats requests. The transport
+        // sentinel proves inspect reached transport instead of failing Busy.
+        let _stats = adapter.permits.acquire_many(8).await.unwrap();
+        let result = adapter.inspect_detail(row()).await;
+        assert!(
+            matches!(result, Err(DockerError::PermissionDenied)),
+            "{result:?}"
+        );
+    }
     #[test]
     fn endpoint_allowlist_is_closed() {
         for path in [

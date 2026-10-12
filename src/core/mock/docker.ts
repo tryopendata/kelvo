@@ -129,6 +129,7 @@ export function mockDockerSnapshot(count: number, now: number): DockerSnapshot {
     },
     coverage: [],
     observed_ms: now,
+    now_ms: now,
     interval_ms: 1000,
     population_revision: 1,
     persistence: {
@@ -197,15 +198,26 @@ export function createMockDocker(
     };
   if (scenarios.includes("docker-idle"))
     snapshot = {
-      ...snapshot,
+      ...mockDockerSnapshot(0, now()),
       status: "idle_suspended",
-      message:
-        "Monitoring is suspended to let the runtime sleep. Resume to check for containers.",
+      interval_ms: 0,
+      population_revision: 0,
+      runtime: {
+        scope: "shared",
+        explanation:
+          "OrbStack shares its runtime with other workloads. Docker-only process attribution has not been verified.",
+        cpu_pct: null,
+        footprint_bytes: null,
+        observed_ms: null,
+        processes: [],
+      },
+      message: "No running containers. Monitoring paused to save power.",
     };
   let visible = true;
   const listeners = new Set<(s: DockerSnapshot) => void>();
   const logTimers = new Set<ReturnType<typeof setInterval>>();
   const emit = () => {
+    snapshot = { ...snapshot, now_ms: now() };
     if (visible) for (const cb of listeners) cb(snapshot);
   };
   const methods: Methods = {
@@ -292,7 +304,11 @@ export function createMockDocker(
       const row = snapshot.containers.find(
         (c) => c.id === containerId && c.engine_id === engineId
       );
-      if (row) return ok(row);
+      if (row) {
+        snapshot = { ...snapshot, now_ms: now() };
+        emit();
+        return ok(row);
+      }
       const saved = retained.find(
         (row) => row.engine_id === engineId && row.id === containerId
       );
@@ -330,6 +346,7 @@ export function createMockDocker(
             working_set_bytes: (400 + i * 3) * MiB,
           },
           measured_ms: i === 90 ? 0 : duration,
+          covered: i !== 90,
           expected_ms: duration,
           population_revision: 1,
           revision: i,
@@ -423,7 +440,7 @@ export function createMockDocker(
       }
     },
     tick() {
-      if (snapshot.settings.enabled) {
+      if (snapshot.settings.enabled && snapshot.status === "connected") {
         const containers = snapshot.containers.map((row, index) => ({
           ...row,
           observed_ms: now(),
@@ -441,6 +458,7 @@ export function createMockDocker(
           containers,
           aggregate: aggregateContainers(containers),
           observed_ms: now(),
+          now_ms: now(),
         };
         emit();
       }

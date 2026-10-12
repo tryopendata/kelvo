@@ -10,7 +10,7 @@ struct Fixture {
     state: Arc<FixtureState>,
 }
 struct FixtureState {
-    count: usize,
+    count: AtomicUsize,
     delay_ms: u64,
     active: AtomicUsize,
     maximum: AtomicUsize,
@@ -18,6 +18,8 @@ struct FixtureState {
     log_requests: AtomicUsize,
     log_follow_requests: AtomicUsize,
     event_requests: AtomicUsize,
+    inventory_requests: AtomicUsize,
+    probe_requests: AtomicUsize,
     event_eof: AtomicBool,
     inspect_status: AtomicUsize,
     inspect_requests: AtomicUsize,
@@ -38,7 +40,7 @@ impl Fixture {
         let (events, _) = broadcast::channel(8);
         let (logs, _) = broadcast::channel(8);
         let state = Arc::new(FixtureState {
-            count,
+            count: AtomicUsize::new(count),
             delay_ms,
             active: AtomicUsize::new(0),
             maximum: AtomicUsize::new(0),
@@ -46,6 +48,8 @@ impl Fixture {
             log_requests: AtomicUsize::new(0),
             log_follow_requests: AtomicUsize::new(0),
             event_requests: AtomicUsize::new(0),
+            inventory_requests: AtomicUsize::new(0),
+            probe_requests: AtomicUsize::new(0),
             event_eof: AtomicBool::new(false),
             inspect_status: AtomicUsize::new(200),
             inspect_requests: AtomicUsize::new(0),
@@ -196,7 +200,15 @@ async fn serve(mut socket: UnixStream, state: Arc<FixtureState>) {
     } else if path.contains("/info") {
         r#"{"ID":"fixture-daemon","MemTotal":8000000000}"#.into()
     } else if path.contains("/containers/json") {
-        let rows:Vec<_>=(0..state.count).map(|n|serde_json::json!({"Id":format!("c{n:04}"),"Names":[format!("/container-{n}")],"Image":"fixture","State":"running"})).collect();
+        state.inventory_requests.fetch_add(1, Ordering::SeqCst);
+        if path.contains("all=false") {
+            assert!(
+                path.contains("limit=1"),
+                "idle probe must list only one running row"
+            );
+            state.probe_requests.fetch_add(1, Ordering::SeqCst);
+        }
+        let rows:Vec<_>=(0..state.count.load(Ordering::SeqCst)).map(|n|serde_json::json!({"Id":format!("c{n:04}"),"Names":[format!("/container-{n}")],"Image":"fixture","State":"running"})).collect();
         serde_json::to_string(&rows).unwrap()
     } else if path.contains("/stats") {
         state.stats.lock_ok().insert(id.clone());
@@ -253,6 +265,21 @@ async fn until(mut predicate: impl FnMut() -> bool) {
     })
     .await
     .unwrap();
+}
+
+// With paused time, a missing state must fail instead of yielding forever while
+// its logical timeout cannot advance. Socket fixtures settle without clock ticks.
+async fn settled(mut predicate: impl FnMut() -> bool) {
+    for _ in 0..10_000 {
+        if predicate() {
+            return;
+        }
+        tokio::task::yield_now().await;
+    }
+    assert!(
+        predicate(),
+        "worker did not settle at the current logical time"
+    );
 }
 
 #[tokio::test]
@@ -568,6 +595,11 @@ async fn retained_removed_detail_and_inspect_races_preserve_metadata_without_hid
             .lifecycle,
         DockerLifecycle::Removed
     );
+    // The 404 is newer removal evidence until inventory lists the container again;
+    // after that, a failing inspection must surface rather than be masked.
+    handle
+        .changed
+        .send_modify(|s| s.containers = vec![row.clone()]);
     fixture.state.inspect_status.store(500, Ordering::SeqCst);
     let error = handle
         .detail_live("fixture-daemon", &row.id)
@@ -577,30 +609,29 @@ async fn retained_removed_detail_and_inspect_races_preserve_metadata_without_hid
     handle.shutdown();
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn successful_handshake_with_repeated_event_eof_backs_off_and_shutdown_interrupts_wait() {
     let fixture = Fixture::new(1, 0).await;
     fixture.state.event_eof.store(true, Ordering::SeqCst);
     let handle = fixture.handle();
     handle.set_visible(true);
     let worker = tokio::spawn(handle.clone().run());
-    until(|| fixture.state.event_requests.load(Ordering::SeqCst) > 0).await;
-    tokio::time::sleep(Duration::from_millis(3400)).await;
-    let attempts = fixture.state.event_requests.load(Ordering::SeqCst);
-    assert!(
-        (1..=2).contains(&attempts),
-        "repeated EOF must back off despite successful version/info: {attempts}"
-    );
+    for (attempt, backoff) in [(1, 1), (2, 2), (3, 4)] {
+        settled(|| handle.snapshot().status == DockerStatus::Connected).await;
+        assert_eq!(fixture.state.event_requests.load(Ordering::SeqCst), attempt);
+        tokio::time::advance(Duration::from_secs(1)).await;
+        settled(|| handle.snapshot().status == DockerStatus::Unavailable).await;
+        if attempt == 3 {
+            break;
+        }
+        tokio::time::advance(Duration::from_millis(backoff * 1000 - 1)).await;
+        assert_eq!(fixture.state.event_requests.load(Ordering::SeqCst), attempt);
+        tokio::time::advance(Duration::from_millis(1)).await;
+    }
     handle.shutdown();
-    tokio::time::timeout(Duration::from_millis(500), worker)
-        .await
-        .unwrap()
-        .unwrap();
-    tokio::time::sleep(Duration::from_millis(100)).await;
-    assert_eq!(
-        fixture.state.event_requests.load(Ordering::SeqCst),
-        attempts
-    );
+    worker.await.unwrap();
+    tokio::time::advance(Duration::from_secs(60)).await;
+    assert_eq!(fixture.state.event_requests.load(Ordering::SeqCst), 3);
 }
 
 #[tokio::test]
@@ -810,4 +841,75 @@ async fn metadata_receipt_tracks_inspection_independently_and_404_clears_live_ob
     assert_eq!(removed.interval_ms, None);
     assert_eq!(removed.metrics.cpu_pct, None);
     handle.shutdown();
+}
+
+#[tokio::test]
+async fn detail_inspection_does_not_steal_stats_capacity() {
+    let fixture = Fixture::new(8, 200).await;
+    let adapter = fixture.adapter().await;
+    let (rows, _) = adapter.inventory().await.unwrap();
+    let tasks: Vec<_> = rows
+        .iter()
+        .map(|row| {
+            let adapter = adapter.clone();
+            let id = row.id.clone();
+            tokio::spawn(async move { adapter.stats(&id).await })
+        })
+        .collect();
+    until(|| fixture.state.stats.lock_ok().len() == 8).await;
+    let detail = adapter.inspect_detail(rows[0].clone()).await;
+    assert!(
+        detail.is_ok(),
+        "detail must not collide with an eight-request cycle: {detail:?}"
+    );
+    for task in tasks {
+        assert!(task.await.unwrap().is_ok());
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn idle_probe_resumes_within_one_minute_without_stats_while_idle() {
+    let fixture = Fixture::new(0, 0).await;
+    let handle = fixture.handle();
+    let worker = tokio::spawn(handle.clone().run());
+    settled(|| handle.snapshot().status == DockerStatus::IdleSuspended).await;
+    assert_eq!(
+        handle.snapshot().message.as_deref(),
+        Some("No running containers. Monitoring paused to save power.")
+    );
+    let idle_at = Instant::now();
+    let events = fixture.state.event_requests.load(Ordering::SeqCst);
+    tokio::time::advance(Duration::from_secs(59)).await;
+    assert!(fixture.state.stats.lock_ok().is_empty());
+    assert_eq!(fixture.state.probe_requests.load(Ordering::SeqCst), 0);
+    assert_eq!(fixture.state.inventory_requests.load(Ordering::SeqCst), 1);
+    assert_eq!(fixture.state.event_requests.load(Ordering::SeqCst), events);
+    fixture.state.count.store(1, Ordering::SeqCst);
+    tokio::time::advance(Duration::from_secs(1)).await;
+    settled(|| handle.snapshot().status == DockerStatus::Connected).await;
+    assert_eq!(handle.snapshot().aggregate.running, 1);
+    assert_eq!(idle_at.elapsed(), Duration::from_secs(60));
+    assert_eq!(fixture.state.probe_requests.load(Ordering::SeqCst), 1);
+    assert_eq!(fixture.state.inventory_requests.load(Ordering::SeqCst), 3);
+    handle.shutdown();
+    worker.await.unwrap();
+}
+
+#[tokio::test(start_paused = true)]
+async fn visible_transition_resumes_idle_without_waiting_for_probe() {
+    for already_visible in [false, true] {
+        let fixture = Fixture::new(0, 0).await;
+        let handle = fixture.handle();
+        if already_visible {
+            handle.set_visible(true);
+        }
+        let worker = tokio::spawn(handle.clone().run());
+        settled(|| handle.snapshot().status == DockerStatus::IdleSuspended).await;
+        fixture.state.count.store(1, Ordering::SeqCst);
+        handle.set_visible(true);
+        settled(|| handle.snapshot().status == DockerStatus::Connected).await;
+        assert_eq!(handle.snapshot().aggregate.running, 1);
+        handle.shutdown();
+        worker.await.unwrap();
+    }
 }

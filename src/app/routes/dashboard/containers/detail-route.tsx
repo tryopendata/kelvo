@@ -1,4 +1,5 @@
 import { formatBytes, formatPercent } from "@core/format";
+import { dockerKeys } from "@core/query-keys";
 import { unwrap } from "@core/transport";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
@@ -21,17 +22,11 @@ import {
   HistoryControls,
 } from "./_components/history-controls";
 import {
-  dockerKeys,
   useDocker,
   useDockerEvents,
   useDockerHistory,
 } from "./_hooks/use-docker";
-import {
-  healthLabel,
-  lifecycleLabel,
-  statusLabel,
-  withInspection,
-} from "./_lib/presentation";
+import { healthLabel, lifecycleLabel, statusLabel } from "./_lib/presentation";
 
 export default function ContainerDetailRoute() {
   return (
@@ -72,7 +67,7 @@ function LocalContainerDetailRoute() {
       ? snapshot.containers.find((row) => row.id === containerId)
       : undefined;
   const inspected = detail.isError ? undefined : detail.data;
-  const row = withInspection(live, inspected);
+  const row = live ?? inspected;
   const current = Boolean(
     live && snapshot?.status === "connected" && row?.observed_ms !== null
   );
@@ -80,8 +75,7 @@ function LocalContainerDetailRoute() {
     snapshot?.engine?.id === engineId
       ? statusLabel[snapshot.status]
       : "Retained engine · not selected";
-  const now =
-    Math.floor((snapshot?.observed_ms ?? Date.now()) / 10_000) * 10_000;
+  const now = Math.floor((snapshot?.now_ms ?? Date.now()) / 10_000) * 10_000;
   const to = end ?? now;
   const from = to - DOCKER_RANGES[range];
   const history = useDockerHistory(
@@ -144,9 +138,12 @@ function LocalContainerDetailRoute() {
               switch or reconnect the live engine.
             </p>
           )}
-          <p role="status" className="text-[12px] text-muted-foreground">
-            {connection} ·{" "}
-            {current ? "Current observation" : "Retained observation"} ·{" "}
+          <p className="text-[12px] text-muted-foreground">
+            <span role="status">
+              {connection} ·{" "}
+              {current ? "Current observation" : "Retained observation"}
+            </span>
+            {" · "}
             {new Date(row.observed_ms ?? row.last_seen_ms).toLocaleString()}
           </p>
           <div className="figures flex flex-wrap gap-x-6 gap-y-2 text-[13px]">

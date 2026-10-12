@@ -1,7 +1,14 @@
 import { formatBytes, formatPercent, formatRate } from "@core/format";
 import type { DockerContainer } from "@core/generated/bindings";
 import { CheckIcon } from "lucide-react";
-import { memo, useCallback, useLayoutEffect, useRef, useState } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { Link, useLocation } from "react-router";
 import { Button } from "~/components/ui/button";
 import { useElementSize } from "~/hooks/use-element-size";
@@ -38,7 +45,7 @@ const ContainerMonitor = memo(function ContainerMonitor({
         checked={checked}
         disabled={disabled}
         onChange={(event) => onChange(id, event.currentTarget.checked)}
-        className="peer size-4 shrink-0 appearance-none rounded-chip border border-input outline-none transition-shadow checked:border-primary checked:bg-primary focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50 dark:bg-input/30 dark:checked:bg-primary"
+        className="peer size-4 shrink-0 appearance-none rounded-chip border border-input outline-none checked:border-primary checked:bg-primary focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50 motion-safe:transition-shadow motion-safe:duration-(--motion-fast) motion-safe:ease-(--ease-out) dark:bg-input/30 dark:checked:bg-primary"
       />
       <CheckIcon
         aria-hidden
@@ -48,7 +55,7 @@ const ContainerMonitor = memo(function ContainerMonitor({
   );
 });
 
-const ContainerIdentity = memo(
+export const ContainerIdentity = memo(
   function ContainerIdentity({
     row,
     monitoringFull,
@@ -126,7 +133,7 @@ const ContainerIdentity = memo(
     a.row.metrics.working_set_bytes === b.row.metrics.working_set_bytes
 );
 
-const ContainerMemory = memo(
+export const ContainerMemory = memo(
   function ContainerMemory({ row, io }: { row: DockerContainer; io: boolean }) {
     return (
       <>
@@ -260,7 +267,18 @@ function ContainerTableImpl({
     ids: [],
   });
   const paused = hovered || focused;
-  const sorted = sortedContainers(rows, sort);
+  const effectiveSort = io
+    ? sort === "cpu"
+      ? "network"
+      : sort === "memory"
+        ? "io"
+        : sort
+    : sort === "network"
+      ? "cpu"
+      : sort === "io"
+        ? "memory"
+        : sort;
+  const sorted = sortedContainers(rows, effectiveSort);
   if (!paused || held.current.version !== orderVersion)
     held.current = { version: orderVersion, ids: sorted.map((row) => row.id) };
   const rank = new Map(held.current.ids.map((id, index) => [id, index]));
@@ -274,7 +292,15 @@ function ContainerTableImpl({
   const pageCount = Math.max(1, Math.ceil(ordered.length / 32));
   const currentPage = Math.min(Math.max(0, page), pageCount - 1);
   const pageRows = ordered.slice(currentPage * 32, (currentPage + 1) * 32);
-  const scroll = document.querySelector("main")?.scrollTop ?? 0;
+  const [scroll, setScroll] = useState(0);
+  useEffect(() => {
+    const main = document.querySelector("main");
+    if (!main) return;
+    const updateScroll = () => setScroll(main.scrollTop);
+    updateScroll();
+    main.addEventListener("scroll", updateScroll, { passive: true });
+    return () => main.removeEventListener("scroll", updateScroll);
+  }, []);
   const groups = grouped
     ? [...new Set(pageRows.map((row) => row.project ?? "Standalone"))]
     : [""];
@@ -288,7 +314,10 @@ function ContainerTableImpl({
             <ContainerGroupHeading
               key={`group:${group}`}
               group={group}
-              count={members.length}
+              count={
+                rows.filter((row) => (row.project ?? "Standalone") === group)
+                  .length
+              }
               columns={columns}
               collapsed={collapsed.includes(group)}
               onToggle={toggleGroup}
@@ -338,7 +367,7 @@ function ContainerTableImpl({
       }}
     >
       {label}
-      {sort === key ? (key === "name" ? " ↑" : " ↓") : ""}
+      {effectiveSort === key ? (key === "name" ? " ↑" : " ↓") : ""}
     </button>
   );
   return (
@@ -409,15 +438,27 @@ function ContainerTableImpl({
               </th>
               <th
                 className="px-3 py-2 text-right font-normal"
-                aria-sort={sort === "cpu" ? "descending" : "none"}
+                aria-sort={
+                  effectiveSort === (io ? "network" : "cpu")
+                    ? "descending"
+                    : "none"
+                }
               >
-                {io ? "Network ↓ / ↑" : heading("CPU", "cpu")}
+                {io
+                  ? heading("Network ↓ / ↑", "network")
+                  : heading("CPU", "cpu")}
               </th>
               <th
                 className={`${styles.memory} px-3 py-2 text-right font-normal`}
-                aria-sort={sort === "memory" ? "descending" : "none"}
+                aria-sort={
+                  effectiveSort === (io ? "io" : "memory")
+                    ? "descending"
+                    : "none"
+                }
               >
-                {io ? "Block I/O" : heading("Memory / limit", "memory")}
+                {io
+                  ? heading("Block I/O", "io")
+                  : heading("Memory / limit", "memory")}
               </th>
               <th
                 className={`${styles.restarts} w-20 px-3 py-2 text-right font-normal`}

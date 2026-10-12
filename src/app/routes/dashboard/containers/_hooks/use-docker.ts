@@ -1,86 +1,12 @@
 import type { DockerSnapshot } from "@core/generated/bindings";
+import { dockerKeys } from "@core/query-keys";
 import { unwrap } from "@core/transport";
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { useIsLocalHost } from "~/hooks/use-is-local-host";
 import { useTransport } from "~/lib/transport-context";
 import { useHostId } from "~/stores/host-store";
 import { dockerErrorMessage } from "../_lib/presentation";
-
-export const dockerKeys = {
-  retained: (
-    host: string,
-    engine: string | null,
-    search: string,
-    offset: number,
-    generation: number
-  ) =>
-    [
-      "history",
-      host,
-      "docker",
-      "retained",
-      engine,
-      search,
-      offset,
-      generation,
-    ] as const,
-  detail: (
-    host: string,
-    engine: string,
-    container: string,
-    generation: number
-  ) =>
-    [
-      "history",
-      host,
-      "docker",
-      engine,
-      container,
-      "detail",
-      generation,
-    ] as const,
-  history: (
-    engine: string,
-    container: string | null,
-    from: number,
-    to: number,
-    host: string,
-    generation: number
-  ) =>
-    [
-      "history",
-      host,
-      "docker",
-      engine,
-      container,
-      "history",
-      from,
-      to,
-      generation,
-    ] as const,
-  events: (
-    engine: string,
-    container: string | null,
-    from: number,
-    to: number,
-    host: string,
-    generation: number,
-    beforeId: string | null
-  ) =>
-    [
-      "history",
-      host,
-      "docker",
-      engine,
-      container,
-      "events",
-      from,
-      to,
-      generation,
-      beforeId,
-    ] as const,
-};
 
 export function useDocker() {
   const transport = useTransport();
@@ -129,6 +55,7 @@ export function useDockerHistory(
   const host = useHostId();
   return useQuery({
     queryKey: dockerKeys.history(engine, container, from, to, host, generation),
+    placeholderData: keepPreviousData,
     enabled: local && Boolean(engine),
     queryFn: () =>
       unwrap(

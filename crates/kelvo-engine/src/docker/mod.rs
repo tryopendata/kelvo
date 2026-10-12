@@ -12,9 +12,12 @@ use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
     path::PathBuf,
     sync::{Arc, Mutex},
-    time::{Duration, Instant},
+    time::Duration,
 };
-use tokio::sync::{broadcast, watch};
+use tokio::{
+    sync::{broadcast, watch},
+    time::Instant,
+};
 
 pub use logs::LogSubscription;
 #[derive(Clone, Debug, PartialEq)]
@@ -71,6 +74,7 @@ impl DockerHandle {
             runtime: unavailable_runtime(""),
             coverage: Vec::new(),
             observed_ms: now_ms(),
+            now_ms: now_ms(),
             interval_ms: 10000,
             population_revision: 0,
             persistence: DockerPersistence {
@@ -131,6 +135,7 @@ impl DockerHandle {
         });
         let c = self.control.borrow().clone();
         self.changed.send_modify(|s| {
+            s.now_ms = now_ms();
             s.settings = settings;
             s.generation = c.generation;
             s.status = if c.settings.enabled {
@@ -156,6 +161,7 @@ impl DockerHandle {
         let generation = self.control.borrow().generation;
         self.inner.lock_ok().events.clear();
         self.changed.send_modify(|s| {
+            s.now_ms = now_ms();
             s.generation = generation;
             s.containers.clear();
             s.coverage.clear();
@@ -267,23 +273,41 @@ impl DockerHandle {
         if row.lifecycle == DockerLifecycle::Removed {
             return Ok(row);
         }
+        let generation = self.control.borrow().generation;
         let adapter = self.inner.lock_ok().adapter.clone();
-        if let Some(adapter) = adapter.filter(|a| a.engine.id == engine) {
-            match adapter.inspect(row.clone()).await {
-                Ok(fresh) => Ok(fresh),
+        let inspected = if let Some(adapter) = adapter.filter(|a| a.engine.id == engine) {
+            match adapter.inspect_detail(row.clone()).await {
+                Ok(fresh) => fresh,
                 Err(DockerError::NotFound) => {
                     row.lifecycle = DockerLifecycle::Removed;
                     row.metadata_observed_ms = Some(now_ms());
                     row.observed_ms = None;
                     row.interval_ms = None;
                     row.metrics = DockerMetrics::default();
-                    Ok(row)
+                    row
                 }
-                Err(error) => Err(error.to_string()),
+                Err(error) => return Err(error.to_string()),
             }
         } else {
-            Ok(row)
+            row
+        };
+        let _gate = self.gate.lock_ok();
+        if self.control.borrow().generation != generation {
+            return Err("Docker configuration changed during inspection".into());
         }
+        let mut reconciled = inspected.clone();
+        self.changed.send_modify(|s| {
+            s.now_ms = now_ms();
+            if let Some(live) = s
+                .containers
+                .iter_mut()
+                .find(|c| c.engine_id == engine && c.id == id)
+            {
+                reconciled = reconcile(live.clone(), &inspected);
+                *live = reconciled.clone();
+            }
+        });
+        Ok(reconciled)
     }
 
     pub fn retained(&self, request: &DockerRetainedRequest) -> Result<DockerRetainedPage, String> {
@@ -309,12 +333,27 @@ impl DockerHandle {
         if self.control.borrow().generation != snapshot.generation {
             return;
         }
+        snapshot.now_ms = now_ms();
+        let current = self.changed.borrow();
+        let inspected: BTreeMap<_, _> = current
+            .containers
+            .iter()
+            .map(|row| ((row.engine_id.as_str(), row.id.as_str()), row))
+            .collect();
+        for row in &mut snapshot.containers {
+            if let Some(previous) = inspected.get(&(row.engine_id.as_str(), row.id.as_str())) {
+                *row = reconcile(row.clone(), previous);
+            }
+        }
+        drop(inspected);
+        drop(current);
         self.recorder.record(&snapshot);
         snapshot.persistence = self.recorder.status();
         self.changed.send_replace(snapshot);
     }
     fn gap(&self, reason: &str) {
         self.changed.send_modify(|s| {
+            s.now_ms = now_ms();
             if s.coverage
                 .last()
                 .is_some_and(|g| g.reason == reason && g.end_ms.is_none())
@@ -357,6 +396,7 @@ impl DockerHandle {
             return false;
         }
         self.changed.send_modify(|s| {
+            s.now_ms = now_ms();
             s.status = status;
             s.message = message;
             s.generation = generation;
@@ -415,6 +455,7 @@ impl DockerHandle {
                 }
                 self.inner.lock_ok().adapter = Some(adapter.clone());
                 self.changed.send_modify(|s| {
+                    s.now_ms = now_ms();
                     if s.engine.as_ref().is_none_or(|e| e.id != adapter.engine.id) {
                         s.coverage.clear();
                         s.containers.clear();
@@ -427,6 +468,7 @@ impl DockerHandle {
                     s.generation = generation;
                 });
             }
+            let idle_adapter = adapter.clone();
             let session = self
                 .session(adapter, generation, &mut controls, &mut retry)
                 .await;
@@ -447,18 +489,50 @@ impl DockerHandle {
                 if !self.transition(
                     generation,
                     DockerStatus::IdleSuspended,
-                    None,
+                    Some("No running containers. Monitoring paused to save power.".into()),
                     "idle_suspended",
                 ) {
                     continue;
                 }
-                loop {
-                    if controls.changed().await.is_err() {
-                        return;
-                    }
-                    let next = controls.borrow_and_update().clone();
-                    if next.generation != generation || next.shutdown {
-                        break;
+                let mut visible = controls.borrow().visible;
+                let mut probe = tokio::time::interval_at(
+                    Instant::now() + Duration::from_secs(60),
+                    Duration::from_secs(60),
+                );
+                probe.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+                'idle: loop {
+                    tokio::select! { biased;
+                        changed = controls.changed() => {
+                            if changed.is_err() { return; }
+                            let next = controls.borrow_and_update().clone();
+                            if next.generation != generation || next.shutdown
+                                || next.visible > visible {
+                                break;
+                            }
+                            visible = next.visible;
+                        }
+                        _ = probe.tick() => {
+                            let result = tokio::select! { biased;
+                                changed = controls.changed() => {
+                                    if changed.is_err() { return; }
+                                    let next = controls.borrow_and_update().clone();
+                                    if next.generation != generation || next.shutdown
+                                        || next.visible > visible {
+                                        break 'idle;
+                                    }
+                                    visible = next.visible;
+                                    continue 'idle;
+                                }
+                                result = idle_adapter.has_running_containers() => result,
+                            };
+                            // Errors return to normal connection/backoff handling.
+                            if !matches!(result, Ok(false)) { break; }
+                            self.transition(
+                                generation, DockerStatus::IdleSuspended,
+                                Some("No running containers. Monitoring paused to save power.".into()),
+                                "idle_suspended",
+                            );
+                        }
                     }
                 }
             }
@@ -534,6 +608,7 @@ impl DockerHandle {
         let mut baseline: BTreeMap<String, (DockerCounters, Instant)> = BTreeMap::new();
         let mut cursor = 0usize;
         let mut inventory_at = Instant::now() - Duration::from_secs(60);
+        let mut capacity_at = Instant::now();
         let mut rows = Vec::<DockerContainer>::new();
         let mut inventory_complete = true;
         let mut population = BTreeSet::new();
@@ -608,6 +683,7 @@ impl DockerHandle {
                     &mut baseline,
                     &mut cursor,
                     &mut inventory_at,
+                    &mut capacity_at,
                     &mut inventory_complete,
                     &mut population,
                     &mut population_revision,
@@ -714,6 +790,7 @@ impl DockerHandle {
         baseline: &mut BTreeMap<String, (DockerCounters, Instant)>,
         cursor: &mut usize,
         inventory_at: &mut Instant,
+        capacity_at: &mut Instant,
         inventory_complete: &mut bool,
         population: &mut BTreeSet<String>,
         population_revision: &mut u32,
@@ -723,12 +800,13 @@ impl DockerHandle {
     ) -> bool {
         let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
         if refresh || inventory_at.elapsed() >= Duration::from_secs(30) {
-            if adapter
-                .engine
-                .capacity_observed_ms
-                .is_none_or(|t| now_ms().saturating_sub(t) >= 30_000)
+            if capacity_at.elapsed() >= Duration::from_secs(30)
+                && matches!(
+                    tokio::time::timeout_at(deadline, adapter.refresh_capacity()).await,
+                    Ok(Ok(()))
+                )
             {
-                let _ = tokio::time::timeout_at(deadline, adapter.refresh_capacity()).await;
+                *capacity_at = Instant::now();
             }
             match tokio::time::timeout_at(deadline, adapter.inventory()).await {
                 Ok(Ok((mut fresh, complete))) => {
@@ -955,6 +1033,35 @@ impl DockerHandle {
         let _ = self.events.send(event);
     }
 }
+/// Inventory/stats and inspection carry separate evidence clocks.
+fn reconcile(mut live: DockerContainer, inspected: &DockerContainer) -> DockerContainer {
+    let newer_state = inspected
+        .metadata_observed_ms
+        .is_some_and(|t| t >= live.last_seen_ms);
+    if newer_state && inspected.lifecycle == DockerLifecycle::Removed {
+        return inspected.clone();
+    }
+    if newer_state {
+        live.lifecycle = inspected.lifecycle;
+        live.health = inspected.health;
+    }
+    let newer_metadata = inspected
+        .metadata_observed_ms
+        .is_some_and(|t| live.metadata_observed_ms.is_none_or(|old| t >= old));
+    if inspected.metadata_available && (!live.metadata_available || newer_metadata) {
+        live.metadata_available = inspected.metadata_available;
+        live.metadata_observed_ms = inspected.metadata_observed_ms;
+        live.restart_count = inspected.restart_count;
+        live.oom_killed = inspected.oom_killed;
+        live.explicit_limit_bytes = inspected.explicit_limit_bytes;
+        live.cpu_quota = inspected.cpu_quota;
+        live.restart_policy = inspected.restart_policy.clone();
+        live.ports = inspected.ports.clone();
+        live.mounts = inspected.mounts.clone();
+        live.created = inspected.created.clone();
+    }
+    live
+}
 #[derive(PartialEq)]
 enum SessionEnd {
     Changed,
@@ -1025,100 +1132,33 @@ fn admit_event(rate: &mut (Instant, usize)) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[tokio::test]
-    async fn idle_engine_stays_fully_suspended_until_explicit_resume() {
-        use std::sync::atomic::{AtomicUsize, Ordering};
-        use tokio::io::{AsyncReadExt, AsyncWriteExt};
-        let dir = tempfile::tempdir().unwrap();
-        let socket = dir.path().join("docker.sock");
-        let listener = tokio::net::UnixListener::bind(&socket).unwrap();
-        let count = Arc::new(AtomicUsize::new(0));
-        let counter = count.clone();
-        let server = tokio::spawn(async move {
-            loop {
-                let (mut conn, _) = listener.accept().await.unwrap();
-                counter.fetch_add(1, Ordering::SeqCst);
-                tokio::spawn(async move {
-                    let mut bytes = vec![];
-                    let mut one = [0];
-                    while conn.read_exact(&mut one).await.is_ok() {
-                        bytes.push(one[0]);
-                        if bytes.ends_with(b"\r\n\r\n") {
-                            break;
-                        }
-                    }
-                    let req = String::from_utf8_lossy(&bytes);
-                    if req.contains("events") {
-                        let _ = conn
-                            .write_all(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n")
-                            .await;
-                        let _ = conn.read(&mut one).await;
-                        return;
-                    }
-                    let body = if req.contains("version") {
-                        r#"{"ApiVersion":"1.49","MinAPIVersion":"1.40"}"#
-                    } else if req.contains("info") {
-                        r#"{"ID":"idle-engine","MemTotal":4096}"#
-                    } else {
-                        "[]"
-                    };
-                    let response = format!(
-                        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-                        body.len(),
-                        body
-                    );
-                    let _ = conn.write_all(response.as_bytes()).await;
-                });
-            }
-        });
+    #[tokio::test(start_paused = true)]
+    async fn docker_interval_clock_advances_with_tokio_time() {
+        let mut rate = (Instant::now(), 1000);
+        assert!(!admit_event(&mut rate));
+        tokio::time::advance(Duration::from_secs(1)).await;
+        assert!(admit_event(&mut rate));
+        assert_eq!(rate.1, 1);
+    }
+    #[test]
+    fn transitions_publish_now_without_fabricating_observations() {
         let handle = DockerHandle::new(
             HostId(uuid::Uuid::new_v4()),
-            DockerSettings {
-                enabled: true,
-                selected_engine: Some(socket.to_string_lossy().into()),
-                ..Default::default()
-            },
-            dir.path().to_path_buf(),
+            DockerSettings::default(),
+            PathBuf::new(),
         );
-        let mut status = handle.subscribe();
-        let worker = tokio::spawn(handle.clone().run());
-        tokio::time::timeout(Duration::from_secs(3), async {
-            loop {
-                status.changed().await.unwrap();
-                if status.borrow().status == DockerStatus::IdleSuspended {
-                    break;
-                }
-            }
-        })
-        .await
-        .unwrap();
-        let before = count.load(Ordering::SeqCst);
-        handle.set_visible(true);
-        handle.set_power(false, 1000);
-        tokio::time::sleep(Duration::from_millis(100)).await;
-        assert_eq!(
-            count.load(Ordering::SeqCst),
-            before,
-            "visibility cannot wake idle daemon"
-        );
-        handle.resume();
-        tokio::time::timeout(Duration::from_secs(3), async {
-            loop {
-                status.changed().await.unwrap();
-                if status.borrow().status == DockerStatus::IdleSuspended
-                    && count.load(Ordering::SeqCst) > before
-                {
-                    break;
-                }
-            }
-        })
-        .await
-        .unwrap();
-        handle.configure(DockerSettings::default()).unwrap();
-        assert_eq!(handle.snapshot().status, DockerStatus::Disabled);
-        handle.shutdown();
-        worker.await.unwrap();
-        server.abort();
+        handle.changed.send_modify(|s| {
+            s.observed_ms = 123;
+            s.now_ms = 0;
+        });
+        assert!(handle.transition(1, DockerStatus::Unavailable, None, "disconnected"));
+        let snapshot = handle.snapshot();
+        assert!(snapshot.now_ms > 123);
+        assert_eq!(snapshot.observed_ms, 123);
+        handle.changed.send_modify(|s| s.now_ms = 0);
+        handle.publish(handle.snapshot());
+        assert!(handle.snapshot().now_ms > 123);
+        assert_eq!(handle.snapshot().observed_ms, 123);
     }
     #[test]
     fn aggregate_counts_missing_values_without_inventing_zero() {

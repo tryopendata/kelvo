@@ -54,8 +54,7 @@ export const ContainerHistory = memo(function ContainerHistory({
     for (const p of points) {
       const value = p.metrics[metric];
       const x = ((p.time_ms - from) / Math.max(1, to - from)) * 1000;
-      const covered = p.measured_ms >= p.expected_ms && p.measured_ms > 0;
-      if (value === null || !covered) {
+      if (value === null || !p.covered) {
         contiguous = false;
         limitContiguous = false;
         previousEnd = null;

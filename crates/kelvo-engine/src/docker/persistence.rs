@@ -1829,6 +1829,7 @@ fn point(b: &db::DockerBucket) -> api::DockerHistoryPoint {
         },
         measured_ms: measured.min(u32::MAX as u64) as u32,
         expected_ms: expected,
+        covered: measured > 0 && measured >= u64::from(expected),
         population_revision: b.populations.last().map_or(0, |p| p.revision),
         revision: b.revision.abs(),
         explicit_limit_bytes: None,
@@ -1939,6 +1940,80 @@ mod tests {
             ..Default::default()
         };
         s
+    }
+    #[test]
+    fn detail_reconciles_state_metadata_and_metrics_by_evidence_clock() {
+        let live = fixture(2000).containers.remove(0);
+        let mut inspected = fixture(1000).containers.remove(0);
+        inspected.explicit_limit_bytes = Some(4096.);
+        inspected.ports = vec!["80/tcp".into()];
+        inspected.lifecycle = api::DockerLifecycle::Exited;
+        inspected.health = api::DockerHealth::Unhealthy;
+        inspected.metrics.cpu_pct = Some(999.);
+        assert_eq!(super::super::reconcile(live.clone(), &inspected), live);
+        // Fresh inspection supplies state and metadata, while live metrics win.
+        inspected.metadata_observed_ms = Some(3000);
+        let merged = super::super::reconcile(live.clone(), &inspected);
+        assert_eq!(merged.lifecycle, api::DockerLifecycle::Exited);
+        assert_eq!(merged.health, api::DockerHealth::Unhealthy);
+        assert_eq!(merged.explicit_limit_bytes, Some(4096.));
+        assert_eq!(merged.ports, inspected.ports);
+        assert_eq!(merged.metrics, live.metrics);
+        // Metadata can be newer than the previous inspect but older than inventory.
+        let mut inventory = live.clone();
+        inventory.last_seen_ms = 4000;
+        let merged = super::super::reconcile(inventory.clone(), &inspected);
+        assert_eq!(merged.lifecycle, inventory.lifecycle);
+        assert_eq!(merged.explicit_limit_bytes, Some(4096.));
+        // Legacy rows without an inspect stamp accept newly stamped metadata.
+        inventory.metadata_observed_ms = None;
+        assert_eq!(
+            super::super::reconcile(inventory.clone(), &inspected).explicit_limit_bytes,
+            Some(4096.)
+        );
+        inspected.metadata_observed_ms = None;
+        assert_eq!(
+            super::super::reconcile(inventory.clone(), &inspected).explicit_limit_bytes,
+            inventory.explicit_limit_bytes
+        );
+        // An uninspected inventory accepts available metadata even without a stamp.
+        inventory.metadata_available = false;
+        assert_eq!(
+            super::super::reconcile(inventory, &inspected).explicit_limit_bytes,
+            Some(4096.)
+        );
+        // A raced 404 is authoritative removal evidence, including cleared metrics.
+        inspected.metadata_observed_ms = Some(3000);
+        inspected.lifecycle = api::DockerLifecycle::Removed;
+        inspected.observed_ms = None;
+        inspected.interval_ms = None;
+        inspected.metrics = api::DockerMetrics::default();
+        assert_eq!(super::super::reconcile(live, &inspected), inspected);
+    }
+    #[test]
+    fn history_points_publish_coverage_without_client_inference() {
+        let mut bucket = db::DockerBucket {
+            entity: "c".into(),
+            tier: Tier::S10,
+            bucket_ms: 0,
+            revision: 1,
+            metrics: vec![db::WeightedMetric {
+                key: "cpu_percent".into(),
+                min: 10.,
+                max: 10.,
+                sum: 100_000.,
+                weight_ms: 10_000,
+                expected_ms: 10_000,
+            }],
+            populations: vec![],
+        };
+        assert!(point(&bucket).covered);
+        bucket.metrics[0].weight_ms = 9999;
+        assert!(!point(&bucket).covered);
+        bucket.metrics[0].weight_ms = 0;
+        assert!(!point(&bucket).covered);
+        bucket.metrics.clear();
+        assert!(!point(&bucket).covered);
     }
     fn at(s: &mut api::DockerSnapshot, time: i64, interval: u32) {
         s.observed_ms = time;

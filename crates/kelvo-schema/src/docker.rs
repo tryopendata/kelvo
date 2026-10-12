@@ -164,6 +164,9 @@ pub struct DockerSnapshot {
     pub coverage: Vec<DockerCoverage>,
     #[specta(type = JsSafeInt)]
     pub observed_ms: i64,
+    /// Publication clock; observation time advances only when data arrives.
+    #[specta(type = JsSafeInt)]
+    pub now_ms: i64,
     pub interval_ms: u32,
     pub population_revision: u32,
     pub persistence: DockerPersistence,
@@ -200,6 +203,8 @@ pub struct DockerHistoryPoint {
     pub metrics: DockerMetrics,
     pub measured_ms: u32,
     pub expected_ms: u32,
+    /// Complete measured coverage of this bucket.
+    pub covered: bool,
     #[specta(type = JsSafeInt)]
     pub population_revision: i64,
     #[specta(type = JsSafeInt)]

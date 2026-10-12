@@ -1,3 +1,4 @@
+import { dockerKeys } from "@core/query-keys";
 import { unwrap } from "@core/transport";
 import { useQuery } from "@tanstack/react-query";
 import { memo, useState } from "react";
@@ -13,7 +14,7 @@ import {
 } from "~/components/ui/select";
 import { useTransport } from "~/lib/transport-context";
 import { useHostId } from "~/stores/host-store";
-import { dockerKeys, useDockerHistory } from "../_hooks/use-docker";
+import { useDockerHistory } from "../_hooks/use-docker";
 import { containerPath, lifecycleLabel } from "../_lib/presentation";
 import { ContainerHistory } from "./container-history";
 import {

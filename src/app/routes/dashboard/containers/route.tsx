@@ -1,3 +1,7 @@
+import {
+  dockerPersistenceLabel,
+  dockerRuntimeScopeLabel,
+} from "@core/docker-labels";
 import { formatBytes, formatPercent } from "@core/format";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation, useSearchParams } from "react-router";
@@ -62,8 +66,7 @@ function LocalContainersRoute() {
   const range = (params.get("range") ?? "15m") as DockerRange;
   const validRange = range in DOCKER_RANGES ? range : "15m";
   const end = params.has("end") ? Number(params.get("end")) : null;
-  const now =
-    Math.floor((snapshot?.observed_ms ?? Date.now()) / 10_000) * 10_000;
+  const now = Math.floor((snapshot?.now_ms ?? Date.now()) / 10_000) * 10_000;
   const to = end ?? now;
   const from = to - DOCKER_RANGES[validRange];
   const engine = snapshot?.engine?.id ?? "";
@@ -256,7 +259,7 @@ function LocalContainersRoute() {
         </>
       ) : (
         <>
-          {snapshot.message && (
+          {(snapshot.message || snapshot.status === "idle_suspended") && (
             <p
               role="status"
               className="rounded-control border border-border px-3 py-2 text-[12px] text-muted-foreground"
@@ -301,19 +304,23 @@ function LocalContainersRoute() {
             {historyControls}
           </div>
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <p
-              role="status"
-              className="figures text-[11px] text-muted-foreground"
-            >
-              Container workload · CPU {aggregate.cpu_measured}/
-              {aggregate.expected}, memory {aggregate.memory_measured}/
-              {aggregate.expected} measured · observed{" "}
-              {new Date(snapshot.observed_ms).toLocaleTimeString()} · every{" "}
-              {snapshot.interval_ms / 1000}s
-              {aggregate.partial
-                ? " · Partial population; totals do not identify the global top consumer"
-                : ""}
-            </p>
+            <div className="figures text-[11px] text-muted-foreground">
+              <span role="status">
+                Container workload · CPU {aggregate.cpu_measured}/
+                {aggregate.expected}, memory {aggregate.memory_measured}/
+                {aggregate.expected} measured
+                {aggregate.partial
+                  ? " · Partial population; totals do not identify the global top consumer"
+                  : ""}
+              </span>
+              <span>
+                {" · observed "}
+                {new Date(snapshot.observed_ms).toLocaleTimeString()}
+                {snapshot.interval_ms > 0
+                  ? ` · every ${snapshot.interval_ms / 1000}s`
+                  : ""}
+              </span>
+            </div>
             {metricControl}
           </div>
           {history.error ? (
@@ -343,7 +350,9 @@ function LocalContainersRoute() {
                 CPU {formatPercent(snapshot.runtime.cpu_pct)} · Footprint{" "}
                 {formatBytes(snapshot.runtime.footprint_bytes)}
               </span>{" "}
-              · {snapshot.runtime.scope}
+              ·{" "}
+              {dockerRuntimeScopeLabel[snapshot.runtime.scope] ??
+                snapshot.runtime.scope}
             </summary>
             <p className="mt-2 text-muted-foreground">
               {snapshot.runtime.explanation}
@@ -395,8 +404,10 @@ function LocalContainersRoute() {
           </SectionCard>
           <footer className="flex flex-wrap items-center gap-4 text-[11px] text-muted-foreground">
             <span>
-              History: {snapshot.persistence.status} ·{" "}
-              {formatBytes(snapshot.persistence.logical_bytes)} /{" "}
+              History:{" "}
+              {dockerPersistenceLabel[snapshot.persistence.status] ??
+                snapshot.persistence.status}{" "}
+              · {formatBytes(snapshot.persistence.logical_bytes)} /{" "}
               {formatBytes(snapshot.persistence.allowance_bytes)} logical
               allowance
               {snapshot.persistence.retained_from_ms !== null
