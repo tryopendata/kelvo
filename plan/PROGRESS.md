@@ -61,7 +61,7 @@ Known follow-ups (small, not scheduled):
 | Network attribution (per-app history, brush, Apps table) | [D-089](decisions.md) | Done (runs from source) | Live curl within 3%, tray cost +0.04 pp; Chrome/Safari downloads left to manual QA |
 | Sample holds and metric kinds on the live stream | [D-090](decisions.md) | Done | Rust publishes kinds and holds, charts join by them. The client-side data-semantics audit findings were decided and fixed in [D-092](decisions.md); the real app was checked over tray-only history with it (2026-10-06) |
 | Data-boundary follow-ups | [D-092](decisions.md) | Done; real-app check open | Group A done: engine, settings and history facts generated as constants (SAMPLING_PLANS, METRIC_CODES, tiers), process refusal from Rust. Group B done: net/disk totals as catalog metrics (gap when any part is), HostInfo gpu_dvfs_mhz and boot_mounts, LiveStatus primary_iface and power_source, self.cpu Mean, memory composition over mem_total_bytes, overview disk from disk.used, mock held staleness. Group C done: rollups weigh Mean/Rate samples by their span (capped at the previous sample's hold); the engine keeps the last hour of its emitted bucket rows plus the open buckets in `LiveHub`, and `query_history` merges them over the store (from them alone with history unavailable); `HistorySeries.hold_ms` (slowest period under the current settings, or the bucket) drives the timeline's joins, replacing the 1.5x rule and the ring stitching, and Live re-reads history when a bucket closes; `battery_hours` takes local hour boundaries; `seriesStats`, `bucketAverages` and a shared `windowMean` (popover footer, settings overhead) run on the `seriesWindow` grid; the mock has no `utun3`. `complete_to_ms` is not on the wire: the Live window still ends at the open bucket's start. Real app: the Power stack is continuous over tray-only history (2026-10-06). Open: check Timeline Live, the battery bars and history-unavailable in `bun run tauri dev` on real hardware |
-| Local Docker container monitoring | [Docker plan](docker-container-monitoring.md) | In progress | User authorized OrbStack validation + documented Desktop/Colima API surfaces; schema/backend, store and frontend implementation underway; unavailable runtime evidence remains explicit |
+| Local Docker container monitoring | [Docker plan](docker-container-monitoring.md) | Implemented; merged | Reviews and automated verification passed; user authorized merge/cleanup/push with real-world acceptance deferred as follow-ups |
 | v1.x QA and polish (manual, from source) | [v1](v1-local-monitor.md) | Next | The user runs the dev build day to day; sessions fix batches of filed issues |
 | v1.x Release: distribution, updater, install | [v1](v1-local-monitor.md) | Not started | After QA; the old v1.0 phase 6 distribution items (D-078) |
 | v2.0 Widget manifest and popover composer | [v2](v2-customization-widgets.md) | Not started | |
@@ -74,6 +74,26 @@ Known follow-ups (small, not scheduled):
 Status values: Not started, In progress, Blocked (say on what), Done (with the verification that proved it).
 
 ## Log
+
+### 2026-10-11 (Docker merged; remaining acceptance deferred)
+
+After the outstanding acceptance checks below were reported, the user explicitly
+requested merge to `main`, cleanup and push. This supersedes the earlier pending
+integration decision: `main` fast-forwarded from `4c44aae` to `4f35d32`, including
+reviewed implementation `73f485c`. The feature worktree and branch were removed;
+the user's untracked `plan/container-mocks/` files remain untouched.
+
+Architecture, database and UI review/fix iterations are approved. The final
+verification evidence below remains applicable to the merged source: 814 Rust
+and 939 frontend tests, 262 functional browser cases, 10 Chromium performance
+gates, bindings freshness and installed OrbStack adapter/worker checks passed.
+
+The user-authorized integration defers these checks as follow-ups, without
+claiming they passed: integrated 24-hour soak; whole-app module-off/on overhead
+and daemon/VM CPU/energy measurements; controlled 32/128/200-container timing and
+aligned end-to-end CPU/memory accuracy; actual Docker Desktop/Colima runtime
+validation. H1–H3 and release acceptance remain open. Push runs the repository's
+normal pre-push checks; remote publication is reported after completion.
 
 ### 2026-10-11 (Docker automated verification complete; acceptance outstanding)
 

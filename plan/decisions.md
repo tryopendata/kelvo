@@ -107,7 +107,7 @@ See [README](README.md) for the roadmap and [architecture.md](architecture.md) f
 | D-100 | The engine's process view and usage key carry their own IPC derives | Accepted |
 | D-101 | SF Pro for the UI, SF Pro Rounded for headline figures; no monospace or uppercase labels | Accepted |
 | D-102 | Menu bar settings: bars, readouts after the bars, and separate items as three independent choices | Accepted |
-| D-103 | Local Docker monitoring has its own clock and history | In progress |
+| D-103 | Local Docker monitoring has its own clock and history | Accepted |
 | D-104 | Remote Macs reuse the app and isolate mirrored history | Accepted |
 
 ---
@@ -3223,10 +3223,11 @@ The combined menu bar item printed one number, the hottest temperature. Watts, m
 
 ## D-103: Local Docker monitoring has its own clock and history
 
-Status: In progress, 2026-10-11. Schema v6 and the worker/recorder integration are
-implemented in the Docker worktree; architecture, database and UI reviews are
-approved after fixes. Release verification remains pending. No feature
-implementation or schema migration has shipped.
+Status: Accepted, 2026-10-11. Schema v6 and the worker/recorder integration are
+implemented on main; architecture, database and UI reviews are approved after
+fixes. The user authorized integration with remaining real-world acceptance
+checks deferred as follow-ups. Release acceptance remains open; merging the
+implementation does not claim a released binary.
 
 ### Context
 

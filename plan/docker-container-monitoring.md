@@ -1,34 +1,32 @@
 # Docker container monitoring
 
-**Status:** In progress — proceeding with OrbStack validation and documented Docker Desktop/Colima API surfaces, as authorized by the user. **Date:** 2026-10-11.
+**Status:** Implemented and merged to `main`; real-world release acceptance remains open. **Date:** 2026-10-11.
 
-Execution workspace: `codex/docker-container-monitoring` in
-`/Users/riley/Projects/vitals-docker-container-monitoring`.
+The reviewed implementation (`73f485c`) and verification record (`4f35d32`) were
+fast-forwarded into `main` from `4c44aae`. The user explicitly requested merge,
+cleanup and push after the outstanding acceptance checks were reported. The
+feature worktree and `codex/docker-container-monitoring` branch are removed.
 
-Execution tracking (dependency order): A partial ([evidence](docker-container-monitoring-compatibility.md)); B scoped verification passed;
-C–G implemented, scoped-tested and review-approved on main `4c44aae`; H1–H3
-remain open for final integrated and real-world acceptance. Completion requires each milestone's
-verification evidence, including its real-engine checks and 24-hour soak.
-The user authorized proceeding with OrbStack evidence and the documented common
-Docker Engine API. Docker Desktop/Colima runtime-specific checks remain unverified;
-their absence does not block implementation. Review/fix iterations, merge to main
-and worktree cleanup are authorized after completion and verification.
+Execution tracking (dependency order): A partial
+([evidence](docker-container-monitoring-compatibility.md)); B–G implemented,
+verified and review-approved; H1–H3 retain the outstanding real-world acceptance
+checks. Integration is authorized with those checks deferred as follow-ups; this
+does not mark them passed or claim a released binary.
 
-Progress recorded 2026-10-11: B's Rust DTOs, generated bindings, typed transport/mock
-parity and relational schema/query-plan checks passed scoped verification. The
-pinned client enforces a pre-decode response bound. The complete frontend check
-passes (907 tests), and live OrbStack adapter/worker checks pass. C–G still need
-integrated race, failure and full-suite acceptance. See [PROGRESS.md](PROGRESS.md)
-for verification details and handoff notes; no release milestone is accepted yet.
-Architecture, database and UI re-reviews are approved after all findings were
-fixed, including retained browsing while disabled, hidden-window log cancellation
-and inspection freshness. The overview passed its unchanged 35 ms/s gate at
-27.54 ms/s (detail 20.92 ms/s), with no long tasks. Full automated verification
-passed: `make check` (814 Rust/939 frontend tests), 262 functional browser cases
-and all 10 Chromium performance gates. Remote-host work merged meanwhile is
-preserved; Docker uses schema v6 after the remote sync v5 migration. Hardware,
-population-scale accuracy and 24-hour soak acceptance remain open; no release
-acceptance or merge is claimed.
+Final verification: `make check` passed (814 Rust/939 frontend tests), all 262
+functional Chromium/WebKit browser cases passed, all 10 Chromium performance
+gates passed (10 expected WebKit skips), generated bindings reproduced exactly,
+and installed OrbStack adapter/worker checks passed. Architecture, database and
+UI `ce:code-reviewer` reviews approved the fixes with no remaining findings.
+Docker overview/detail measured 27.54/20.92 ms/s against unchanged 35 ms/s limits,
+with no long tasks. Docker uses schema v6 after remote sync's v5 migration.
+
+Follow-ups remain: integrated 24-hour soak; whole-app module-off/on overhead and
+daemon/VM CPU/energy measurements; controlled 32/128/200-container timing and
+aligned end-to-end CPU/memory accuracy; actual Docker Desktop/Colima runtime
+validation. The user authorized OrbStack validation and the documented common
+Docker Engine API surfaces. Hardware checks must run under valid benchmark
+conditions. See [PROGRESS.md](PROGRESS.md) for evidence and acceptance details.
 
 Add a Containers tab that answers two questions: “How much of my Mac is Docker using?” and “Which container explains it?” Show the selected local engine's container workload alongside the macOS runtime processes that support it, with explicit measurement boundaries. Keep container history and lifecycle evidence so an earlier spike remains explainable.
 
