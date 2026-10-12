@@ -273,10 +273,10 @@ From opendata's `frontend-design-slop` skill, applied to Kelvo.
 | Disk page | `/dashboard/disk` | `StatStrip`, `MirrorBars`, `VolumeTable`, `ProcessTable` | v1.0 |
 | Battery page | `/dashboard/battery` | `RingStatCard`, `BatteryHistoryBars`, `StatStrip` | v1.0 |
 | Processes page | `/dashboard/processes` | `ProcessTable` (full), `SearchField`, `SegmentedControl`, `ProcessActions` (row action and context menu with Quit and Force Quit), `Dialog`, toast | v1.0 |
-| Containers overview and detail (planned) | `/dashboard/containers`, `/dashboard/containers/:engineId/:containerId` | Existing PageHeader, SectionCard, SearchField and SegmentedControl; new container table, coverage status, history/detail and bounded log pane. See [Docker UX plan](docker-container-monitoring.md#2-experience-and-visual-direction) | Independently staged; not implemented |
+| Containers overview and detail | `/dashboard/containers`, `/dashboard/containers/:engineId/:containerId` | `PageHeader`, `SectionCard`, `SearchField`, `SegmentedControl`, `DockerLocalOnly`, `EngineChooser`, `ContainerTable` (search, grouping, sorting and 32-row pages), `ContainerHistory`, `HistoryControls`, `RetainedHistory`, `ContainerLogs` (bounded tail and Follow); connection and coverage status. See [Docker UX plan](docker-container-monitoring.md#2-experience-and-visual-direction) | Implemented; runtime and release acceptance remain open |
 | WidgetKit widgets | SwiftUI extension `native/KelvoWidgets` | SwiftUI views reading the widget feed | v2.2 dev build; v3 signed public build |
 | Alerts editor | `/dashboard/alerts` | `RuleList`, `RuleEditor` | v2.3 (first built-in rule in v1.2 has no editor) |
-| Hosts fleet view | `/dashboard/hosts` | `HostCard`, `Sparkline`, `HostSwitcher` | v4.2 |
+| Hosts page and machine selection | `/dashboard/hosts`; dashboard sidebar | `HostsRoute` (local and remote hosts, connection status, CPU/memory, retry and settings), `AddMacDialog`, `HostSettings`, `HostSwitcher` (selected machine chooser) | Implemented; v4 remote hosts |
 | Add host flow | `add-host` sheet | `HostPicker`, `InstallProgress` | v4.0 |
 
 ## Component inventory

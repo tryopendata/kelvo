@@ -48,6 +48,12 @@ pub const BINDINGS_PATH: &str = concat!(
 #[cfg(debug_assertions)]
 pub const DEV_IDENTIFIER: &str = "com.tryopendata.kelvo.dev";
 
+/// Remote setup and background launches defer UI creation until a tray click.
+fn deferred_ui_launch(args: impl IntoIterator<Item = impl AsRef<str>>) -> bool {
+    args.into_iter()
+        .any(|arg| matches!(arg.as_ref(), "--remote-setup" | "--background"))
+}
+
 /// Every command and event the webview can reach. The same builder feeds the invoke
 /// handler and the bindings export, so the two cannot drift apart.
 pub fn specta_builder() -> Builder<tauri::Wry> {
@@ -179,7 +185,7 @@ pub fn run() {
         // instance shows its dashboard and the new process exits (one writer per history
         // file, architecture.md infra 8; the store's lock is the backstop).
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
-            if args.iter().any(|arg| arg == "--remote-setup" || arg == "--background") { return; }
+            if deferred_ui_launch(&args) { return; }
             if let Err(e) = windows::open_dashboard(app, None) {
                 tracing::warn!("showing the dashboard for a second launch: {e}");
             }
@@ -215,11 +221,15 @@ pub fn run() {
             AppState::start(app.handle())?;
             app.manage(windows::DashboardLifecycle::default());
             tray::create(app.handle())?;
+            #[cfg(target_os = "macos")]
+            if !deferred_ui_launch(std::env::args()) {
+                popover::create(app.handle())?;
+            }
             remote::start(app.handle())?;
             match bench::scenario() {
                 Some(scenario) => bench::start(app.handle(), scenario),
                 None => {
-                    if !std::env::args().any(|a| a == "--remote-setup" || a == "--background") && !platform::launched_at_login() {
+                    if !deferred_ui_launch(std::env::args()) && !platform::launched_at_login() {
                         windows::show_onboarding_if_needed(app.handle())?;
                         if app.state::<AppState>().settings.settings().onboarding.completed {
                             windows::open_dashboard(app.handle(),None)?;
@@ -293,4 +303,23 @@ pub fn run() {
         }
         _ => {}
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::deferred_ui_launch;
+
+    #[test]
+    fn launch_modes_defer_ui_only_for_remote_setup_and_background() {
+        for args in [vec!["kelvo"], vec!["kelvo", "--unrelated"], vec![]] {
+            assert!(!deferred_ui_launch(args));
+        }
+        for args in [
+            vec!["kelvo", "--remote-setup"],
+            vec!["kelvo", "--background"],
+            vec!["kelvo", "--background", "--remote-setup"],
+        ] {
+            assert!(deferred_ui_launch(args));
+        }
+    }
 }
