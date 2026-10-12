@@ -546,14 +546,28 @@ pub fn start(app: &AppHandle) -> anyhow::Result<()> {
             Err(e) => tracing::warn!("remote host configuration could not be read: {e}"),
         }
     }
-    let (stop, rx) = tokio::sync::watch::channel(false);
+    let (stop, mut rx) = tokio::sync::watch::channel(false);
     *state.remotes.stop.lock_ok() = Some(stop);
     let paths = SocketPaths::new(data_dir(app)?);
     let handle = app.clone();
     let control = Arc::new(move |request| control(&handle, request));
     tauri::async_runtime::spawn(async move {
-        if let Err(e) = kelvo_remote::serve_control(paths.control, control, rx).await {
-            tracing::error!("remote control socket: {e}");
+        loop {
+            if *rx.borrow() {
+                break;
+            }
+            if let Err(e) =
+                kelvo_remote::serve_control(paths.control.clone(), control.clone(), rx.clone())
+                    .await
+            {
+                tracing::error!("remote control socket: {e}");
+            } else {
+                break;
+            }
+            tokio::select! {
+                _ = tokio::time::sleep(std::time::Duration::from_secs(1)) => {},
+                _ = rx.changed() => break,
+            }
         }
     });
     refresh_metrics(app);
