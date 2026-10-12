@@ -1,7 +1,7 @@
 import { formatBytes } from "@core/format";
-import type { RemoteHostRecord } from "@core/generated/bindings";
+import type { CommandError, RemoteHostRecord } from "@core/generated/bindings";
 import { hostKeys } from "@core/query-keys";
-import { remoteErrorText } from "@core/remote-errors";
+import { remoteErrorText, sshEndpointError } from "@core/remote-errors";
 import { connectionLabel } from "@core/remote-hosts";
 import { unwrap } from "@core/transport";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -22,6 +22,8 @@ import { useRemoteHosts } from "~/hooks/use-remote-hosts";
 import { useHostSelection } from "~/lib/host-selection";
 import { useTransport } from "~/lib/transport-context";
 import { AddMacDialog, HOST_INPUT } from "./_components/add-mac-dialog";
+import { RemoteSetupError } from "./_components/remote-setup-error";
+import { SshSetupHelp } from "./_components/ssh-setup-help";
 
 function HostSettings({
   remote,
@@ -44,7 +46,10 @@ function HostSettings({
   const [deleteMirror, setDeleteMirror] = useState(false);
   const [removing, setRemoving] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<CommandError | string | null>(null);
+  const endpointError =
+    sshEndpointError(config.lan ?? "") ??
+    sshEndpointError(config.tailscale ?? "");
   const validBudget =
     Number.isInteger(config.mirror_budget_mb) &&
     config.mirror_budget_mb >= 10 &&
@@ -56,13 +61,18 @@ function HostSettings({
       const result = remove
         ? await transport.removeRemoteHost(config.id, deleteMirror, stopSharing)
         : await transport.updateRemoteHost(config);
-      if (result.status === "error") setError(remoteErrorText(result.error));
+      if (result.status === "error") setError(result.error);
       else {
         if (remove && typeof result.data === "string") toast.error(result.data);
         await cache.invalidateQueries({ queryKey: hostKeys.all });
         close();
       }
     } catch (e) {
+      console.error("[remote settings] update failed", {
+        hostId: config.id,
+        remove,
+        error: e,
+      });
       setError(String(e));
     } finally {
       setBusy(false);
@@ -190,10 +200,19 @@ function HostSettings({
             </div>
           </fieldset>
         )}
-        {error && (
-          <p role="alert" className="text-[13px] text-destructive">
-            {error}
+        {!removing && endpointError && (
+          <p role="alert" className="text-[12px] text-destructive">
+            {endpointError}
           </p>
+        )}
+        {error && <RemoteSetupError error={error} />}
+        {!removing && (
+          <SshSetupHelp
+            saved
+            lan={config.lan}
+            tailscale={config.tailscale}
+            busy={busy}
+          />
         )}
         <div className="flex justify-between gap-2">
           {removing ? (
@@ -218,7 +237,7 @@ function HostSettings({
               busy ||
               !config.name.trim() ||
               !(config.lan?.trim() || config.tailscale?.trim()) ||
-              (!removing && !validBudget)
+              (!removing && (!validBudget || !!endpointError))
             }
             onClick={() => run(removing)}
           >

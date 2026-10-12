@@ -20,6 +20,7 @@ export const commands = {
 	/**  Every host, the local one first. */
 	listHosts: () => __TAURI_INVOKE<HostRecord[]>("list_hosts"),
 	listRemoteHosts: () => __TAURI_INVOKE<RemoteHostRecord[]>("list_remote_hosts"),
+	remoteSshConfigStatus: () => typedError<RemoteSshConfigStatus, CommandError>(__TAURI_INVOKE("remote_ssh_config_status")),
 	inspectRemoteSshHost: (alias: string) => typedError<RemoteSshHostTrust, CommandError>(__TAURI_INVOKE("inspect_remote_ssh_host", { alias })),
 	acceptRemoteSshHost: (token: string) => typedError<null, CommandError>(__TAURI_INVOKE("accept_remote_ssh_host", { token })),
 	prepareRemoteHost: (lan: string | null, tailscale: string | null) => typedError<RemoteHostPreparation, CommandError>(__TAURI_INVOKE("prepare_remote_host", { lan, tailscale })),
@@ -1846,6 +1847,8 @@ export type RemoteHostStatus = {
 };
 
 export type RemoteRoute = "lan" | "tailscale";
+
+export type RemoteSshConfigStatus = "missing" | "present";
 
 export type RemoteSshHostTrust = {
 	token: string,

@@ -18,6 +18,8 @@ import type {
 import { trayStyleMenuBar } from "@core/settings-patch";
 
 export type ScenarioName =
+  | "ssh-auth"
+  | "ssh-no-config"
   | "ssh-untrusted"
   | "multi-host"
   | "default"
@@ -55,7 +57,9 @@ export type ScenarioName =
   | "docker-idle";
 
 export const SCENARIOS: readonly ScenarioName[] = [
+  "ssh-auth",
   "ssh-untrusted",
+  "ssh-no-config",
   "multi-host",
   "default",
   "sleep-gap",

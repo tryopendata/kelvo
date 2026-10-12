@@ -52,6 +52,7 @@ import {
   type RemoteHostConfig,
   type RemoteHostPreparation,
   type RemoteHostRecord,
+  type RemoteSshConfigStatus,
   type RemoteSshHostTrust,
   type SensorDump,
   type SeriesSelector,
@@ -127,6 +128,7 @@ export interface Transport {
   dockerResume(): Promise<CommandResult<DockerSnapshot>>;
   listHosts(): Promise<HostRecord[]>;
   listRemoteHosts(): Promise<RemoteHostRecord[]>;
+  remoteSshConfigStatus(): Promise<CommandResult<RemoteSshConfigStatus>>;
   inspectRemoteSshHost(
     alias: string
   ): Promise<CommandResult<RemoteSshHostTrust>>;
@@ -393,6 +395,7 @@ export function createTauriTransport(label: string): Transport {
     listHosts: () => commands.listHosts(),
     listRemoteHosts: () => commands.listRemoteHosts(),
     inspectRemoteSshHost: (alias) => commands.inspectRemoteSshHost(alias),
+    remoteSshConfigStatus: () => commands.remoteSshConfigStatus(),
     acceptRemoteSshHost: (token) => commands.acceptRemoteSshHost(token),
     prepareRemoteHost: (lan, tailscale) =>
       commands.prepareRemoteHost(lan, tailscale),

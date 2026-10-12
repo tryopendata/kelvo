@@ -1093,6 +1093,12 @@ export function createMockTransport(
       for (const e of Object.values(emitters)) e.clear();
     },
 
+    async remoteSshConfigStatus() {
+      record("remote_ssh_config_status");
+      return ok(
+        options.scenarios?.includes("ssh-no-config") ? "missing" : "present"
+      );
+    },
     async inspectRemoteSshHost(alias) {
       record("inspect_remote_ssh_host", alias);
       return ok({
@@ -1113,6 +1119,11 @@ export function createMockTransport(
     },
     async prepareRemoteHost(lan, tailscale) {
       record("prepare_remote_host", lan, tailscale);
+      if (options.scenarios?.includes("ssh-auth"))
+        return err({
+          kind: "remote_auth",
+          message: "Permission denied (publickey).",
+        });
       if (!lan && !tailscale)
         return err({
           kind: "invalid_argument",

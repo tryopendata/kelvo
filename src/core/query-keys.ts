@@ -124,6 +124,7 @@ export const historyKeys = {
 };
 
 export const hostKeys = {
+  sshConfig: () => ["ssh-config"] as const,
   all: ["hosts"] as const,
   list: () => [...hostKeys.all, "list"] as const,
   remote: () => [...hostKeys.all, "remote"] as const,

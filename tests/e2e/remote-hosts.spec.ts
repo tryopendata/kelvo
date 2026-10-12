@@ -1,6 +1,111 @@
 import { expect, test } from "@playwright/test";
 
 for (const theme of ["light", "dark"]) {
+  test(`saved-host SSH verification guidance (${theme})`, async ({
+    page,
+  }, info) => {
+    await page.setViewportSize({ width: 1280, height: 833 });
+    await page.goto(
+      `/?route=/dashboard/hosts&scenario=multi-host&theme=${theme}&ticks=0`
+    );
+    await page.getByRole("button", { name: "Settings", exact: true }).click();
+    await page
+      .getByRole("button", { name: "Show SSH setup guide", exact: true })
+      .click();
+    const verification = page.getByText(/BatchMode=no/).first();
+    await expect(verification).toContainText("StrictHostKeyChecking=ask");
+    await expect(page.getByText(/BatchMode=yes/).first()).toContainText(
+      "StrictHostKeyChecking=yes"
+    );
+    await expect(
+      page.getByText(/for key in \/etc\/ssh\/ssh_host_/)
+    ).toHaveCount(1);
+    await verification.scrollIntoViewIfNeeded();
+    await page.screenshot({
+      path: `test-results/screens/ssh-saved-verification-${theme}-${info.project.name}.png`,
+      animations: "disabled",
+    });
+  });
+
+  test(`SSH authentication recovery (${theme})`, async ({ page }, info) => {
+    await page.setViewportSize({ width: 1280, height: 833 });
+    await page.goto(
+      `/?route=/dashboard/hosts&scenario=ssh-auth&theme=${theme}&ticks=0`
+    );
+    await page.getByRole("button", { name: "Add Mac", exact: true }).click();
+    await page
+      .getByLabel("LAN SSH alias", { exact: true })
+      .fill("user@office.local");
+    await page
+      .getByRole("button", { name: "Check connection", exact: true })
+      .click();
+    await expect(page.getByRole("alert")).toContainText(
+      "unlock your key in your SSH agent"
+    );
+    await page.getByText("Technical details", { exact: true }).click();
+    await expect(
+      page.getByText("Permission denied (publickey).", { exact: true })
+    ).toBeVisible();
+    await page.screenshot({
+      path: `test-results/screens/ssh-auth-${theme}-${info.project.name}.png`,
+      animations: "disabled",
+    });
+    await page
+      .getByLabel("LAN SSH alias", { exact: true })
+      .fill("other@office.local");
+    await expect(page.getByRole("alert")).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: "Check connection", exact: true })
+    ).toBeEnabled();
+  });
+
+  test(`SSH setup guidance without a config (${theme})`, async ({
+    page,
+  }, info) => {
+    await page.setViewportSize({ width: 1280, height: 833 });
+    await page.goto(
+      `/?route=/dashboard/hosts&scenario=ssh-no-config&theme=${theme}&ticks=0`
+    );
+    await page.getByRole("button", { name: "Add Mac", exact: true }).click();
+    await expect(page.getByText(/No ~\/\.ssh\/config found/)).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Hide SSH setup guide" })
+    ).toHaveAttribute("aria-expanded", "true");
+    await page
+      .getByLabel("LAN SSH alias", { exact: true })
+      .fill("user@office.local");
+    await page.getByText(/Host studio/).scrollIntoViewIfNeeded();
+    await page.screenshot({
+      path: `test-results/screens/ssh-guide-${theme}-${info.project.name}.png`,
+      animations: "disabled",
+    });
+    await page
+      .getByRole("button", { name: "Check connection", exact: true })
+      .click();
+    await expect(
+      page.getByRole("button", { name: "Connect", exact: true })
+    ).toBeVisible();
+    await page.getByRole("button", { name: "Cancel", exact: true }).click();
+    await page.goto(`/?route=/dashboard/settings&theme=${theme}&ticks=0`);
+    await expect(
+      page.getByRole("heading", { name: "Settings", exact: true })
+    ).toBeVisible();
+    await page.screenshot({
+      path: `test-results/screens/ssh-neighbor-settings-${theme}-${info.project.name}.png`,
+      animations: "disabled",
+    });
+    await page.goto(`/?route=/dev/gallery&theme=${theme}&ticks=0`);
+    await expect(
+      page.getByRole("heading", { name: "Gallery", exact: true })
+    ).toBeVisible();
+    await page.screenshot({
+      path: `test-results/screens/ssh-neighbor-gallery-${theme}-${info.project.name}.png`,
+      animations: "disabled",
+    });
+  });
+}
+
+for (const theme of ["light", "dark"]) {
   test(`remote host selection and setup (${theme})`, async ({ page }, info) => {
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));

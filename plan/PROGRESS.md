@@ -75,6 +75,56 @@ Status values: Not started, In progress, Blocked (say on what), Done (with the v
 
 ## Log
 
+### 2026-10-12 (SSH setup guidance and error recovery)
+
+Pulled main through `1b2e535`, then applied `ce:handling-errors` to Add Mac and
+saved-host Settings. A typed shell command detects whether this Mac has
+`~/.ssh/config`; missing configuration opens a setup guide without blocking direct
+`user@address` connections. Detection failures remain distinct from missing files,
+with details and a recheck action. Finding a file deliberately does not claim that
+SSH works: Check connection remains the actual authentication and remote probe.
+
+The guide covers Remote Login, the signed-in remote account, public-key setup and
+agent unlocking, an editable config example, LAN/Tailscale choices, and copyable,
+shell-quoted Terminal tests. Authentication, reachability, trust, incompatible
+hosts, and identity mismatches now have recovery advice alongside expandable raw
+diagnostics. Address edits clear old errors and trust prompts; expired trust tokens
+return to verification. Fingerprint instructions cover all scanned key types.
+Unexpected setup failures log their operation and destination while keeping inputs.
+
+Visual comparison: browser mock screenshots in light/dark and Chromium/WebKit,
+against Hosts, Settings and the gallery. Intentional differences: a plain bordered
+help section in setup/settings, selectable command examples on the muted surface,
+and expandable technical details. The expanded guide makes the dialog scroll so
+instructions stay with the task; new-key instructions have a separate disclosure.
+Existing typography, controls, spacing and semantic colors are retained; only the
+error summary is red, with recovery instructions in normal secondary text.
+
+Verification: 962 frontend tests; typecheck, Biome and Rust formatting/clippy;
+839 Rust tests passed (32 ignored). The first unsandboxed Rust run exceeded the
+process collector allocation gate at 1.02/tick against 1.00; the full rerun after
+browser tests stopped passed. Six new workflow regressions failed against the old
+dialog, and config-detection and command-quoting mutations failed their tests.
+Remote-host Playwright coverage includes both themes, config-missing and auth
+errors, trust, settings, removal and selection persistence. Native two-Mac setup
+and actual SSH-agent interoperability were not exercised in this change.
+
+Guidance checked against [Apple Remote Login](https://support.apple.com/en-au/guide/mac-help/mchlp1066/mac)
+and [OpenSSH configuration](https://man.openbsd.com/ssh_config.5). No SSH files or
+keys are created or modified by this guidance check.
+
+Production-readiness review: dispatched `ce:code-reviewer`; fixed both findings
+and received APPROVE on re-review. Saved-host guidance now separates interactive
+host verification (`BatchMode=no`, `StrictHostKeyChecking=ask`) from the strict
+noninteractive access test, with fingerprint comparison instructions. The broad
+`remote_unreachable` variant also covers installation/protocol/local I/O failures,
+so its summary is neutral and its actual diagnostic stays visible. Both regression
+tests failed before the fixes; the focused tests and 22 remote-host browser checks
+pass. Saved-host guide screenshots were compared in both themes. The final full
+browser suite passed 286 tests, with 10 existing skips. Final `make check` passed:
+965 frontend tests, 839 Rust tests (32 ignored), formatting, lint, typecheck, and
+standard/App Store Rust checks.
+
 ### 2026-10-12 (remote access settings deadlock)
 
 The first real Add Mac attempt (to an M3 Max over Tailscale) failed with "Kelvo could

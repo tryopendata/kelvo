@@ -1,10 +1,11 @@
 import type {
+  CommandError,
   RemoteHostConfig,
   RemoteHostPreparation,
   RemoteSshHostTrust,
 } from "@core/generated/bindings";
 import { hostKeys } from "@core/query-keys";
-import { isHostKeyError, remoteErrorText } from "@core/remote-errors";
+import { isHostKeyError, sshEndpointError } from "@core/remote-errors";
 import { useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { Button } from "~/components/ui/button";
@@ -17,6 +18,8 @@ import {
 } from "~/components/ui/dialog";
 import { Switch } from "~/components/ui/switch";
 import { useTransport } from "~/lib/transport-context";
+import { RemoteSetupError } from "./remote-setup-error";
+import { SshSetupHelp } from "./ssh-setup-help";
 
 export const HOST_INPUT =
   "h-8 w-full rounded-control border border-input bg-background px-2 text-[13px] outline-none focus-visible:ring-2 focus-visible:ring-ring";
@@ -41,14 +44,18 @@ export function AddMacDialog({
   >("idle");
   const setupId = useRef<string | null>(null);
   const [hostKeyError, setHostKeyError] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<CommandError | string | null>(null);
   const busy = phase !== "idle";
   const endpoints = {
     lan: lan.trim() || null,
     tailscale: tailscale.trim() || null,
   };
+  const endpointError = sshEndpointError(lan) ?? sshEndpointError(tailscale);
   const prepare = async () => {
+    if (endpointError) return;
     setHostKeyError(false);
+    setPrepared(null);
+    setTrust(null);
     setPhase("checking");
     setError(null);
     try {
@@ -58,12 +65,18 @@ export function AddMacDialog({
       );
       if (result.status === "error") {
         setHostKeyError(isHostKeyError(result.error));
-        setError(remoteErrorText(result.error));
+        setError(result.error);
       } else {
         setPrepared(result.data);
         if (!name.trim()) setName(result.data.name);
       }
     } catch (e) {
+      console.error("[remote setup] operation failed", {
+        phase: "prepare",
+        lan,
+        tailscale,
+        error: e,
+      });
       setError(String(e));
     } finally {
       setPhase("idle");
@@ -71,12 +84,21 @@ export function AddMacDialog({
   };
   const inspect = async (alias: string) => {
     setPhase("verifying");
+    setError(null);
     setTrust(null);
     try {
       const result = await transport.inspectRemoteSshHost(alias);
-      if (result.status === "error") setError(remoteErrorText(result.error));
-      else setTrust(result.data);
+      if (result.status === "error") setError(result.error);
+      else {
+        setError(null);
+        setTrust(result.data);
+      }
     } catch (e) {
+      console.error("[remote setup] inspect failed", {
+        lan,
+        tailscale,
+        error: e,
+      });
       setError(String(e));
     } finally {
       setPhase("idle");
@@ -87,12 +109,22 @@ export function AddMacDialog({
     setPhase("verifying");
     try {
       const result = await transport.acceptRemoteSshHost(trust.token);
-      if (result.status === "error") setError(remoteErrorText(result.error));
-      else {
+      if (result.status === "error") {
+        setError(result.error);
+        setTrust(null);
+        setHostKeyError(true);
+      } else {
         setTrust(null);
         await prepare();
       }
     } catch (e) {
+      console.error("[remote setup] accept failed", {
+        lan,
+        tailscale,
+        error: e,
+      });
+      setTrust(null);
+      setHostKeyError(true);
       setError(String(e));
     } finally {
       setPhase("idle");
@@ -118,12 +150,18 @@ export function AddMacDialog({
         showMenuBar,
         attempt
       );
-      if (result.status === "error") setError(remoteErrorText(result.error));
-      else {
+      if (result.status === "error") {
+        setError(result.error);
+        if (isHostKeyError(result.error)) {
+          setPrepared(null);
+          setHostKeyError(true);
+        }
+      } else {
         await cache.invalidateQueries({ queryKey: hostKeys.all });
         onOpenChange(false);
       }
     } catch (e) {
+      console.error("[remote setup] add failed", { lan, tailscale, error: e });
       setError(String(e));
     } finally {
       setupId.current = null;
@@ -141,8 +179,13 @@ export function AddMacDialog({
     try {
       const result = await transport.cancelRemoteSetup(attempt);
       if (setupId.current === attempt && result.status === "error")
-        setError(remoteErrorText(result.error));
+        setError(result.error);
     } catch (e) {
+      console.error("[remote setup] cancel failed", {
+        lan,
+        tailscale,
+        error: e,
+      });
       if (setupId.current === attempt) setError(String(e));
     }
     // The original add response owns completion: its rollback must finish first.
@@ -183,8 +226,10 @@ export function AddMacDialog({
                 setLan(e.target.value);
                 setPrepared(null);
                 setTrust(null);
+                setHostKeyError(false);
+                setError(null);
               }}
-              placeholder="studio.local"
+              placeholder="studio or username@studio.local"
               autoCapitalize="none"
               spellCheck={false}
             />
@@ -198,6 +243,8 @@ export function AddMacDialog({
                 setTailscale(e.target.value);
                 setPrepared(null);
                 setTrust(null);
+                setHostKeyError(false);
+                setError(null);
               }}
               placeholder="studio-tailnet"
               autoCapitalize="none"
@@ -205,8 +252,9 @@ export function AddMacDialog({
             />
           </label>
           <p className="text-[12px] text-muted-foreground">
-            Use the SSH user signed in on the other Mac. Existing SSH keys and
-            configuration are used.
+            Enter an alias from ~/.ssh/config or user@address, without “ssh”.
+            Use the account signed in on the other Mac. Only one address is
+            needed.
           </p>
           <div className="flex items-center justify-between gap-3 text-[12px]">
             <span>Show menu-bar icon on the other Mac</span>
@@ -217,7 +265,12 @@ export function AddMacDialog({
             />
           </div>
         </fieldset>
-        {prepared && (
+        {endpointError && (
+          <p role="alert" className="text-[12px] text-destructive">
+            {endpointError}
+          </p>
+        )}
+        {prepared && !error && (
           <p className="text-[13px] text-fg-subtle">
             {prepared.message ??
               (prepared.installed
@@ -238,11 +291,7 @@ export function AddMacDialog({
                   : "Setting up Kelvo and connecting…"}
           </p>
         )}
-        {error && (
-          <p role="alert" className="text-[13px] text-destructive">
-            {error}
-          </p>
-        )}
+        {error && <RemoteSetupError error={error} />}
         {hostKeyError && error && !prepared && !trust && (
           <div className="flex gap-2">
             {endpoints.lan && (
@@ -271,7 +320,13 @@ export function AddMacDialog({
           <div className="grid gap-2 border-border-subtle border-y py-3 text-[12px]">
             <p>
               Verify {trust.hostname}:{trust.port} with the owner of that Mac
-              before trusting its SSH key.
+              before trusting its SSH key. On the other Mac, run this in
+              Terminal and compare each SHA256 fingerprint:
+            </p>
+            <p className="select-text break-all">
+              {
+                'for key in /etc/ssh/ssh_host_*_key.pub; do ssh-keygen -lf "$key"; done'
+              }
             </p>
             {trust.fingerprints.map((fingerprint) => (
               <p key={fingerprint} className="select-text break-all">
@@ -282,6 +337,13 @@ export function AddMacDialog({
               Trust this host
             </Button>
           </div>
+        )}
+        {(!prepared || error) && !trust && (
+          <SshSetupHelp
+            lan={endpoints.lan}
+            tailscale={endpoints.tailscale}
+            busy={busy}
+          />
         )}
         <DialogFooter>
           <Button
@@ -301,7 +363,11 @@ export function AddMacDialog({
             </Button>
           ) : (
             <Button
-              disabled={busy || (!endpoints.lan && !endpoints.tailscale)}
+              disabled={
+                busy ||
+                !!endpointError ||
+                (!endpoints.lan && !endpoints.tailscale)
+              }
               onClick={prepare}
             >
               Check connection

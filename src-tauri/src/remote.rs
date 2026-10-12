@@ -105,6 +105,32 @@ pub struct RemoteSshHostTrust {
     pub fingerprints: Vec<String>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum RemoteSshConfigStatus {
+    Missing,
+    Present,
+}
+
+/// A missing per-user config is guidance, not a connection failure: OpenSSH can
+/// also use defaults, the system config, and an agent. Never read private keys.
+fn ssh_config_status(path: &std::path::Path) -> Result<RemoteSshConfigStatus, CommandError> {
+    match std::fs::metadata(path) {
+        Ok(metadata) if metadata.is_file() => Ok(RemoteSshConfigStatus::Present),
+        Ok(_) => Err(failure("~/.ssh/config must be a file, not a directory")),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            Ok(RemoteSshConfigStatus::Missing)
+        }
+        Err(error) => Err(failure(format!("Could not check ~/.ssh/config: {error}"))),
+    }
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn remote_ssh_config_status(app: AppHandle) -> Result<RemoteSshConfigStatus, CommandError> {
+    ssh_config_status(&app.path().home_dir().map_err(failure)?.join(".ssh/config"))
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 struct SavedHost {
     config: RemoteHostConfig,
@@ -1428,6 +1454,22 @@ mod tests;
 #[cfg(test)]
 mod command_regressions {
     use super::*;
+
+    #[test]
+    fn ssh_config_check_distinguishes_missing_files_and_invalid_paths() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = dir.path().join("config");
+        assert_eq!(
+            ssh_config_status(&config).unwrap(),
+            RemoteSshConfigStatus::Missing
+        );
+        std::fs::write(&config, "Host studio\n HostName studio.local\n").unwrap();
+        assert_eq!(
+            ssh_config_status(&config).unwrap(),
+            RemoteSshConfigStatus::Present
+        );
+        assert!(ssh_config_status(dir.path()).is_err());
+    }
 
     #[test]
     fn route_failures_report_the_actionable_error_with_every_message() {

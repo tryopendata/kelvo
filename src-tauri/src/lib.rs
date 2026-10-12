@@ -71,6 +71,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             docker::docker_logs, docker::docker_close_logs,
             commands::list_hosts,
             remote::list_remote_hosts,
+            remote::remote_ssh_config_status,
             remote::inspect_remote_ssh_host,
             remote::accept_remote_ssh_host,
             remote::prepare_remote_host,

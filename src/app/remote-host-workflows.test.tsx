@@ -57,6 +57,190 @@ function hostRow(name = "Studio Mac") {
 }
 
 describe("remote Mac recovery workflows", () => {
+  it("offers interactive trust verification separately from the saved-host SSH test", async () => {
+    const source = transport();
+    mount(source);
+    await screen.findByRole("heading", { name: "Studio Mac" });
+    fireEvent.click(hostRow().getByRole("button", { name: "Settings" }));
+    fireEvent.change(screen.getByLabelText("LAN SSH alias"), {
+      target: { value: "o'brien@studio.local" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Show SSH setup guide" })
+    );
+    expect(
+      screen.getByText(/BatchMode=no.*o'\\''brien@studio.local/)
+    ).toHaveTextContent("StrictHostKeyChecking=ask");
+    expect(
+      screen.getByText(/BatchMode=yes.*o'\\''brien@studio.local/)
+    ).toHaveTextContent("StrictHostKeyChecking=yes");
+    expect(
+      screen.getByText(/for key in \/etc\/ssh\/ssh_host_/)
+    ).toHaveTextContent("ssh-keygen -lf");
+  });
+
+  it("keeps installation failure diagnostics visible without diagnosing a network problem", async () => {
+    const source = transport();
+    source.addRemoteHost = async () => ({
+      status: "error",
+      error: {
+        kind: "remote_unreachable",
+        message: "A packaged Kelvo.app with bundled helper is required.",
+      },
+    });
+    mount(source);
+    fireEvent.click(await screen.findByRole("button", { name: "Add Mac" }));
+    fireEvent.change(screen.getByLabelText("LAN SSH alias"), {
+      target: { value: "office.local" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Check connection" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Connect" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "A packaged Kelvo.app with bundled helper is required."
+    );
+    expect(screen.getByRole("alert")).not.toHaveTextContent("could not reach");
+  });
+
+  it("guides missing-config setup without blocking a direct SSH connection", async () => {
+    const source = transport();
+    source.remoteSshConfigStatus = async () => ({
+      status: "ok",
+      data: "missing",
+    });
+    mount(source);
+    fireEvent.click(await screen.findByRole("button", { name: "Add Mac" }));
+    expect(
+      await screen.findByText(/No ~\/\.ssh\/config found/)
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Hide SSH setup guide" })
+    ).toHaveAttribute("aria-expanded", "true");
+    fireEvent.change(screen.getByLabelText("LAN SSH alias"), {
+      target: { value: "user@office.local" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Check connection" }));
+    expect(
+      await screen.findByRole("button", { name: "Connect" })
+    ).toBeEnabled();
+  });
+
+  it("reports a failed config check and lets the user recheck after fixing it", async () => {
+    const source = transport();
+    source.remoteSshConfigStatus = async () =>
+      unavailable("Cannot read config metadata");
+    mount(source);
+    fireEvent.click(await screen.findByRole("button", { name: "Add Mac" }));
+    expect(
+      await screen.findByText(/Could not check ~\/\.ssh\/config/)
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(/No ~\/\.ssh\/config found/)
+    ).not.toBeInTheDocument();
+    source.remoteSshConfigStatus = async () => ({
+      status: "ok",
+      data: "present",
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Recheck config" }));
+    expect(
+      await screen.findByText(/Found ~\/\.ssh\/config/)
+    ).toBeInTheDocument();
+  });
+
+  it("explains authentication recovery, retains the diagnostic, and preserves entries", async () => {
+    const source = transport();
+    source.prepareRemoteHost = async () => ({
+      status: "error",
+      error: { kind: "remote_auth", message: "Permission denied (publickey)." },
+    });
+    mount(source);
+    fireEvent.click(await screen.findByRole("button", { name: "Add Mac" }));
+    fireEvent.change(screen.getByLabelText("LAN SSH alias"), {
+      target: { value: "user@office.local" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Check connection" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "unlock your key in your SSH agent"
+    );
+    expect(
+      screen.getByText("Permission denied (publickey).")
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("LAN SSH alias")).toHaveValue(
+      "user@office.local"
+    );
+    expect(
+      screen.getByRole("button", { name: "Check connection" })
+    ).toBeEnabled();
+  });
+
+  it("clears obsolete host verification when the SSH address changes", async () => {
+    const source = transport();
+    source.prepareRemoteHost = async () => ({
+      status: "error",
+      error: { kind: "host_key_unknown", message: "Unknown key" },
+    });
+    mount(source);
+    fireEvent.click(await screen.findByRole("button", { name: "Add Mac" }));
+    fireEvent.change(screen.getByLabelText("LAN SSH alias"), {
+      target: { value: "old.local" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Check connection" }));
+    await screen.findByRole("button", { name: "Verify LAN host" });
+    fireEvent.change(screen.getByLabelText("LAN SSH alias"), {
+      target: { value: "new.local" },
+    });
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Verify LAN host" })
+    ).not.toBeInTheDocument();
+  });
+
+  it("offers a fresh verification after the trust token expires", async () => {
+    const source = transport();
+    source.prepareRemoteHost = async () => ({
+      status: "error",
+      error: { kind: "host_key_unknown", message: "Unknown key" },
+    });
+    source.acceptRemoteSshHost = async () =>
+      unavailable("SSH verification expired. Check the host again");
+    mount(source);
+    fireEvent.click(await screen.findByRole("button", { name: "Add Mac" }));
+    fireEvent.change(screen.getByLabelText("LAN SSH alias"), {
+      target: { value: "office.local" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Check connection" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Verify LAN host" })
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Trust this host" })
+    );
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "verification expired"
+    );
+    expect(
+      screen.queryByRole("button", { name: "Trust this host" })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Verify LAN host" })
+    ).toBeEnabled();
+  });
+
+  it("explains pasted SSH commands before trying to connect", async () => {
+    const source = transport();
+    mount(source);
+    fireEvent.click(await screen.findByRole("button", { name: "Add Mac" }));
+    fireEvent.change(screen.getByLabelText("LAN SSH alias"), {
+      target: { value: "ssh user@office.local" },
+    });
+    expect(screen.getByRole("alert")).toHaveTextContent("without “ssh”");
+    expect(
+      screen.getByRole("button", { name: "Check connection" })
+    ).toBeDisabled();
+    expect(
+      source.calls.some((call) => call.command === "prepare_remote_host")
+    ).toBe(false);
+  });
+
   it.each(["remote_incompatible", "host_key_unknown"] as const)(
     "offers host verification only for a host-key error: %s",
     async (kind) => {
