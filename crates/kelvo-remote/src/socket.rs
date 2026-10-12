@@ -112,19 +112,7 @@ pub async fn serve_control(
         tokio::select! {
             _=shutdown.changed()=>break,
             accepted=listener.accept()=>{
-                let (mut socket,_)=accepted?; if same_uid(&socket).is_err(){continue;} let handler=handler.clone();
-                if sessions.len()>=16 {continue;}
-                sessions.spawn(async move {
-                    let _=tokio::time::timeout(std::time::Duration::from_secs(10),async move {
-                        let size=socket.read_u32().await? as usize;
-                        if size>16*1024 {return Err(std::io::Error::new(std::io::ErrorKind::InvalidData,"control request too large"));}
-                        let mut bytes=vec![0;size];socket.read_exact(&mut bytes).await?;
-                        let request:ControlRequest=serde_json::from_slice(&bytes).map_err(std::io::Error::other)?;
-                        let reply=tokio::task::spawn_blocking(move||handler(request)).await.map_err(std::io::Error::other)?;let bytes=serde_json::to_vec(&reply).map_err(std::io::Error::other)?;
-                        socket.write_u32(bytes.len() as u32).await?;socket.write_all(&bytes).await?;
-                        socket.shutdown().await
-                    }).await;
-                });
+                accept_control(accepted, &handler, &mut sessions)?;
             },
             _=sessions.join_next(),if !sessions.is_empty()=>{}
         }
@@ -132,6 +120,50 @@ pub async fn serve_control(
     sessions.abort_all();
     while sessions.join_next().await.is_some() {}
     Ok(())
+}
+fn accept_control(
+    accepted: std::io::Result<(UnixStream, tokio::net::unix::SocketAddr)>,
+    handler: &Arc<dyn Fn(ControlRequest) -> ControlResponse + Send + Sync>,
+    sessions: &mut tokio::task::JoinSet<()>,
+) -> Result<()> {
+    let (socket, _) = accepted?;
+    if same_uid(&socket).is_err() {
+        return Ok(());
+    }
+    let handler = handler.clone();
+    if sessions.len() >= 16 {
+        return Ok(());
+    }
+    sessions.spawn(async move {
+        let _ = tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            handle_control(socket, handler),
+        )
+        .await;
+    });
+    Ok(())
+}
+async fn handle_control(
+    mut socket: UnixStream,
+    handler: Arc<dyn Fn(ControlRequest) -> ControlResponse + Send + Sync>,
+) -> std::io::Result<()> {
+    let size = socket.read_u32().await? as usize;
+    if size > 16 * 1024 {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "control request too large",
+        ));
+    }
+    let mut bytes = vec![0; size];
+    socket.read_exact(&mut bytes).await?;
+    let request: ControlRequest = serde_json::from_slice(&bytes).map_err(std::io::Error::other)?;
+    let reply = tokio::task::spawn_blocking(move || handler(request))
+        .await
+        .map_err(std::io::Error::other)?;
+    let bytes = serde_json::to_vec(&reply).map_err(std::io::Error::other)?;
+    socket.write_u32(bytes.len() as u32).await?;
+    socket.write_all(&bytes).await?;
+    socket.shutdown().await
 }
 pub async fn control_request(path: &Path, request: &ControlRequest) -> Result<ControlResponse> {
     tokio::time::timeout(std::time::Duration::from_secs(10), async {

@@ -53,15 +53,30 @@ pub async fn serve_metrics(
         tokio::select! {
             _=shutdown.changed()=>break,
             accepted=listener.accept()=>{
-                let (stream,_)=accepted?;
-                if socket::same_uid(&stream).is_err() || sessions.len()>=16 {continue;}
-                let provider=provider.clone();sessions.spawn(async move {if let Err(error)=serve_connection(stream,provider).await{tracing::debug!(%error,"remote session closed");}});
+                accept_metrics(accepted, &provider, &mut sessions)?;
             },
             _=sessions.join_next(),if !sessions.is_empty()=>{}
         }
     }
     sessions.abort_all();
     while sessions.join_next().await.is_some() {}
+    Ok(())
+}
+fn accept_metrics(
+    accepted: std::io::Result<(tokio::net::UnixStream, tokio::net::unix::SocketAddr)>,
+    provider: &Arc<dyn ServerProvider>,
+    sessions: &mut tokio::task::JoinSet<()>,
+) -> Result<()> {
+    let (stream, _) = accepted?;
+    if socket::same_uid(&stream).is_err() || sessions.len() >= 16 {
+        return Ok(());
+    }
+    let provider = provider.clone();
+    sessions.spawn(async move {
+        if let Err(error) = serve_connection(stream, provider).await {
+            tracing::debug!(%error, "remote session closed");
+        }
+    });
     Ok(())
 }
 pub async fn serve_connection<S: AsyncRead + AsyncWrite + Unpin + Send + 'static>(
@@ -96,65 +111,222 @@ pub async fn serve_connection<S: AsyncRead + AsyncWrite + Unpin + Send + 'static
     let mut bus = hub.subscribe();
     let (mut input, task) = codec::reader_task(reader);
     let _reader = codec::AbortOnDrop(task);
-    let mut interest = RemoteInterest::default();
+    let interest = RemoteInterest::default();
     let mut summary = tokio::time::interval(Duration::from_secs(5));
     summary.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-    let mut last_layout = None;
-    let mut last_process = tokio::time::Instant::now() - Duration::from_secs(3600);
+    let last_layout = None;
+    let last_process = tokio::time::Instant::now() - Duration::from_secs(3600);
     codec::write(&mut writer, &Message::SourceStatus(provider.status())).await?;
+    let mut connection = Connection {
+        provider,
+        hub,
+        writer,
+        session,
+        kinds,
+        interest,
+        last_layout,
+        last_process,
+    };
     loop {
         tokio::select! {
-            incoming=input.recv()=>{
-                let message=incoming.ok_or_else(||RemoteError::Transport("peer closed".into()))??;
-                match message {
-                    Message::Interest(next)=>{
-                        interest=next;provider.set_interest(session,interest.clone());
-                        codec::write(&mut writer,&Message::SourceStatus(provider.status())).await?;
-                        if interest.detail && let Some(frame)=hub.latest_frame(){send_frame(&mut writer,&frame,&mut last_layout).await?;}
-                    },
-                    Message::Subscribe{tiers}=>{interest.detail=tiers.contains(&kelvo_proto::LiveTier::Live1s);provider.set_interest(session,interest.clone());},
-                    Message::Unsubscribe=>{interest=RemoteInterest::default();provider.set_interest(session,interest.clone());},
-                    Message::Ping{nonce,t0_ms}=>codec::write(&mut writer,&Message::Pong{nonce,t0_ms,t_remote_ms:kelvo_engine::wall_ms()}).await?,
-                    Message::SyncRequest(mut request)=>{
-                        request.max_rows=request.max_rows.clamp(1,2000);request.max_bytes=Some(request.max_bytes.unwrap_or(16*1024).clamp(1024,256*1024));
-                        let p=provider.clone();let result=tokio::task::spawn_blocking(move||p.sync(&request,kinds)).await.map_err(|e|RemoteError::Transport(e.to_string()))?;
-                        let reply=result.unwrap_or_else(|message|Message::Error{code:kelvo_proto::ErrorCode::Internal,message});
-                        if kelvo_proto::encode_message(&reply)?.len()>256*1024 {return Err(RemoteError::Protocol("history provider exceeded page limit".into()));}
-                        codec::write(&mut writer,&reply).await?;
-                    },
-                    Message::RecentRequest{from_ms,to_ms}=>{
-                        let p=provider.clone();let reply=tokio::task::spawn_blocking(move||p.recent(from_ms.max(to_ms.saturating_sub(300_000)),to_ms)).await.map_err(|e|RemoteError::Transport(e.to_string()))?.unwrap_or_else(|message|Message::Error{code:kelvo_proto::ErrorCode::Internal,message});
-                        let reply=if kelvo_proto::encode_message(&reply)?.len()>codec::MAX_WIRE_BYTES {Message::Error{code:kelvo_proto::ErrorCode::Internal,message:"recent history snapshot exceeds transport limit".into()}}else{reply};
-                        codec::write(&mut writer,&reply).await?;
-                    },
-                    Message::Unknown=>{},
-                    _=>return Err(RemoteError::Protocol("unexpected controller message".into())),
-                }
-            },
-            event=bus.recv_event()=>match event{
-                kelvo_engine::Recv::Msg(BusMsg::Frame(frame)) if interest.detail=>send_frame(&mut writer,&frame,&mut last_layout).await?,
-                kelvo_engine::Recv::Msg(BusMsg::Caps(caps))=>codec::write(&mut writer,&Message::CapabilitiesChanged((*caps).clone())).await?,
-                kelvo_engine::Recv::Msg(BusMsg::Status(_))=>codec::write(&mut writer,&Message::SourceStatus(provider.status())).await?,
-                kelvo_engine::Recv::Msg(BusMsg::Processes(batch)) if interest.process_period_ms.is_some()=>{
-                    let period=interest.process_period_ms.unwrap_or(1000);
-                    if last_process.elapsed()>=Duration::from_millis(u64::from(period)) {
-                        if batch.rows.len()>32768 {return Err(RemoteError::Protocol("too many process rows".into()));}
-                        codec::write(&mut writer,&Message::LiveProcesses(kelvo_proto::LiveProcesses{ts_ms:batch.ts_ms,rows:batch.rows.iter().map(process_to_wire).collect(),gpu_span_ms:batch.gpu_span_ms})).await?;
-                        last_process=tokio::time::Instant::now();
-                    }
-                },
-                kelvo_engine::Recv::Lagged(_)=>return Err(RemoteError::Transport("viewer fell behind live stream".into())),
-                kelvo_engine::Recv::Closed=>return Err(RemoteError::Transport("engine stopped".into())),
-                _=>{}
-            },
-            _=summary.tick(),if !interest.detail=>{
-                if let Some(frame)=hub.latest_frame(){
-                    codec::write(&mut writer,&Message::HostSummary(kelvo_proto::HostSummary{ts_ms:frame.ts_ms,online:true,headline:frame.layout.series.iter().cloned().zip(frame.held.iter().copied()).filter(|(key,_)|["cpu.total","mem.used","mem.pressure","gpu.util","thermal.hottest","net.rx","net.tx","disk.read","disk.write"].contains(&key.metric.as_str())).collect()})).await?;
-                }
-            }
+            incoming = input.recv() => connection.incoming(incoming).await?,
+            event = bus.recv_event() => connection.event(event).await?,
+            _ = summary.tick(), if !connection.interest.detail => connection.summary().await?,
         }
     }
 }
+
+struct Connection<W> {
+    provider: Arc<dyn ServerProvider>,
+    hub: LiveHub,
+    writer: W,
+    session: u64,
+    kinds: SyncKinds,
+    interest: RemoteInterest,
+    last_layout: Option<u32>,
+    last_process: tokio::time::Instant,
+}
+impl<W: AsyncWrite + Unpin> Connection<W> {
+    async fn incoming(&mut self, incoming: Option<Result<Message>>) -> Result<()> {
+        let message = incoming.ok_or_else(|| RemoteError::Transport("peer closed".into()))??;
+        match message {
+            Message::Interest(next) => {
+                self.interest = next;
+                self.provider
+                    .set_interest(self.session, self.interest.clone());
+                codec::write(
+                    &mut self.writer,
+                    &Message::SourceStatus(self.provider.status()),
+                )
+                .await?;
+                if self.interest.detail
+                    && let Some(frame) = self.hub.latest_frame()
+                {
+                    send_frame(&mut self.writer, &frame, &mut self.last_layout).await?;
+                }
+            }
+            Message::Subscribe { tiers } => {
+                self.interest.detail = tiers.contains(&kelvo_proto::LiveTier::Live1s);
+                self.provider
+                    .set_interest(self.session, self.interest.clone());
+            }
+            Message::Unsubscribe => {
+                self.interest = RemoteInterest::default();
+                self.provider
+                    .set_interest(self.session, self.interest.clone());
+            }
+            Message::Ping { nonce, t0_ms } => {
+                codec::write(
+                    &mut self.writer,
+                    &Message::Pong {
+                        nonce,
+                        t0_ms,
+                        t_remote_ms: kelvo_engine::wall_ms(),
+                    },
+                )
+                .await?
+            }
+            Message::SyncRequest(mut request) => {
+                request.max_rows = request.max_rows.clamp(1, 2000);
+                request.max_bytes = Some(
+                    request
+                        .max_bytes
+                        .unwrap_or(16 * 1024)
+                        .clamp(1024, 256 * 1024),
+                );
+                let p = self.provider.clone();
+                let kinds = self.kinds;
+                let result = tokio::task::spawn_blocking(move || p.sync(&request, kinds))
+                    .await
+                    .map_err(|e| RemoteError::Transport(e.to_string()))?;
+                let reply = result.unwrap_or_else(|message| Message::Error {
+                    code: kelvo_proto::ErrorCode::Internal,
+                    message,
+                });
+                if kelvo_proto::encode_message(&reply)?.len() > 256 * 1024 {
+                    return Err(RemoteError::Protocol(
+                        "history provider exceeded page limit".into(),
+                    ));
+                }
+                codec::write(&mut self.writer, &reply).await?;
+            }
+            Message::RecentRequest { from_ms, to_ms } => {
+                let p = self.provider.clone();
+                let reply = tokio::task::spawn_blocking(move || {
+                    p.recent(from_ms.max(to_ms.saturating_sub(300_000)), to_ms)
+                })
+                .await
+                .map_err(|e| RemoteError::Transport(e.to_string()))?
+                .unwrap_or_else(|message| Message::Error {
+                    code: kelvo_proto::ErrorCode::Internal,
+                    message,
+                });
+                let reply = if kelvo_proto::encode_message(&reply)?.len() > codec::MAX_WIRE_BYTES {
+                    Message::Error {
+                        code: kelvo_proto::ErrorCode::Internal,
+                        message: "recent history snapshot exceeds transport limit".into(),
+                    }
+                } else {
+                    reply
+                };
+                codec::write(&mut self.writer, &reply).await?;
+            }
+            Message::Unknown => {}
+            _ => {
+                return Err(RemoteError::Protocol(
+                    "unexpected controller message".into(),
+                ));
+            }
+        }
+        Ok(())
+    }
+    async fn event(&mut self, event: kelvo_engine::Recv) -> Result<()> {
+        match event {
+            kelvo_engine::Recv::Msg(BusMsg::Frame(frame)) if self.interest.detail => {
+                send_frame(&mut self.writer, &frame, &mut self.last_layout).await?
+            }
+            kelvo_engine::Recv::Msg(BusMsg::Caps(caps)) => {
+                codec::write(
+                    &mut self.writer,
+                    &Message::CapabilitiesChanged((*caps).clone()),
+                )
+                .await?
+            }
+            kelvo_engine::Recv::Msg(BusMsg::Status(_)) => {
+                codec::write(
+                    &mut self.writer,
+                    &Message::SourceStatus(self.provider.status()),
+                )
+                .await?
+            }
+            kelvo_engine::Recv::Msg(BusMsg::Processes(batch))
+                if self.interest.process_period_ms.is_some() =>
+            {
+                let period = self.interest.process_period_ms.unwrap_or(1000);
+                if self.last_process.elapsed() >= Duration::from_millis(u64::from(period)) {
+                    if batch.rows.len() > 32768 {
+                        return Err(RemoteError::Protocol("too many process rows".into()));
+                    }
+                    codec::write(
+                        &mut self.writer,
+                        &Message::LiveProcesses(kelvo_proto::LiveProcesses {
+                            ts_ms: batch.ts_ms,
+                            rows: batch.rows.iter().map(process_to_wire).collect(),
+                            gpu_span_ms: batch.gpu_span_ms,
+                        }),
+                    )
+                    .await?;
+                    self.last_process = tokio::time::Instant::now();
+                }
+            }
+            kelvo_engine::Recv::Lagged(_) => {
+                return Err(RemoteError::Transport(
+                    "viewer fell behind live stream".into(),
+                ));
+            }
+            kelvo_engine::Recv::Closed => {
+                return Err(RemoteError::Transport("engine stopped".into()));
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+    async fn summary(&mut self) -> Result<()> {
+        if let Some(frame) = self.hub.latest_frame() {
+            codec::write(
+                &mut self.writer,
+                &Message::HostSummary(kelvo_proto::HostSummary {
+                    ts_ms: frame.ts_ms,
+                    online: true,
+                    headline: frame
+                        .layout
+                        .series
+                        .iter()
+                        .cloned()
+                        .zip(frame.held.iter().copied())
+                        .filter(|(key, _)| {
+                            [
+                                "cpu.total",
+                                "mem.used",
+                                "mem.pressure",
+                                "gpu.util",
+                                "thermal.hottest",
+                                "net.rx",
+                                "net.tx",
+                                "disk.read",
+                                "disk.write",
+                            ]
+                            .contains(&key.metric.as_str())
+                        })
+                        .collect(),
+                }),
+            )
+            .await?;
+        }
+        Ok(())
+    }
+}
+
 async fn send_frame<W: AsyncWrite + Unpin>(
     writer: &mut W,
     frame: &kelvo_engine::LiveFrame,
