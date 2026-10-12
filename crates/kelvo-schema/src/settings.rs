@@ -332,9 +332,7 @@ pub struct SamplingSettings {
 }
 
 /// Why Performance mode is in effect (D-088).
-#[derive(
-    Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize, specta::Type,
-)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, specta::Type)]
 #[serde(rename_all = "snake_case")]
 pub enum PerformanceReason {
     #[default]
@@ -343,9 +341,23 @@ pub enum PerformanceReason {
     Setting,
     /// macOS Low Power Mode is on and the setting is off. It ends with Low Power Mode.
     LowPowerMode,
+    Unknown,
 }
 
+crate::compat::text_enum_deserialize!(PerformanceReason);
+
 impl PerformanceReason {
+    pub const ALL: [Self; 3] = [Self::Off, Self::Setting, Self::LowPowerMode];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Off => "off",
+            Self::Setting => "setting",
+            Self::LowPowerMode => "low_power_mode",
+            Self::Unknown => "unknown",
+        }
+    }
+
     /// The setting wins when both hold: turning Low Power Mode off would not end it.
     pub fn resolve(setting: bool, low_power_mode: bool) -> Self {
         match (setting, low_power_mode) {
@@ -356,15 +368,13 @@ impl PerformanceReason {
     }
 
     pub fn is_on(self) -> bool {
-        self != Self::Off
+        matches!(self, Self::Setting | Self::LowPowerMode)
     }
 }
 
 /// What powers the Mac right now (D-092), from the same power-source notification the
 /// battery back-off reacts to. A Mac without a battery is always on `Adapter`.
-#[derive(
-    Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize, specta::Type,
-)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, specta::Type)]
 #[serde(rename_all = "snake_case")]
 pub enum PowerSource {
     /// Running on the battery.
@@ -374,9 +384,23 @@ pub enum PowerSource {
     Adapter,
     /// On external power and the battery is charging.
     Charging,
+    Unknown,
 }
 
+crate::compat::text_enum_deserialize!(PowerSource);
+
 impl PowerSource {
+    pub const ALL: [Self; 3] = [Self::Battery, Self::Adapter, Self::Charging];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Battery => "battery",
+            Self::Adapter => "adapter",
+            Self::Charging => "charging",
+            Self::Unknown => "unknown",
+        }
+    }
+
     /// `on_battery` wins: a battery that reports charging while it powers the Mac is
     /// still the source.
     pub fn resolve(on_battery: bool, charging: bool) -> Self {

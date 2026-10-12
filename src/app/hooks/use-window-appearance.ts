@@ -1,4 +1,5 @@
 import type { Appearance, WindowAppearance } from "@core/generated/bindings";
+import { isPerformanceOn } from "@core/performance";
 import { useEffect, useLayoutEffect, useState } from "react";
 import { useTransport } from "~/lib/transport-context";
 import { useSettings } from "~/stores/settings-store";
@@ -62,7 +63,7 @@ export function useWindowAppearance(override?: "light" | "dark" | null) {
     root.classList.toggle("dark", dark);
     root.toggleAttribute(
       "data-performance",
-      (flags?.performance ?? "off") !== "off"
+      isPerformanceOn(flags?.performance)
     );
     root.toggleAttribute(
       "data-reduce-transparency",

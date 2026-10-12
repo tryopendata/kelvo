@@ -1579,7 +1579,7 @@ export type PerformanceReason = "off" |
 /**  The user turned it on in Settings. */
 "setting" |
 /**  macOS Low Power Mode is on and the setting is off. It ends with Low Power Mode. */
-"low_power_mode";
+"low_power_mode" | "unknown";
 
 /**  What the engine, the tray and the live stream run at on one power source. */
 export type PlanFigures = {
@@ -1622,7 +1622,7 @@ export type PowerSource =
 /**  On external power, the battery not charging (full, held at a limit, or no battery). */
 "adapter" |
 /**  On external power and the battery is charging. */
-"charging";
+"charging" | "unknown";
 
 export type ProcessResolution =
 /**

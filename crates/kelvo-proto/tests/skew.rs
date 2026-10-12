@@ -326,7 +326,7 @@ fn v1_fixtures_decode_with_current_code() {
     let dir = fixtures_dir();
     if std::env::var_os("KELVO_WRITE_FIXTURES").is_some() {
         std::fs::create_dir_all(&dir).unwrap();
-        for (name, msg) in samples() {
+        for (name, msg) in samples().into_iter().chain(remote_samples()) {
             std::fs::write(
                 dir.join(format!("{name}.cbor")),
                 encode_message(&msg).unwrap(),
@@ -335,7 +335,7 @@ fn v1_fixtures_decode_with_current_code() {
         }
     }
     let mut checked = 0;
-    for (name, msg) in samples() {
+    for (name, msg) in samples().into_iter().chain(remote_samples()) {
         let path = dir.join(format!("{name}.cbor"));
         let body = std::fs::read(&path)
             .unwrap_or_else(|e| panic!("missing fixture {}: {e}", path.display()));
@@ -361,6 +361,36 @@ fn tagged(t: &str, c: Option<Value>) -> Vec<u8> {
         m.push((Value::Text("c".into()), c));
     }
     cbor(&Value::Map(m))
+}
+
+/// A newer source's status must not force an older controller to reconnect.
+#[test]
+fn source_status_with_unknown_reasons_decodes() {
+    // Hand-built CBOR, independent of this build's enum serializer.
+    let body = tagged(
+        "SourceStatus",
+        Some(Value::Map(vec![
+            (
+                Value::Text("interval_ms".into()),
+                Value::Integer(2000.into()),
+            ),
+            (
+                Value::Text("performance".into()),
+                Value::Text("thermal_budget".into()),
+            ),
+            (
+                Value::Text("power_source".into()),
+                Value::Text("external_pack".into()),
+            ),
+        ])),
+    );
+    let Message::SourceStatus(status) = decode_message(&body).unwrap() else {
+        panic!("expected SourceStatus");
+    };
+    assert_eq!(status.interval_ms, 2000);
+    assert_eq!(status.performance, kelvo_schema::PerformanceReason::Unknown);
+    assert!(!status.performance.is_on());
+    assert_eq!(status.power_source, kelvo_schema::PowerSource::Unknown);
 }
 
 /// Settles the `#[serde(other)]` question in architecture.md (D-038): a message type this
@@ -827,6 +857,18 @@ fn bucket_stats_by_index() {
 
 fn remote_samples() -> Vec<(&'static str, Message)> {
     vec![
+        (
+            "live_remote",
+            Message::Live(LiveFrame {
+                interval_ms: 2000,
+                timeline: 7,
+                holds: vec![1000, 4000, 2000],
+                ts_ms: 1_790_000_000_000,
+                layout_no: 1,
+                values: vec![12.5, 40.0, 61.25],
+                held: vec![12.0, 39.0, 60.0],
+            }),
+        ),
         (
             "interest",
             Message::Interest(kelvo_proto::RemoteInterest {

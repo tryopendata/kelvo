@@ -53,3 +53,16 @@ describe("samplingPill", () => {
     ).toEqual({ state: "live", label: "1s" });
   });
 });
+
+describe("samplingPill with a reason from a newer source", () => {
+  it("treats an unknown Performance reason as off, like Rust", () => {
+    const pill = samplingPill({
+      intervalMs: 2000,
+      framePeriodMs: 4000,
+      paused: false,
+      stale: false,
+      performance: "unknown",
+    });
+    expect(pill.label).toBe("2s");
+  });
+});

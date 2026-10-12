@@ -8,6 +8,13 @@ import { menuBarOf, SETTINGS_MODULES } from "@core/settings-patch";
 
 const secs = (ms: number) => `${ms / 1000} s`;
 
+/** Mirrors Rust's `PerformanceReason::is_on`: a reason this build doesn't know is off. */
+export function isPerformanceOn(
+  reason: PerformanceReason | undefined
+): boolean {
+  return reason === "setting" || reason === "low_power_mode";
+}
+
 /**
  * What Performance mode changes for these settings (D-088), as short lines:
  * each figure where the sampling plan with the mode on differs from the one
