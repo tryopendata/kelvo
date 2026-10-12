@@ -1,12 +1,16 @@
 import { formatBytes } from "@core/format";
 import type { RemoteHostRecord } from "@core/generated/bindings";
 import { hostKeys } from "@core/query-keys";
+import { remoteErrorText } from "@core/remote-errors";
+import { connectionLabel } from "@core/remote-hosts";
 import { unwrap } from "@core/transport";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useId, useState } from "react";
 import { useNavigate } from "react-router";
+import { toast } from "sonner";
 import { PageHeader } from "~/components/page-header";
 import { Button } from "~/components/ui/button";
+import { Checkbox } from "~/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -19,20 +23,6 @@ import { useHostSelection } from "~/lib/host-selection";
 import { useTransport } from "~/lib/transport-context";
 import { AddMacDialog, HOST_INPUT } from "./_components/add-mac-dialog";
 
-export function connectionLabel(remote: RemoteHostRecord): string {
-  const { status } = remote;
-  if (status.state === "connected")
-    return `${status.route === "lan" ? "LAN" : "Tailscale"}${status.sync === "catching_up" ? " · catching up history" : status.sync === "unavailable" ? " · history unavailable" : " · connected"}`;
-  return (
-    {
-      connecting: "Connecting…",
-      offline: "Offline",
-      disabled: "Connection disabled",
-      error: "Connection failed",
-    }[status.state] ?? status.state
-  );
-}
-
 function HostSettings({
   remote,
   close,
@@ -42,28 +32,33 @@ function HostSettings({
 }) {
   const transport = useTransport();
   const cache = useQueryClient();
+  const stopSharingId = useId();
+  const deleteMirrorId = useId();
   const [config, setConfig] = useState(remote.config);
   const size = useQuery({
     queryKey: hostKeys.historySize(remote.config.id),
     queryFn: () => unwrap(transport.historySize(remote.config.id)),
     refetchInterval: 60000,
   });
+  const [stopSharing, setStopSharing] = useState(true);
   const [deleteMirror, setDeleteMirror] = useState(false);
   const [removing, setRemoving] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const validBudget =
+    Number.isInteger(config.mirror_budget_mb) &&
+    config.mirror_budget_mb >= 10 &&
+    config.mirror_budget_mb <= 10000;
   const run = async (remove: boolean) => {
     setBusy(true);
     setError(null);
     try {
       const result = remove
-        ? await transport.removeRemoteHost(config.id, deleteMirror)
+        ? await transport.removeRemoteHost(config.id, deleteMirror, stopSharing)
         : await transport.updateRemoteHost(config);
-      if (result.status === "error")
-        setError(
-          "message" in result.error ? result.error.message : result.error.kind
-        );
+      if (result.status === "error") setError(remoteErrorText(result.error));
       else {
+        if (remove && typeof result.data === "string") toast.error(result.data);
         await cache.invalidateQueries({ queryKey: hostKeys.all });
         close();
       }
@@ -89,18 +84,36 @@ function HostSettings({
         </DialogTitle>
         <DialogDescription>
           {removing
-            ? "This disconnects the Mac. Kelvo on that Mac keeps running."
+            ? "This disconnects the Mac. Kelvo on that Mac keeps running and its start-at-login setting stays the same."
             : "Connection and history stored on this Mac."}
         </DialogDescription>
         {removing ? (
-          <label className="flex items-center gap-2 text-[13px]">
-            <input
-              type="checkbox"
-              checked={deleteMirror}
-              onChange={(e) => setDeleteMirror(e.target.checked)}
-            />
-            Delete mirrored history from this Mac
-          </label>
+          <div className="grid gap-3">
+            <label
+              htmlFor={stopSharingId}
+              className="flex items-center gap-2 text-[13px]"
+            >
+              <Checkbox
+                id={stopSharingId}
+                checked={stopSharing}
+                onCheckedChange={(checked) => setStopSharing(checked === true)}
+                disabled={busy}
+              />
+              Also stop sharing on that Mac
+            </label>
+            <label
+              htmlFor={deleteMirrorId}
+              className="flex items-center gap-2 text-[13px]"
+            >
+              <Checkbox
+                id={deleteMirrorId}
+                checked={deleteMirror}
+                onCheckedChange={(checked) => setDeleteMirror(checked === true)}
+                disabled={busy}
+              />
+              Delete mirrored history from this Mac
+            </label>
+          </div>
         ) : (
           <fieldset disabled={busy} className="grid gap-3">
             <label className="grid gap-1 text-[12px]">
@@ -145,16 +158,28 @@ function HostSettings({
                 className={HOST_INPUT}
                 type="number"
                 min="10"
-                max="100000"
-                value={config.mirror_budget_mb}
+                max="10000"
+                value={
+                  Number.isNaN(config.mirror_budget_mb)
+                    ? ""
+                    : config.mirror_budget_mb
+                }
                 onChange={(e) =>
                   setConfig({
                     ...config,
-                    mirror_budget_mb: Number(e.target.value),
+                    mirror_budget_mb:
+                      e.target.value === ""
+                        ? Number.NaN
+                        : Number(e.target.value),
                   })
                 }
               />
             </label>
+            {!validBudget && (
+              <p role="alert" className="text-[13px] text-destructive">
+                Enter a whole number from 10 to 10,000 MB.
+              </p>
+            )}
             <div className="flex justify-between text-[13px]">
               Connect automatically
               <Switch
@@ -193,7 +218,7 @@ function HostSettings({
               busy ||
               !config.name.trim() ||
               !(config.lan?.trim() || config.tailscale?.trim()) ||
-              config.mirror_budget_mb < 10
+              (!removing && !validBudget)
             }
             onClick={() => run(removing)}
           >
@@ -222,10 +247,7 @@ export default function HostsRoute() {
     setError(null);
     try {
       const result = await transport.retryRemoteHost(id);
-      if (result.status === "error")
-        setError(
-          "message" in result.error ? result.error.message : result.error.kind
-        );
+      if (result.status === "error") setError(remoteErrorText(result.error));
       await cache.invalidateQueries({ queryKey: hostKeys.remote() });
     } catch (e) {
       setError(String(e));

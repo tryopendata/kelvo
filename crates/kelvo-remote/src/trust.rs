@@ -48,7 +48,7 @@ pub async fn inspect_host(alias: &str) -> Result<TrustCandidate> {
         .collect();
     for option in ["proxycommand", "proxyjump"] {
         if options.get(option).is_some_and(|v| v != "none") {
-            return Err(RemoteError::Authentication("This alias uses an SSH proxy. Verify its host key in Terminal, then retry in Kelvo.".into()));
+            return Err(RemoteError::HostKey("This alias uses an SSH proxy. Verify its host key in Terminal, then retry in Kelvo.".into()));
         }
     }
     let hostname = options
@@ -64,7 +64,7 @@ pub async fn inspect_host(alias: &str) -> Result<TrustCandidate> {
         .filter(|p| *p > 0)
         .ok_or_else(|| RemoteError::Protocol("invalid SSH port".into()))?;
     if port != 22 && options.get("hostkeyalias").is_some_and(|v| v != "none") {
-        return Err(RemoteError::Authentication(
+        return Err(RemoteError::HostKey(
             "Verify custom HostKeyAlias with a nonstandard port in Terminal, then retry in Kelvo."
                 .into(),
         ));
@@ -91,7 +91,7 @@ pub async fn inspect_host(alias: &str) -> Result<TrustCandidate> {
     let home = std::env::var("HOME").map_err(|_| RemoteError::Protocol("HOME missing".into()))?;
     let resolve = |value: &str| -> Result<PathBuf> {
         if value.contains('%') || value.contains('"') || value.contains('\'') {
-            return Err(RemoteError::Authentication(
+            return Err(RemoteError::HostKey(
                 "Verify this custom known-hosts configuration in Terminal, then retry.".into(),
             ));
         }
@@ -101,7 +101,7 @@ pub async fn inspect_host(alias: &str) -> Result<TrustCandidate> {
             value.to_string()
         };
         if value == "none" || !value.starts_with('/') {
-            return Err(RemoteError::Authentication(
+            return Err(RemoteError::HostKey(
                 "SSH has no writable user known-hosts file; configure trust in Terminal.".into(),
             ));
         }
@@ -187,7 +187,7 @@ fn normalize_keys(lookup: &str, scanned: &[u8]) -> Result<Vec<u8>> {
         lines.insert(format!("{lookup} {} {}\n", fields[1], fields[2]));
     }
     if lines.is_empty() || lines.len() > 6 {
-        return Err(RemoteError::Authentication(
+        return Err(RemoteError::HostKey(
             "No supported SSH host keys were received.".into(),
         ));
     }
@@ -207,10 +207,10 @@ async fn ensure_unknown(lookup: &str, paths: &[PathBuf]) -> Result<()> {
             .await
             .map_err(|_| RemoteError::Transport("known-hosts lookup timed out".into()))??;
         if output.status.success() && !output.stdout.is_empty() {
-            return Err(RemoteError::Authentication("This host already has a known key. Kelvo will not replace it; inspect any changed-key warning in Terminal.".into()));
+            return Err(RemoteError::HostKey("This host already has a known key. Kelvo will not replace it; inspect any changed-key warning in Terminal.".into()));
         }
         if output.status.code() != Some(1) {
-            return Err(RemoteError::Authentication(
+            return Err(RemoteError::HostKey(
                 "Could not inspect SSH known-hosts; verify this host in Terminal.".into(),
             ));
         }
@@ -219,7 +219,7 @@ async fn ensure_unknown(lookup: &str, paths: &[PathBuf]) -> Result<()> {
 }
 pub async fn accept_host(candidate: &TrustCandidate) -> Result<()> {
     if candidate.created.elapsed() > Duration::from_secs(300) {
-        return Err(RemoteError::Authentication(
+        return Err(RemoteError::HostKey(
             "Host-key review expired; scan again.".into(),
         ));
     }
@@ -247,7 +247,7 @@ pub async fn accept_host(candidate: &TrustCandidate) -> Result<()> {
         || metadata.nlink() != 1
         || metadata.mode() & 0o022 != 0
     {
-        return Err(RemoteError::Authentication(
+        return Err(RemoteError::HostKey(
             "known-hosts must be an ordinary file owned by this user".into(),
         ));
     }
@@ -258,7 +258,7 @@ pub async fn accept_host(candidate: &TrustCandidate) -> Result<()> {
     }
     ensure_unknown(&candidate.lookup, &candidate.all_known_hosts).await?;
     if std::fs::symlink_metadata(&candidate.known_hosts)?.ino() != metadata.ino() {
-        return Err(RemoteError::Authentication(
+        return Err(RemoteError::HostKey(
             "known-hosts changed during review; retry".into(),
         ));
     }

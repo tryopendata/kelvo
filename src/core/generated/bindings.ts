@@ -26,7 +26,7 @@ export const commands = {
 	addRemoteHost: (config: RemoteHostConfig, install: boolean, showMenuBar: boolean, setupId: string) => typedError<RemoteHostRecord, CommandError>(__TAURI_INVOKE("add_remote_host", { config, install, showMenuBar, setupId })),
 	cancelRemoteSetup: (setupId: string) => typedError<null, CommandError>(__TAURI_INVOKE("cancel_remote_setup", { setupId })),
 	updateRemoteHost: (config: RemoteHostConfig) => typedError<RemoteHostRecord, CommandError>(__TAURI_INVOKE("update_remote_host", { config })),
-	removeRemoteHost: (id: string, deleteMirror: boolean) => typedError<null, CommandError>(__TAURI_INVOKE("remove_remote_host", { id, deleteMirror })),
+	removeRemoteHost: (id: string, deleteMirror: boolean, stopSharing: boolean) => typedError<string | null, CommandError>(__TAURI_INVOKE("remove_remote_host", { id, deleteMirror, stopSharing })),
 	retryRemoteHost: (id: string) => typedError<null, CommandError>(__TAURI_INVOKE("retry_remote_host", { id })),
 	getHost: (host: HostId) => typedError<HostRecord, CommandError>(__TAURI_INVOKE("get_host", { host })),
 	getCapabilities: (host: HostId) => typedError<Capabilities, CommandError>(__TAURI_INVOKE("get_capabilities", { host })),
@@ -445,6 +445,16 @@ export type ClusterInfo = {
 };
 
 export type CommandError =
+/**  SSH login to the other Mac failed (key, agent or account). */
+{ kind: "remote_auth"; message: string } |
+/**  The other Mac's host key isn't trusted yet, or needs checking in Terminal. */
+{ kind: "host_key_unknown"; message: string } |
+/**  The other Mac can't run this Kelvo (architecture, macOS or protocol version). */
+{ kind: "remote_incompatible"; message: string } |
+/**  The Mac that answered is not the one this host was added as. */
+{ kind: "remote_identity"; message: string } |
+/**  The other Mac could not be reached, or the connection broke. */
+{ kind: "remote_unreachable"; message: string } |
 /**  A bounded, sanitized Docker monitoring error. */
 { kind: "docker"; message: string } |
 /**  No host with this id is registered. */

@@ -2,11 +2,11 @@ import { formatPercent, formatWatts } from "@core/format";
 import type { UiModule } from "@core/module-state";
 import { useCallback } from "react";
 import { useLocation, useNavigate } from "react-router";
+import { HostSwitcher } from "~/components/host-switcher";
 import { PerformanceExplainer } from "~/components/performance-explainer";
 import { Sidebar, type SidebarEntry } from "~/components/sidebar";
 import { useIsLocalHost } from "~/hooks/use-is-local-host";
 import { useModuleStates } from "~/hooks/use-module-states";
-import { HostSwitcher } from "~/routes/dashboard/hosts/_components/host-switcher";
 import {
   useBattery,
   useCpu,

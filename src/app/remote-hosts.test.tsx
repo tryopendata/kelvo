@@ -52,6 +52,12 @@ describe("remote host selection", () => {
     expect(
       screen.queryByRole("button", { name: /Quit/ })
     ).not.toBeInTheDocument();
+    const remoteSubscriptions = () =>
+      transport.calls.filter(
+        (call) =>
+          call.command === "subscribe_live" && call.args[0] === "remote-studio"
+      ).length;
+    const beforeSettings = remoteSubscriptions();
     fireEvent.click(screen.getByRole("link", { name: "Settings" }));
     await screen.findByRole("heading", { name: "Settings" });
     await waitFor(() =>
@@ -61,14 +67,12 @@ describe("remote host selection", () => {
           .at(-1)?.args[0]
       ).toBe(MOCK_HOST_ID)
     );
+    expect(
+      screen.getByRole("combobox", { name: "Selected machine" })
+    ).toHaveTextContent("Studio Mac");
     fireEvent.click(screen.getByRole("link", { name: "Overview" }));
-    await waitFor(() =>
-      expect(
-        transport.calls
-          .filter((call) => call.command === "subscribe_live")
-          .at(-1)?.args[0]
-      ).toBe("remote-studio")
-    );
+    await screen.findByRole("heading", { name: "Overview" });
+    expect(remoteSubscriptions()).toBe(beforeSettings);
     unmount();
     transport.dispose();
   });
@@ -105,7 +109,7 @@ describe("remote host selection", () => {
         : {
             status: "error",
             error: {
-              kind: "invalid_argument",
+              kind: "host_key_unknown",
               message: "Host key verification failed",
             },
           };

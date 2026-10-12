@@ -4,6 +4,7 @@ import type {
   RemoteSshHostTrust,
 } from "@core/generated/bindings";
 import { hostKeys } from "@core/query-keys";
+import { isHostKeyError, remoteErrorText } from "@core/remote-errors";
 import { useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { Button } from "~/components/ui/button";
@@ -39,6 +40,7 @@ export function AddMacDialog({
     "idle" | "checking" | "adding" | "verifying" | "cancelling"
   >("idle");
   const setupId = useRef<string | null>(null);
+  const [hostKeyError, setHostKeyError] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const busy = phase !== "idle";
   const endpoints = {
@@ -46,6 +48,7 @@ export function AddMacDialog({
     tailscale: tailscale.trim() || null,
   };
   const prepare = async () => {
+    setHostKeyError(false);
     setPhase("checking");
     setError(null);
     try {
@@ -53,11 +56,10 @@ export function AddMacDialog({
         endpoints.lan,
         endpoints.tailscale
       );
-      if (result.status === "error")
-        setError(
-          "message" in result.error ? result.error.message : result.error.kind
-        );
-      else {
+      if (result.status === "error") {
+        setHostKeyError(isHostKeyError(result.error));
+        setError(remoteErrorText(result.error));
+      } else {
         setPrepared(result.data);
         if (!name.trim()) setName(result.data.name);
       }
@@ -72,10 +74,7 @@ export function AddMacDialog({
     setTrust(null);
     try {
       const result = await transport.inspectRemoteSshHost(alias);
-      if (result.status === "error")
-        setError(
-          "message" in result.error ? result.error.message : result.error.kind
-        );
+      if (result.status === "error") setError(remoteErrorText(result.error));
       else setTrust(result.data);
     } catch (e) {
       setError(String(e));
@@ -88,10 +87,7 @@ export function AddMacDialog({
     setPhase("verifying");
     try {
       const result = await transport.acceptRemoteSshHost(trust.token);
-      if (result.status === "error")
-        setError(
-          "message" in result.error ? result.error.message : result.error.kind
-        );
+      if (result.status === "error") setError(remoteErrorText(result.error));
       else {
         setTrust(null);
         await prepare();
@@ -122,10 +118,7 @@ export function AddMacDialog({
         showMenuBar,
         attempt
       );
-      if (result.status === "error")
-        setError(
-          "message" in result.error ? result.error.message : result.error.kind
-        );
+      if (result.status === "error") setError(remoteErrorText(result.error));
       else {
         await cache.invalidateQueries({ queryKey: hostKeys.all });
         onOpenChange(false);
@@ -148,9 +141,7 @@ export function AddMacDialog({
     try {
       const result = await transport.cancelRemoteSetup(attempt);
       if (setupId.current === attempt && result.status === "error")
-        setError(
-          "message" in result.error ? result.error.message : result.error.kind
-        );
+        setError(remoteErrorText(result.error));
     } catch (e) {
       if (setupId.current === attempt) setError(String(e));
     }
@@ -170,7 +161,8 @@ export function AddMacDialog({
         <DialogTitle>Add Mac</DialogTitle>
         <DialogDescription>
           Connect through SSH. Kelvo prefers LAN and falls back to Tailscale
-          when both are configured.
+          when both are configured. Kelvo on that Mac will start at login and
+          share its metrics with this Mac.
         </DialogDescription>
         <fieldset disabled={busy} className="grid gap-3">
           <label className="grid gap-1 text-[12px]">
@@ -251,7 +243,7 @@ export function AddMacDialog({
             {error}
           </p>
         )}
-        {error && !prepared && !trust && (
+        {hostKeyError && error && !prepared && !trust && (
           <div className="flex gap-2">
             {endpoints.lan && (
               <Button
