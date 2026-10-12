@@ -217,6 +217,11 @@ export function settingsInvalidation(
 }
 
 export const dockerKeys = {
+  storage: (engine: string, generation: number) =>
+    ["docker", "storage", engine, generation] as const,
+  operationRefresh: (engine: string) =>
+    ["docker", "operation-refresh", engine] as const,
+  operation: (engine: string) => ["docker", "operation", engine] as const,
   retained: (
     host: string,
     engine: string | null,

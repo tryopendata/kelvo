@@ -12,6 +12,7 @@ This folder is the plan for Kelvo, from the first installable build through remo
 | [v4-remote-hosts.md](v4-remote-hosts.md) | Broader v4 roadmap; first Mac milestone and SSH setup/recovery merged, real-device acceptance open |
 | [remote-macs-execution.md](remote-macs-execution.md) | Implemented Mac-to-Mac behavior, SSH setup/recovery, verification evidence and remaining device checks |
 | [docker-container-monitoring.md](docker-container-monitoring.md) | Local Docker tab implemented and merged: aggregate/runtime and per-container stats, history, logs; real-world release acceptance remains open |
+| [docker-storage-cleanup.md](docker-storage-cleanup.md) | In progress: on-demand Docker storage inventory, cleanup review, confirmed local actions and resource review |
 | [decisions.md](decisions.md) | ADR log: every decision with its reasoning and when to revisit it |
 | [PROGRESS.md](PROGRESS.md) | Implementation progress tracker |
 

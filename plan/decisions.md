@@ -3298,3 +3298,27 @@ comparable.
 Setup creates the popover eagerly again, except for `--remote-setup` and
 `--background` launches, which keep the lazy path. No bench was run for this
 change.
+
+## D-107: Docker cleanup is explicit, local, and separate from monitoring
+
+Accepted 2026-10-12 following the [storage plan](docker-storage-cleanup.md) and
+CE devil's-advocate review. Implementation and acceptance are in progress.
+
+The monitoring adapter remains read-only. On-demand storage scans and confirmed
+actions use independently bounded clients and typed local commands. Rust owns
+resource relationships, incomplete evidence, accounting, confirmation expiry and
+operation lifecycle. There are no arbitrary Docker endpoints at the IPC boundary,
+remote mutations, background cleanup, or changes to host/series/wire identities.
+
+The user reviews exact selected resources with nothing preselected. No force
+deletion, implicit volume removal or broad prune is allowed. Volume deletion has
+an explicit data-loss acknowledgement and discloses Docker's reusable-name race:
+inspection cannot atomically guard a subsequent volume deletion against replacement
+by another client. AutoRemove containers cannot be stopped through this feature.
+Build-cache deletion requires verified exact ID matching on the daemon implementation.
+Issued mutations are never retried automatically; uncertain outcomes remain uncertain.
+
+Docker-managed object usage and reclaimable estimates are distinct from VM allocation
+and macOS free space. Unknown sizes, shared ownership, unused age and database identity
+are not invented. Storage snapshots/results are bounded session data, not new history
+series. Revisit for persistent storage trends, remote control, or database integrations.

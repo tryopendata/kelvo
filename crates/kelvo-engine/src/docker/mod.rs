@@ -4,6 +4,7 @@ mod integration_tests;
 mod logs;
 mod normalize;
 mod persistence;
+pub mod storage;
 use futures_util::{StreamExt, stream};
 use kelvo_collect::docker::{DockerAdapter, DockerCounters, DockerError, candidates, now_ms};
 use kelvo_schema::{HostId, docker::*, lock::LockExt};
@@ -39,6 +40,7 @@ pub struct DockerHandle {
     pub events: broadcast::Sender<DockerEvent>,
     logs: Arc<Mutex<logs::LogRegistry>>,
     pub recorder: Arc<DockerRecorder>,
+    storage: Arc<storage::StorageManager>,
 }
 struct State {
     adapter: Option<DockerAdapter>,
@@ -96,6 +98,7 @@ impl DockerHandle {
             events,
             logs: Arc::new(Mutex::new(logs::LogRegistry::default())),
             recorder: Arc::new(DockerRecorder::new(host_id)),
+            storage: Arc::new(storage::StorageManager::default()),
         }
     }
     pub fn glance(&self) -> (DockerStatus, DockerAggregate) {
@@ -177,6 +180,10 @@ impl DockerHandle {
         self.cancel();
         self.control
             .send_modify(|c| c.generation = c.generation.wrapping_add(1));
+        self.storage.resumed_generation.store(
+            self.control.borrow().generation,
+            std::sync::atomic::Ordering::SeqCst,
+        );
     }
     pub fn set_visible(&self, visible: bool) {
         self.control.send_modify(|c| {

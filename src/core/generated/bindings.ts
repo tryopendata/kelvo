@@ -17,6 +17,10 @@ export const commands = {
 	dockerEvents: (request: DockerEventsRequest) => typedError<DockerEventsPage, CommandError>(__TAURI_INVOKE("docker_events", { request })),
 	dockerLogs: (request: DockerLogsRequest, channel: Channel<DockerLogBatch>) => typedError<number, CommandError>(__TAURI_INVOKE("docker_logs", { request, channel })),
 	dockerCloseLogs: (stream: number) => typedError<null, CommandError>(__TAURI_INVOKE("docker_close_logs", { stream })),
+	dockerStorageScan: (force: boolean) => typedError<DockerStorageView, CommandError>(__TAURI_INVOKE("docker_storage_scan", { force })),
+	dockerStoragePrepare: (selections: DockerStorageSelection[]) => typedError<DockerStorageReview, CommandError>(__TAURI_INVOKE("docker_storage_prepare", { selections })),
+	dockerStorageExecute: (token: string, confirmVolumes: boolean) => typedError<DockerStorageOperation, CommandError>(__TAURI_INVOKE("docker_storage_execute", { token, confirmVolumes })),
+	dockerStorageOperation: (operationId: string) => typedError<DockerStorageOperation, CommandError>(__TAURI_INVOKE("docker_storage_operation", { operationId })),
 	/**  Every host, the local one first. */
 	listHosts: () => __TAURI_INVOKE<HostRecord[]>("list_hosts"),
 	listRemoteHosts: () => __TAURI_INVOKE<RemoteHostRecord[]>("list_remote_hosts"),
@@ -731,6 +735,99 @@ export type DockerSnapshot = {
 };
 
 export type DockerStatus = "disabled" | "connecting" | "connected" | "idle_suspended" | "paused" | "unavailable" | "permission_denied" | "incompatible";
+
+export type DockerStorageAction = "delete" | "stop";
+
+export type DockerStorageCategory = {
+	kind: DockerStorageKind,
+	size_bytes: number | null,
+	reclaimable_bytes: number | null,
+};
+
+export type DockerStorageItemResult = {
+	selection: DockerStorageSelection,
+	status: DockerStorageItemStatus,
+	message: string,
+	reclaimed_bytes: number | null,
+};
+
+export type DockerStorageItemStatus = "succeeded" | "skipped" | "failed" | "outcome_unknown";
+
+export type DockerStorageKind = "container" | "image" | "volume" | "build_cache";
+
+export type DockerStorageMount = {
+	kind: string,
+	name: string | null,
+	source: string | null,
+	destination: string | null,
+};
+
+export type DockerStorageOperation = {
+	id: string,
+	engine_id: string,
+	generation: number,
+	started_ms: number,
+	finished_ms: number | null,
+	results: DockerStorageItemResult[],
+	total: number,
+};
+
+export type DockerStorageResource = {
+	kind: DockerStorageKind,
+	id: string,
+	name: string,
+	project: string | null,
+	size_bytes: number | null,
+	/**  Conservative independently reclaimable bytes; never sum shared image/cache sizes. */
+	reclaimable_bytes: number | null,
+	references: string[],
+	age_ms: number | null,
+	age_basis: string | null,
+	/**  Repository-based inference, not a database inspection. */
+	database: string | null,
+	mounts: DockerStorageMount[],
+	auto_remove: boolean | null,
+	can_delete: boolean,
+	can_stop: boolean,
+	reason: string | null,
+	/**  Hash of identity/state metadata used only for local confirmation revalidation. */
+	fingerprint: string,
+};
+
+export type DockerStorageReview = {
+	token: string,
+	engine_id: string,
+	generation: number,
+	expires_ms: number,
+	resources: DockerStorageResource[],
+	selections: DockerStorageSelection[],
+	/**  Unknown when selected resources may share physical layers. */
+	estimated_reclaimed_bytes: number | null,
+	warnings: string[],
+};
+
+export type DockerStorageSelection = {
+	kind: DockerStorageKind,
+	id: string,
+	action: DockerStorageAction,
+};
+
+export type DockerStorageSnapshot = {
+	engine_id: string,
+	generation: number,
+	observed_ms: number,
+	complete: boolean,
+	resources: DockerStorageResource[],
+	categories: DockerStorageCategory[],
+	warnings: string[],
+};
+
+export type DockerStorageView = {
+	snapshot: DockerStorageSnapshot | null,
+	error: string | null,
+	/**  Recover the latest session result when a window is reopened. */
+	latest_operation_id: string | null,
+};
 
 /**  Returned by `get_edition`. Fixed for the life of the process. */
 export type Edition = {

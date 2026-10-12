@@ -51,7 +51,7 @@ Task-time targets apply to supported, fully monitored populations; a partial pop
 
 **Staged after the core tab:** Timeline lane and event links, optional popover summary and tray count. These consume the same facts and do not create independent collectors.
 
-**Deferred:** remote engines, simultaneous monitoring of multiple engines, Podman/Kubernetes/containerd adapters, lifecycle actions, terminal/exec, image/volume cleanup, builds, Compose editing, disk-image capacity scanning, notifications/alert rules, log storage/export, and v2 widget authoring. Docker installation is the user's existing environment; Kelvo needs no Docker CLI, helper container, privileged helper, or permission-changing setup command.
+**Deferred from this monitoring milestone:** remote engines, simultaneous monitoring of multiple engines, Podman/Kubernetes/containerd adapters, lifecycle actions, terminal/exec, image/volume cleanup, builds, Compose editing, disk-image capacity scanning, notifications/alert rules, log storage/export, and v2 widget authoring. Explicit local Stop and storage cleanup are now covered by the separate [storage and cleanup plan](docker-storage-cleanup.md) and D-107; the monitoring client stays read-only. Docker installation is the user's existing environment; Kelvo needs no Docker CLI, helper container, privileged helper, or permission-changing setup command.
 
 ## 2. Experience and visual direction
 

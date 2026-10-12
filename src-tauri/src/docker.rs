@@ -353,3 +353,44 @@ mod tests {
         assert_eq!(streams.logs.lock_ok().len(), 1);
     }
 }
+
+#[tauri::command]
+#[specta::specta]
+pub async fn docker_storage_scan(
+    state: State<'_, AppState>,
+    force: bool,
+) -> Result<kelvo_engine::docker::storage::DockerStorageView, CommandError> {
+    Ok(state.docker.storage_scan(force).await)
+}
+#[tauri::command]
+#[specta::specta]
+pub async fn docker_storage_prepare(
+    state: State<'_, AppState>,
+    selections: Vec<kelvo_schema::docker_storage::DockerStorageSelection>,
+) -> Result<kelvo_engine::docker::storage::DockerStorageReview, CommandError> {
+    state
+        .docker
+        .storage_prepare(selections)
+        .await
+        .map_err(error)
+}
+#[tauri::command]
+#[specta::specta]
+pub fn docker_storage_execute(
+    state: State<'_, AppState>,
+    token: String,
+    confirm_volumes: bool,
+) -> Result<kelvo_engine::docker::storage::DockerStorageOperation, CommandError> {
+    state
+        .docker
+        .storage_execute(&token, confirm_volumes)
+        .map_err(error)
+}
+#[tauri::command]
+#[specta::specta]
+pub fn docker_storage_operation(
+    state: State<'_, AppState>,
+    operation_id: String,
+) -> Result<kelvo_engine::docker::storage::DockerStorageOperation, CommandError> {
+    state.docker.storage_operation(&operation_id).map_err(error)
+}

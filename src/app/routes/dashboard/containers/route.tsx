@@ -3,6 +3,8 @@ import {
   dockerRuntimeScopeLabel,
 } from "@core/docker-labels";
 import { formatBytes, formatPercent } from "@core/format";
+import { dockerKeys } from "@core/query-keys";
+import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation, useSearchParams } from "react-router";
 import { PageHeader } from "~/components/page-header";
@@ -21,7 +23,10 @@ import {
 import { useTransport } from "~/lib/transport-context";
 import { ContainerHistory } from "./_components/container-history";
 import { ContainerTable } from "./_components/container-table";
+import { DockerActivityReview } from "./_components/docker-activity-review";
+import { DockerCleanupFlow } from "./_components/docker-cleanup-flow";
 import { DockerLocalOnly } from "./_components/docker-local-only";
+import { DockerStorage } from "./_components/docker-storage";
 import { EngineChooser } from "./_components/engine-chooser";
 import {
   DOCKER_RANGES,
@@ -34,6 +39,7 @@ import {
   useDockerEvents,
   useDockerHistory,
 } from "./_hooks/use-docker";
+import { useDockerCleanup } from "./_hooks/use-docker-cleanup";
 import {
   type ContainerSort,
   dockerErrorMessage,
@@ -57,6 +63,15 @@ function LocalContainersRoute() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [params, setParams] = useSearchParams();
   const location = useLocation();
+  const client = useQueryClient();
+  const storageView = params.get("view") === "storage";
+  const cleanupConnected =
+    snapshot?.status === "connected" || snapshot?.status === "idle_suspended";
+  const cleanup = useDockerCleanup(
+    snapshot?.engine?.id ?? "",
+    snapshot?.generation ?? 0,
+    cleanupConnected
+  );
   const query = params.get("q") ?? "";
   const state = params.get("state") ?? "all";
   const sort = (params.get("sort") ?? "cpu") as ContainerSort;
@@ -141,6 +156,7 @@ function LocalContainersRoute() {
           value={query}
           onChange={(q) => set("q", q)}
           placeholder="Name, image or project"
+          label="Search containers by name, image or project"
         />
         <Select value={state} onValueChange={(value) => set("state", value)}>
           <SelectTrigger aria-label="Container state" size="sm">
@@ -272,8 +288,15 @@ function LocalContainersRoute() {
                   className="ml-3"
                   onClick={() =>
                     void transport.dockerResume().then((r) => {
-                      if (r.status === "ok") setSnapshot(r.data);
-                      else setActionError(dockerErrorMessage(r.error));
+                      if (r.status === "ok") {
+                        setSnapshot(r.data);
+                        void client.invalidateQueries({
+                          queryKey: dockerKeys.storage(
+                            r.data.engine?.id ?? "",
+                            r.data.generation
+                          ),
+                        });
+                      } else setActionError(dockerErrorMessage(r.error));
                     })
                   }
                 >
@@ -282,169 +305,208 @@ function LocalContainersRoute() {
               )}
             </p>
           )}
-          <div className="flex flex-wrap items-end justify-between gap-3">
-            <div className="figures flex flex-wrap items-baseline gap-x-6 gap-y-2">
-              <span className="text-[13px]">
-                {aggregate.running} running / {aggregate.total} total
-              </span>
-              <span
-                title="Occupied vCPU cores. One core equals 100% in container rows."
-                className="figures-display text-[26px]"
-              >
-                {aggregate.cpu_cores?.toFixed(2) ?? "—"}
-                <span className="ml-1 font-normal text-[12px] text-muted-foreground">
-                  cores
-                </span>
-              </span>
-              <span title="Summed container working set against independently observed engine capacity, not Mac RAM.">
-                {formatBytes(aggregate.working_set_bytes)} /{" "}
-                {formatBytes(aggregate.capacity_bytes)}
-              </span>
-            </div>
-            {historyControls}
-          </div>
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="figures text-[11px] text-muted-foreground">
-              <span role="status">
-                Container workload · CPU {aggregate.cpu_measured}/
-                {aggregate.expected}, memory {aggregate.memory_measured}/
-                {aggregate.expected} measured
-                {aggregate.partial
-                  ? " · Partial population; totals do not identify the global top consumer"
-                  : ""}
-              </span>
-              <span>
-                {" · observed "}
-                {new Date(snapshot.observed_ms).toLocaleTimeString()}
-                {snapshot.interval_ms > 0
-                  ? ` · every ${snapshot.interval_ms / 1000}s`
-                  : ""}
-              </span>
-            </div>
-            {metricControl}
-          </div>
-          {history.error ? (
-            <p role="alert" className="text-[12px] text-muted-foreground">
-              History could not be read: {history.error.message}
-            </p>
+          <SegmentedControl
+            options={[
+              { value: "activity", label: "Activity" },
+              { value: "storage", label: "Storage & cleanup" },
+            ]}
+            value={storageView ? "storage" : "activity"}
+            onChange={(value) => set("view", value)}
+            ariaLabel="Containers view"
+          />
+          <DockerCleanupFlow flow={cleanup} />
+          {storageView ? (
+            <DockerStorage
+              key={`${engine}:${snapshot.generation}`}
+              engine={engine}
+              generation={snapshot.generation}
+              connected={cleanupConnected}
+              flow={cleanup}
+            />
           ) : (
-            <ContainerHistory
-              aggregate
-              compact
-              title={
-                end === null
-                  ? "Container workload"
-                  : "Historical container workload · table below is Now"
-              }
-              page={history.data}
-              metric={metric === "cpu" ? "cpu_pct" : "working_set_bytes"}
-              from={from}
-              to={to}
-              events={events.data?.events}
-            />
+            <>
+              <div className="flex flex-wrap items-end justify-between gap-3">
+                <div className="figures flex flex-wrap items-baseline gap-x-6 gap-y-2">
+                  <span className="text-[13px]">
+                    {aggregate.running} running / {aggregate.total} total
+                  </span>
+                  <span
+                    title="Occupied vCPU cores. One core equals 100% in container rows."
+                    className="figures-display text-[26px]"
+                  >
+                    {aggregate.cpu_cores?.toFixed(2) ?? "—"}
+                    <span className="ml-1 font-normal text-[12px] text-muted-foreground">
+                      cores
+                    </span>
+                  </span>
+                  <span title="Summed container working set against independently observed engine capacity, not Mac RAM.">
+                    {formatBytes(aggregate.working_set_bytes)} /{" "}
+                    {formatBytes(aggregate.capacity_bytes)}
+                  </span>
+                </div>
+                {historyControls}
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="figures text-[11px] text-muted-foreground">
+                  <span role="status">
+                    Container workload · CPU {aggregate.cpu_measured}/
+                    {aggregate.expected}, memory {aggregate.memory_measured}/
+                    {aggregate.expected} measured
+                    {aggregate.partial
+                      ? " · Partial population; totals do not identify the global top consumer"
+                      : ""}
+                  </span>
+                  <span>
+                    {" · observed "}
+                    {new Date(snapshot.observed_ms).toLocaleTimeString()}
+                    {snapshot.interval_ms > 0
+                      ? ` · every ${snapshot.interval_ms / 1000}s`
+                      : ""}
+                  </span>
+                </div>
+                {metricControl}
+              </div>
+              {history.error ? (
+                <p role="alert" className="text-[12px] text-muted-foreground">
+                  History could not be read: {history.error.message}
+                </p>
+              ) : (
+                <ContainerHistory
+                  aggregate
+                  compact
+                  title={
+                    end === null
+                      ? "Container workload"
+                      : "Historical container workload · table below is Now"
+                  }
+                  page={history.data}
+                  metric={metric === "cpu" ? "cpu_pct" : "working_set_bytes"}
+                  from={from}
+                  to={to}
+                  events={events.data?.events}
+                />
+              )}
+              <details className="border-border-subtle border-y py-3 text-[12px]">
+                <summary className="cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                  Runtime processes on this Mac{" "}
+                  <span className="figures ml-3">
+                    CPU {formatPercent(snapshot.runtime.cpu_pct)} · Footprint{" "}
+                    {formatBytes(snapshot.runtime.footprint_bytes)}
+                  </span>{" "}
+                  ·{" "}
+                  {dockerRuntimeScopeLabel[snapshot.runtime.scope] ??
+                    snapshot.runtime.scope}
+                </summary>
+                <p className="mt-2 text-muted-foreground">
+                  {snapshot.runtime.explanation}
+                  {snapshot.engine?.capacity_observed_ms !== null &&
+                  snapshot.engine?.capacity_observed_ms !== undefined
+                    ? ` Engine capacity observed ${new Date(snapshot.engine.capacity_observed_ms).toLocaleString()}.`
+                    : " Engine capacity measurement time unavailable."}
+                </p>
+                <p className="mt-1 text-muted-foreground">
+                  {snapshot.runtime.processes.join(" · ") ||
+                    "No verified runtime processes"}
+                  {snapshot.runtime.observed_ms !== null
+                    ? ` · observed ${new Date(snapshot.runtime.observed_ms).toLocaleTimeString()}`
+                    : ""}
+                </p>
+              </details>
+              <DockerActivityReview
+                key={`${engine}:${snapshot.generation}`}
+                rows={snapshot.containers}
+                connected={cleanupConnected}
+                flow={cleanup}
+              />
+              {filters}{" "}
+              <SectionCard
+                accent="cpu"
+                title="Containers now"
+                hiddenTitle
+                flush
+              >
+                <ContainerTable
+                  rows={shown}
+                  page={Number(params.get("page") ?? 0)}
+                  onPage={(page) => set("page", String(page))}
+                  sort={sort}
+                  onSort={(value) => set("sort", value)}
+                  monitoringFull={
+                    snapshot.aggregate.monitored >=
+                    snapshot.aggregate.monitoring_limit
+                  }
+                  onMonitored={monitor}
+                  grouped={grouped}
+                  io={io}
+                  collapsed={collapsed}
+                  onCollapse={(group) =>
+                    setParams(
+                      (previous) => {
+                        const next = new URLSearchParams(previous);
+                        const values = next.getAll("collapsed");
+                        next.delete("collapsed");
+                        for (const value of values.includes(group)
+                          ? values.filter((v) => v !== group)
+                          : [...values, group])
+                          next.append("collapsed", value);
+                        return next;
+                      },
+                      { replace: true }
+                    )
+                  }
+                />
+              </SectionCard>
+              <footer className="flex flex-wrap items-center gap-4 text-[11px] text-muted-foreground">
+                <span>
+                  History:{" "}
+                  {dockerPersistenceLabel[snapshot.persistence.status] ??
+                    snapshot.persistence.status}{" "}
+                  · {formatBytes(snapshot.persistence.logical_bytes)} /{" "}
+                  {formatBytes(snapshot.persistence.allowance_bytes)} logical
+                  allowance
+                  {snapshot.persistence.retained_from_ms !== null
+                    ? ` · retained from ${new Date(snapshot.persistence.retained_from_ms).toLocaleString()}`
+                    : ""}
+                </span>
+                <label
+                  htmlFor="docker-popover"
+                  className="flex items-center gap-1"
+                >
+                  <Checkbox
+                    id="docker-popover"
+                    checked={snapshot.settings.show_popover}
+                    onCheckedChange={(checked) =>
+                      void configure({ show_popover: checked === true })
+                    }
+                  />
+                  Popover summary
+                </label>
+                <label
+                  htmlFor="docker-tray"
+                  className="flex items-center gap-1"
+                >
+                  <Checkbox
+                    id="docker-tray"
+                    checked={snapshot.settings.show_tray_count}
+                    onCheckedChange={(checked) =>
+                      void configure({ show_tray_count: checked === true })
+                    }
+                  />
+                  Tray count
+                </label>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => void configure({ enabled: false })}
+                >
+                  Disable monitoring
+                </Button>
+              </footer>
+            </>
           )}
-          <details className="border-border-subtle border-y py-3 text-[12px]">
-            <summary className="cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-              Runtime processes on this Mac{" "}
-              <span className="figures ml-3">
-                CPU {formatPercent(snapshot.runtime.cpu_pct)} · Footprint{" "}
-                {formatBytes(snapshot.runtime.footprint_bytes)}
-              </span>{" "}
-              ·{" "}
-              {dockerRuntimeScopeLabel[snapshot.runtime.scope] ??
-                snapshot.runtime.scope}
-            </summary>
-            <p className="mt-2 text-muted-foreground">
-              {snapshot.runtime.explanation}
-              {snapshot.engine?.capacity_observed_ms !== null &&
-              snapshot.engine?.capacity_observed_ms !== undefined
-                ? ` Engine capacity observed ${new Date(snapshot.engine.capacity_observed_ms).toLocaleString()}.`
-                : " Engine capacity measurement time unavailable."}
-            </p>
-            <p className="mt-1 text-muted-foreground">
-              {snapshot.runtime.processes.join(" · ") ||
-                "No verified runtime processes"}
-              {snapshot.runtime.observed_ms !== null
-                ? ` · observed ${new Date(snapshot.runtime.observed_ms).toLocaleTimeString()}`
-                : ""}
-            </p>
-          </details>
-          {filters}{" "}
-          <SectionCard accent="cpu" title="Containers now" hiddenTitle flush>
-            <ContainerTable
-              rows={shown}
-              page={Number(params.get("page") ?? 0)}
-              onPage={(page) => set("page", String(page))}
-              sort={sort}
-              onSort={(value) => set("sort", value)}
-              monitoringFull={
-                snapshot.aggregate.monitored >=
-                snapshot.aggregate.monitoring_limit
-              }
-              onMonitored={monitor}
-              grouped={grouped}
-              io={io}
-              collapsed={collapsed}
-              onCollapse={(group) =>
-                setParams(
-                  (previous) => {
-                    const next = new URLSearchParams(previous);
-                    const values = next.getAll("collapsed");
-                    next.delete("collapsed");
-                    for (const value of values.includes(group)
-                      ? values.filter((v) => v !== group)
-                      : [...values, group])
-                      next.append("collapsed", value);
-                    return next;
-                  },
-                  { replace: true }
-                )
-              }
-            />
-          </SectionCard>
-          <footer className="flex flex-wrap items-center gap-4 text-[11px] text-muted-foreground">
-            <span>
-              History:{" "}
-              {dockerPersistenceLabel[snapshot.persistence.status] ??
-                snapshot.persistence.status}{" "}
-              · {formatBytes(snapshot.persistence.logical_bytes)} /{" "}
-              {formatBytes(snapshot.persistence.allowance_bytes)} logical
-              allowance
-              {snapshot.persistence.retained_from_ms !== null
-                ? ` · retained from ${new Date(snapshot.persistence.retained_from_ms).toLocaleString()}`
-                : ""}
-            </span>
-            <label htmlFor="docker-popover" className="flex items-center gap-1">
-              <Checkbox
-                id="docker-popover"
-                checked={snapshot.settings.show_popover}
-                onCheckedChange={(checked) =>
-                  void configure({ show_popover: checked === true })
-                }
-              />
-              Popover summary
-            </label>
-            <label htmlFor="docker-tray" className="flex items-center gap-1">
-              <Checkbox
-                id="docker-tray"
-                checked={snapshot.settings.show_tray_count}
-                onCheckedChange={(checked) =>
-                  void configure({ show_tray_count: checked === true })
-                }
-              />
-              Tray count
-            </label>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => void configure({ enabled: false })}
-            >
-              Disable monitoring
-            </Button>
-          </footer>
         </>
       )}
-      {snapshot.settings.enabled && (
+      {snapshot.settings.enabled && !storageView && (
         <RetainedHistory enabled generation={snapshot.generation} />
       )}
     </div>

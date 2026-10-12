@@ -26,6 +26,10 @@ import {
   type DockerRetainedRequest,
   type DockerSettings,
   type DockerSnapshot,
+  type DockerStorageOperation,
+  type DockerStorageReview,
+  type DockerStorageSelection,
+  type DockerStorageView,
   type Edition,
   type Event,
   type EventRecorded,
@@ -100,6 +104,17 @@ export interface Transport {
   /** The window label (`popover`, `dashboard`, `onboarding`). */
   windowLabel(): string;
 
+  dockerStorageScan(force: boolean): Promise<CommandResult<DockerStorageView>>;
+  dockerStoragePrepare(
+    selections: DockerStorageSelection[]
+  ): Promise<CommandResult<DockerStorageReview>>;
+  dockerStorageExecute(
+    token: string,
+    confirmVolumes: boolean
+  ): Promise<CommandResult<DockerStorageOperation>>;
+  dockerStorageOperation(
+    operationId: string
+  ): Promise<CommandResult<DockerStorageOperation>>;
   dockerRetained(
     request: DockerRetainedRequest
   ): Promise<CommandResult<DockerRetainedPage>>;
@@ -353,6 +368,13 @@ export function createTauriTransport(label: string): Transport {
   return {
     kind: "tauri",
     windowLabel: () => label,
+    dockerStorageScan: (force) => commands.dockerStorageScan(force),
+    dockerStoragePrepare: (selections) =>
+      commands.dockerStoragePrepare(selections),
+    dockerStorageExecute: (token, confirmVolumes) =>
+      commands.dockerStorageExecute(token, confirmVolumes),
+    dockerStorageOperation: (operationId) =>
+      commands.dockerStorageOperation(operationId),
     dockerRetained: (request) => commands.dockerRetained(request),
     dockerDiscover: () => commands.dockerDiscover(),
     dockerConfigure: (settings) => commands.dockerConfigure(settings),

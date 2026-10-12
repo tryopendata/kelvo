@@ -56,7 +56,7 @@ rm -rf ~/.kelvo
 | Disk | Read and write rates, free space, top processes by disk activity |
 | Battery | Charge, health, cycle count, power in or out, time remaining |
 | Processes | Every process, with CPU, memory, disk, network and GPU columns |
-| Containers (opt-in) | Local Docker CPU, memory and I/O, history, lifecycle evidence and on-demand logs |
+| Containers (opt-in) | Local Docker CPU, memory and I/O, history, logs, storage inventory and reviewed cleanup |
 
 Enable monitoring from Containers and choose one local Docker engine. Kelvo reads
 the Unix socket directly and needs no Docker CLI. Up to 128 containers are
@@ -65,6 +65,15 @@ memory and macOS runtime footprint are separate measurements, and unavailable
 runtime attribution is labelled. Logs stay in memory while viewed. OrbStack has
 been exercised locally; Docker Desktop and Colima runtime validation remains open
 in the [compatibility notes](plan/docker-container-monitoring-compatibility.md).
+
+Storage & cleanup scans images, writable layers, volumes and daemon build cache
+on demand, with a five-minute cache. Review stopped containers and unused resources
+by size and project, then confirm selected actions. Volumes require a separate
+data-loss acknowledgement; bind-mounted host files are never removed. AutoRemove
+containers cannot be stopped here, and cache cleanup is enabled only for verified
+engine builds. Docker-managed usage is not the VM's allocated Mac footprint or a
+promise of immediately recovered Mac disk space. See the
+[storage and cleanup plan](plan/docker-storage-cleanup.md) for limits and verification.
 
 ![The CPU page](https://raw.githubusercontent.com/tryopendata/kelvo/assets/media/cpu.webp)
 

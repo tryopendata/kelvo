@@ -44,6 +44,7 @@ mod catalog;
 mod codes;
 mod compat;
 pub mod docker;
+pub mod docker_storage;
 mod event;
 mod history;
 mod host;

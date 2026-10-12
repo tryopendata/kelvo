@@ -8,9 +8,9 @@ describe("container view shaping", () => {
     expect(filterContainers(rows, "PROJECT-2", "all").map((r) => r.id)).toEqual(
       ["container-5", "container-6", "container-7"]
     );
-    expect(filterContainers(rows, "nginx", "exited").map((r) => r.id)).toEqual([
-      "container-6",
-    ]);
+    expect(
+      filterContainers(rows, "postgres", "exited").map((r) => r.id)
+    ).toEqual(["container-6"]);
     expect(rows).toHaveLength(8);
   });
   it("uses stable container identity to break ties, placing unknown metrics last", () => {

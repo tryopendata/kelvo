@@ -791,3 +791,4 @@ mod tests {
 
 #[cfg(unix)]
 pub mod docker;
+pub mod docker_storage;

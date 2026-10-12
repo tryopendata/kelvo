@@ -7,6 +7,7 @@ import type {
   DockerSnapshot,
 } from "@core/generated/bindings";
 import type { CommandResult, Transport } from "@core/transport";
+import { createMockDockerStorage } from "./docker-storage";
 import { MOCK_HOST_ID, type ScenarioName } from "./fixtures";
 
 const ok = <T>(data: T): CommandResult<T> => ({ status: "ok", data });
@@ -34,7 +35,12 @@ export function mockContainer(index: number, now: number): DockerContainer {
     metadata_observed_ms: now,
     id: `container-${index}`,
     name: index === 0 ? "worker" : index === 1 ? "web" : `service-${index}`,
-    image: index === 0 ? "api-worker:latest" : "nginx:alpine",
+    image:
+      index === 0
+        ? "api-worker:latest"
+        : index === 6
+          ? "postgres:16"
+          : "nginx:alpine",
     project: index % 5 === 4 ? null : `project-${Math.floor(index / 5) + 1}`,
     service: index === 0 ? "worker" : "web",
     lifecycle: index % 7 === 6 ? "exited" : "running",
@@ -220,6 +226,38 @@ export function createMockDocker(
     snapshot = { ...snapshot, now_ms: now() };
     if (visible) for (const cb of listeners) cb(snapshot);
   };
+  const storage = createMockDockerStorage(
+    now,
+    () => snapshot,
+    (id) => {
+      snapshot = {
+        ...snapshot,
+        containers: snapshot.containers.map((row) =>
+          row.id === id
+            ? {
+                ...row,
+                lifecycle: "exited",
+                metrics: {
+                  ...row.metrics,
+                  cpu_pct: null,
+                  working_set_bytes: null,
+                },
+              }
+            : row
+        ),
+      };
+      snapshot.aggregate = aggregateContainers(snapshot.containers);
+      emit();
+    },
+    (id) => {
+      snapshot = {
+        ...snapshot,
+        containers: snapshot.containers.filter((row) => row.id !== id),
+      };
+      snapshot.aggregate = aggregateContainers(snapshot.containers);
+      emit();
+    }
+  );
   const methods: Methods = {
     async dockerRetained(request) {
       const needle = request.search.toLocaleLowerCase();
@@ -413,13 +451,14 @@ export function createMockDocker(
       };
     },
     async dockerResume() {
+      storage.resume();
       snapshot = { ...snapshot, status: "connected", message: null };
       emit();
       return ok(snapshot);
     },
   };
   return {
-    methods,
+    methods: { ...methods, ...storage.methods },
     resetHistory() {
       retained = [];
       snapshot = {

@@ -72,9 +72,9 @@ fn allowed(path: &str) -> bool {
     }
 }
 /// Bounds the entire HTTP response, including decoder lookahead and partial lines.
-struct BoundedIo {
-    stream: UnixStream,
-    left: usize,
+pub(crate) struct BoundedIo {
+    pub(crate) stream: UnixStream,
+    pub(crate) left: usize,
 }
 impl AsyncRead for BoundedIo {
     fn poll_read(
