@@ -75,6 +75,53 @@ Status values: Not started, In progress, Blocked (say on what), Done (with the v
 
 ## Log
 
+### 2026-10-12 (production-readiness review fixes)
+
+A `ce:code-reviewer` production-readiness review of `2cdcb9f..0ffb166` (remote Macs
+and local Docker monitoring) returned NOT READY with 21 findings and 5 suspected
+issues. Codex delegates implemented fixes in five worktrees (wire, remote-session,
+remote-shell, docker, shell-tests-docs), reviewed by Claude and merged on
+`fix/review-findings`.
+
+Wire forward compatibility now uses Unknown fallbacks for `PerformanceReason`
+and `PowerSource`, with frozen remote fixtures covering D-040.
+
+Remote sessions drop late replies after the 30 s timeout and reconnect when a
+reply is lost for 120 s. Unsolicited replies are retryable, summary layouts stay
+stable, accept errors back off, and the control server restarts. Handshake errors
+use plain language, and `select!` loops were refactored into Session/Connection
+methods.
+
+Remote setup discloses its changes and host removal can stop sharing on the
+other Mac (D-105). The app tree no longer re-renders on host polls or remounts
+on Settings/Hosts. Host teardown runs off the async worker, the restore timeout
+is 600 s, and the history limit is 10..=10000 MB.
+
+Docker idle suspension explains itself and offers Resume. It probes once a
+minute and resumes on visibility. Snapshots publish `now_ms`; Rust reconciles
+inspection and publishes per-point coverage. Inspection has a separate permit
+pool, and the worker uses tokio time. UI fixes cover chart blanking, live-region
+chatter, labels, counts, `aria-sort`, scroll and motion tokens.
+
+The shell creates the popover at setup again (D-106). The motion test again
+asserts no running animation, with an explicit per-tick allowlist.
+
+During integration, Codex's sandbox blocked Unix sockets, so Claude ran socket
+tests outside it. Claude also fixed a TS spot treating unknown performance
+reasons as on, route-error selection losing host-key errors, an unbounded
+stop-sharing SSH call, a timed-out sync tier that could stall forever, and a
+Docker test that encoded the old TS merge semantics.
+
+Verification on this branch outside the Codex sandbox: `make check` passed
+(cargo fmt and clippy clean; Rust 837 passed, 0 failed, 32 ignored; Vitest 155
+files, 955 tests); `make bindings-check` was clean; `bun run test:e2e` had 274
+passed and 10 skipped.
+
+Still unmeasured or deferred: idle CPU with remote hosts or Docker enabled
+(`make bench` was not run, finding #3); real two-Mac QA; Docker Desktop and
+Colima; the 24-hour soak; and `make rust-linux-check` (no Linux cross toolchain
+on this machine).
+
 ### 2026-10-12 (shared agent guidance)
 
 Added generated `AGENTS.md`, Antigravity rule files, and a shared skill link from

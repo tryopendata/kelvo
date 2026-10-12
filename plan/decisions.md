@@ -3271,3 +3271,30 @@ Approved new crate edges: kelvo-remote -> {schema,proto,store,engine}; the helpe
 kelvo-remote; app shell -> kelvo-remote and proto for the serving adapter.
 
 Revisit for multi-user system daemons or cross-platform agents, not for this milestone.
+
+## D-105: Remote setup discloses its changes and host removal can stop sharing
+
+Accepted 2026-10-12, following the production-readiness review of remote Macs.
+
+Setup turns on launch at login and remote monitoring on the other Mac, as before.
+The Add Mac dialog now says so. Removing a host offers "Also stop sharing on that
+Mac", checked by default. It sends `configure(allow_remote_monitoring=false)`
+over SSH with a 15 s timeout. A failure warns but never blocks removal. Launch
+at login is left as it is.
+
+Remote command errors are typed as `RemoteAuth`, `HostKeyUnknown`,
+`RemoteIncompatible`, `RemoteIdentity` or `RemoteUnreachable` instead of
+`Internal`. Verify host is offered only for host-key errors.
+
+## D-106: Create the popover at setup again
+
+Accepted 2026-10-12, following the production-readiness review of the app shell.
+
+Commit `6a914c0` made the popover lazy without a decision entry. The first tray
+click then paid for webview creation, against the architecture budget of opening
+the popover in under 150 ms, and the tray-only bench baseline stopped being
+comparable.
+
+Setup creates the popover eagerly again, except for `--remote-setup` and
+`--background` launches, which keep the lazy path. No bench was run for this
+change.
