@@ -78,6 +78,37 @@ The Timeline puts every module on one chart covering the last hour, 24 hours, 7 
 
 The menu bar can show one combined item or one item per module, each as a number, a graph or a per-core strip.
 
+## Monitor another Mac
+
+Open **Hosts → Add Mac** in a packaged Kelvo build. Both Macs need Apple Silicon
+and macOS 26 or newer. Kelvo connects over SSH using the account signed in to the
+other Mac's desktop.
+
+1. On the other Mac, enable **System Settings → General → Sharing → Remote Login**
+   and allow that account.
+2. On this Mac, set up SSH key access. The in-app **SSH setup guide** explains how
+   to create a key, authorize its public key on the other Mac, and unlock it in your
+   SSH agent. Kelvo's connections cannot prompt for passwords or key passphrases.
+3. Enter an SSH alias from `~/.ssh/config` or `user@address`. A config file is optional;
+   Kelvo detects when it is missing and opens the guide. Leave Tailscale blank unless
+   you use it; both addresses must reach the same Mac and account.
+4. Choose **Check connection**. If the host is unknown, choose **Verify host** and
+   compare its fingerprint with the other Mac before trusting it. Then connect.
+
+Setup reuses or copies the packaged Kelvo app and enables remote monitoring and
+launch at login on the other Mac. macOS approvals must be completed there. Select
+the Mac in Hosts to see its live metrics and mirrored history; settings, alerts,
+process control and menu-bar metrics remain local.
+
+If connection fails, follow the recovery message and expand its details when needed.
+For a saved Mac, open its **Settings → Show SSH setup guide** for verification and
+access-test commands, save any address changes, then use **Retry** in Hosts.
+**Recheck config** only checks for the local file; it does not test SSH access.
+
+See the [setup and troubleshooting notes](plan/remote-macs-execution.md#setup-behavior)
+for recovery behavior and the [remaining real-device checks](plan/remote-macs-execution.md#outstanding-real-device-gates).
+Linux hosts are not supported yet.
+
 ## Resource use
 
 With only the menu bar showing, Kelvo samples every 2 seconds and uses under 1% of one core. Open a window and it samples every second (adjustable from 0.5 to 60 seconds) and uses 6 to 10%, depending on the page.
@@ -90,7 +121,7 @@ Measured on an M3 Max running macOS 27, plugged in, on 2026-10-07:
 | [Stats](https://github.com/exelban/stats) 3.0.20 | Menu bar only, default settings | 4.1% | 149 MB |
 | Activity Monitor | Window open, 5 s updates | 3.9% | 138 MB |
 
-CPU is the kernel's CPU time for the app and its helper processes over 120 seconds; memory is their physical footprint. These default-setting measurements have Docker monitoring off. Each figure is a single run on a machine busy with other builds, and Stats ran its own default modules rather than Kelvo's set. Activity Monitor had its window open, so compare it with Kelvo's 6 to 10% windowed figure, not the menu bar one.
+CPU is the kernel's CPU time for the app and its helper processes over 120 seconds; memory is their physical footprint. These default-setting measurements predate remote monitoring and have Docker monitoring off. Each figure is a single run on a machine busy with other builds, and Stats ran its own default modules rather than Kelvo's set. Activity Monitor had its window open, so compare it with Kelvo's 6 to 10% windowed figure, not the menu bar one.
 
 To measure on your Mac, run `make bench`, or `make bench-vs-stats` to compare against Stats for 10 minutes each. Raw numbers are in [`plan/competitor-benchmarks.md`](plan/competitor-benchmarks.md).
 
@@ -98,7 +129,10 @@ To measure on your Mac, run `make bench`, or `make bench-vs-stats` to compare ag
 
 ### Does Kelvo need any permissions?
 
-No. It reads everything as your user, with no admin password or helper tool. If you turn on an alert in Settings, macOS asks once whether Kelvo may send notifications.
+Local monitoring reads macOS data as your user, without a privileged helper. If
+you turn on an alert in Settings, macOS asks once whether Kelvo may send notifications.
+Monitoring another Mac requires Remote Login and SSH key access on that Mac;
+setup uses a bundled SSH helper and may require native macOS approval there.
 
 ### Why does the network column only list some processes?
 
@@ -110,7 +144,11 @@ About 150 MB for 30 days. History older than 7 days is stored in 15-minute bucke
 
 ### Where does Kelvo keep its data?
 
-History and settings are in `~/Library/Application Support/com.tryopendata.kelvo/`, logs in `~/Library/Logs/com.tryopendata.kelvo/`. Nothing leaves your Mac.
+History and settings are in `~/Library/Application Support/com.tryopendata.kelvo/`,
+logs in `~/Library/Logs/com.tryopendata.kelvo/`. Local monitoring keeps that data on
+your Mac. If you enable remote monitoring, authorized SSH clients can read its
+metrics and history; a controller keeps a separate local history mirror for each
+remote Mac. This sharing uses SSH directly, with no Kelvo backend.
 
 ### Will there be a DMG or Homebrew install?
 

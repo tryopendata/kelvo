@@ -276,7 +276,7 @@ From opendata's `frontend-design-slop` skill, applied to Kelvo.
 | Containers overview and detail | `/dashboard/containers`, `/dashboard/containers/:engineId/:containerId` | `PageHeader`, `SectionCard`, `SearchField`, `SegmentedControl`, `DockerLocalOnly`, `EngineChooser`, `ContainerTable` (search, grouping, sorting and 32-row pages), `ContainerHistory`, `HistoryControls`, `RetainedHistory`, `ContainerLogs` (bounded tail and Follow); connection and coverage status. See [Docker UX plan](docker-container-monitoring.md#2-experience-and-visual-direction) | Implemented; runtime and release acceptance remain open |
 | WidgetKit widgets | SwiftUI extension `native/KelvoWidgets` | SwiftUI views reading the widget feed | v2.2 dev build; v3 signed public build |
 | Alerts editor | `/dashboard/alerts` | `RuleList`, `RuleEditor` | v2.3 (first built-in rule in v1.2 has no editor) |
-| Hosts page and machine selection | `/dashboard/hosts`; dashboard sidebar | `HostsRoute` (local and remote hosts, connection status, CPU/memory, retry and settings), `AddMacDialog`, `HostSettings`, `HostSwitcher` (selected machine chooser) | Implemented; v4 remote hosts |
+| Hosts page and machine selection | `/dashboard/hosts`; dashboard sidebar | `HostsRoute` (local and remote hosts, connection status, CPU/memory, retry and settings), `AddMacDialog`, `HostSettings`, `HostSwitcher` (selected machine chooser), `SshSetupHelp` (config detection and expandable setup guide), `RemoteSetupError` (recovery with diagnostic details) | Implemented; first Mac milestone, including SSH setup/recovery |
 | Add host flow | `add-host` sheet | `HostPicker`, `InstallProgress` | v4.0 |
 
 ## Component inventory

@@ -9,7 +9,8 @@ This folder is the plan for Kelvo, from the first installable build through remo
 | [v1-local-monitor.md](v1-local-monitor.md) | v1.x: tray, popover, dashboard, Timeline, history |
 | [v2-customization-widgets.md](v2-customization-widgets.md) | v2.x: widget manifest, composer, floating desktop widgets, WidgetKit dev build |
 | [v3-native-distribution.md](v3-native-distribution.md) | v3.x: Developer ID, notarization, public WidgetKit, App Store evaluation |
-| [v4-remote-hosts.md](v4-remote-hosts.md) | v4.x: `kelvo-agent`, SSH transport, sync, fleet view |
+| [v4-remote-hosts.md](v4-remote-hosts.md) | Broader v4 roadmap; first Mac milestone and SSH setup/recovery merged, real-device acceptance open |
+| [remote-macs-execution.md](remote-macs-execution.md) | Implemented Mac-to-Mac behavior, SSH setup/recovery, verification evidence and remaining device checks |
 | [docker-container-monitoring.md](docker-container-monitoring.md) | Local Docker tab implemented and merged: aggregate/runtime and per-container stats, history, logs; real-world release acceptance remains open |
 | [decisions.md](decisions.md) | ADR log: every decision with its reasoning and when to revisit it |
 | [PROGRESS.md](PROGRESS.md) | Implementation progress tracker |
@@ -32,7 +33,7 @@ Look back and attribute: "Something happened earlier. Show me what, and which pr
 
 Ambient display: "Keep a few numbers on my desktop while I work, without opening anything." Floating desktop widgets and WidgetKit widgets serve this.
 
-Watch my servers (later): "Show me my Linux boxes and other Macs the same way, including what happened while I was not looking." Remote hosts in v4 serve this.
+Watch my machines: "Show me my other Macs and Linux boxes the same way, including what happened while I was not looking." The first Mac-to-Mac milestone is implemented; Linux hosts and the broader v4 roadmap remain future work.
 
 ## 4. Differentiators
 
@@ -64,7 +65,9 @@ Never interpolate across missing data. Sleep, app-not-running and disconnected p
 
 Label what we don't know. An unrecognised chip, an unavailable module or an unverified sensor mapping is shown as such.
 
-Local-first. History stays on the machine. There is no telemetry beyond an opt-out update check.
+Local-first. History stays on the machine unless the user enables remote monitoring;
+authorized SSH controllers can then read metrics/history and keep local mirrors.
+There is no Kelvo backend for this sharing or telemetry beyond an opt-out update check.
 
 Nothing to install. Kelvo runs on macOS APIs and what is compiled or bundled into the app; a user never installs a library or tool for it to work. Anything a future feature truly needs is bundled in the .app or installed by Kelvo itself on first run, with consent (D-058).
 
@@ -80,6 +83,11 @@ Each row is a major version. Minor versions inside each are listed in the versio
 | v4.x | Remote hosts | `kelvo-agent` for macOS and Linux, Add-host flow over SSH, live stream and cursor sync, Linux collectors (cgroups, containers), fleet view and host switcher, remote alerts | `RemoteSource`, per-host mirrors with disk budgets, `HostSummary` in use | Agent under 0.3% CPU and 30 MB; sync survives drops, reinstalls and pruning without interpolating; fleet view works for offline hosts |
 
 The [Docker container monitoring plan](docker-container-monitoring.md) is an independently staged local feature. It adds one selected local engine, a Containers tab and historical investigation; release placement is not assigned. The v4 remote Linux container work remains separate.
+
+The [first Mac-to-Mac milestone](remote-macs-execution.md) brings Hosts, selection,
+SSH setup and mirrored history forward from v4. It reuses the full Mac app and bundled
+helper (D-104). That implementation is merged; this does not complete the standalone
+agent, Linux, remote alerts or remote menu-bar features in the table above.
 
 ## 8. Architecture at a glance
 
@@ -132,18 +140,24 @@ flowchart LR
   WF[WidgetFeedSink v2.2]
   WK[WidgetKit extension v2.2]
   AG[kelvo-agent v4]
-  RS[RemoteSource v4]
+  RS[RemoteSource Macs]
+  MAC[Remote Kelvo app + bundled helper]
   BUS -.-> WF -.-> WK
   AG -.->|ssh stdio, CBOR| RS
-  REG -.-> RS
-  RS -.-> BUS
-  RS -.-> STORE
+  MAC -->|ssh stdio, CBOR| RS
+  REG --> RS
+  RS --> BUS
+  RS --> MIRROR[(Per-host SQLite mirror)]
+  MIRROR -->|history commands| TQ
 
   classDef future stroke-dasharray: 5 5
-  class WF,WK,AG,RS,BOARD future
+  class WF,WK,AG,BOARD future
 ```
 
-Dashed nodes and edges are later versions. The WidgetKit feed is labelled v2.2 to match the current roadmap; if it moves again, change it here and in the roadmap table.
+Dashed nodes and edges are later versions. The solid remote Mac path is implemented
+(D-104); its history is stored in isolated mirrors, not the local store. The WidgetKit
+feed is labelled v2.2 to match the current roadmap; if it moves again, change it here
+and in the roadmap table.
 
 ## 9. Design at a glance
 

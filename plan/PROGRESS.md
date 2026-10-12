@@ -4,9 +4,17 @@ This file tracks where Kelvo is against the plan. Task-level checkboxes live in 
 
 Agents update this file whenever a phase starts or finishes. Each update adds a log entry: what changed, how it was verified, and anything left open. They also tick the matching checkboxes in the version doc.
 
-## Start here (handoff, 2026-10-05, QA and polish)
+## Start here (handoff, 2026-10-12, QA and polish)
 
 State: `main` holds v1.0, v1.1 and v1.2. The app runs from source with `bun run tauri dev`; `make check` and `bun run test:e2e` pass. There is no release path yet, by design (D-078): no DMG, updater, tap or tags until the user calls the dev build ready.
+
+The local Docker feature and first Mac-to-Mac remote milestone are also merged.
+Remote setup guidance and error recovery are pushed through `ded22a7`, following
+the settings deadlock fix in `1b2e535`. Automated checks and review passed; native
+two-Mac setup, SSH-agent interoperability and remote overhead remain unverified.
+Use the [remote execution record](remote-macs-execution.md) and
+[Docker compatibility notes](docker-container-monitoring-compatibility.md) for their
+remaining acceptance work. Broader v4 Linux/agent features are still future scope.
 
 Stage: manual QA and polish (`v1-local-monitor.md` section 8, "v1.x QA and polish"). The user runs the dev build day to day and files bugs and UX issues; each session takes a batch, fixes it with a regression test where one fits, and logs it here. After QA comes the release phase (same section).
 
@@ -69,11 +77,23 @@ Known follow-ups (small, not scheduled):
 | v2.2 WidgetKit dev build | [v2](v2-customization-widgets.md) | Not started | |
 | v2.3 Alerts editor, configurable Overview | [v2](v2-customization-widgets.md) | Not started | |
 | v3.x Native distribution | [v3](v3-native-distribution.md) | Not started | Needs a paid Apple Developer membership |
-| v4.x Remote hosts | [v4](v4-remote-hosts.md) | Mac implementation and automated testing follow-up merged; native QA unverified | Expanded coverage/review pass, merged at `9e69367` with explicit user authorization. Native QA blocked by computer-use tool access; another Mac excluded from this pass. [Execution and verification gates](remote-macs-execution.md); broader v4 remains future scope |
+| v4.x Remote hosts | [v4](v4-remote-hosts.md) | Mac milestone and SSH setup/recovery merged; native acceptance open | Main includes the settings deadlock fix (`1b2e535`) and reviewed SSH guidance (`ded22a7`), with full automated checks and push gates passed. Real two-Mac setup, SSH-agent interoperability and overhead remain unverified. [Execution and verification gates](remote-macs-execution.md); broader v4 remains future scope |
 
 Status values: Not started, In progress, Blocked (say on what), Done (with the verification that proved it).
 
 ## Log
+
+### 2026-10-12 (remote documentation reconciliation)
+
+Reconciled the landed SSH work against the README, current handoff/milestone status,
+remote execution checklist, v4 roadmap, architecture overview and component inventory.
+The README now introduces remote setup and qualifies local-only permission/data claims;
+the execution record describes config detection, authentication and trust recovery,
+saved-host retries, and stop-sharing behavior. Recorded `ded22a7` as merged and pushed,
+including successful commit/push gates and branch cleanup. Kept native acceptance
+and broader v4 work open, with explicit SSH setup scenarios for the future device pass.
+Documentation was checked against the landed implementation and test evidence; local
+links and whitespace were checked. No runtime code changed or new device testing ran.
 
 ### 2026-10-12 (SSH setup guidance and error recovery)
 
@@ -124,6 +144,10 @@ pass. Saved-host guide screenshots were compared in both themes. The final full
 browser suite passed 286 tests, with 10 existing skips. Final `make check` passed:
 965 frontend tests, 839 Rust tests (32 ignored), formatting, lint, typecheck, and
 standard/App Store Rust checks.
+
+Landed as `ded22a7`, fast-forward merged and pushed to main. Commit hooks and the
+push gate (`make check bindings-check e2e-perf`) passed. Verified remote main matched
+the commit and deleted `codex/ssh-setup-recovery`; unrelated planning files remained.
 
 ### 2026-10-12 (remote access settings deadlock)
 

@@ -1,6 +1,11 @@
 # Remote Macs implementation
 
-Status: implementation and automated verification complete, merged into main at a702cc4; real-device acceptance pending. Implementation commit: 6a914c0 (base a0eee11). The codex/remote-macs branch and worktree have been removed.
+Status (2026-10-12): Mac implementation, review fixes and SSH setup/error recovery
+are merged and pushed to main through `ded22a7`. Automated verification passed;
+real-device acceptance remains open. The initial implementation merged at `a702cc4`
+(implementation `6a914c0`, base `a0eee11`); its branch and worktree were removed.
+The latest SSH follow-up branch was also removed. See the dated records below for
+the scope and evidence of each pass.
 
 Execution follows ce:executing-plans (installed CE 4.3.0): isolated worktree,
 subsystem agents, dependency gates, automated and real-device verification, mandatory
@@ -32,6 +37,7 @@ approval. Never bypass host-key or macOS trust. Existing settings/data survive f
 - [x] C: Shell lifecycle, host registry/history routing/settings/IPC (orchestrator); depends on A/B.
 - [x] D: Hosts UI, selection, setup, clocks, mocks (frontend agent); final integration depends on C.
 - [x] E1: Automated verification, packaged build, browser visual checks and code review; depends on A-D.
+- [x] SSH setup/error recovery follow-up: config-file detection, setup guidance, typed recovery, retry/trust state handling and regression tests; merged at `ded22a7`.
 - [ ] E2: Real two-Mac acceptance and overhead measurements; deferred from the current testing pass by the user's explicit instruction not to test another machine.
 
 ## Verification gates
@@ -79,7 +85,8 @@ open; do not substitute mocked results or mark them complete without evidence.
 Use a packaged build from `bun run build:app`; ordinary cargo development does not
 require a prebuilt helper. Both machines must be Apple Silicon Macs running macOS 26
 or newer. Enable Remote Login and key-based SSH on the monitored Mac; use the SSH
-account signed into its desktop. Enter LAN and/or Tailscale aliases in Hosts → Add Mac.
+account signed into its desktop. Enter LAN and/or Tailscale aliases, or `user@address`,
+in Hosts → Add Mac. Both routes must reach the same Mac and account.
 Review unknown-host fingerprints against the other Mac before accepting them. Changed
 keys and custom proxy trust configuration require native SSH resolution.
 
@@ -88,14 +95,62 @@ Kelvo to be quit on the other Mac and saves a matched app/data backup. macOS app
 remain native and can be completed on the other Mac before retrying. Cancellation stops
 read-only waits immediately, but waits for file swaps and settings writes to settle before
 recovery. A completed fresh installation may remain for a later retry; no host row is
-registered until handshake and local persistence succeed. Removal disconnects this
-controller and optionally deletes only its local mirror.
+registered until handshake and local persistence succeed. Setup enables remote
+monitoring and launch at login on the other Mac, as disclosed in Add Mac.
+Removal disconnects this controller and optionally deletes its local mirror.
+"Also stop sharing on that Mac" is checked by default: it disables remote monitoring
+for all controllers of that Mac, with a 15-second SSH timeout. Failure is reported
+without preventing removal; launch at login is unchanged (D-105).
 
 The selected host supplies live metrics and history. Settings and process control remain
 local. Unselected remote hosts send five-second summaries. Each mirror defaults to
 100 MB (decimal); actual database/WAL size is checked after each committed page, with
 pruning before the next page. Failed pruning is visible as history unavailable while
 live metrics continue.
+
+### SSH setup and recovery
+
+Add Mac and saved-host Settings check whether `~/.ssh/config` is a file on this Mac.
+If missing, the guide opens automatically; direct `user@address` connections still
+work without a config file. An unreadable path or other check failure is shown
+separately, with details and **Recheck config**. Finding a file does not validate its
+contents, discover aliases, or prove authentication. The setup guide does not create
+or edit `~/.ssh/config` or authentication keys. Explicitly accepting an unknown host
+does save its reviewed host key to the configured known-hosts file.
+
+The guide explains Remote Login, the signed-in remote account, public-key creation
+and authorization, SSH-agent unlocking, an optional config example, and LAN/Tailscale
+addresses. Commands can be copied or selected manually if clipboard access fails.
+Enter only an alias or `user@address`, not `ssh`, options or whitespace (255 characters
+maximum). Nondefault ports and other SSH options belong in the SSH config entry.
+
+For an unknown host in Add Mac, use **Verify host**, compare its fingerprint with
+the other Mac, then accept it. Saved-host Settings provides a separate interactive
+Terminal verification command (`BatchMode=no`, `StrictHostKeyChecking=ask`). Compare
+the matching key type with the fingerprints shown by this command on the other Mac:
+
+```sh
+for key in /etc/ssh/ssh_host_*_key.pub; do ssh-keygen -lf "$key"; done
+```
+
+The guide also provides a strict access test (`BatchMode=yes`,
+`StrictHostKeyChecking=yes`, `ControlPath=none`). It must succeed without a password,
+passphrase or trust prompt; success exits without output. Interactive verification
+alone does not establish that Kelvo can connect. Save any address edits, then use
+**Retry** in Hosts. A changed key requires confirming why it changed and resolving
+trust in Terminal; the app never replaces a known key automatically.
+
+| Failure | Recovery shown in setup/settings |
+| --- | --- |
+| SSH authentication | Check the signed-in account and Remote Login access, authorize a key, and unlock it in the SSH agent |
+| Host key needs verification | Compare fingerprints; investigate changed keys before resolving trust |
+| Unsupported Mac or Kelvo version | Check Apple Silicon/macOS 26 requirements and the diagnostic for the version mismatch |
+| Different Mac answers | Correct the alias/address/account, or add a replacement as a new Mac |
+| Connection/setup failure | Keep the actual diagnostic visible: this also covers installation, protocol and local I/O failures, not just network reachability |
+
+Other typed errors retain their diagnostic. Address edits clear obsolete errors and
+trust prompts; expired trust tokens return to verification. Failed operations keep
+form inputs, and unexpected failures are logged with the operation and destination.
 
 ## Outstanding real-device gates
 
@@ -105,6 +160,8 @@ or a blocker on that follow-up's automated coverage. Integration does not establ
 these results. A future real-device pass would verify:
 
 1. Signed app copy, Remote Login/key trust, native launch/login approval and resume.
+   Exercise the setup guide with no config file, direct `user@address`, a passphrase
+   key/SSH agent, unknown and changed host keys, and saved-host address edits.
 2. Live CPU/memory/process values against the source Mac, including held samples and
    positive/negative source clock changes.
 3. LAN preference, Tailscale fallback, return to LAN after network change, sleep/wake,
@@ -117,6 +174,27 @@ these results. A future real-device pass would verify:
 
 SSH alias suggestions remain part of the broader v4 roadmap. This milestone accepts
 explicit aliases and follows their existing SSH configuration.
+
+## SSH setup and review follow-up (2026-10-12)
+
+- [x] Pulled the remote-settings deadlock fix through `1b2e535`. The fix's real-device
+  evidence covers control responses, an off/on sharing toggle and metrics-socket
+  creation; an end-to-end two-Mac connection is still unverified. See the
+  [deadlock record](PROGRESS.md#2026-10-12-remote-access-settings-deadlock).
+- [x] Implemented the setup detection and recovery behavior above. `ce:code-reviewer`
+  found two blockers: saved-host guidance needed interactive trust verification,
+  and the broad connection-error kind incorrectly implied a network problem.
+  Both were fixed, their regressions failed before the fixes, and re-review approved.
+- [x] Final `make check`: 965 frontend tests and 839 Rust tests passed (32 ignored),
+  plus formatting, lint, typecheck and standard/App Store Rust checks. Full browser
+  suite: 286 passed, 10 existing skips. Light/dark Chromium/WebKit screenshots were
+  compared with Hosts, Settings and the gallery; visual differences are recorded in
+  [the progress log](PROGRESS.md#2026-10-12-ssh-setup-guidance-and-error-recovery).
+- [x] Committed, merged and pushed at `ded22a7`; commit hooks and the push gate
+  (`make check bindings-check e2e-perf`) passed. Removed `codex/ssh-setup-recovery`;
+  unrelated local planning files were preserved.
+- [ ] Native two-Mac setup and actual SSH-agent interoperability. Browser mocks and
+  the passing performance gate do not establish these or remote-host overhead.
 
 ## Single-Mac testing follow-up (2026-10-11)
 

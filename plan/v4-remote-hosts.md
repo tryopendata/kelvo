@@ -11,6 +11,14 @@
 > tool access despite user consent. See [the follow-up record](remote-macs-execution.md#single-mac-testing-follow-up-2026-10-11)
 > for verification counts, review status and remaining checks.
 
+> Current follow-up (2026-10-12): main includes the remote-settings deadlock fix
+> (`1b2e535`) and SSH setup/error recovery (`ded22a7`). Add Mac and saved-host Settings
+> detect a missing local config file, provide setup instructions and distinguish host
+> verification from password-free SSH access. Reviewed and pushed with all automated
+> gates passing; real two-Mac setup and SSH-agent interoperability remain unverified.
+> See [setup behavior](remote-macs-execution.md#setup-behavior) and the
+> [follow-up checklist](remote-macs-execution.md#ssh-setup-and-review-follow-up-2026-10-12).
+
 This doc covers v4.0 through v4.2. v4.0 ships `kelvo-agent`, the SSH transport, the sync protocol in real use and the Add-host flow. v4.1 adds a native Linux collector set with cgroups and containers. v4.2 adds the fleet view, the host switcher, remote metrics in the menu bar, and alerts evaluated on the agent.
 
 This is the version the v1 one-way doors were built for. Read [architecture.md](architecture.md) items 1 to 5 (series model, host identity, wire format, sync cursors, sources) and its Sync protocol section first; this doc refines them and does not repeat the type sketches. NVIDIA GPUs are out of scope (D-008).

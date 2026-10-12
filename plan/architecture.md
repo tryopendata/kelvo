@@ -344,7 +344,10 @@ A `Source` is anything that produces data for one host. Sources push live frames
 
 This puts the abstraction at the right layer. If instead the UI queried "a source" for history, every fleet card and every Timeline scroll on a remote host would be an SSH round trip, and an offline host would show nothing. With sources as producers, an offline host still has its mirrored history, and the fleet view is a local query.
 
-In v1, `LocalSource` wraps the in-process engine. Later it could become "spawn `kelvo-agent` on a unix socket" without the UI noticing. In v4, `RemoteSource` speaks `kelvo-proto` over `ssh host kelvo-agent serve --stdio` and writes into the same store.
+`LocalSource` wraps the in-process engine. The implemented Mac `RemoteSource` speaks
+`kelvo-proto` through a bundled SSH helper to the other Mac's app and writes to an
+isolated mirror per host (D-104), not the local store. A standalone `kelvo-agent`
+remains part of the broader v4 roadmap.
 
 ```rust
 // src-tauri (trait lives in kelvo-engine so the agent can reuse it)
@@ -1136,3 +1139,11 @@ closing one viewer cannot suppress another viewer's demand. Unselected connectio
 receive five-second summaries. Selected charts and process views request only their
 visible data. Route retries, control sockets and mirror errors remain independent
 of local sampling. Settings, alerts, process control and menu-bar output remain local.
+
+The shell's typed `remote_ssh_config_status` command checks metadata for the local
+`~/.ssh/config` file. Add Mac and host Settings consume it through the transport seam
+to open setup guidance when missing. This check does not parse aliases, validate
+authentication or modify SSH files; the connection probe remains authoritative.
+Typed setup errors supply recovery guidance and diagnostics, with interactive trust
+verification kept separate from noninteractive access testing. See
+[setup and recovery](remote-macs-execution.md#ssh-setup-and-recovery).
