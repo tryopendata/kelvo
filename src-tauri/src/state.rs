@@ -358,7 +358,7 @@ impl SettingsEffects for ShellEffects<'_> {
     fn committed(&self, old: &Settings, now: &SettingsSnapshot) {
         let new = &now.settings;
         if old.remote_access != new.remote_access {
-            crate::remote::refresh_metrics(self.app);
+            crate::remote::refresh_metrics(self.app, new.remote_access.enabled);
         }
         if old.docker != new.docker {
             let _ = self.state.docker.configure(new.docker.clone());

@@ -570,7 +570,7 @@ pub fn start(app: &AppHandle) -> anyhow::Result<()> {
             }
         }
     });
-    refresh_metrics(app);
+    refresh_metrics(app, state.settings.settings().remote_access.enabled);
     let handle = app.clone();
     *state.remotes.monitor.lock_ok() = match crate::remote_network::start(
         app,
@@ -651,9 +651,10 @@ fn control(app: &AppHandle, request: ControlRequest) -> ControlResponse {
     }
 }
 
-pub fn refresh_metrics(app: &AppHandle) {
+/// Starts or stops sharing over the metrics socket. `enabled` comes from the caller: see
+/// [`crate::settings::SettingsEffects`] for why the settings-change path can't read it.
+pub fn refresh_metrics(app: &AppHandle, enabled: bool) {
     let state = app.state::<AppState>();
-    let enabled = state.settings.settings().remote_access.enabled;
     let mut setting = state.remotes.metrics_stop.lock_ok();
     if let Some(tx) = setting.as_ref() {
         let _ = tx.send(enabled);

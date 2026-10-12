@@ -75,6 +75,21 @@ Status values: Not started, In progress, Blocked (say on what), Done (with the v
 
 ## Log
 
+### 2026-10-12 (remote access settings deadlock)
+
+The first real Add Mac attempt (to an M3 Max over Tailscale) failed with "Kelvo could
+not start ... kelvo-remote-helper: unexpected end of file". The Configure control request
+turned on remote access on the other Mac, and its main thread deadlocked:
+`SettingsEffects::committed` runs under the settings mutex and called
+`remote::refresh_metrics`, which re-read `settings()`. Every later settings reader hung,
+so each `status` request timed out after 10 s and `metrics.sock` was never bound
+(confirmed with `sample` on the remote process). `refresh_metrics` now takes `enabled` from
+its caller. The `SettingsEffects` docs state the no-reentry rule, and debug builds panic
+on a settings read inside an effect. A test covers this, and it hangs with the guard
+removed. A release build of the fix on the other Mac answers `status` in 9 ms, survives
+an off/on remote-access toggle through `configure`, and binds `metrics.sock`. The
+end-to-end Connect from this Mac after the fix has not been run yet.
+
 ### 2026-10-12 (production-readiness review fixes)
 
 A `ce:code-reviewer` production-readiness review of `2cdcb9f..0ffb166` (remote Macs
