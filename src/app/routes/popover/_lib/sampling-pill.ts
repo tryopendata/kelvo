@@ -1,4 +1,5 @@
 import type { PerformanceReason } from "@core/generated/bindings";
+import { isPerformanceOn } from "@core/performance";
 import type { StatusPillProps } from "~/widgets/status-pill";
 
 /**
@@ -20,7 +21,7 @@ export function samplingPill(s: {
   if (s.connection === "reconnecting")
     return { state: "stale", label: "Reconnecting" };
   if (s.stale) return { state: "stale", label: "Stale" };
-  const perf = (s.performance ?? "off") !== "off";
+  const perf = isPerformanceOn(s.performance);
   const ms = (perf ? s.framePeriodMs : null) ?? s.intervalMs ?? 1000;
   return { state: "live", label: `${ms / 1000}s${perf ? " · perf" : ""}` };
 }
