@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build Kelvo from source and install it to /Applications. Installs the build tools it
+# Build Kelvo from source and install it to ~/Applications. Installs the build tools it
 # needs (Xcode Command Line Tools, Rust, Bun) when they are missing. Rerun it to update.
 #
 # Usage:
@@ -12,7 +12,6 @@
 set -euo pipefail
 
 REPO_URL="https://github.com/tryopendata/kelvo.git"
-APP_DEST="/Applications/Kelvo.app"
 
 say() { printf '\033[1mkelvo:\033[0m %s\n' "$*"; }
 die() { printf '\033[1;31mkelvo:\033[0m %s\n' "$*" >&2; exit 1; }
@@ -79,20 +78,7 @@ build_and_install() {
   say "building Kelvo. The first build takes about five minutes."
   APPLE_SIGNING_IDENTITY=- bun run build:app --bundles app </dev/null
 
-  local built="$SRC/target/release/bundle/macos/Kelvo.app"
-  codesign --verify --deep --strict "$built"
-
-  # Replacing the bundle under a running copy leaves the old binary running.
-  if pgrep -xq kelvo; then
-    say "quitting the running Kelvo."
-    pkill -x kelvo
-    while pgrep -xq kelvo; do sleep 0.2; done
-  fi
-
-  rm -rf "$APP_DEST"
-  ditto "$built" "$APP_DEST"
-  say "installed $APP_DEST."
-  open "$APP_DEST"
+  bash "$SRC/scripts/install-app.sh" "$SRC/target/release/bundle/macos/Kelvo.app"
 }
 
 # Everything runs from main so that `curl | bash` has read the whole script before any

@@ -16,11 +16,11 @@ You need an Apple Silicon Mac (M1 or newer) on macOS 26 or newer. Intel Macs are
 curl -fsSL https://raw.githubusercontent.com/tryopendata/kelvo/main/scripts/install.sh | bash
 ```
 
-The script installs whichever build tools are missing (Xcode Command Line Tools, Rust, Bun), downloads the source to `~/.kelvo/src`, builds the app, copies it to `/Applications`, and opens it. The first run takes about five minutes, most of it compiling. Kelvo then appears in the menu bar and asks you to pick a menu bar style.
+The script installs whichever build tools are missing (Xcode Command Line Tools, Rust, Bun), downloads the source to `~/.kelvo/src`, builds the app, copies it to `~/Applications`, and opens it. The first run takes about five minutes, most of it compiling. Kelvo then appears in the menu bar and asks you to pick a menu bar style.
 
 Because the app is built on your Mac, Gatekeeper opens it without a warning.
 
-To update, run the same command again. It pulls the latest source, rebuilds, and replaces the app. Your history and settings are kept.
+To update, run the same command again. It pulls the latest source, rebuilds, quits the running Kelvo, replaces the app, and starts it again. Your history and settings are kept.
 
 ### Build it yourself
 
@@ -34,12 +34,15 @@ scripts/install.sh
 
 Run from a checkout, the script builds that checkout as it is and doesn't pull.
 
+During development, `bun run build:prod` (also available as `bun run build:local`)
+builds the release app, quits Kelvo, replaces `~/Applications/Kelvo.app`, and opens it.
+
 ### Uninstall
 
 Quit Kelvo from its menu bar item, then delete the app, its data and the source:
 
 ```bash
-rm -rf /Applications/Kelvo.app
+rm -rf ~/Applications/Kelvo.app
 rm -rf ~/Library/Application\ Support/com.tryopendata.kelvo ~/Library/Logs/com.tryopendata.kelvo
 rm -rf ~/.kelvo
 ```
