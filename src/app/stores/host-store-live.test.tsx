@@ -75,7 +75,7 @@ describe("a live channel that ends silently (#14)", () => {
     vi.restoreAllMocks();
   });
 
-  it("resubscribes after three more stale intervals, asking for the span missed", async () => {
+  it("resubscribes after three more stale intervals with the full history horizon", async () => {
     const t = createMockTransport({ autoTick: false });
     const { getByTestId } = mount(t);
     await wait(0);
@@ -91,10 +91,7 @@ describe("a live channel that ends silently (#14)", () => {
 
     await wait(100);
     expect(subscribes(t)).toHaveLength(2);
-    // About six seconds missed plus two intervals of slack, not the minute.
-    const backfill = subscribes(t)[1]?.args[1] as number;
-    expect(backfill).toBeGreaterThanOrEqual(6000);
-    expect(backfill).toBeLessThan(10_000);
+    expect(subscribes(t)[1]?.args[1]).toBe(60_000);
     expect(console.warn).toHaveBeenCalledWith(
       "[live] no frames while visible; resubscribing",
       expect.objectContaining({ hostId: MOCK_HOST_ID, window: "dashboard" })
@@ -105,6 +102,43 @@ describe("a live channel that ends silently (#14)", () => {
     expect(getByTestId("state").textContent).toBe("live false");
     t.dispose();
   });
+
+  it.each([false, true])(
+    "keeps the resume horizon after reconnect (Performance mode: %s)",
+    async (performance) => {
+      const t = createMockTransport({
+        autoTick: false,
+        historyRows: 3600,
+        scenarios: performance ? ["performance-mode"] : [],
+      });
+      mount(t, HOUR, <ResumeSeries />);
+      await wait(10);
+      await tick(t);
+      await wait(performance ? 12_000 : 6000);
+      expect(subscribes(t)).toHaveLength(2);
+      await tick(t);
+
+      // A later hidden interval must still recover the full missed span.
+      // backfillMs belongs to the stream's lifetime, not only this reconnect.
+      act(() => {
+        setVisibility("hidden");
+        t.setWindowVisible(false);
+      });
+      for (let i = 0; i < 120; i++) await tick(t);
+      act(() => {
+        t.setWindowVisible(true);
+        setVisibility("visible");
+      });
+      await wait(10);
+      await tick(t);
+      for (const values of Object.values(resumeSeries)) {
+        expect(values).toHaveLength(performance ? 60 : 120);
+        expect(values.filter((v) => v === null)).toHaveLength(0);
+      }
+      expect(subscribes(t)).toHaveLength(2);
+      t.dispose();
+    }
+  );
 
   it("shows reconnecting until the new subscription answers", async () => {
     const t = createMockTransport({ autoTick: false });
@@ -209,6 +243,15 @@ describe("no frames by design is not stale (#13)", () => {
     t.dispose();
   });
 });
+
+let resumeSeries: Record<string, (number | null)[]> = {};
+function ResumeSeries() {
+  resumeSeries = useWindowSeries(
+    ["cpu.total", "gpu.util", "mem.pressure"],
+    120_000
+  ).values;
+  return null;
+}
 
 let last2m: (number | null)[] = [];
 function LastTwoMinutes() {

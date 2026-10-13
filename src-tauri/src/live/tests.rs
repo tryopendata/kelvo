@@ -283,6 +283,58 @@ fn with_head(rest: &[&str]) -> Vec<String> {
     HEAD.iter().chain(rest).map(|s| s.to_string()).collect()
 }
 
+/// The dashboard can subscribe after SQLite warm-up but before the first live tick.
+#[tokio::test(start_paused = true)]
+async fn startup_backfills_warm_history_before_the_first_frame() {
+    let feed = FakeFeed::new();
+    let history = kelvo_store::HistoryResult {
+        tier: kelvo_schema::Tier::S10,
+        bucket_ms: 10_000,
+        series: vec![kelvo_store::SeriesPoints {
+            key: SeriesKey::bare(MetricId::from_static("cpu.total")),
+            points: [0, 10_000, 30_000]
+                .into_iter()
+                .map(|t| kelvo_store::Point {
+                    t,
+                    min: 20.0,
+                    max: 20.0,
+                    avg: 20.0,
+                })
+                .collect(),
+        }],
+        gaps: Vec::new(),
+    };
+    assert_eq!(feed.hub.warm(&history), 3);
+    assert!(feed.hub.latest_frame().is_none());
+    let (s, rx, _) = sink();
+    let reg = registry(&["dashboard"]);
+    let info = reg.subscribe("dashboard", feed.clone(), s, req(3_600_000));
+    assert_eq!(
+        info.backfill_rows, 3,
+        "saved samples must arrive before live ticks"
+    );
+    let messages = drain_raw(&rx).await;
+    let spans: Vec<_> = messages
+        .iter()
+        .filter_map(|m| match m {
+            LiveMsg::Backfill { start_ms, rows, .. } => Some((*start_ms, rows.len())),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        spans,
+        vec![(10_000, 2), (40_000, 1)],
+        "real missing bucket stays a gap"
+    );
+    feed.tick(&layout(1, 1), 41_000, 30.0);
+    assert!(
+        drain_raw(&rx)
+            .await
+            .iter()
+            .any(|m| matches!(m, LiveMsg::Frame { ts_ms: 41_000, .. }))
+    );
+}
+
 #[tokio::test(start_paused = true)]
 async fn subscribe_sends_layout_then_backfill_then_frames() {
     let feed = FakeFeed::new();

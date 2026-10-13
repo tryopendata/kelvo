@@ -126,7 +126,7 @@ interface LiveRequest {
  *   sampling is not paused and the display is awake (plan 4.17).
  * - Stale for `RECONNECT_INTERVALS` more while visible: the channel may have
  *   ended silently (review #14), so it shows `reconnecting` and
- *   resubscribes, asking only for the span it missed.
+ *   resubscribes with the window's full history horizon.
  * - Every subscription's `stream` goes to the window's process interest, so
  *   interest follows the live subscription (D-066).
  */
@@ -260,16 +260,19 @@ function useLiveSubscription(
       unsubscribe = () => {};
       interest.setStream(null);
       s.setConnection("reconnecting");
-      // Ask Rust for the span missed. Rows already held are dropped as not
-      // newer; a gap longer than the recent span refills the ring instead.
+      // backfillMs is also Rust's recovery horizon for every later show/wake.
+      // Shrinking it to this reconnect's missed span permanently loses older
+      // samples on subsequent resumes. Keep the window's full horizon.
+      // A longer outage needs a fresh ring: earlier chunks only prepend and
+      // cannot repair a hole between rows already held.
       const interval = s.status?.interval_ms ?? 1000;
-      let backfill = backfillMs;
-      if (s.lastTsMs !== null) {
-        const missed = clockRef.current() - s.lastTsMs + 2 * interval;
-        if (missed < RECENT_MS) backfill = Math.min(backfillMs, missed);
-        else s.clearRows();
+      if (
+        s.lastTsMs !== null &&
+        clockRef.current() - s.lastTsMs + 2 * interval >= RECENT_MS
+      ) {
+        s.clearRows();
       }
-      void connect(0, backfill);
+      void connect(0, backfillMs);
     };
 
     // Shown again: frames should resume within three intervals (Rust

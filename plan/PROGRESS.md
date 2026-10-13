@@ -84,6 +84,52 @@ Status values: Not started, In progress, Blocked (say on what), Done (with the v
 
 ## Log
 
+### 2026-10-13 (Shared chart gaps after reconnect)
+
+Read-only inspection of the running release's SQLite history found all 180 expected
+10-second buckets for 12:25–12:55 CDT, finite CPU total/user/system and all 2,880
+per-core triples, and no overlapping explicit gaps. Engine logs counted 1,796 ticks
+across the interval without collector/store warnings or stalls. The chart holes
+were in live delivery, while persisted measurements and range statistics survived.
+
+Reproduced the cause at the transport boundary: a short stale-channel reconnect
+replaced the dashboard's one-hour `backfillMs` with only the few seconds missed.
+Rust retains that request as the stream's recovery limit for every later visibility
+or display-wake resume. A subsequent two-minute hidden interval therefore restored
+only its tail. Reconnect now keeps the full configured history horizon; long
+outages still clear the frontend ring before the two-phase refill, so earlier
+chunks can restore history correctly. No collector, sample, gap, wire-format or
+visual-design semantics changed.
+
+Regression coverage reconnects, hides while collecting for two minutes, resumes,
+and checks CPU, GPU and memory chart continuity with Performance mode off and on.
+Reintroducing the old request truncation fails both cases (105 missing 1-second
+slots / 44 missing 2-second slots); the fix passes. `bun run check` passed Biome,
+typecheck and all 1,004 frontend tests. Temporary native/IPC tracing was removed.
+
+Native restart verification then exposed a startup race: the shell warmed 360
+SQLite rows before the first live frame, but `catch_up` required a latest frame
+and returned without sending them. The hub now supplies a backfill anchor from
+warm rows until a live frame exists. Warm buckets have exact end timestamps, so
+their 10-second interval no longer suppresses the following five seconds of live
+frames. A Rust regression reproduces both failures before their fixes, checks
+that saved rows arrive before the first frame, and preserves a real missing
+bucket as a gap. All 34 live-registry tests pass.
+
+`make check` passed formatting, workspace clippy and App Store compilation/clippy,
+but stopped at five hardware allocation gates: disk-capacity allocations are
+2.13/tick versus 1 in tray scenarios, 1.07 versus 0.5 in visible scenarios.
+An archived, unchanged `d9ba82a` reproduced all five with identical counts; no
+budgets were changed. The remaining workspace tests were run separately with
+only those five known failures excluded: 859 passed, 34 ignored. Built and
+ad-hoc signed the release, installed it to `~/Applications/Kelvo.app`, and
+verified the native 30-minute CPU chart and all core rows restore their saved
+history. The genuine "Kelvo not running" interval remains marked; the repeated
+unlabelled holes are gone. No visual styling changed. Diagnostic app/server and
+the temporary baseline source archive were removed; no branches or worktrees
+were created.
+
+
 ### 2026-10-13 (shared process selection and bulk Quit)
 
 Processes and the CPU, GPU, Memory, Disk and Power tables now share selection rows,

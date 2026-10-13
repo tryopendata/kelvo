@@ -203,6 +203,16 @@ impl LiveHub {
         self.lock().ring.backfill(since_ms)
     }
 
+    /// Timestamp and timeline anchoring a backfill. Before the first live frame,
+    /// stored warm-up rows on timeline 0 are already available to opening windows.
+    pub fn backfill_anchor(&self) -> Option<(i64, u32)> {
+        let r = self.lock();
+        r.frame
+            .as_ref()
+            .map(|f| (f.ts_ms, f.timeline))
+            .or_else(|| r.ring.last_ts().map(|ts| (ts, 0)))
+    }
+
     /// The most recent frame. Its `ts_ms` is "now" on the source's clock, which is what a
     /// backfill window is measured from.
     pub fn latest_frame(&self) -> Option<Arc<LiveFrame>> {

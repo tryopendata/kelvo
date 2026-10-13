@@ -452,7 +452,13 @@ impl Stream {
         let last = seg.start_ms + len_i64(n) * interval;
         self.last_ts = Some(last);
         self.timeline = Some(seg.timeline);
-        self.sent_until = last + interval / 2;
+        // Stored buckets are stamped at their exact end, not nominal tick times.
+        // Their 10 s interval must not suppress the first 5 s of live frames.
+        self.sent_until = if seg.layout.layout_no == kelvo_engine::WARM_LAYOUT_NO {
+            last
+        } else {
+            last + interval / 2
+        };
         Ok(())
     }
 
@@ -473,15 +479,15 @@ impl Stream {
         let mut out = CatchUp::default();
         let feed = Arc::clone(&self.feed);
         let hub = feed.hub();
-        // "Now" on the source's clock: its latest frame (D-066).
-        let Some(latest) = hub.latest_frame() else {
+        // "Now" on the source's clock: the latest frame, or warm history
+        // before the first frame (D-066, D-097).
+        let Some((anchor, timeline)) = hub.backfill_anchor() else {
             return Ok(out);
         };
-        let anchor = latest.ts_ms;
         let mut since = anchor - self.backfill_ms;
         let mut stepped_from = None;
         if let Some(last) = self.last_ts {
-            if anchor < last || self.timeline.is_some_and(|t| t != latest.timeline) {
+            if anchor < last || self.timeline.is_some_and(|t| t != timeline) {
                 stepped_from = Some(self.timeline);
                 self.restart_timeline();
             } else {
