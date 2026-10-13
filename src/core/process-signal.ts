@@ -65,7 +65,10 @@ export function signalOutcome(
   if (result.status === "ok") {
     return {
       tone: "success",
-      message: kind === "quit" ? `Asked ${who} to quit` : `Force quit ${who}`,
+      message:
+        kind === "quit"
+          ? `Asked ${who} to quit`
+          : `Force Quit requested for ${who}`,
     };
   }
   const e = result.error;

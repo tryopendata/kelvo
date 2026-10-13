@@ -88,7 +88,13 @@ const names = (table: HTMLElement) =>
   within(table)
     .getAllByRole("row")
     .slice(1)
-    .map((r) => within(r).queryAllByRole("cell")[0]?.textContent ?? "");
+    .map(
+      (r) =>
+        within(r)
+          .queryAllByRole("cell")
+          .find((cell) => cell.getAttribute("aria-label") !== "Selection")
+          ?.textContent ?? ""
+    );
 
 function renderCpu(clock: () => number = () => NOW) {
   const transport = createMockTransport({

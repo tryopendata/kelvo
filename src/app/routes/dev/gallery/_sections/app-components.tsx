@@ -567,7 +567,10 @@ export function AppComponentsSection() {
         </div>
       </div>
 
-      <GalleryItem name="ProcessTable" usedIn="CPU">
+      <GalleryItem
+        name="ProcessTable"
+        usedIn="Processes and module usage tables"
+      >
         <div
           className="vt-card flex flex-col"
           style={{ "--a": "var(--color-cpu)" } as CSSProperties}
@@ -579,6 +582,7 @@ export function AppComponentsSection() {
             </span>
           </div>
           <ProcessTable
+            selectable
             ariaLabel="Top processes"
             rows={PROCESS_ROWS}
             columns={[

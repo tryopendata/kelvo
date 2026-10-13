@@ -84,6 +84,65 @@ Status values: Not started, In progress, Blocked (say on what), Done (with the v
 
 ## Log
 
+### 2026-10-13 (shared process selection and bulk Quit)
+
+Processes and the CPU, GPU, Memory, Disk and Power tables now share selection rows,
+controls, context menus, confirmation and dispatch. Command/Shift selection,
+checkboxes, keyboard navigation, gutter drag with edge scrolling, app rows that
+stand for the app's main process with members selectable individually,
+hidden-selection counts and Selected-only review work
+across both virtualized and grouped tables. Selection holds exact process identities
+and row order; each confirmed batch uses the existing guarded Rust signal command,
+reports individual results, and stops unsent work on a lost connection or view/host
+change. Network history and compact widget lists remain read-only. See v1 §4.14.
+
+Compared light/dark Processes, module tables and the dev gallery with the design
+system. Intentional additions are the checkbox gutter, a 40 px selection toolbar
+below the rows shown only while selecting, neutral selected-row fill and checkboxes,
+fixed live-row action space and bounded batch review/results. Review changes: app
+rows act on the app's main process instead of every member (helpers were signalled
+before the app's graceful quit); the idle hint strip is gone and the toolbar moved
+below the rows so a starting click or drag doesn't shift rows under the pointer;
+checked boxes no longer pick up the cyan primary in dark mode; single-process
+outcomes keep their error tone (EPERM toast). Results now share the live table's available height so they cannot
+overlap its footer; the regression test failed with the fix removed and passed when
+restored.
+
+Verified: Biome, full typecheck and 1,002 Vitest tests; 18 feature Playwright checks
+in Chromium/WebKit; native Rust test rejecting a stale identity and sending Quit
+and Force Quit to disposable child processes. The full browser run passed 309,
+skipped 10 and hit one Power-page long-task failure during a source hot reload;
+the isolated frontend performance run passed 9/10, including CPU/GPU/Power, but
+hit a 587 ms dashboard-resume long task. That final case passed separately with
+zero long tasks (the machine had multiple CPU-heavy Python jobs during the run;
+the failure's cause was not established). `make check` passed Rust
+format, workspace Clippy and App Store compile/Clippy, then stopped at five existing
+disk-capacity allocation gates (2.13 > 1 tray-only; 1.07 > 0.5 window). The isolated
+tray gate reproduced 2.13 > 1 with unchanged Rust sources and budgets. The remaining
+schema/protocol/store suites passed separately. Native app UI modifier/drag testing
+remains manual; no whole-app CPU claim is made.
+
+Skill discovery now links the two personal Claude Essentials skill directories into
+`~/.agents/skills`, following OpenData's symlink pattern without copying instructions.
+Canonical `CLAUDE.md` documents plugin lookup fallback, and generated `AGENTS.md`
+includes it. A fresh Codex prompt preview found both skills; agent-config drift
+checking and all 17 synchronizer tests passed.
+
+### 2026-10-13 (local build and installer restart Kelvo)
+
+Added `bun run build:prod` alongside `build:local`. Both it and the one-line
+source installer now use a shared install step targeting `~/Applications/Kelvo.app`:
+stage and verify the new bundle, stop the current user's Kelvo, replace the app,
+and open it. A failed copy/signature check or a process that does not quit within
+10 seconds leaves the installed bundle intact. README commands reflect the path
+and restart behavior.
+
+Verified Bash syntax, ShellCheck (excluding SC1091 for the existing external Rust
+environment source), package.json's Biome check, and six isolated install scenarios:
+fresh install, running update, process exit race, shutdown timeout, invalid signature,
+and copy failure. These use simulated process/signing/launch commands with real
+temporary bundle copies; no full release build or live-app restart was performed.
+
 ### 2026-10-12 (Docker storage and cleanup completed)
 
 Updated the [storage and cleanup plan](docker-storage-cleanup.md) after CE review:

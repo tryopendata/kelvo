@@ -86,12 +86,14 @@ export function OtherAppsRow({
   first,
   indent = false,
   children,
+  selectionCell,
 }: {
   name: string;
   system: boolean;
   first: boolean;
   indent?: boolean;
   children: ReactNode;
+  selectionCell?: ReactNode;
 }) {
   return (
     <TableRow
@@ -101,6 +103,7 @@ export function OtherAppsRow({
         system && "border-b-0"
       )}
     >
+      {selectionCell}
       <TableCell className={APP_CELL}>
         <span className="inline-flex items-center gap-2">
           {indent && <span aria-hidden className="-ml-1 inline-block size-4" />}

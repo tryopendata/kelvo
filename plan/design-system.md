@@ -217,6 +217,23 @@ These apply to every live and history chart, in every surface.
 - Reduce Motion, Reduce Transparency and Increase Contrast are honored. Increase Contrast swaps `--color-border` for `--color-border-strong` and `--color-fg-faint` for `--color-muted-foreground`.
 - Windows support full keyboard navigation of the sidebar (arrow keys, Enter) and ⌘1 to ⌘9 for the first nine sidebar entries (proposed, not in mocks).
 
+### Process selection
+
+Actionable process tables have a leading checkbox column. A 40 px selection
+toolbar appears below the rows only while something is selected, so rows never
+move under the pointer when a click or gutter drag starts a selection; a
+fixed-height table gives up that space at the bottom. There is no idle hint strip.
+Selection uses the neutral `selected` surface and neutral checkbox overrides (in
+both themes); module accents continue to encode measured data. The action column
+retains its width when hover actions give way to the selection toolbar.
+Selected-only review lists exact process names/PIDs and last-observed eligibility;
+it does not fabricate historical metric cells. An app row's checkbox stands for the
+app's main process. A batch confirmation has a bounded scrolling list and a
+persistent footer, and results use one expandable list rather than one toast per
+process.
+These are intentional additions to the existing dense tables, with unchanged type,
+card surfaces and module metric formatting. See v1-local-monitor.md §4.14.
+
 ## Tray icon spec
 
 The tray image is rendered in Rust (`tiny-skia` for shapes, `ab_glyph` for text) as an `NSImage` template, so macOS tints it for light, dark and selected menu bars. All glyphs are monochrome; values are encoded by height and text.
@@ -307,7 +324,8 @@ Components under `src/app/widgets/` are render-only. They take plain props and c
 | `BatteryHistoryBars` | Hourly charge bars with charging marks | yes | `{ hours: { tsMs: number; charge: number \| null; charging: boolean }[]; annotations: ChartAnnotation[] }` |
 | `ChartAnnotation` | Labelled marker line inside a chart | yes | `{ tsMs; label }` |
 | `ProcessList` | Compact top-5: initial chip, name, value | yes | `{ rows: { initial; name; value: string }[] }` |
-| `ProcessTable` | Sortable, virtualized process table | no | `{ rows: ProcessRow[]; columns: ColumnId[]; sort: { by; dir }; onSort; onSelect? }` |
+| `ProcessTable` | Sortable, virtualized live process table; opt-in shared selection | no | `{ rows; columns; sort; onSort; selectable?; height }` |
+| `ProcessSelectionSurface`, `ProcessSelectionRow` | Shared selection, held order, checkboxes, keyboard/gutter drag, context menus, counted actions, review and batch results for live and grouped usage rows | no | `{ rows: { key; parentKey?; label; targets }[]; allTargets; scopeKey?; orderKey?; children }` |
 | `InterfaceTable`, `VolumeTable` | Network interfaces and disk volumes | no | `{ rows }` |
 | `InitialChip` | 16 px initial for a process | yes | `{ text: string }` |
 | `TimelineLanes` | Lane stack with shared x axis, crosshair and gap bands | no | `{ range: { fromMs; toMs }; tier; lanes: TimelineLaneProps[]; gaps: { fromMs; toMs; kind }[]; annotations; onCursor }` |

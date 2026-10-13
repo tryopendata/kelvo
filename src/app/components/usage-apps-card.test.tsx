@@ -123,7 +123,7 @@ const full = (fromMs: number, toMs: number): UsageByApp => ({
 const table = () => screen.findByRole("table", { name: "Energy by app" });
 
 describe("UsageAppsCard (D-093, D-099)", () => {
-  it("quits an app through its main process, after the dialog", async () => {
+  it("quits an app through its main process only, after the dialog", async () => {
     const { user, transport } = render(full);
     await table();
     await user.click(
@@ -133,17 +133,51 @@ describe("UsageAppsCard (D-093, D-099)", () => {
       name: "Quit Google Chrome?",
     });
     expect(dialog).toHaveTextContent("PID 10");
+    expect(
+      transport.calls.filter((c) => c.command === "process_signal")
+    ).toEqual([]);
     await user.click(within(dialog).getByRole("button", { name: "Quit" }));
     await waitFor(() =>
       expect(
-        transport.calls.filter((c) => c.command === "process_signal")
-      ).toEqual([
-        {
-          command: "process_signal",
-          args: [expect.any(String), 10, 10_000, "quit"],
-        },
-      ])
+        transport.calls
+          .filter((c) => c.command === "process_signal")
+          .map((c) => c.args.slice(1))
+      ).toEqual([[10, 10_000, "quit"]])
     );
+  });
+
+  it("selects an app as its main process and adds members individually", async () => {
+    const { user } = render(full);
+    await table();
+    await user.click(
+      screen.getByRole("checkbox", { name: "Select Google Chrome" })
+    );
+    expect(screen.getByText("1 selected")).toBeVisible();
+    await user.click(
+      screen.getByRole("button", { name: "Show Google Chrome processes" })
+    );
+    expect(
+      screen.getByRole("checkbox", { name: "Select Google Chrome Helper (12)" })
+    ).toBeDisabled();
+    await user.click(
+      screen.getByRole("checkbox", {
+        name: "Select Google Chrome Helper (Renderer) (11)",
+      })
+    );
+    expect(screen.getByText("2 selected")).toBeVisible();
+    await user.click(
+      screen.getByRole("checkbox", { name: "Select Google Chrome (10)" })
+    );
+    expect(screen.getByText("1 selected")).toBeVisible();
+    expect(
+      screen.getByRole("checkbox", { name: "Select Google Chrome" })
+    ).not.toBeChecked();
+    await user.click(screen.getByRole("button", { name: "Quit 1…" }));
+    expect(
+      await screen.findByRole("alertdialog", {
+        name: "Quit Google Chrome Helper (Renderer)?",
+      })
+    ).toHaveTextContent("PID 11");
   });
 
   it("expands an app to its processes; exited ones have no actions", async () => {

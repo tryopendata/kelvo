@@ -2,11 +2,7 @@ import type { LiveProcess } from "@core/generated/bindings";
 import { FULL_TABLE, type ProcessView } from "@core/process-interest";
 import { useMemo, useState } from "react";
 import { PageHeader } from "~/components/page-header";
-import {
-  ProcessContextMenu,
-  ProcessRowActions,
-  QuitDialog,
-} from "~/components/process-actions";
+import { SELECTION_BAR_PX } from "~/components/process-selection";
 import { type ProcessSort, ProcessTable } from "~/components/process-table";
 import { SearchField } from "~/components/search-field";
 import { SectionCard } from "~/components/section-card";
@@ -20,7 +16,6 @@ import {
   useProcessNetwork,
   useProcessRows,
 } from "~/hooks/use-process-interest";
-import { useQuitFlow } from "~/hooks/use-quit-flow";
 import { useUnits } from "~/hooks/use-units";
 import {
   COLUMN_SETS,
@@ -74,7 +69,6 @@ export default function ProcessesRoute() {
   const live = useProcessRows();
   const rows = live ?? EMPTY;
   const units = useUnits();
-  const flow = useQuitFlow();
   // The App Store edition has no Quit or Force Quit (D-065).
   const edition = useEdition();
   const canSignal = local && edition?.process_signal === true;
@@ -125,41 +119,31 @@ export default function ProcessesRoute() {
         className="min-h-0 flex-1"
       >
         <div ref={bodyRef} className="min-h-0 flex-1 px-1 pt-1">
-          {shown.length > 0 ? (
-            <ProcessTable
-              rows={shown}
-              columns={COLUMN_SETS[set].columns}
-              sort={tableSort}
-              onSort={setSort}
-              height={Math.max(120, bodyHeight - TABLE_CHROME_PX)}
-              memUnits={units.bytes}
-              freezeOrderOnHover
-              rowAction={
-                canSignal
-                  ? (p) => <ProcessRowActions p={p} onRequest={flow.request} />
-                  : undefined
-              }
-              rowContextMenu={
-                canSignal
-                  ? (p) => <ProcessContextMenu p={p} onRequest={flow.request} />
-                  : undefined
-              }
-              ariaLabel="Processes"
-            />
-          ) : (
-            <p className="px-3 py-6 font-normal text-[12px] text-muted-foreground">
-              {loading
+          <ProcessTable
+            rows={shown}
+            columns={COLUMN_SETS[set].columns}
+            sort={tableSort}
+            onSort={setSort}
+            height={Math.max(
+              120,
+              bodyHeight - TABLE_CHROME_PX - (canSignal ? SELECTION_BAR_PX : 0)
+            )}
+            memUnits={units.bytes}
+            freezeOrderOnHover
+            selectable={canSignal}
+            empty={
+              loading
                 ? "Waiting for the first process sample…"
-                : `No process matches “${query.trim()}”.`}
-            </p>
-          )}
+                : `No process matches “${query.trim()}”.`
+            }
+            ariaLabel="Processes"
+          />
         </div>
         <footer className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 border-border-subtle border-t px-4 py-2.5 font-normal text-[11px] text-muted-foreground">
           <span className="figures">{countLine(rows, shown)}</span>
           {note && <span>{note}</span>}
         </footer>
       </SectionCard>
-      <QuitDialog flow={flow} />
     </div>
   );
 }

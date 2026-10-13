@@ -3,17 +3,15 @@ import { useRef } from "react";
 import { ConfirmDialog } from "~/components/confirm-dialog";
 import { Button } from "~/components/ui/button";
 import {
-  ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuLabel,
-  ContextMenuSeparator,
-} from "~/components/ui/context-menu";
-import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "~/components/ui/tooltip";
-import type { QuitFlow, Quittable } from "~/hooks/use-quit-flow";
+import {
+  type QuitFlow,
+  type Quittable,
+  quitExclusion,
+} from "~/hooks/use-quit-flow";
 
 const LABEL: Record<SignalKind, string> = {
   quit: "Quit",
@@ -82,46 +80,6 @@ export function ProcessRowActions({
   );
 }
 
-/** The row's context menu: the same two actions, with the reason when refused. */
-export function ProcessContextMenu({
-  p,
-  onRequest,
-}: {
-  p: Quittable;
-  onRequest: QuitFlow["request"];
-}) {
-  const reason = refusalReason(p);
-  return (
-    <ContextMenuContent className="w-60">
-      <ContextMenuLabel className="truncate font-[590] text-[12px]">
-        {p.name}
-        <span className="figures ml-1.5 font-normal text-muted-foreground">
-          {p.pid}
-        </span>
-      </ContextMenuLabel>
-      <ContextMenuSeparator />
-      <ContextMenuItem
-        disabled={reason !== null}
-        onSelect={() => onRequest(p, "quit")}
-      >
-        Quit…
-      </ContextMenuItem>
-      <ContextMenuItem
-        variant="destructive"
-        disabled={reason !== null}
-        onSelect={() => onRequest(p, "force_quit")}
-      >
-        Force Quit…
-      </ContextMenuItem>
-      {reason && (
-        <p className="px-2 pt-1 pb-1.5 font-normal text-[11px] text-muted-foreground">
-          {reason}
-        </p>
-      )}
-    </ContextMenuContent>
-  );
-}
-
 /**
  * Confirm dialog naming the process and PID. Force Quit says that unsaved
  * data is lost (D-029). Nothing is sent before the confirm button.
@@ -134,6 +92,10 @@ export function QuitDialog({ flow }: { flow: QuitFlow }) {
   const shown = req ?? last.current;
   if (!shown) return null;
   const force = shown.kind === "force_quit";
+  const many = shown.targets.length > 1;
+  const eligible = shown.targets.filter(
+    (p) => quitExclusion(p) === null
+  ).length;
   return (
     <ConfirmDialog
       open={req !== null}
@@ -141,9 +103,17 @@ export function QuitDialog({ flow }: { flow: QuitFlow }) {
         if (!open) flow.cancel();
       }}
       className="sm:max-w-md"
-      title={`${force ? "Force quit" : "Quit"} ${shown.target.name}?`}
+      title={`${force ? "Force quit" : "Quit"} ${many ? `${shown.targets.length} processes` : shown.target.name}?`}
       description={
-        force ? (
+        many ? (
+          <>
+            {eligible} requests will be sent. {shown.targets.length - eligible}{" "}
+            excluded.
+            {force
+              ? " Processes stop immediately. Unsaved data will be lost."
+              : " Kelvo asks each process to quit; apps may ask you to save first."}
+          </>
+        ) : force ? (
           <>
             {shown.target.name} (PID{" "}
             <span className="figures">{shown.target.pid}</span>) stops
@@ -157,11 +127,46 @@ export function QuitDialog({ flow }: { flow: QuitFlow }) {
           </>
         )
       }
-      confirmLabel={force ? "Force Quit" : "Quit"}
+      confirmLabel={
+        flow.busy
+          ? `Sending ${flow.progress} of ${shown.targets.length}…`
+          : many
+            ? `${force ? "Force Quit" : "Quit"} ${eligible} processes`
+            : force
+              ? "Force Quit"
+              : "Quit"
+      }
+      confirmDisabled={eligible === 0}
       confirmVariant={force ? "destructive" : "secondary"}
       onConfirm={() => void flow.confirm()}
       busy={flow.busy}
       lockWhileBusy
-    />
+    >
+      {many && (
+        <ul
+          aria-label="Processes to review"
+          className="max-h-64 divide-y divide-border-subtle overflow-auto text-[12px]"
+        >
+          {shown.targets.map((p) => (
+            <li
+              key={`${p.pid}:${p.start_time_us}`}
+              className="flex justify-between gap-3 py-2"
+            >
+              <span className="min-w-0 break-words">
+                {p.name}{" "}
+                <span className="figures text-muted-foreground">
+                  PID {p.pid}
+                </span>
+              </span>
+              {quitExclusion(p) && (
+                <span className="text-muted-foreground">
+                  {quitExclusion(p)}
+                </span>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </ConfirmDialog>
   );
 }

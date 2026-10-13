@@ -48,7 +48,7 @@ describe("signalOutcome", () => {
   it("names the process on success and on an exited process", () => {
     expect(
       signalOutcome({ status: "ok", data: null }, target, "force_quit").message
-    ).toBe("Force quit Xcode (2214)");
+    ).toBe("Force Quit requested for Xcode (2214)");
     expect(
       signalOutcome(
         { status: "error", error: { kind: "not_found" } },

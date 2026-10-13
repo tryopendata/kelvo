@@ -1,103 +1,212 @@
-import type { LiveProcess } from "@core/generated/bindings";
+import type { HostId } from "@core/generated/bindings";
+import { type ProcessTarget, uniqueTargets } from "@core/process-selection";
 import {
   type ProcessSignalResult,
   refusalReason,
   type SignalKind,
+  type SignalOutcome,
   type SignalTarget,
   signalOutcome,
   signalTarget,
 } from "@core/process-signal";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { useMarkProcessSignalUnavailable } from "~/hooks/use-edition";
+import {
+  useEdition,
+  useMarkProcessSignalUnavailable,
+} from "~/hooks/use-edition";
 import { useIsLocalHost } from "~/hooks/use-is-local-host";
 import { useTransport } from "~/lib/transport-context";
 import { useHostId } from "~/stores/host-store";
 
-/**
- * What Quit needs of a process: its identity, the name the dialog shows and
- * Rust's refusal. A live row (`LiveProcess`) and an energy row
- * (`ProcessEnergy`, D-093) both carry it.
- */
-export type Quittable = Pick<
-  LiveProcess,
-  "pid" | "start_time_us" | "name" | "refusal"
->;
+export type Quittable = ProcessTarget;
 
 export interface QuitRequest {
+  host: HostId;
+  /** Kept for single-process dialog wording. */
   target: SignalTarget;
+  targets: readonly Quittable[];
   kind: SignalKind;
 }
 
+export interface QuitResult {
+  target: Quittable;
+  state: "accepted" | "excluded" | "failed" | "unknown" | "unsent";
+  tone: SignalOutcome["tone"];
+  message: string;
+}
+
+export const quitExclusion = (p: Quittable): string | null =>
+  p.running === false ? "Already exited" : refusalReason(p);
+
 export interface QuitFlow {
-  /** The request waiting for confirmation, or null when no dialog is open. */
   pending: QuitRequest | null;
-  /** The command is in flight. */
   busy: boolean;
-  /** Open the confirm dialog. Does nothing for a refused process. */
+  results: readonly QuitResult[];
+  progress: number;
   request: (p: Quittable, kind: SignalKind) => void;
+  requestMany: (targets: readonly Quittable[], kind: SignalKind) => void;
   cancel: () => void;
-  /** Send `process_signal` for the pending request and report the outcome. */
   confirm: () => Promise<void>;
 }
 
-/**
- * Quit and Force Quit (D-029): nothing is sent until the user confirms, and
- * the outcome is a toast. `EPERM` reads "Kelvo can't quit processes owned by
- * another user" and offers nothing more; there is no escalation.
- */
+/** One immutable, host-bound request; every target still passes Rust's guards. */
 export function useQuitFlow(): QuitFlow {
   const local = useIsLocalHost();
+  const edition = useEdition();
   const transport = useTransport();
   const hostId = useHostId();
   const [pending, setPending] = useState<QuitRequest | null>(null);
+  const pendingRef = useRef<QuitRequest | null>(null);
   const [busy, setBusy] = useState(false);
+  const locked = useRef(false);
+  const [results, setResults] = useState<readonly QuitResult[]>([]);
+  const [progress, setProgress] = useState(0);
+  const lifetime = useRef(0);
+  const currentHost = useRef(hostId);
+  currentHost.current = hostId;
+  const allowed = useRef(false);
+  allowed.current = local && edition?.process_signal === true;
   const markUnavailable = useMarkProcessSignalUnavailable();
 
-  const confirm = async () => {
-    if (!local || !pending || busy) return;
-    const { target, kind } = pending;
-    setBusy(true);
-    let result: ProcessSignalResult;
-    try {
-      result = await transport.processSignal(
-        hostId,
-        target.pid,
-        target.startTimeUs,
-        kind
-      );
-    } catch (err) {
-      // Typed errors resolve; only an IPC failure (an `Error`) throws.
-      console.error("[processes] process_signal failed", {
-        hostId,
-        window: transport.windowLabel(),
-        pid: target.pid,
-        kind,
-        err,
-      });
-      toast.error(err instanceof Error ? err.message : String(err));
-      setBusy(false);
-      setPending(null);
-      return;
-    }
-    if (result.status === "error" && result.error.kind === "unavailable") {
-      markUnavailable();
-    }
-    const outcome = signalOutcome(result, target, kind);
-    toast[outcome.tone](outcome.message);
+  useEffect(() => {
+    currentHost.current = hostId;
+    setPending(null);
+    pendingRef.current = null;
+    setResults([]);
     setBusy(false);
+    locked.current = false;
+    return () => {
+      lifetime.current += 1;
+    };
+  }, [hostId]);
+
+  const requestMany = (targets: readonly Quittable[], kind: SignalKind) => {
+    if (!allowed.current || locked.current) return;
+    const captured = uniqueTargets(targets).map((p) => ({ ...p }));
+    const first = captured[0];
+    if (!first) return;
+    const req = {
+      host: hostId,
+      target: signalTarget(first),
+      targets: captured,
+      kind,
+    };
+    pendingRef.current = req;
+    setPending(req);
+    setProgress(0);
+  };
+
+  const confirm = async () => {
+    const req = pendingRef.current;
+    if (
+      !allowed.current ||
+      !req ||
+      locked.current ||
+      req.host !== currentHost.current
+    )
+      return;
+    if (req.targets.every((p) => quitExclusion(p) !== null)) return;
+    // A ref closes the same-render double-click race before React commits busy.
+    locked.current = true;
+    setBusy(true);
+    const token = lifetime.current;
+    const out: QuitResult[] = [];
+    let stopped = false;
+    for (const p of req.targets) {
+      const exclusion = quitExclusion(p);
+      if (exclusion) {
+        out.push({
+          target: p,
+          state: "excluded",
+          tone: "info",
+          message: exclusion,
+        });
+      } else if (
+        stopped ||
+        lifetime.current !== token ||
+        currentHost.current !== req.host ||
+        !allowed.current
+      ) {
+        out.push({
+          target: p,
+          state: "unsent",
+          tone: "info",
+          message: "Not sent — batch interrupted",
+        });
+      } else {
+        try {
+          const result: ProcessSignalResult = await transport.processSignal(
+            req.host,
+            p.pid,
+            p.start_time_us,
+            req.kind
+          );
+          const outcome = signalOutcome(result, signalTarget(p), req.kind);
+          out.push({
+            target: p,
+            state: result.status === "ok" ? "accepted" : "failed",
+            tone: outcome.tone,
+            message: outcome.message,
+          });
+          if (
+            result.status === "error" &&
+            ["unavailable", "remote_host", "unknown_host"].includes(
+              result.error.kind
+            )
+          ) {
+            stopped = true;
+            if (result.error.kind === "unavailable") markUnavailable();
+          }
+        } catch (err) {
+          console.error("[processes] process_signal failed", {
+            hostId: req.host,
+            pid: p.pid,
+            kind: req.kind,
+            err,
+          });
+          out.push({
+            target: p,
+            state: "unknown",
+            tone: "error",
+            message:
+              "Connection failed; whether the request arrived is unknown",
+          });
+          stopped = true;
+        }
+      }
+      if (lifetime.current === token) setProgress(out.length);
+    }
+    const accepted = out.filter((r) => r.state === "accepted").length;
+    if (out.length === 1 && out[0]) {
+      toast[out[0].tone](out[0].message);
+    } else {
+      toast.info(
+        `${accepted} of ${out.length} ${req.kind === "quit" ? "quit" : "force quit"} requests accepted`
+      );
+    }
+    if (lifetime.current !== token) return;
+    setResults(out);
+    setBusy(false);
+    locked.current = false;
+    pendingRef.current = null;
     setPending(null);
   };
 
   return {
     pending,
     busy,
+    results,
+    progress,
+    requestMany,
     request: (p, kind) => {
-      if (!local || refusalReason(p) !== null) return;
-      setPending({ target: signalTarget(p), kind });
+      if (quitExclusion(p) === null) requestMany([p], kind);
     },
     cancel: () => {
-      if (!busy) setPending(null);
+      if (!locked.current) {
+        pendingRef.current = null;
+        setPending(null);
+      }
     },
     confirm,
   };

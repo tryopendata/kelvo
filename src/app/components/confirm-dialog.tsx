@@ -29,6 +29,8 @@ export interface ConfirmDialogProps {
   lockWhileBusy?: boolean;
   /** Width override for the content ("sm:max-w-sm"). */
   className?: string;
+  children?: ReactNode;
+  confirmDisabled?: boolean;
 }
 
 /**
@@ -47,6 +49,8 @@ export function ConfirmDialog({
   busy = false,
   lockWhileBusy = false,
   className,
+  children,
+  confirmDisabled = false,
 }: ConfirmDialogProps) {
   return (
     <AlertDialog.Root open={open} onOpenChange={onOpenChange}>
@@ -61,6 +65,7 @@ export function ConfirmDialog({
               {description}
             </AlertDialog.Description>
           </DialogHeader>
+          {children}
           <DialogFooter>
             <AlertDialog.Cancel asChild>
               <Button variant="outline" disabled={lockWhileBusy && busy}>
@@ -69,7 +74,7 @@ export function ConfirmDialog({
             </AlertDialog.Cancel>
             <Button
               variant={confirmVariant}
-              disabled={busy}
+              disabled={busy || confirmDisabled}
               onClick={onConfirm}
             >
               {confirmLabel}

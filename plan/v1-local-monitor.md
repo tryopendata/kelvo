@@ -338,6 +338,47 @@ While the pointer is over the table, row order is frozen and values keep updatin
 
 Quit and Force Quit (D-029) appear as a row action on hover and in the row's context menu. Quit asks the process to exit: `NSRunningApplication.terminate` when the process is a regular app, `SIGTERM` otherwise. Force Quit uses `forceTerminate` or `SIGKILL`. Both open a confirm dialog naming the process and PID; the Force Quit dialog also says that unsaved data in that process will be lost. The actions are disabled, with a tooltip saying why, for PID 1 (`launchd`), `kernel_task`, `WindowServer` and Kelvo's own processes, and Rust refuses them again regardless of what the UI sends. A process owned by another user fails with `EPERM`; the UI shows a toast ("Kelvo can't quit processes owned by another user") and does not offer to escalate. If the process has already exited, or its PID now belongs to a different process, the command reports that and the table drops the row on the next tick.
 
+#### Shared selection and bulk Quit (2026-10-13)
+
+Processes and the CPU, GPU, Memory, Disk and Power usage tables share
+`ProcessSelectionSurface`, `ProcessSelectionRow`, selection controls, context
+menus, and one confirmation/dispatch flow. The live table retains virtualization;
+the module adapter retains app grouping, historical figures, coverage notes and
+remainder rows. Network's historical app totals and compact widget lists stay
+read-only because they do not expose actionable process identities.
+
+Click selects one row; Command-click toggles, Shift-click selects the displayed
+range, Command-Shift-click adds a range, and checkboxes toggle without modifiers.
+Command-A selects all matching loaded processes, including virtualized rows and
+apps behind Show all. Control-click opens the context menu. Arrow keys move,
+Shift extends, Command moves focus without selection, Space toggles, Home/End and
+Page Up/Down navigate, and Escape clears. Drag the selection gutter to select a
+range with edge scrolling; Command-drag adds it.
+
+An app row stands for the process Rust picked to quit the app (`quit_pid`): its
+hover Quit and Force Quit and its checkbox target that process only, because
+signalling helpers alongside a graceful quit cuts it short (an app asking to save
+loses its helpers). Apps without a `quit_pid` have no app-level action. Expanded
+member rows are selectable individually and deduplicate against the app row. Exited and remainder rows are not selectable. Protected processes remain
+reviewable but are excluded from signaling with an explanation. New members never
+join a selection automatically. Selections retain exact PID/start-time identities
+through search, sorting, columns and collapse; the toolbar shows hidden counts and
+opens a flat Selected-only review. Leaving the route, switching host, or explicitly
+changing the historical range clears the selection. Automatic order holds while
+hovered, focused, selected or confirming; values continue updating.
+
+The toolbar and selected-row context menu act on the selection. With no selection,
+hover actions remain available. The selection toolbar appears below the rows only
+while something is selected.
+One confirmation snapshots the host, identities and action, lists names/PIDs in a
+bounded scroll area, and counts exclusions. Sequential dispatch reuses
+`process_signal`, including its Rust identity and refusal checks. Individual errors
+do not abort other targets; transport failure, unavailable host/edition, or leaving
+the view stops unsent work. A lost transport reply has unknown outcome and is never
+automatically retried. Results report accepted requests, not verified exits; the
+selection remains available for a newly confirmed follow-up. No automatic Force
+Quit, privilege escalation, remote signals, or process-name kill patterns.
+
 ### 4.15 Settings
 
 | Section | Row | Control | Effect |
@@ -813,6 +854,7 @@ GPU, Memory, Network, Disk, Battery, Processes pages (4.8, 4.9, 4.11 to 4.14; no
 - [x] Processes page per 4.14 with search, column sets, frozen order on hover
 - [x] `process_signal` command: re-read the PID's start time and fail with `PidReused` on mismatch, refuse PID 1, `kernel_task`, `WindowServer` and Kelvo's own PIDs, use `NSRunningApplication` for apps and `kill(2)` otherwise, map `EPERM` and `ESRCH` to typed errors
 - [x] Quit and Force Quit row action and context menu with confirm dialogs (Force Quit warns about unsaved data), disabled state with tooltip for refused processes, toast on `PermissionDenied`
+- [x] Shared process selection and batch Quit across Processes and CPU/GPU/Memory/Disk/Power, including hidden selection review and partial results
 - [x] Tests: Rust tests that spawn a child process and quit and force-quit it, that a stale `start_time` returns `PidReused`, that each refused target is rejected without a signal sent, and that another user's PID returns `PermissionDenied`; a Vitest test that the dialog sends the command only after confirmation
 
 Timeline (4.6)

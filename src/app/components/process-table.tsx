@@ -8,10 +8,18 @@ import {
   type RateUnits,
 } from "@core/format";
 import type { LiveProcess } from "@core/generated/bindings";
+import { targetKey } from "@core/process-selection";
 import { observeElementRect, useVirtualizer } from "@tanstack/react-virtual";
-import { type ReactNode, useMemo, useRef, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import {
+  ProcessSelectionHead,
+  ProcessSelectionRow,
+  ProcessSelectionSurface,
+  SELECTION_BAR_PX,
+  SharedProcessActions,
+  useProcessSelection,
+} from "~/components/process-selection";
 import { type ColumnDef, SortHeader } from "~/components/sort-header";
-import { ContextMenu, ContextMenuTrigger } from "~/components/ui/context-menu";
 import { cn } from "~/lib/utils";
 import { InitialChip } from "~/widgets/initial-chip";
 import { MeterTrack } from "~/widgets/meter-track";
@@ -42,6 +50,7 @@ export interface ProcessSort {
 
 export interface ProcessTableProps {
   rows: readonly LiveProcess[];
+  selectable?: boolean;
   columns: readonly ProcessColumn[];
   sort: ProcessSort;
   onSort: (sort: ProcessSort) => void;
@@ -51,15 +60,6 @@ export interface ProcessTableProps {
   height: number;
   memUnits?: ByteUnits;
   rateUnits?: RateUnits;
-  /** Row click, for selection and row actions on the Processes page. */
-  onSelect?: (row: LiveProcess) => void;
-  /**
-   * Controls in a trailing cell, shown while the row is hovered or has focus
-   * (the Processes page's Quit and Force Quit).
-   */
-  rowAction?: (row: LiveProcess) => ReactNode;
-  /** A `<ContextMenuContent>` for the row's context menu. */
-  rowContextMenu?: (row: LiveProcess) => ReactNode;
   /**
    * Keep row order while the pointer is over the table so a row does not move
    * under the cursor; values keep updating, new rows go last, and order
@@ -124,9 +124,7 @@ export function frozenOrder(
 }
 
 /** Stable identity: a pid is reused, (pid, start time) is not. */
-export function processKey(p: LiveProcess): string {
-  return `${p.pid}:${p.start_time_us}`;
-}
+export const processKey = targetKey;
 
 /** Sort a copy; `null` values go last in either direction, ties by pid. */
 export function sortProcesses(
@@ -350,7 +348,33 @@ const COLUMNS: Record<ProcessColumn, ColumnDef<LiveProcess, CellCtx>> = {
  * the sort; clicking the sorted column flips direction, another column sorts
  * descending (ascending for text).
  */
-export function ProcessTable({
+export function ProcessTable(props: ProcessTableProps) {
+  const descriptors = useMemo(
+    () =>
+      props.selectable
+        ? sortProcesses(props.rows, props.sort).map((p) => ({
+            key: processKey(p),
+            label: `${p.name} (${p.pid})`,
+            targets: [p],
+          }))
+        : [],
+    [props.rows, props.sort, props.selectable]
+  );
+  if (!props.selectable) return <ProcessTableBody {...props} />;
+  return (
+    <ProcessSelectionSurface
+      rows={descriptors}
+      allTargets={props.rows}
+      orderKey={`${props.sort.by}:${props.sort.dir}`}
+      height={props.height + ROW_H + 4 + SELECTION_BAR_PX}
+    >
+      {/* Takes the toolbar's space while nothing is selected; the scroll area shrinks when it shows. */}
+      <ProcessTableBody {...props} height={props.height + SELECTION_BAR_PX} />
+    </ProcessSelectionSurface>
+  );
+}
+
+function ProcessTableBody({
   rows,
   columns,
   sort,
@@ -359,22 +383,28 @@ export function ProcessTable({
   height,
   memUnits = "GB",
   rateUnits = "MBps",
-  onSelect,
-  rowAction,
-  rowContextMenu,
   freezeOrderOnHover = false,
   growOnly = false,
   empty,
   ariaLabel,
 }: ProcessTableProps) {
+  const selection = useProcessSelection();
   const scrollRef = useRef<HTMLDivElement>(null);
   const [frozenKeys, setFrozenKeys] = useState<string[] | null>(null);
   const sortedLive = useMemo(() => sortProcesses(rows, sort), [rows, sort]);
-  const sorted = useMemo(
+  const frozen = useMemo(
     () => (frozenKeys ? frozenOrder(sortedLive, frozenKeys) : sortedLive),
     [sortedLive, frozenKeys]
   );
-  const colSpan = columns.length + (rowAction ? 1 : 0);
+  const byKey = new Map(frozen.map((p) => [processKey(p), p]));
+  const sorted = selection
+    ? selection.rows.flatMap((r) => {
+        const p = byKey.get(r.key);
+        return p ? [p] : [];
+      })
+    : frozen;
+  const hasActions = Boolean(selection);
+  const colSpan = columns.length + (hasActions ? 1 : 0) + (selection ? 1 : 0);
   const showEmpty = rows.length === 0 && empty !== undefined;
   const bodyPx = Math.min((showEmpty ? 1 : rows.length) * ROW_H, height);
   const [tallestPx, setTallestPx] = useState(bodyPx);
@@ -394,6 +424,17 @@ export function ProcessTable({
         cb(rect.height > 0 ? rect : { width: rect.width, height })
       ),
   });
+  const revealRef = selection?.reveal;
+  useEffect(() => {
+    if (!revealRef) return;
+    revealRef.current = (key) => {
+      const index = sorted.findIndex((p) => processKey(p) === key);
+      if (index >= 0) virtualizer.scrollToIndex(index);
+    };
+    return () => {
+      revealRef.current = null;
+    };
+  }, [revealRef, sorted, virtualizer]);
   const items = virtualizer.getVirtualItems();
   const padTop = items[0]?.start ?? 0;
   const padBottom =
@@ -410,7 +451,8 @@ export function ProcessTable({
     <div
       ref={scrollRef}
       data-testid="process-table-scroll"
-      className="overflow-auto"
+      data-process-scroll
+      className="min-h-0 overflow-auto"
       style={
         growOnly
           ? { height: Math.max(tallestPx, bodyPx) + ROW_H + 4 }
@@ -431,6 +473,7 @@ export function ProcessTable({
       >
         <thead className="sticky top-0 z-10 bg-card">
           <tr>
+            <ProcessSelectionHead />
             {columns.map((col) => {
               const { label, align } = COLUMNS[col];
               return (
@@ -446,10 +489,10 @@ export function ProcessTable({
                 />
               );
             })}
-            {rowAction && (
+            {hasActions && (
               <th
                 scope="col"
-                className="w-px border-border border-b p-0 font-normal"
+                className="w-36 border-border border-b p-0 font-normal"
               >
                 <span className="sr-only">Actions</span>
               </th>
@@ -464,14 +507,15 @@ export function ProcessTable({
           )}
           {items.map((v) => {
             const p = sorted[v.index] as LiveProcess;
-            const row = (
-              <tr
+            return (
+              <ProcessSelectionRow
+                rowKey={processKey(p)}
+                label={`${p.name} (${p.pid})`}
+                targets={[p]}
                 key={v.key}
                 data-key={v.key}
-                onClick={onSelect ? () => onSelect(p) : undefined}
                 className={cn(
-                  "group h-[29px] border-border-subtle border-b hover:bg-selected data-[state=open]:bg-selected",
-                  onSelect && "cursor-default"
+                  "group h-[29px] border-border-subtle border-b hover:bg-selected"
                 )}
               >
                 {columns.map((col) => (
@@ -485,21 +529,14 @@ export function ProcessTable({
                     {COLUMNS[col].cell(p, ctx)}
                   </td>
                 ))}
-                {rowAction && (
-                  <td className="whitespace-nowrap py-0 pr-2 pl-1 text-right">
+                {hasActions && (
+                  <td className="w-36 min-w-36 whitespace-nowrap py-0 pr-2 pl-1 text-right">
                     <span className="opacity-0 group-focus-within:opacity-100 group-hover:opacity-100 group-data-[state=open]:opacity-100">
-                      {rowAction(p)}
+                      <SharedProcessActions targets={[p]} />
                     </span>
                   </td>
                 )}
-              </tr>
-            );
-            if (!rowContextMenu) return row;
-            return (
-              <ContextMenu key={v.key}>
-                <ContextMenuTrigger asChild>{row}</ContextMenuTrigger>
-                {rowContextMenu(p)}
-              </ContextMenu>
+              </ProcessSelectionRow>
             );
           })}
           {showEmpty && (
