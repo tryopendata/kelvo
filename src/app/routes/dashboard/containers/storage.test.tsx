@@ -76,16 +76,18 @@ it("disables AutoRemove Stop while ordinary Stop displays the grace period", asy
     historyRows: 1,
   });
   const result = renderWithProviders(<ContainersRoute />, { transport });
-  await result.user.click(
-    await screen.findByRole("button", { name: "Review running containers" })
-  );
   expect(
     await screen.findByRole("button", { name: "Stop web" })
-  ).toBeDisabled();
-  expect(screen.getByText(/Stop unavailable: AutoRemove/)).toBeVisible();
+  ).toHaveAttribute("aria-disabled", "true");
   await result.user.click(screen.getByRole("button", { name: "Stop worker" }));
-  expect(await screen.findByText(/Docker waits 30 seconds/)).toBeVisible();
-  expect(within(screen.getByRole("dialog")).getByText("worker")).toBeVisible();
+  expect(
+    await screen.findByText(
+      "Docker sends SIGTERM and waits 30 seconds, then kills the container."
+    )
+  ).toBeVisible();
+  expect(
+    screen.getByRole("alertdialog", { name: "Stop worker?" })
+  ).toBeVisible();
   result.unmount();
   transport.dispose();
 });

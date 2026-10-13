@@ -19,18 +19,20 @@ export function useNiceCeiling(
 ): number {
   const state = useRef<CeilingState | null>(null);
   const lastMs = useRef<number | null>(null);
+  const lastMax = useRef<number | null>(null);
   const lastWindow = useRef(windowMs);
   if (lastWindow.current !== windowMs) {
     state.current = null;
     lastMs.current = null;
     lastWindow.current = windowMs;
   }
-  if (lastMs.current !== nowMs) {
-    let max: number | null = null;
-    for (const v of values)
-      if (v !== null && (max === null || v > max)) max = v;
+  let max: number | null = null;
+  for (const v of values) if (v !== null && (max === null || v > max)) max = v;
+  // Selection changes can publish a larger series at the same history timestamp.
+  if (lastMs.current !== nowMs || lastMax.current !== max) {
     state.current = nextCeiling(state.current, max, nowMs, { minCeiling });
     lastMs.current = nowMs;
+    lastMax.current = max;
   }
   return state.current?.ceiling ?? minCeiling;
 }

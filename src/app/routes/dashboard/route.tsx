@@ -88,7 +88,7 @@ export default function DashboardLayout() {
         ref={mainRef}
         data-stale={stale || undefined}
         className={cn(
-          "min-w-0 flex-1 overflow-y-auto px-6 pt-5 pb-6 transition-opacity duration-(--motion-crossfade)",
+          "min-w-0 flex-1 overflow-y-auto px-3 pt-5 pb-6 transition-opacity duration-(--motion-crossfade) sm:px-6",
           pageEnter,
           stale && "opacity-50"
         )}

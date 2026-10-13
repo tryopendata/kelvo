@@ -1,5 +1,7 @@
 # Docker container monitoring
 
+The overview, comparison history, monitoring controls and Start/Stop UX are specified by [Containers monitoring UX RFC](docker-monitoring-ux-rfc.md), which supersedes the overview layout in this document.
+
 **Status:** Implemented and merged to `main`; real-world release acceptance remains open. **Date:** 2026-10-11.
 
 The reviewed implementation (`73f485c`) and verification record (`4f35d32`) were

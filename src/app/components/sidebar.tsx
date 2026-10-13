@@ -92,6 +92,7 @@ function SidebarItem({
   return (
     <a
       href={entry.href}
+      title={entry.label}
       aria-current={current ? "page" : undefined}
       data-sidebar-item
       onClick={onClick}
@@ -115,9 +116,11 @@ function SidebarItem({
       >
         <path d={ICONS[entry.icon]} />
       </svg>
-      <span className="flex-1 truncate text-[13px]">{entry.label}</span>
+      <span className="flex-1 truncate text-[13px] max-sm:sr-only">
+        {entry.label}
+      </span>
       {!entry.disabled && entry.value && (
-        <span className="figures min-w-9 text-right font-normal text-[11px] text-muted-foreground">
+        <span className="figures min-w-9 text-right font-normal text-[11px] text-muted-foreground max-sm:hidden">
           {entry.value}
         </span>
       )}
@@ -200,13 +203,13 @@ export function Sidebar({
       ref={navRef}
       aria-label="Dashboard sections"
       onKeyDown={onKeyDown}
-      className="relative flex h-full w-[220px] flex-col gap-0.5 border-border-subtle border-r bg-deep px-2.5 pt-3.5 pb-3 text-foreground"
+      className="relative flex h-full w-[220px] shrink-0 flex-col gap-0.5 border-border-subtle border-r bg-deep px-2.5 pt-3.5 pb-3 text-foreground max-sm:w-13 max-sm:px-2"
     >
       <div
         ref={pillRef}
         aria-hidden
         data-sidebar-pill
-        className="pointer-events-none absolute inset-x-2.5 top-0 h-[30px] rounded-control bg-selected opacity-0 shadow-[inset_0_0_0_1px_var(--color-border)] transition-transform duration-(--motion-fast) ease-out"
+        className="pointer-events-none absolute inset-x-2.5 top-0 h-[30px] rounded-control bg-selected opacity-0 shadow-[inset_0_0_0_1px_var(--color-border)] transition-transform duration-(--motion-fast) ease-out max-sm:inset-x-2"
       />
       <SidebarBrand />
       {hostSwitcher}
@@ -220,7 +223,7 @@ export function Sidebar({
         />
       ))}
       <div className="flex-1" />
-      <div className="flex flex-col gap-1 border-border-subtle border-t px-2 pt-2.5">
+      <div className="flex flex-col gap-1 border-border-subtle border-t px-2 pt-2.5 max-sm:sr-only">
         <div className="flex items-center gap-2">
           {status.paused ? (
             <>
@@ -274,7 +277,7 @@ const SidebarBrand = memo(function SidebarBrand() {
         className="mb-2 flex shrink-0 items-center gap-2.5 border-border-subtle border-b px-2 pt-0.5 pb-3"
       >
         <KelvoMark className="pointer-events-none size-5" />
-        <span className="pointer-events-none font-[620] text-[18px] leading-none tracking-[-0.02em]">
+        <span className="pointer-events-none font-[620] text-[18px] leading-none tracking-[-0.02em] max-sm:sr-only">
           Kelvo
         </span>
       </div>

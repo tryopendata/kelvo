@@ -236,6 +236,18 @@ pub async fn docker_retained(
 }
 #[tauri::command]
 #[specta::specta]
+pub async fn docker_comparison(
+    state: State<'_, AppState>,
+    request: DockerComparisonRequest,
+) -> Result<DockerComparisonPage, CommandError> {
+    let handle = state.docker.clone();
+    tauri::async_runtime::spawn_blocking(move || handle.comparison(&request))
+        .await
+        .map_err(|_| error("Docker comparison task failed"))?
+        .map_err(error)
+}
+#[tauri::command]
+#[specta::specta]
 pub async fn docker_history(
     state: State<'_, AppState>,
     request: DockerHistoryRequest,
@@ -376,7 +388,7 @@ pub async fn docker_storage_prepare(
 }
 #[tauri::command]
 #[specta::specta]
-pub fn docker_storage_execute(
+pub async fn docker_storage_execute(
     state: State<'_, AppState>,
     token: String,
     confirm_volumes: bool,
@@ -393,4 +405,18 @@ pub fn docker_storage_operation(
     operation_id: String,
 ) -> Result<kelvo_engine::docker::storage::DockerStorageOperation, CommandError> {
     state.docker.storage_operation(&operation_id).map_err(error)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn docker_container_action(
+    state: State<'_, AppState>,
+    engine_id: String,
+    container_id: String,
+    action: kelvo_schema::docker_storage::DockerContainerAction,
+) -> Result<kelvo_engine::docker::storage::DockerStorageOperation, CommandError> {
+    state
+        .docker
+        .container_action(&engine_id, &container_id, action)
+        .map_err(error)
 }

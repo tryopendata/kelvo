@@ -153,7 +153,8 @@ fn events_deduplicate_full_identity_and_cursor_is_atomic() {
     let snap = reader.docker_snapshot(host(1).id, "daemon").unwrap();
     assert_eq!(snap.cursor().unwrap().unwrap().time_ns, event.time_ns);
     assert!(
-        snap.history(&query(Tier::S10))
+        !snap
+            .history(&query(Tier::S10))
             .unwrap()
             .coverage
             .iter()
@@ -354,7 +355,7 @@ fn shared_commit_failure_reports_host_and_docker_and_releases_reservations() {
             |r| r.get::<_, i64>(0)
         )
         .unwrap(),
-        1
+        0
     );
     w.flush().unwrap();
     assert_eq!(
@@ -499,35 +500,35 @@ fn default_allowance_churn() {
 }
 
 #[test]
-fn queue_count_is_bounded_until_terminal_ack_and_rejections_record_coverage() {
-    let dir = temp_dir("docker-queue");
-    let store = open(&dir, "h.sqlite");
+fn applied_batches_release_admission_before_the_300_second_commit() {
+    let dir = temp_dir("docker-admission");
+    let mut config = kelvo_store::StoreConfig::new(dir.path().join("h.sqlite"));
+    config.commit_interval = std::time::Duration::from_secs(300);
+    let store = kelvo_store::Store::open(config).unwrap();
     let w = store.writer();
     w.upsert_host(host(1)).unwrap();
     let mut receivers = Vec::new();
-    for revision in 1..=MAX_PENDING_WRITES {
-        receivers.push(w.write_docker(batch(revision as i64)).unwrap());
+    for revision in 1..=400 {
+        let mut b = batch(revision);
+        // Advance the sampled clock through 299 seconds; the queue barrier below
+        // waits for apply, never COMMIT, and avoids wall-clock sleeps.
+        b.start_ms = T0 + revision * 299_000 / 400;
+        b.end_ms = b.start_ms + 1;
+        receivers.push(w.write_docker(b).unwrap());
+        w.begin_session(host(1).id, T0).unwrap();
+        assert_eq!(w.docker_storage_status().pending_writes, 0);
+        assert_eq!(w.docker_storage_status().pending_bytes, 0);
+        assert!(matches!(
+            receivers.last().unwrap().try_recv(),
+            Err(TryRecvError::Empty)
+        ));
     }
-    let rejected = w.write_docker(batch(999)).unwrap();
-    assert_eq!(rejected.recv().unwrap().outcome, DockerOutcome::Rejected);
-    assert_eq!(w.docker_storage_status().pending_writes, MAX_PENDING_WRITES);
-    assert!(w.docker_storage_status().pending_bytes <= MAX_PENDING_BYTES);
     w.flush().unwrap();
     for rx in receivers {
         assert_eq!(rx.recv().unwrap().outcome, DockerOutcome::Persisted);
     }
-    assert_eq!(w.docker_storage_status().pending_writes, 0);
-    let conn = raw(&store);
-    assert_eq!(
-        conn.query_row(
-            "SELECT count(*) FROM docker_coverage WHERE reason='write_failed'",
-            [],
-            |r| r.get::<_, i64>(0)
-        )
-        .unwrap(),
-        1
-    );
 }
+
 #[test]
 fn metadata_only_pressure_reclaims_and_resumes_without_waiting_for_prune() {
     let dir = temp_dir("docker-metadata-pressure");
@@ -604,50 +605,6 @@ fn daemon_identity_churn_is_accounted_bounded_and_preserves_generation() {
     let rx = w.write_docker(b).unwrap();
     w.flush().unwrap();
     assert_eq!(rx.recv().unwrap().outcome, DockerOutcome::Persisted);
-}
-
-#[test]
-fn loss_scope_overflow_records_conservative_global_coverage() {
-    let dir = temp_dir("docker-loss-overflow");
-    let store = open(&dir, "h.sqlite");
-    let w = store.writer();
-    w.upsert_host(host(1)).unwrap();
-    let rx = w.write_docker(batch(1)).unwrap();
-    w.flush().unwrap();
-    assert_eq!(rx.recv().unwrap().outcome, DockerOutcome::Persisted);
-    let mut pending = Vec::new();
-    for n in 0..MAX_PENDING_WRITES {
-        pending.push(w.write_docker(batch(n as i64 + 2)).unwrap());
-    }
-    for n in 0..1000 {
-        let mut b = batch(n + 1000);
-        b.daemon_id = format!("unseen-{n}");
-        b.start_ms = T0 + n;
-        b.end_ms = T0 + n + 10_000;
-        assert_eq!(
-            w.write_docker(b).unwrap().recv().unwrap().outcome,
-            DockerOutcome::Rejected
-        );
-    }
-    w.flush().unwrap();
-    let conn = raw(&store);
-    let span: (i64, i64) = conn
-        .query_row(
-            "SELECT start_ms,end_ms FROM docker_coverage WHERE reason='loss_scope_overflow'",
-            [],
-            |r| Ok((r.get(0)?, r.get(1)?)),
-        )
-        .unwrap();
-    assert_eq!(span, (T0 + 127, T0 + 10999));
-    w.flush().unwrap();
-    let count: i64 = conn
-        .query_row(
-            "SELECT count(*) FROM docker_coverage WHERE reason='loss_scope_overflow'",
-            [],
-            |r| r.get(0),
-        )
-        .unwrap();
-    assert_eq!(count, 1);
 }
 
 #[test]
@@ -809,5 +766,142 @@ fn retained_catalog_overlay_filters_counts_and_pages_without_duplicate_identitie
     assert!(
         snap.catalog_with_overlay(None, "", 0, 100, &oversized, &[])
             .is_err()
+    );
+}
+
+#[test]
+fn open_engine_switch_recovers_from_observed_population_without_migration() {
+    let dir = temp_dir("docker-switch-recovery");
+    let store = open(&dir, "h.sqlite");
+    let writer = store.writer();
+    writer.upsert_host(host(1)).unwrap();
+    let mut b = batch(1);
+    b.buckets[0].entity.clear();
+    b.buckets[0].populations.push(PopulationSegment {
+        revision: 1,
+        start_ms: T0 + 2000,
+        end_ms: T0 + 10000,
+    });
+    b.populations.push(DockerPopulation {
+        revision: 1,
+        effective_ms: T0 + 2000,
+        members: vec!["c".into()],
+    });
+    writer.write_docker(b).unwrap();
+    writer.flush().unwrap();
+    let conn = rusqlite::Connection::open(store.path()).unwrap();
+    conn.execute("INSERT INTO docker_coverage(host_id,engine_id,start_ms,end_ms,reason,revision,sampled_ms,expected_ms) SELECT host_id,id,?1,NULL,'engine_switch',1,0,0 FROM docker_engines", [T0+1000]).unwrap();
+    conn.execute("INSERT INTO docker_coverage(host_id,engine_id,start_ms,end_ms,reason,revision,sampled_ms,expected_ms) SELECT host_id,id,?1,NULL,'engine_switch',1,0,0 FROM docker_engines", [T0+15000]).unwrap();
+    let mut reader = store.reader().unwrap();
+    let snapshot = reader.docker_snapshot(host(1).id, "daemon").unwrap();
+    let coverage = snapshot.event_coverage(None, T0, T0 + 20000).unwrap();
+    assert_eq!(coverage[0].end_ms, Some(T0 + 2000));
+    assert_eq!(
+        coverage[1].end_ms, None,
+        "no later observation leaves a switch open"
+    );
+    drop(snapshot);
+    conn.execute_batch("PRAGMA foreign_keys=ON; DELETE FROM docker_10s; DELETE FROM docker_1m;")
+        .unwrap();
+    let snapshot = reader.docker_snapshot(host(1).id, "daemon").unwrap();
+    assert_eq!(
+        snapshot.event_coverage(None, T0, T0 + 20000).unwrap()[0].end_ms,
+        Some(T0 + 2000),
+        "coarse tiers preserve the exact observation boundary"
+    );
+    drop(snapshot);
+    writer.write_docker(batch(2)).unwrap();
+    writer.flush().unwrap();
+    let end: Option<i64> = conn
+        .query_row(
+            "SELECT end_ms FROM docker_coverage WHERE reason='engine_switch' AND start_ms=?1",
+            [T0 + 1000],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(end, Some(T0 + 2000));
+    let mut stale = batch(3);
+    stale.buckets.clear();
+    stale.coverage.push(DockerCoverage {
+        entity: None,
+        metric: None,
+        start_ms: T0 + 1000,
+        end_ms: None,
+        reason: "engine_switch".into(),
+        revision: 3,
+        sampled_ms: 0,
+        expected_ms: 0,
+    });
+    writer.write_docker(stale).unwrap();
+    writer.flush().unwrap();
+    let end: Option<i64> = conn
+        .query_row(
+            "SELECT end_ms FROM docker_coverage WHERE reason='engine_switch' AND start_ms=?1",
+            [T0 + 1000],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        end,
+        Some(T0 + 2000),
+        "late retries must not reopen a closed interval"
+    );
+}
+
+#[test]
+fn v7_removes_only_legacy_engine_wide_save_loss_records() {
+    let dir = temp_dir("docker-v7");
+    let path = dir.path().join("h.sqlite");
+    {
+        let store = open(&dir, "h.sqlite");
+        let w = store.writer();
+        w.upsert_host(host(1)).unwrap();
+        let mut b = batch(1);
+        for entity in [None, Some("c".into())] {
+            for reason in ["write_failed", "loss_scope_overflow", "sleep"] {
+                b.coverage.push(DockerCoverage {
+                    entity: entity.clone(),
+                    metric: None,
+                    start_ms: T0,
+                    end_ms: Some(T0 + 10_000),
+                    reason: reason.into(),
+                    revision: 1,
+                    sampled_ms: 0,
+                    expected_ms: 10_000,
+                });
+            }
+        }
+        let rx = w.write_docker(b).unwrap();
+        w.flush().unwrap();
+        assert_eq!(rx.recv().unwrap().outcome, DockerOutcome::Persisted);
+    }
+    let conn = rusqlite::Connection::open(&path).unwrap();
+    conn.execute_batch(
+        "PRAGMA user_version=6; UPDATE meta SET value=6 WHERE key='schema_version';",
+    )
+    .unwrap();
+    drop(conn);
+    let store = open(&dir, "h.sqlite");
+    let conn = raw(&store);
+    assert_eq!(
+        count(
+            &conn,
+            "SELECT count(*) FROM docker_coverage WHERE entity_id IS NULL AND reason IN ('write_failed','loss_scope_overflow')"
+        ),
+        0
+    );
+    assert_eq!(
+        count(
+            &conn,
+            "SELECT count(*) FROM docker_coverage WHERE entity_id IS NOT NULL"
+        ),
+        3
+    );
+    assert_eq!(
+        count(
+            &conn,
+            "SELECT count(*) FROM docker_coverage WHERE reason='sleep'"
+        ),
+        2
     );
 }

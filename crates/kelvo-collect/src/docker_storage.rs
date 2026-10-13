@@ -173,9 +173,12 @@ fn allowed(
         && p.len() == 4
         && p.get(1) == Some(&"containers")
         && p.get(2).is_some_and(|s| valid_id(s))
-        && p.get(3) == Some(&"stop")
     {
-        return equals(&[("t", "30")]);
+        return match p.get(3) {
+            Some(&"stop") => equals(&[("t", "30")]),
+            Some(&"start") => q.is_empty(),
+            _ => false,
+        };
     }
     method == hyper::Method::POST
         && path == "/build/prune"
@@ -379,6 +382,7 @@ impl DockerStorageAdapter {
             );
         };
         let eligible = match selection.action {
+            DockerStorageAction::Start => false,
             DockerStorageAction::Delete => current.can_delete && reviewed.can_delete,
             DockerStorageAction::Stop => current.can_stop && reviewed.can_stop,
         };
@@ -425,6 +429,103 @@ impl DockerStorageAdapter {
                 None,
             );
         }
+        self.dispatch(selection).await
+    }
+    /// Revalidate only the selected container. This lane never scans storage.
+    pub async fn container_action(
+        &self,
+        container_id: &str,
+        action: DockerContainerAction,
+        can_dispatch: impl Fn() -> bool,
+    ) -> DockerStorageItemResult {
+        let selection = DockerStorageSelection {
+            kind: DockerStorageKind::Container,
+            id: container_id.into(),
+            action: action.into(),
+        };
+        let skipped = |message: &str| DockerStorageItemResult {
+            selection: selection.clone(),
+            status: DockerStorageItemStatus::Skipped,
+            message: message.into(),
+            reclaimed_bytes: None,
+        };
+        let Ok(_permit) = self.action_permit.try_acquire() else {
+            return skipped("Another Docker action is running");
+        };
+        if !valid_id(container_id) {
+            return skipped("Container identity is invalid");
+        }
+        let inspected = match self
+            .scan_client
+            .inspect_container(container_id, None::<InspectContainerOptions>)
+            .await
+        {
+            Ok(container) => container,
+            Err(bollard::errors::Error::DockerResponseServerError {
+                status_code: 404, ..
+            }) => {
+                return skipped("Container no longer exists");
+            }
+            Err(_) => return skipped("Container information is unavailable; no action was sent"),
+        };
+        if inspected.id.as_deref() != Some(container_id) {
+            return skipped("Container identity changed or is unavailable");
+        }
+        let lifecycle = inspected
+            .state
+            .and_then(|state| state.status)
+            .map(|status| status.to_string());
+        match action {
+            DockerContainerAction::Start => {
+                if !matches!(lifecycle.as_deref(), Some("exited" | "created")) {
+                    return skipped("Only an exited or newly created container can be started");
+                }
+            }
+            DockerContainerAction::Stop => {
+                if !matches!(
+                    lifecycle.as_deref(),
+                    Some("running" | "restarting" | "paused")
+                ) {
+                    return skipped("Container is no longer running");
+                }
+                match inspected.host_config.and_then(|config| config.auto_remove) {
+                    Some(false) => (),
+                    Some(true) => {
+                        return skipped(
+                            "Stop is unavailable because Docker would automatically remove this container",
+                        );
+                    }
+                    None => {
+                        return skipped(
+                            "Stop is unavailable because the container host configuration is unknown",
+                        );
+                    }
+                }
+            }
+        }
+        if self
+            .scan_client
+            .info()
+            .await
+            .ok()
+            .and_then(|info| info.id)
+            .as_deref()
+            != Some(self.engine.id.as_str())
+        {
+            return skipped("Docker engine changed or is unavailable");
+        }
+        if !can_dispatch() {
+            return skipped("Docker engine changed, paused, or disconnected before dispatch");
+        }
+        self.dispatch(&selection).await
+    }
+    async fn dispatch(&self, selection: &DockerStorageSelection) -> DockerStorageItemResult {
+        let result = |status, message: String, reclaimed_bytes| DockerStorageItemResult {
+            selection: selection.clone(),
+            status,
+            message,
+            reclaimed_bytes,
+        };
         let response = tokio::time::timeout(DEADLINE, self.mutate(selection)).await;
         match response {
             Ok(Ok(MutationOutcome::NoRemoval)) => result(
@@ -437,14 +538,14 @@ impl DockerStorageAdapter {
                 "Docker accepted the action".into(),
                 bytes,
             ),
-            Ok(Err(bollard::errors::Error::DockerResponseServerError { status_code, .. })) => {
+            Ok(Err(bollard::errors::Error::DockerResponseServerError { status_code, message })) => {
                 result(
                     if status_code == 404 || status_code == 409 {
                         DockerStorageItemStatus::Skipped
                     } else {
                         DockerStorageItemStatus::Failed
                     },
-                    format!("Docker returned HTTP {status_code}; no retry was sent"),
+                    format!("Docker returned HTTP {status_code}: {}; no retry was sent", bounded(&message, 512)),
                     None,
                 )
             }
@@ -460,6 +561,11 @@ impl DockerStorageAdapter {
         selection: &DockerStorageSelection,
     ) -> Result<MutationOutcome, bollard::errors::Error> {
         match (selection.kind, selection.action) {
+            (DockerStorageKind::Container, DockerStorageAction::Start) => {
+                self.action_client
+                    .start_container(&selection.id, None::<StartContainerOptions>)
+                    .await?
+            }
             (DockerStorageKind::Container, DockerStorageAction::Stop) => {
                 self.action_client
                     .stop_container(
@@ -1177,7 +1283,22 @@ mod tests {
             true,
             false
         ));
+        assert!(allowed(
+            &hyper::Method::POST,
+            "/containers/abc/start",
+            None,
+            true,
+            false
+        ));
+        assert!(!allowed(
+            &hyper::Method::POST,
+            "/containers/abc/start",
+            None,
+            false,
+            false
+        ));
         for (method, path, query) in [
+            (hyper::Method::POST, "/containers/abc/start", "detachKeys=x"),
             (
                 hyper::Method::DELETE,
                 digest.as_str(),
@@ -1265,6 +1386,7 @@ mod tests {
         revoke_during_inspect: Arc<AtomicBool>,
         dispatch_allowed: Arc<AtomicBool>,
         drop_mutation_response: Arc<AtomicBool>,
+        mutation_error: Arc<Mutex<Option<u16>>>,
         cache_response: Arc<Mutex<Value>>,
         task: tokio::task::JoinHandle<()>,
     }
@@ -1287,6 +1409,8 @@ mod tests {
         let cache_response = Arc::new(Mutex::new(
             json!({"CachesDeleted":["cache.*one"],"SpaceReclaimed":40}),
         ));
+        let mutation_error = Arc::new(Mutex::new(None));
+        let serve_error = mutation_error.clone();
         let serve_cache = cache_response.clone();
         let serve_drop = drop_mutation_response.clone();
         let serve_revoke = revoke_during_inspect.clone();
@@ -1298,6 +1422,7 @@ mod tests {
                 let Ok((mut stream, _)) = listener.accept().await else {
                     break;
                 };
+                let mutation_error = serve_error.clone();
                 let cache_response = serve_cache.clone();
                 let drop_response = serve_drop.clone();
                 let revoke = serve_revoke.clone();
@@ -1326,7 +1451,16 @@ mod tests {
                     }
                     let path = first.split_whitespace().nth(1).unwrap_or("");
                     let path = unversioned(path.split('?').next().unwrap_or(""));
-                    let body = if path == "/version" {
+                    let error_status = if first.starts_with("POST") || first.starts_with("DELETE") {
+                        *mutation_error.lock_ok()
+                    } else if path.starts_with("/containers/") && details.lock_ok().is_empty() {
+                        Some(404)
+                    } else {
+                        None
+                    };
+                    let body = if error_status.is_some() {
+                        json!({"message":"Port 8080 is already in use"})
+                    } else if path == "/version" {
                         json!({"Version":"29.4.0","GitCommit":"daa0cb7f","ApiVersion":"1.49","MinAPIVersion":"1.40"})
                     } else if path == "/info" {
                         json!({"ID":"fake"})
@@ -1360,10 +1494,12 @@ mod tests {
                     } else {
                         Value::Null
                     };
-                    let status = if body.is_null() {
-                        "204 No Content"
+                    let status = if let Some(code) = error_status {
+                        format!("{code} Fixture Error")
+                    } else if body.is_null() {
+                        "204 No Content".into()
                     } else {
-                        "200 OK"
+                        "200 OK".into()
                     };
                     let body = if body.is_null() {
                         String::new()
@@ -1387,6 +1523,7 @@ mod tests {
             revoke_during_inspect,
             dispatch_allowed,
             drop_mutation_response,
+            mutation_error,
             cache_response,
             task,
         }
@@ -1594,6 +1731,128 @@ mod tests {
         );
         assert!(!f.requests.lock_ok().iter().any(|r| r.starts_with("POST")));
     }
+    #[tokio::test]
+    async fn container_actions_inspect_only_target_and_use_exact_start_stop_endpoints() {
+        let f = fake().await;
+        let adapter = DockerStorageAdapter::connect(f.engine.clone())
+            .await
+            .unwrap();
+        for (state, action) in [
+            ("exited", DockerContainerAction::Start),
+            ("created", DockerContainerAction::Start),
+            ("running", DockerContainerAction::Stop),
+            ("restarting", DockerContainerAction::Stop),
+            ("paused", DockerContainerAction::Stop),
+        ] {
+            f.details.lock_ok().get_mut("abc123").unwrap()["State"]["Status"] = json!(state);
+            let result = adapter.container_action("abc123", action, || true).await;
+            assert_eq!(
+                result.status,
+                DockerStorageItemStatus::Succeeded,
+                "{state}: {result:?}"
+            );
+        }
+        let requests = f.requests.lock_ok();
+        assert!(!requests.iter().any(|r| r.contains("/system/df")));
+        let mutations: Vec<_> = requests.iter().filter(|r| r.starts_with("POST")).collect();
+        assert_eq!(mutations.len(), 5);
+        assert_eq!(
+            mutations
+                .iter()
+                .filter(|r| r.contains("/start HTTP"))
+                .count(),
+            2
+        );
+        assert_eq!(
+            mutations
+                .iter()
+                .filter(|r| r.contains("/stop?t=30 HTTP"))
+                .count(),
+            3
+        );
+    }
+    #[tokio::test]
+    async fn container_actions_reject_ineligible_missing_and_changed_evidence_before_dispatch() {
+        let f = fake().await;
+        let mut adapter = DockerStorageAdapter::connect(f.engine.clone())
+            .await
+            .unwrap();
+        for (state, auto_remove, action) in [
+            ("running", json!(false), DockerContainerAction::Start),
+            ("paused", json!(false), DockerContainerAction::Start),
+            ("exited", json!(false), DockerContainerAction::Stop),
+            ("running", json!(true), DockerContainerAction::Stop),
+            ("running", Value::Null, DockerContainerAction::Stop),
+        ] {
+            {
+                let mut details = f.details.lock_ok();
+                let row = details.get_mut("abc123").unwrap();
+                row["State"]["Status"] = json!(state);
+                row["HostConfig"]["AutoRemove"] = auto_remove;
+            }
+            assert_eq!(
+                adapter
+                    .container_action("abc123", action, || true)
+                    .await
+                    .status,
+                DockerStorageItemStatus::Skipped
+            );
+        }
+        f.details.lock_ok().get_mut("abc123").unwrap()["State"]["Status"] = json!("exited");
+        f.revoke_during_inspect.store(true, Ordering::SeqCst);
+        assert_eq!(
+            adapter
+                .container_action("abc123", DockerContainerAction::Start, || f
+                    .dispatch_allowed
+                    .load(Ordering::SeqCst))
+                .await
+                .status,
+            DockerStorageItemStatus::Skipped
+        );
+        adapter.engine.id = "replacement".into();
+        assert_eq!(
+            adapter
+                .container_action("abc123", DockerContainerAction::Start, || true)
+                .await
+                .status,
+            DockerStorageItemStatus::Skipped
+        );
+        adapter.engine.id = "fake".into();
+        f.details.lock_ok().clear();
+        let missing = adapter
+            .container_action("abc123", DockerContainerAction::Start, || true)
+            .await;
+        assert_eq!(missing.status, DockerStorageItemStatus::Skipped);
+        assert!(missing.message.contains("no longer exists"));
+        assert!(!f.requests.lock_ok().iter().any(|r| r.starts_with("POST")));
+    }
+    #[tokio::test]
+    async fn container_action_failures_and_unknown_outcomes_are_never_retried() {
+        let f = fake().await;
+        let adapter = DockerStorageAdapter::connect(f.engine.clone())
+            .await
+            .unwrap();
+        *f.mutation_error.lock_ok() = Some(500);
+        let result = adapter
+            .container_action("abc123", DockerContainerAction::Start, || true)
+            .await;
+        assert_eq!(result.status, DockerStorageItemStatus::Failed);
+        assert!(result.message.contains("Port 8080 is already in use"));
+        *f.mutation_error.lock_ok() = None;
+        f.drop_mutation_response.store(true, Ordering::SeqCst);
+        let result = adapter
+            .container_action("abc123", DockerContainerAction::Start, || true)
+            .await;
+        assert_eq!(result.status, DockerStorageItemStatus::OutcomeUnknown);
+        assert_eq!(
+            f.requests
+                .lock_ok()
+                .iter()
+                .filter(|r| r.starts_with("POST"))
+                .count(),
+            2
+        );
+    }
     /// Explicit opt-in only; no resource is selected by discovery. Names must identify
     /// parent-created disposable fixtures. Cache uses its exact supplied immutable ID.
     #[tokio::test]
@@ -1673,6 +1932,22 @@ mod tests {
                         );
                     }
                 }
+            }
+        }
+        if let Ok(id) = std::env::var("KELVO_DOCKER_TEST_START_ID") {
+            let detail = adapter
+                .scan_client
+                .inspect_container(&id, None::<InspectContainerOptions>)
+                .await
+                .unwrap();
+            assert!(detail.name.as_deref().is_some_and(|name| {
+                name.trim_start_matches('/')
+                    .starts_with("kelvo-storage-test-")
+            }));
+            for action in [DockerContainerAction::Start, DockerContainerAction::Stop] {
+                let result = adapter.container_action(&id, action, || true).await;
+                println!("container fixture {id}: {result:?}");
+                assert_eq!(result.status, DockerStorageItemStatus::Succeeded);
             }
         }
         if let Ok(id) = std::env::var("KELVO_DOCKER_TEST_AUTOREMOVE_ID") {

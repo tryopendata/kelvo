@@ -66,6 +66,13 @@
 
   /* Module accents. The fill is the same in both themes; `-ink` is for lines,
      text and thin marks, darker in light mode so it clears 3:1 on white. */
+  /* Categorical container identity, not health or module identity. */
+  --color-series-1: #2a78d6;
+  --color-series-2: #eb6834;
+  --color-series-3: #1baf7a;
+  --color-series-4: #6250d6;
+  --color-series-5: #e87ba4;
+  --color-series-6: #008300;
   --color-cpu: #06b6d4;
   --color-cpu-ink: #0891b2;
   --color-cpu-2: #67e8f9;
@@ -110,6 +117,13 @@
 
 /* Dark mode overrides - zinc-based precision palette */
 .dark {
+  --color-series-1: #3987e5;
+  --color-series-2: #d95926;
+  --color-series-3: #199e70;
+  --color-series-4: #9085e9;
+  --color-series-5: #d55181;
+  --color-series-6: #008300;
+
   --color-background: #09090b;
   --color-foreground: #f7f8f8;
   --color-card: #111113;
@@ -210,6 +224,13 @@
   }
 
   :root.dark {
+    --color-series-1: #3987e5;
+    --color-series-2: #d95926;
+    --color-series-3: #199e70;
+    --color-series-4: #9085e9;
+    --color-series-5: #d55181;
+    --color-series-6: #008300;
+
     --color-vibrant: #161619;
     --color-card-vibrant: #111113;
     --color-widget: #121214;

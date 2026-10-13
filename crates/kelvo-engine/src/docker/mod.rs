@@ -73,6 +73,7 @@ impl DockerHandle {
                 monitoring_limit: 128,
                 ..Default::default()
             },
+            project_aggregates: Vec::new(),
             runtime: unavailable_runtime(""),
             coverage: Vec::new(),
             observed_ms: now_ms(),
@@ -80,6 +81,7 @@ impl DockerHandle {
             interval_ms: 10000,
             population_revision: 0,
             persistence: DockerPersistence {
+                error: None,
                 status: "live_only".into(),
                 logical_bytes: 0.,
                 allowance_bytes: 37_500_000.,
@@ -112,20 +114,28 @@ impl DockerHandle {
         self.changed.subscribe()
     }
     pub fn configure(&self, settings: DockerSettings) -> Result<(), DockerError> {
-        if settings.monitored_containers.len() > 128
-            || settings
-                .monitored_containers
-                .iter()
-                .any(|id| !kelvo_collect::docker::valid_id(id))
-        {
-            return Err(DockerError::Invalid);
-        }
         if settings.selected_engine.as_ref().is_some_and(|s| {
             !std::path::Path::new(s).is_absolute() || s.contains("://") || s.len() > 4096
         }) {
             return Err(DockerError::Endpoint);
         }
         let _gate = self.gate.lock_ok();
+        let current = self.control.borrow().settings.clone();
+        if current.enabled == settings.enabled
+            && current.selected_engine == settings.selected_engine
+        {
+            // Presentation preferences do not interrupt sampling, connection attempts,
+            // log streams or pending actions. The next worker read sees the new settings.
+            self.control.send_if_modified(|c| {
+                c.settings = settings.clone();
+                false
+            });
+            self.changed.send_modify(|s| {
+                s.now_ms = now_ms();
+                s.settings = settings;
+            });
+            return Ok(());
+        }
         self.gap(if settings.enabled {
             "engine_switch"
         } else {
@@ -147,6 +157,7 @@ impl DockerHandle {
                 DockerStatus::Disabled
             };
             s.containers.clear();
+            s.project_aggregates.clear();
             s.aggregate = DockerAggregate {
                 monitoring_limit: 128,
                 ..Default::default()
@@ -167,6 +178,7 @@ impl DockerHandle {
             s.now_ms = now_ms();
             s.generation = generation;
             s.containers.clear();
+            s.project_aggregates.clear();
             s.coverage.clear();
             s.aggregate = DockerAggregate {
                 monitoring_limit: 128,
@@ -320,6 +332,12 @@ impl DockerHandle {
     pub fn retained(&self, request: &DockerRetainedRequest) -> Result<DockerRetainedPage, String> {
         self.recorder.retained(request)
     }
+    pub fn comparison(
+        &self,
+        request: &DockerComparisonRequest,
+    ) -> Result<DockerComparisonPage, String> {
+        self.recorder.comparison(request)
+    }
     pub fn history(&self, request: &DockerHistoryRequest) -> Result<DockerHistoryPage, String> {
         self.recorder.history(request)
     }
@@ -341,6 +359,8 @@ impl DockerHandle {
             return;
         }
         snapshot.now_ms = now_ms();
+        // A presentation preference can change while this sample is in flight.
+        snapshot.settings = self.control.borrow().settings.clone();
         let current = self.changed.borrow();
         let inspected: BTreeMap<_, _> = current
             .containers
@@ -466,6 +486,7 @@ impl DockerHandle {
                     if s.engine.as_ref().is_none_or(|e| e.id != adapter.engine.id) {
                         s.coverage.clear();
                         s.containers.clear();
+                        s.project_aggregates.clear();
                         s.aggregate = DockerAggregate {
                             monitoring_limit: 128,
                             ..Default::default()
@@ -695,7 +716,6 @@ impl DockerHandle {
                     &mut population,
                     &mut population_revision,
                     refresh,
-                    &control.settings,
                     generation,
                 );
                 tokio::pin!(cycle);
@@ -763,6 +783,13 @@ impl DockerHandle {
                 observed,
                 interval,
             );
+            snapshot.project_aggregates = project_aggregates(
+                &rows,
+                adapter.engine.capacity_bytes,
+                inventory_complete,
+                observed,
+                interval,
+            );
             if ok
                 && let Some(g) = snapshot.coverage.last_mut()
                 && g.end_ms.is_none()
@@ -802,7 +829,6 @@ impl DockerHandle {
         population: &mut BTreeSet<String>,
         population_revision: &mut u32,
         refresh: bool,
-        settings: &DockerSettings,
         generation: u32,
     ) -> bool {
         let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
@@ -853,29 +879,18 @@ impl DockerHandle {
                 _ => return false,
             }
         }
-        let selected: BTreeSet<_> = if !settings.explicit_selection {
-            let mut selected: BTreeSet<String> = population
-                .iter()
-                .filter(|id| rows.iter().any(|c| c.id == **id))
-                .cloned()
-                .collect();
-            for row in rows
-                .iter()
-                .filter(|c| c.lifecycle == DockerLifecycle::Running)
-                .chain(
-                    rows.iter()
-                        .filter(|c| c.lifecycle != DockerLifecycle::Running),
-                )
-            {
-                if selected.len() >= 128 {
-                    break;
-                }
-                selected.insert(row.id.clone());
-            }
-            selected
-        } else {
-            settings.monitored_containers.iter().cloned().collect()
-        };
+        // The daemon inventory is authoritative. Recompute the bounded population
+        // so newly running containers displace stopped containers on every refresh.
+        let selected: BTreeSet<_> = rows
+            .iter()
+            .filter(|c| c.lifecycle == DockerLifecycle::Running)
+            .chain(
+                rows.iter()
+                    .filter(|c| c.lifecycle != DockerLifecycle::Running),
+            )
+            .take(128)
+            .map(|c| c.id.clone())
+            .collect();
         if *population != selected {
             *population = selected;
             *population_revision = population_revision.wrapping_add(1);
@@ -1058,6 +1073,7 @@ fn reconcile(mut live: DockerContainer, inspected: &DockerContainer) -> DockerCo
     if inspected.metadata_available && (!live.metadata_available || newer_metadata) {
         live.metadata_available = inspected.metadata_available;
         live.metadata_observed_ms = inspected.metadata_observed_ms;
+        live.auto_remove = inspected.auto_remove;
         live.restart_count = inspected.restart_count;
         live.oom_killed = inspected.oom_killed;
         live.explicit_limit_bytes = inspected.explicit_limit_bytes;
@@ -1085,12 +1101,46 @@ fn aggregate(
     now: i64,
     interval: u32,
 ) -> DockerAggregate {
+    aggregate_rows(rows.iter(), capacity, inventory_complete, now, interval)
+}
+fn project_aggregates(
+    rows: &[DockerContainer],
+    capacity: Option<f64>,
+    inventory_complete: bool,
+    now: i64,
+    interval: u32,
+) -> Vec<DockerProjectAggregate> {
+    let mut projects: BTreeMap<Option<String>, Vec<&DockerContainer>> = BTreeMap::new();
+    for row in rows {
+        projects.entry(row.project.clone()).or_default().push(row);
+    }
+    projects
+        .into_iter()
+        .map(|(project, rows)| DockerProjectAggregate {
+            project,
+            aggregate: aggregate_rows(
+                rows.iter().copied(),
+                capacity,
+                inventory_complete,
+                now,
+                interval,
+            ),
+        })
+        .collect()
+}
+fn aggregate_rows<'a>(
+    rows: impl Iterator<Item = &'a DockerContainer> + Clone,
+    capacity: Option<f64>,
+    inventory_complete: bool,
+    now: i64,
+    interval: u32,
+) -> DockerAggregate {
     let running = rows
-        .iter()
+        .clone()
         .filter(|c| c.lifecycle == DockerLifecycle::Running)
         .count() as u32;
     let expected = rows
-        .iter()
+        .clone()
         .filter(|c| c.monitored && c.lifecycle == DockerLifecycle::Running)
         .count() as u32;
     let fresh = |c: &&DockerContainer| {
@@ -1100,12 +1150,12 @@ fn aggregate(
                 .is_some_and(|t| now.saturating_sub(t) <= interval.max(5000) as i64 * 2)
     };
     let cpu: Vec<_> = rows
-        .iter()
+        .clone()
         .filter(fresh)
         .filter_map(|c| c.metrics.cpu_pct)
         .collect();
     let memory: Vec<_> = rows
-        .iter()
+        .clone()
         .filter(fresh)
         .filter_map(|c| c.metrics.working_set_bytes)
         .collect();
@@ -1118,8 +1168,8 @@ fn aggregate(
         memory_measured: memory.len() as u32,
         expected,
         running,
-        total: rows.len() as u32,
-        monitored: rows.iter().filter(|c| c.monitored).count() as u32,
+        total: rows.clone().count() as u32,
+        monitored: rows.clone().filter(|c| c.monitored).count() as u32,
         partial: expected < running
             || cpu.len() < expected as usize
             || memory.len() < expected as usize
@@ -1146,6 +1196,64 @@ mod tests {
         tokio::time::advance(Duration::from_secs(1)).await;
         assert!(admit_event(&mut rate));
         assert_eq!(rate.1, 1);
+    }
+    #[test]
+    fn display_preferences_preserve_collection_and_survive_inflight_samples() {
+        let handle = DockerHandle::new(
+            HostId(uuid::Uuid::new_v4()),
+            DockerSettings {
+                enabled: true,
+                selected_engine: Some("/tmp/docker.sock".into()),
+                ..Default::default()
+            },
+            PathBuf::new(),
+        );
+        handle.changed.send_modify(|s| {
+            s.status = DockerStatus::Connected;
+            s.observed_ms = 123;
+            s.aggregate.running = 5;
+            s.aggregate.expected = 5;
+            s.coverage.push(DockerCoverage {
+                start_ms: 10,
+                end_ms: Some(20),
+                container_id: None,
+                reason: "disconnected".into(),
+            });
+        });
+        let worker = handle.control.subscribe();
+        let mut subscriber = handle.subscribe();
+        for (popover, tray) in [(true, false), (true, true), (false, true)] {
+            let mut before = handle.snapshot();
+            let inflight = before.clone();
+            let settings = DockerSettings {
+                show_popover: popover,
+                show_tray_count: tray,
+                ..before.settings.clone()
+            };
+            handle.configure(settings.clone()).unwrap();
+            assert!(
+                !worker.has_changed().unwrap(),
+                "display preferences wake the worker"
+            );
+            assert_eq!(worker.borrow().settings, settings);
+            assert!(subscriber.has_changed().unwrap());
+            let after = subscriber.borrow_and_update().clone();
+            before.settings = settings.clone();
+            before.now_ms = after.now_ms;
+            assert_eq!(after, before, "display preferences reset observations");
+            handle.publish(inflight);
+            assert_eq!(
+                handle.snapshot().settings,
+                settings,
+                "old sample reverts preferences"
+            );
+        }
+        let mut disabled = handle.snapshot().settings;
+        disabled.enabled = false;
+        handle.configure(disabled).unwrap();
+        assert!(worker.has_changed().unwrap());
+        assert_eq!(handle.snapshot().generation, 2);
+        assert_eq!(handle.snapshot().status, DockerStatus::Disabled);
     }
     #[test]
     fn transitions_publish_now_without_fabricating_observations() {

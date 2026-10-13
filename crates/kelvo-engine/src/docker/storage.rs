@@ -273,6 +273,7 @@ impl DockerHandle {
                 .find(|r| r.kind == selection.kind && r.id == selection.id)
                 .ok_or(DockerStorageError::Selection)?;
             if !match selection.action {
+                DockerStorageAction::Start => false,
                 DockerStorageAction::Delete => resource.can_delete,
                 DockerStorageAction::Stop => resource.can_stop,
             } {
@@ -359,6 +360,85 @@ impl DockerHandle {
         tokio::spawn(async move {
             handle.storage_run(id, prepared).await;
         });
+        Ok(operation)
+    }
+    /// Start/Stop share cleanup's operation registry and never perform a storage scan.
+    pub fn container_action(
+        &self,
+        engine_id: &str,
+        container_id: &str,
+        action: DockerContainerAction,
+    ) -> Result<DockerStorageOperation, DockerStorageError> {
+        let _gate = self.gate.lock_ok();
+        let mut registry = self.storage.registry.lock_ok();
+        registry.prune();
+        if registry.operations.iter().any(|o| o.completed.is_none()) {
+            return Err(DockerStorageError::Busy);
+        }
+        let selection = DockerStorageSelection {
+            kind: DockerStorageKind::Container,
+            id: container_id.into(),
+            action: action.into(),
+        };
+        let context = self
+            .storage_context()
+            .ok()
+            .filter(|(engine, _)| engine.id == engine_id);
+        let mut operation = DockerStorageOperation {
+            id: uuid::Uuid::new_v4().to_string(),
+            engine_id: engine_id.into(),
+            generation: self.control.borrow().generation,
+            started_ms: now_ms(),
+            finished_ms: None,
+            results: Vec::new(),
+            total: 1,
+        };
+        if context.is_none() {
+            operation.results.push(item_result(
+                &selection,
+                DockerStorageItemStatus::Skipped,
+                "Docker engine changed, paused, or disconnected before dispatch",
+            ));
+            operation.finished_ms = Some(now_ms());
+        }
+        while registry.operations.len() >= MAX_RESULTS {
+            registry.operations.pop_front();
+        }
+        registry.operations.push_back(RetainedOperation {
+            completed: operation.finished_ms.map(|_| Instant::now()),
+            operation: operation.clone(),
+        });
+        if let Some((engine, generation)) = context {
+            let handle = self.clone();
+            let id = operation.id.clone();
+            tokio::spawn(async move {
+                let result = bounded_action(&selection, async {
+                    if !handle.storage_current(&engine, generation) {
+                        return item_result(&selection, DockerStorageItemStatus::Skipped,
+                            "Docker engine changed, paused, or disconnected before dispatch");
+                    }
+                    match DockerStorageAdapter::connect(engine.clone()).await {
+                        Ok(adapter) => adapter.container_action(&selection.id, action,
+                            || handle.storage_current(&engine, generation)).await,
+                        Err(_) => item_result(&selection, DockerStorageItemStatus::Skipped,
+                            "Docker engine identity or connection is unavailable; no action was sent"),
+                    }
+                }).await;
+                let mut registry = handle.storage.registry.lock_ok();
+                registry.reviews.clear();
+                // The old storage snapshot remains useful but must refresh before reuse.
+                registry.scanned = None;
+                if let Some(retained) = registry
+                    .operations
+                    .iter_mut()
+                    .find(|o| o.operation.id == id)
+                {
+                    retained.operation.results.push(result);
+                    retained.operation.finished_ms = Some(now_ms());
+                    retained.completed = Some(Instant::now());
+                }
+            });
+        }
         Ok(operation)
     }
     pub fn storage_operation(
@@ -729,6 +809,44 @@ mod tests {
         assert_eq!(selected_estimate(&selections, &rows), None);
         selections[0].kind = DockerStorageKind::BuildCache;
         assert_eq!(selected_estimate(&selections, &rows), None);
+    }
+    #[tokio::test]
+    async fn container_actions_reuse_operation_registry_and_revalidate_before_connection() {
+        let handle = handle();
+        let stale = handle
+            .container_action("old-engine", "abc123", DockerContainerAction::Start)
+            .unwrap();
+        assert!(stale.finished_ms.is_some());
+        assert_eq!(stale.results[0].status, DockerStorageItemStatus::Skipped);
+        assert_eq!(
+            handle.storage_operation(&stale.id).unwrap().results,
+            stale.results
+        );
+        let operation = handle
+            .container_action("test", "abc123", DockerContainerAction::Start)
+            .unwrap();
+        assert!(operation.finished_ms.is_none());
+        assert!(matches!(
+            handle.container_action("test", "def456", DockerContainerAction::Stop),
+            Err(DockerStorageError::Busy)
+        ));
+        handle
+            .storage
+            .registry
+            .lock_ok()
+            .reviews
+            .push_back(prepared(DockerStorageKind::Image));
+        assert!(matches!(
+            handle.storage_execute("review", false),
+            Err(DockerStorageError::Busy)
+        ));
+        handle.set_power(true, 1000);
+        tokio::task::yield_now().await;
+        let result = handle.storage_operation(&operation.id).unwrap();
+        assert!(result.finished_ms.is_some());
+        assert_eq!(result.results.len(), 1);
+        assert_eq!(result.results[0].status, DockerStorageItemStatus::Skipped);
+        assert!(result.results[0].message.contains("before dispatch"));
     }
     #[tokio::test]
     async fn duplicate_and_empty_selections_rejected_before_network() {

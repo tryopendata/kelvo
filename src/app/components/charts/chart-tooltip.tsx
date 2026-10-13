@@ -43,7 +43,7 @@ export function SeriesSwatch({ color }: { color: string }) {
   return (
     <span
       aria-hidden
-      className="size-2 rounded-mark"
+      className="inline-block size-2 shrink-0 rounded-mark"
       style={{ background: color }}
     />
   );

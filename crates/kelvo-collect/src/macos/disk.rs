@@ -198,13 +198,12 @@ fn whole_disk(dev: &str) -> Option<String> {
     (digits > 0).then(|| format!("disk{}", rest.get(..digits).unwrap_or_default()))
 }
 
-fn c_str(buf: &[libc::c_char]) -> String {
-    let bytes: Vec<u8> = buf
-        .iter()
-        .take_while(|&&c| c != 0)
-        .map(|&c| c as u8)
-        .collect();
-    String::from_utf8_lossy(&bytes).into_owned()
+fn c_str(buf: &[libc::c_char]) -> std::borrow::Cow<'_, str> {
+    // SAFETY: c_char is one byte and every bit pattern is a valid u8. The
+    // borrowed byte slice has the same lifetime and bounds as the input.
+    let bytes = unsafe { std::slice::from_raw_parts(buf.as_ptr().cast::<u8>(), buf.len()) };
+    let bytes = bytes.split(|byte| *byte == 0).next().unwrap_or_default();
+    String::from_utf8_lossy(bytes)
 }
 
 unsafe extern "C" {
@@ -216,31 +215,41 @@ unsafe extern "C" {
     fn getmntinfo_r_np(mntbufp: *mut *mut libc::statfs, flags: libc::c_int) -> libc::c_int;
 }
 
-/// Mounted local, browsable volumes.
-fn mounted() -> Vec<(VolumeInfo, u64, u64)> {
-    let mut mounts: *mut libc::statfs = std::ptr::null_mut();
-    // SAFETY: `mounts` is an out-pointer; on success it points to `n` entries this call
-    // allocated, which are freed below after reading.
-    let n = unsafe { getmntinfo_r_np(&mut mounts, libc::MNT_NOWAIT) };
-    if n <= 0 || mounts.is_null() {
-        return Vec::new();
+/// Owns the reentrant mount buffer for exactly the duration of a read.
+struct MountBuffer(*mut libc::statfs);
+impl Drop for MountBuffer {
+    fn drop(&mut self) {
+        // SAFETY: getmntinfo_r_np returns a malloc-owned buffer; free accepts null.
+        unsafe { libc::free(self.0.cast()) };
     }
-    // SAFETY: getmntinfo_r_np returned `n` contiguous statfs entries at `mounts`.
-    let all = unsafe { std::slice::from_raw_parts(mounts, n as usize) };
-    let out = volumes_of(all);
-    // SAFETY: the buffer was malloc'ed by getmntinfo_r_np and nothing borrows it now.
-    unsafe { libc::free(mounts.cast()) };
-    out
+}
+fn with_mounts<T>(read: impl FnOnce(&[libc::statfs]) -> T) -> T {
+    let mut mounts = MountBuffer(std::ptr::null_mut());
+    // SAFETY: mounts.0 is an out-pointer owned by the guard above.
+    let n = unsafe { getmntinfo_r_np(&mut mounts.0, libc::MNT_NOWAIT) };
+    if n <= 0 || mounts.0.is_null() {
+        return read(&[]);
+    }
+    // SAFETY: the call returned n contiguous entries; the guard outlives read.
+    let all = unsafe { std::slice::from_raw_parts(mounts.0, n as usize) };
+    read(all)
+}
+
+/// Mounted local, browsable volumes. Metadata is owned only when probing.
+fn mounted() -> Vec<(VolumeInfo, u64, u64)> {
+    with_mounts(volumes_of)
+}
+fn browsable(fs: &libc::statfs) -> bool {
+    fs.f_flags & libc::MNT_LOCAL as u32 != 0 && fs.f_flags & libc::MNT_DONTBROWSE as u32 == 0
 }
 
 fn volumes_of(all: &[libc::statfs]) -> Vec<(VolumeInfo, u64, u64)> {
     let mut out = Vec::new();
     for fs in all {
-        let flags = fs.f_flags;
-        if flags & libc::MNT_LOCAL as u32 == 0 || flags & libc::MNT_DONTBROWSE as u32 != 0 {
+        if !browsable(fs) {
             continue;
         }
-        let mount = c_str(&fs.f_mntonname);
+        let mount = c_str(&fs.f_mntonname).into_owned();
         let from = c_str(&fs.f_mntfromname);
         let device = from.strip_prefix("/dev/").unwrap_or(&from).to_owned();
         let bsize = u64::from(fs.f_bsize);
@@ -251,7 +260,7 @@ fn volumes_of(all: &[libc::statfs]) -> Vec<(VolumeInfo, u64, u64)> {
                 is_boot: mount == "/",
                 container: whole_disk(&device),
                 device,
-                fs_type: c_str(&fs.f_fstypename),
+                fs_type: c_str(&fs.f_fstypename).into_owned(),
                 mount,
             },
             total,
@@ -308,6 +317,21 @@ impl DiskCapacity {
     pub fn volumes(&self) -> &[VolumeInfo] {
         &self.infos
     }
+
+    fn sample_mounts(&self, mounts: &[libc::statfs], out: &mut SampleBuf) {
+        for fs in mounts.iter().filter(|fs| browsable(fs)) {
+            let mount = c_str(&fs.f_mntonname);
+            let Some(v) = self.volumes.iter().find(|v| v.info.mount == mount) else {
+                continue; // New mounts get series only when the collector is reprobed.
+            };
+            let bsize = u64::from(fs.f_bsize);
+            let total = fs.f_blocks.saturating_mul(bsize);
+            let free = fs.f_bavail.saturating_mul(bsize);
+            out.push(&v.total, total as f32);
+            out.push(&v.free, free as f32);
+            out.push(&v.used, total.saturating_sub(free) as f32);
+        }
+    }
 }
 
 impl Collector for DiskCapacity {
@@ -354,15 +378,9 @@ impl Collector for DiskCapacity {
     }
 
     fn sample(&mut self, _tick: &Tick, out: &mut SampleBuf) -> Result<(), CollectError> {
-        // At most every 60 s, so the small allocation in `mounted` is not a steady-state cost.
-        for (info, total, free) in mounted() {
-            let Some(v) = self.volumes.iter().find(|v| v.info.mount == info.mount) else {
-                continue;
-            };
-            out.push(&v.total, total as f32);
-            out.push(&v.free, free as f32);
-            out.push(&v.used, total.saturating_sub(free) as f32);
-        }
+        // Capacity changes; mount/device/type metadata and series keys do not.
+        // Borrow the mount table instead of allocating VolumeInfo per volume.
+        with_mounts(|mounts| self.sample_mounts(mounts, out));
         Ok(())
     }
 }
@@ -370,6 +388,73 @@ impl Collector for DiskCapacity {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn borrowed_capacity_samples_keep_probed_series_and_mount_filtering() {
+        fn mount(path: &str, flags: u32, available: u64) -> libc::statfs {
+            // SAFETY: statfs contains only numeric fields and fixed numeric arrays.
+            let mut fs: libc::statfs = unsafe { std::mem::zeroed() };
+            for (slot, byte) in fs.f_mntonname.iter_mut().zip(path.bytes()) {
+                *slot = byte as libc::c_char;
+            }
+            fs.f_flags = flags;
+            fs.f_bsize = 4096;
+            fs.f_blocks = 100;
+            fs.f_bavail = available;
+            fs
+        }
+        let local = libc::MNT_LOCAL as u32;
+        let initial = [mount("/", local, 40), mount("/Volumes/Removed", local, 20)];
+        let volumes = volumes_of(&initial)
+            .into_iter()
+            .map(|(info, _, _)| {
+                let key = |id| {
+                    SeriesKey::new(
+                        MetricId::from_static(id),
+                        Labels::single("vol", &info.mount),
+                    )
+                };
+                Volume {
+                    used: key("disk.used"),
+                    free: key("disk.free"),
+                    total: key("disk.total"),
+                    info,
+                }
+            })
+            .collect();
+        let capacity = DiskCapacity {
+            volumes,
+            infos: Vec::new(),
+        };
+        let changed = [
+            mount("/", local, 30),
+            mount("/Volumes/New", local, 10),
+            mount("/", local | libc::MNT_DONTBROWSE as u32, 99),
+            mount("/", 0, 99),
+        ];
+        let mut out = SampleBuf::new();
+        capacity.sample_mounts(&changed, &mut out);
+        let measured: Vec<_> = out
+            .values()
+            .iter()
+            .map(|sample| (sample.key.to_string(), sample.value))
+            .collect();
+        assert_eq!(
+            measured,
+            [
+                ("disk.total{vol=/}".into(), 409_600.),
+                ("disk.free{vol=/}".into(), 122_880.),
+                ("disk.used{vol=/}".into(), 286_720.),
+            ]
+        );
+        out.clear();
+        capacity.sample_mounts(&[], &mut out);
+        assert!(out.values().is_empty());
+        assert!(matches!(
+            c_str(&initial[0].f_mntonname),
+            std::borrow::Cow::Borrowed("/")
+        ));
+    }
 
     #[test]
     fn whole_disk_strips_slices() {

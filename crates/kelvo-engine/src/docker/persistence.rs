@@ -6,7 +6,7 @@ use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
     path::PathBuf,
     sync::{
-        Arc, Mutex,
+        Arc, Mutex, Weak,
         atomic::{AtomicI64, Ordering},
         mpsc,
     },
@@ -27,12 +27,25 @@ struct Entry {
     pins: usize,
     durable: i64,
 }
+#[derive(Default)]
+struct Retry {
+    events: Vec<db::DockerEvent>,
+    coverage: Vec<db::DockerCoverage>,
+    entities: Vec<db::DockerEntity>,
+    cursor: Option<db::DockerCursor>,
+}
 struct Receipt {
     rx: mpsc::Receiver<db::DockerAck>,
+    retry: Retry,
     keys: Vec<Key>,
     engine: String,
     start: i64,
     end: i64,
+}
+struct SharedReadBucket {
+    key: Key,
+    bucket: Weak<db::DockerBucket>,
+    bytes: usize,
 }
 struct State {
     generation: u32,
@@ -51,9 +64,12 @@ struct State {
     events: VecDeque<api::DockerEvent>,
     coverage: BTreeMap<String, Vec<api::DockerCoverage>>,
     pending: Vec<Receipt>,
+    retry: BTreeMap<String, Retry>,
+    last_warning: BTreeMap<String, i64>,
     bytes: usize,
     aux_bytes: usize,
     reader_bytes: usize,
+    shared_read_buckets: BTreeMap<usize, SharedReadBucket>,
     error: Option<String>,
     runtime: BTreeMap<String, String>,
 }
@@ -76,6 +92,7 @@ impl Drop for ReadPin<'_> {
     fn drop(&mut self) {
         let mut s = self.state.lock_ok();
         s.reader_bytes = s.reader_bytes.saturating_sub(self.bytes);
+        recount_aux(&mut s);
     }
 }
 pub struct DockerRecorder {
@@ -110,9 +127,12 @@ impl DockerRecorder {
                 events: VecDeque::new(),
                 coverage: BTreeMap::new(),
                 pending: Vec::new(),
+                retry: BTreeMap::new(),
+                last_warning: BTreeMap::new(),
                 bytes: 0,
                 aux_bytes: 0,
                 reader_bytes: 0,
+                shared_read_buckets: BTreeMap::new(),
                 error: None,
                 runtime: BTreeMap::new(),
             }),
@@ -143,6 +163,7 @@ impl DockerRecorder {
                     .iter()
                     .find(|(_, e)| e.bucket.revision > e.durable)
                     .map(|((engine, _, _), _)| engine.clone())
+                    .or_else(|| s.retry.keys().next().cloned())
                 else {
                     return Ok(());
                 };
@@ -158,7 +179,7 @@ impl DockerRecorder {
                     .take(64)
                     .map(|(k, _)| k.clone())
                     .collect();
-                if keys.is_empty() {
+                if keys.is_empty() && !s.retry.contains_key(&engine) {
                     return Err("Docker shutdown still has unacknowledged writes".into());
                 }
                 let generation = s.generation;
@@ -180,10 +201,11 @@ impl DockerRecorder {
                     .collect();
                 let entities: BTreeSet<_> =
                     batch.buckets.iter().map(|b| b.entity.clone()).collect();
-                batch.entities = entities
-                    .into_iter()
-                    .filter_map(|id| s.facts.get(&(engine.clone(), id)).cloned())
-                    .collect();
+                batch.entities.extend(
+                    entities
+                        .into_iter()
+                        .filter_map(|id| s.facts.get(&(engine.clone(), id)).cloned()),
+                );
                 batch.start_ms = batch
                     .buckets
                     .iter()
@@ -361,6 +383,32 @@ impl DockerRecorder {
                 )),
             );
         }
+        // configure() clears the published generation's coverage. The recorder
+        // still owns the old engine's switch until that daemon resumes.
+        let mut resumed = Vec::new();
+        if snapshot.status == api::DockerStatus::Connected
+            && let Some(gaps) = s.coverage.get_mut(daemon)
+        {
+            for gap in gaps
+                .iter_mut()
+                .filter(|g| g.reason == "engine_switch" && g.end_ms.is_none() && g.start_ms < now)
+            {
+                gap.end_ms = Some(now);
+                resumed.push(gap.clone());
+            }
+        }
+        for gap in resumed {
+            batch.coverage.push(db::DockerCoverage {
+                entity: gap.container_id,
+                metric: None,
+                start_ms: gap.start_ms,
+                end_ms: gap.end_ms,
+                reason: gap.reason,
+                revision: next(&mut s),
+                sampled_ms: 0,
+                expected_ms: now - gap.start_ms,
+            });
+        }
         let old_coverage = s.coverage.get(daemon).cloned().unwrap_or_default();
         for c in &snapshot.coverage {
             if !old_coverage.contains(c) {
@@ -372,7 +420,9 @@ impl DockerRecorder {
                     reason: c.reason.clone(),
                     revision: next(&mut s),
                     sampled_ms: 0,
-                    expected_ms: c.end_ms.unwrap_or(now).saturating_sub(c.start_ms),
+                    // A transition can open a gap after the last metric snapshot.
+                    // Its still-open duration is zero until a newer observation.
+                    expected_ms: c.end_ms.unwrap_or(now).saturating_sub(c.start_ms).max(0),
                 });
             }
         }
@@ -383,7 +433,9 @@ impl DockerRecorder {
                     && old.container_id == c.container_id
                     && old.reason == c.reason
             }) {
-                *old = c.clone();
+                if old.end_ms.is_none() || c.end_ms.is_some() {
+                    *old = c.clone();
+                }
             } else {
                 gaps.push(c.clone());
             }
@@ -396,6 +448,7 @@ impl DockerRecorder {
             .filter(|((e, _, t), v)| {
                 e == daemon && *t < cut && v.pins == 0 && v.bucket.revision > v.durable
             })
+            .take(1024)
             .map(|(k, _)| k.clone())
             .collect();
         for key in &keys {
@@ -432,6 +485,30 @@ impl DockerRecorder {
         queue(&mut s, attached.as_ref(), batch, keys);
     }
     fn batch(&self, s: &mut State, daemon: &str, generation: u32, time: i64) -> db::DockerBatch {
+        let mut retry = s.retry.remove(daemon).unwrap_or_default();
+        // Leave one event slot and 128 coverage slots for this collection cycle.
+        // A bounded retry queue can still be larger than one store batch.
+        let remaining_events = if retry.events.len() > 999 {
+            retry.events.split_off(999)
+        } else {
+            Vec::new()
+        };
+        let remaining_coverage = if retry.coverage.len() > 896 {
+            retry.coverage.split_off(896)
+        } else {
+            Vec::new()
+        };
+        if !remaining_events.is_empty() || !remaining_coverage.is_empty() {
+            s.retry.insert(
+                daemon.into(),
+                Retry {
+                    events: remaining_events,
+                    coverage: remaining_coverage,
+                    entities: Vec::new(),
+                    cursor: retry.cursor.take(),
+                },
+            );
+        }
         db::DockerBatch {
             host: self.host,
             daemon_id: daemon.into(),
@@ -444,11 +521,11 @@ impl DockerRecorder {
                 .get(daemon)
                 .cloned()
                 .unwrap_or_else(|| "Docker".into()),
-            entities: Vec::new(),
+            entities: retry.entities,
             buckets: Vec::new(),
-            events: Vec::new(),
-            coverage: Vec::new(),
-            cursor: None,
+            events: retry.events,
+            coverage: retry.coverage,
+            cursor: retry.cursor,
             populations: Vec::new(),
         }
     }
@@ -541,10 +618,12 @@ impl DockerRecorder {
         recount_aux(&mut s);
         evict(&mut s, event.time_ms);
         let mut batch = self.batch(&mut s, &event.engine_id, generation, event.time_ms);
-        batch.cursor = Some(db::DockerCursor {
-            time_ns,
-            event_key: key,
-        });
+        if !s.retry.contains_key(&event.engine_id) {
+            batch.cursor = Some(db::DockerCursor {
+                time_ns,
+                event_key: key,
+            });
+        }
         if let Some(id) = &event.container_id
             && let Some(fact) = s.facts.get(&(event.engine_id.clone(), id.clone()))
         {
@@ -560,6 +639,7 @@ impl DockerRecorder {
         drain(&mut s);
         let status = a.map(|a| a.writer.docker_storage_status());
         api::DockerPersistence {
+            error: s.error.clone(),
             status: if s.error.is_some() {
                 "write_failed"
             } else if status.as_ref().is_some_and(|v| v.paused) {
@@ -594,8 +674,11 @@ impl DockerRecorder {
             s.events.clear();
             s.coverage.clear();
             s.pending.clear();
+            s.retry.clear();
+            s.last_warning.clear();
             s.bytes = 0;
             s.aux_bytes = 0;
+            recount_aux(&mut s);
         }
         if let Some(a) = a {
             a.writer
@@ -826,16 +909,6 @@ impl DockerRecorder {
         {
             return Err("History request exceeds range or point bounds".into());
         }
-        let started = Instant::now();
-        let range = q.to_ms - q.from_ms;
-        let desired = range / i64::from(q.max_points);
-        let tier = if desired <= 10_000 && range <= 86_400_000 {
-            Tier::S10
-        } else if desired <= 60_000 && range <= 7 * 86_400_000 {
-            Tier::M1
-        } else {
-            Tier::M15
-        };
         // Capture enough predecessor ring data for a retained coarser tier too.
         let from = q.from_ms.div_euclid(900_000) * 900_000;
         let (a, coord) = self.context();
@@ -890,257 +963,15 @@ impl DockerRecorder {
         let coverage = s.coverage.get(&q.engine_id).cloned().unwrap_or_default();
         drop(s);
         drop(guard);
-        let result = (|| {
-            let mut tier = tier;
-            let mut from = q.from_ms.div_euclid(tier.bucket_ms().unwrap_or(10_000))
-                * tier.bucket_ms().unwrap_or(10_000);
-            let mut persisted = if let Some(snapshot) = &snapshot {
-                snapshot
-                    .history(&db::DockerHistoryQuery {
-                        entity: entity.into(),
-                        start_ms: from,
-                        end_ms: q.to_ms,
-                        tier,
-                        max_points: 10_000,
-                    })
-                    .map_err(|e| e.to_string())?
-            } else {
-                db::DockerHistory::default()
-            };
-            if let Some(snapshot) = &snapshot {
-                // Retention and pressure remove tiers independently. Prefer a
-                // coarser whole range whenever it contains evidence missing from
-                // the selected tier, avoiding overlapping mixed-tier additions.
-                for candidate in [Tier::M1, Tier::M15] {
-                    let width = candidate.bucket_ms().unwrap_or(900_000);
-                    if width <= tier.bucket_ms().unwrap_or(10_000) {
-                        continue;
-                    }
-                    let start = q.from_ms.div_euclid(width) * width;
-                    let older = snapshot
-                        .history(&db::DockerHistoryQuery {
-                            entity: entity.into(),
-                            start_ms: start,
-                            end_ms: q.to_ms,
-                            tier: candidate,
-                            max_points: 10_000,
-                        })
-                        .map_err(|e| e.to_string())?;
-                    let end = (q.to_ms - 1).div_euclid(width).saturating_add(1) * width;
-                    let fine_width = tier.bucket_ms().unwrap_or(10000);
-                    let comparable = if (end - start) / fine_width <= 10000 {
-                        snapshot
-                            .history(&db::DockerHistoryQuery {
-                                entity: entity.into(),
-                                start_ms: start,
-                                end_ms: end,
-                                tier,
-                                max_points: 10000,
-                            })
-                            .map_err(|e| e.to_string())?
-                            .buckets
-                    } else {
-                        persisted.buckets.clone()
-                    };
-                    let finer = fold_ring(
-                        &comparable.into_iter().map(Arc::new).collect::<Vec<_>>(),
-                        candidate,
-                    );
-                    let additional = older.buckets.iter().any(|b| {
-                        finer
-                            .iter()
-                            .find(|fine| fine.bucket_ms == b.bucket_ms)
-                            .is_none_or(|fine| {
-                                b.metrics.iter().any(|m| {
-                                    fine.metrics
-                                        .iter()
-                                        .find(|n| n.key == m.key)
-                                        .is_none_or(|n| n.weight_ms < m.weight_ms)
-                                })
-                            })
-                    });
-                    if additional {
-                        tier = candidate;
-                        from = start;
-                        persisted = older;
-                    }
-                }
-            }
-            let width = tier.bucket_ms().unwrap_or(10_000);
-            let ring: Vec<_> = ring
-                .iter()
-                .filter(|b| b.bucket_ms >= from)
-                .cloned()
-                .collect();
-            let mut buckets: BTreeMap<i64, db::DockerBucket> = persisted
-                .buckets
-                .into_iter()
-                .map(|b| (b.bucket_ms, b))
-                .collect();
-            // Capture covered fine buckets from the *same* SQLite snapshot, then
-            // replace whole fine revisions with ring revisions before coarse folding.
-            let mut fine: BTreeMap<i64, Arc<db::DockerBucket>> = BTreeMap::new();
-            if tier != Tier::S10 && !ring.is_empty() {
-                let left = ring
-                    .iter()
-                    .map(|b| b.bucket_ms.div_euclid(width) * width)
-                    .min()
-                    .unwrap_or(from);
-                let right = ring
-                    .iter()
-                    .map(|b| (b.bucket_ms.div_euclid(width) + 1) * width)
-                    .max()
-                    .unwrap_or(q.to_ms);
-                if let Some(snapshot) = &snapshot {
-                    for b in snapshot
-                        .history(&db::DockerHistoryQuery {
-                            entity: entity.into(),
-                            start_ms: left,
-                            end_ms: right,
-                            tier: Tier::S10,
-                            max_points: 10_000,
-                        })
-                        .map_err(|e| e.to_string())?
-                        .buckets
-                    {
-                        fine.insert(b.bucket_ms, Arc::new(b));
-                    }
-                }
-            }
-            for b in &ring {
-                if fine
-                    .get(&b.bucket_ms)
-                    .is_none_or(|old| b.revision > old.revision)
+        let result = self
+            .history_page(q, snapshot.as_ref(), &ring, metadata, coverage, generation)
+            .and_then(|page| {
+                if serde_json::to_vec(&page).map_err(|e| e.to_string())?.len() > db::MAX_QUERY_BYTES
                 {
-                    fine.insert(b.bucket_ms, Arc::clone(b));
+                    return Err("History response byte limit exceeded".into());
                 }
-            }
-            let folded = fold_ring(&fine.into_values().collect::<Vec<_>>(), tier);
-            for b in folded {
-                // Pressure may have removed fine rows while retaining the coarse span.
-                // Never overwrite that coarse evidence with a smaller fine population.
-                let covers_old = buckets.get(&b.bucket_ms).is_none_or(|old| {
-                    old.metrics.iter().all(|m| {
-                        b.metrics
-                            .iter()
-                            .any(|n| n.key == m.key && n.weight_ms >= m.weight_ms)
-                    })
-                });
-                if buckets
-                    .get(&b.bucket_ms)
-                    .is_none_or(|old| covers_old && b.revision > old.revision)
-                {
-                    buckets.insert(b.bucket_ms, b);
-                }
-            }
-            let mut display_width = width;
-            while buckets.len() > q.max_points as usize {
-                display_width = display_width.saturating_mul(2);
-                let mut coarse: BTreeMap<i64, db::DockerBucket> = BTreeMap::new();
-                for b in buckets.into_values() {
-                    let at = b.bucket_ms.div_euclid(display_width) * display_width;
-                    let target = coarse.entry(at).or_insert_with(|| db::DockerBucket {
-                        entity: b.entity.clone(),
-                        tier,
-                        bucket_ms: at,
-                        revision: 0,
-                        metrics: Vec::new(),
-                        populations: Vec::new(),
-                    });
-                    target.revision = target.revision.max(b.revision);
-                    for m in b.metrics {
-                        if let Some(old) = target.metrics.iter_mut().find(|old| old.key == m.key) {
-                            old.merge(&m).map_err(|e| e.to_string())?;
-                        } else {
-                            target.metrics.push(m);
-                        }
-                    }
-                    target.populations.extend(b.populations);
-                }
-                for b in coarse.values_mut() {
-                    for m in &mut b.metrics {
-                        m.expected_ms = display_width as u64;
-                    }
-                }
-                buckets = coarse;
-            }
-            let mut points = Vec::new();
-            for b in buckets.into_values() {
-                let mut p = point(&b);
-                p.duration_ms = display_width.min(i64::from(u32::MAX)) as u32;
-                p.expected_ms = p.duration_ms;
-                points.push(p);
-            }
-            if points.len() > q.max_points as usize {
-                return Err("Select a coarser history range or more points".into());
-            }
-            let mut meta_rows: BTreeMap<(i64, i64), db::DockerEntity> = persisted
-                .metadata
-                .into_iter()
-                .chain(metadata)
-                .map(|e| ((e.effective_ms, e.revision), e))
-                .collect();
-            let predecessor = meta_rows
-                .keys()
-                .rfind(|(time, _)| *time < q.from_ms)
-                .copied();
-            meta_rows.retain(|key, _| key.0 >= q.from_ms || Some(*key) == predecessor);
-            for point in &mut points {
-                point.engine_capacity_bytes = meta_rows
-                    .range(..=(point.time_ms, i64::MAX))
-                    .next_back()
-                    .and_then(|(_, e)| e.capacity.map(|v| v as f64));
-                point.explicit_limit_bytes = meta_rows
-                    .range(..=(point.time_ms, i64::MAX))
-                    .next_back()
-                    .and_then(|(_, e)| e.explicit_limit.map(|v| v as f64));
-            }
-            let metas: Vec<api::DockerContainer> = meta_rows
-                .values()
-                .filter_map(|e| serde_json::from_slice(&e.extras).ok())
-                .collect();
-            let mut gaps: Vec<_> = persisted
-                .coverage
-                .into_iter()
-                .map(|c| api::DockerCoverage {
-                    start_ms: c.start_ms,
-                    end_ms: c.end_ms,
-                    container_id: c.entity,
-                    reason: c.reason,
-                })
-                .collect();
-            for c in coverage {
-                if !gaps.contains(&c) {
-                    gaps.push(c);
-                }
-            }
-            if started.elapsed() > Duration::from_secs(2) {
-                return Err("History snapshot expired".into());
-            }
-            let mut persistence = self.status();
-            let durable_start = snapshot
-                .as_ref()
-                .map(|snap| snap.retained_range())
-                .transpose()
-                .map_err(|e| e.to_string())?
-                .flatten()
-                .map(|(start, _)| start);
-            persistence.retained_from_ms = durable_start
-                .into_iter()
-                .chain(ring.iter().map(|b| b.bucket_ms))
-                .min();
-            let page = api::DockerHistoryPage {
-                generation,
-                points,
-                coverage: gaps,
-                metadata: metas,
-                persistence,
-            };
-            if serde_json::to_vec(&page).map_err(|e| e.to_string())?.len() > db::MAX_QUERY_BYTES {
-                return Err("History response byte limit exceeded".into());
-            }
-            Ok(page)
-        })();
+                Ok(page)
+            });
         drop(snapshot);
         let mut s = self.state.lock_ok();
         s.reader_bytes = s.reader_bytes.saturating_sub(held);
@@ -1148,6 +979,578 @@ impl DockerRecorder {
             return Err("History was reset or engine changed".into());
         }
         result
+    }
+    pub fn comparison(
+        &self,
+        q: &api::DockerComparisonRequest,
+    ) -> Result<api::DockerComparisonPage, String> {
+        if q.to_ms <= q.from_ms
+            || q.to_ms.saturating_sub(q.from_ms) > db::MAX_RANGE_MS
+            || q.max_points == 0
+            || q.max_points > 360
+            || q.selected.as_ref().is_some_and(|ids| ids.len() > 6)
+            || q.engine_id.len() > 256
+            || q.project.as_ref().is_some_and(|p| p.len() > 256)
+            || q.selected
+                .as_ref()
+                .is_some_and(|ids| ids.iter().any(|id| id.len() > 256))
+        {
+            return Err("Comparison request exceeds range, six-series or 360-point bounds".into());
+        }
+        let (attached, coord) = self.context();
+        let mut reader = attached
+            .as_ref()
+            .map(|a| Reader::open(&a.path))
+            .transpose()
+            .map_err(|e| e.to_string())?;
+        let guard = coord.lock_ok();
+        let snapshot = reader
+            .as_mut()
+            .map(|r| r.docker_snapshot(self.host, &q.engine_id))
+            .transpose()
+            .map_err(|e| e.to_string())?;
+        let mut s = self.state.lock_ok();
+        drain(&mut s);
+        let from = q.from_ms.div_euclid(900_000) * 900_000;
+        let ring: Vec<_> = s
+            .entries
+            .iter()
+            .filter(|((engine, id, time), _)| {
+                engine == &q.engine_id && !id.is_empty() && *time >= from && *time < q.to_ms
+            })
+            .map(|(_, entry)| Arc::clone(&entry.bucket))
+            .collect();
+        let facts: Vec<_> = s
+            .facts
+            .iter()
+            .filter(|((engine, id), _)| engine == &q.engine_id && !id.is_empty())
+            .map(|(_, fact)| fact.clone())
+            .collect();
+        let metadata: Vec<_> = s
+            .metadata_history
+            .iter()
+            .filter(|(engine, _)| engine == &q.engine_id)
+            .map(|(_, fact)| fact.clone())
+            .collect();
+        let coverage = s.coverage.get(&q.engine_id).cloned().unwrap_or_default();
+        // Payloads are immutable Arcs already charged to the ring. Register their
+        // shared ownership so replacing/evicting a live revision transfers its
+        // charge to the read, instead of charging every payload twice up front.
+        for bucket in &ring {
+            s.shared_read_buckets
+                .entry(Arc::as_ptr(bucket) as usize)
+                .or_insert_with(|| SharedReadBucket {
+                    key: (q.engine_id.clone(), bucket.entity.clone(), bucket.bucket_ms),
+                    bucket: Arc::downgrade(bucket),
+                    bytes: bucket_bytes(bucket),
+                });
+        }
+        recount_aux(&mut s);
+        let held = ring.len() * std::mem::size_of::<Arc<db::DockerBucket>>()
+            + facts
+                .iter()
+                .chain(&metadata)
+                .map(|m| m.extras.len() + 512)
+                .sum::<usize>()
+            + coverage.len() * 512;
+        if held > db::MAX_QUERY_BYTES
+            || s.bytes
+                .saturating_add(s.aux_bytes)
+                .saturating_add(s.reader_bytes)
+                .saturating_add(held)
+                > RING_BYTES
+        {
+            return Err("Comparison snapshot byte bound exceeded".into());
+        }
+        s.reader_bytes += held;
+        let pin = ReadPin {
+            state: &self.state,
+            bytes: held,
+            generation: s.generation,
+            reset_epoch: s.reset_epoch,
+            started: Instant::now(),
+        };
+        let generation = s.generation;
+        drop(s);
+        drop(guard);
+        let mut candidates: BTreeMap<String, db::DockerEntity> = snapshot
+            .as_ref()
+            .map(|snap| snap.comparison_candidates(q.from_ms, q.to_ms))
+            .transpose()
+            .map_err(|e| e.to_string())?
+            .unwrap_or_default()
+            .into_iter()
+            .map(|fact| (fact.external_id.clone(), fact))
+            .collect();
+        for fact in facts {
+            if (candidates.contains_key(&fact.external_id)
+                || ring
+                    .iter()
+                    .any(|b| b.entity == fact.external_id && b.bucket_ms >= q.from_ms))
+                && candidates.get(&fact.external_id).is_none_or(|old| {
+                    (fact.effective_ms, fact.revision) >= (old.effective_ms, old.revision)
+                })
+            {
+                candidates.insert(fact.external_id.clone(), fact);
+            }
+        }
+        let mut ranking = Vec::new();
+        let mut pages = BTreeMap::new();
+        let mut all_coverage = coverage.clone();
+        if let Some(snapshot) = &snapshot {
+            for c in snapshot
+                .event_coverage(None, q.from_ms, q.to_ms)
+                .map_err(|e| e.to_string())?
+            {
+                all_coverage.push(api::DockerCoverage {
+                    start_ms: c.start_ms,
+                    end_ms: c.end_ms,
+                    container_id: c.entity,
+                    reason: c.reason,
+                });
+            }
+        }
+        for (id, fact) in candidates {
+            if q.project
+                .as_ref()
+                .is_some_and(|project| fact.project.as_deref().unwrap_or("") != project)
+            {
+                continue;
+            }
+            let container: api::DockerContainer = serde_json::from_slice(&fact.extras)
+                .map_err(|_| "Comparison metadata is unavailable")?;
+            let own_ring: Vec<_> = ring.iter().filter(|b| b.entity == id).cloned().collect();
+            let page = self.history_page(
+                &api::DockerHistoryRequest {
+                    engine_id: q.engine_id.clone(),
+                    container_id: Some(id.clone()),
+                    from_ms: q.from_ms,
+                    to_ms: q.to_ms,
+                    max_points: q.max_points,
+                },
+                snapshot.as_ref(),
+                &own_ring,
+                metadata
+                    .iter()
+                    .filter(|m| m.external_id == id)
+                    .cloned()
+                    .collect(),
+                coverage.clone(),
+                generation,
+            )?;
+            if page.points.is_empty() {
+                continue;
+            }
+            let summarize = |cpu: bool| {
+                let mut peak: Option<f64> = None;
+                let mut sum = 0.;
+                let mut weight = 0_u64;
+                for p in &page.points {
+                    let (average, maximum, measured) = if cpu {
+                        (p.metrics.cpu_pct, p.peak.cpu_pct, p.cpu_measured_ms)
+                    } else {
+                        (
+                            p.metrics.working_set_bytes,
+                            p.peak.working_set_bytes,
+                            p.memory_measured_ms,
+                        )
+                    };
+                    if let (Some(avg), Some(max)) = (average, maximum)
+                        && measured > 0
+                    {
+                        sum += avg * f64::from(measured);
+                        weight += u64::from(measured);
+                        peak = Some(peak.map_or(max, |old| old.max(max)));
+                    }
+                }
+                (peak, (weight > 0).then(|| sum / weight as f64), weight)
+            };
+            let (peak_cpu_pct, avg_cpu_pct, cpu_measured_ms) = summarize(true);
+            let (peak_working_set_bytes, avg_working_set_bytes, memory_measured_ms) =
+                summarize(false);
+            let last_lifecycle = page.metadata.last().map(|metadata| metadata.lifecycle);
+            all_coverage.extend(page.coverage);
+            let selected_weight = match q.metric {
+                api::DockerComparisonMetric::Cpu => cpu_measured_ms,
+                api::DockerComparisonMetric::Memory => memory_measured_ms,
+            };
+            if cpu_measured_ms == 0 && memory_measured_ms == 0 {
+                continue;
+            }
+            ranking.push(api::DockerRankedContainer {
+                last_lifecycle,
+                container: container.clone(),
+                peak_cpu_pct,
+                avg_cpu_pct,
+                cpu_measured_ms,
+                peak_working_set_bytes,
+                avg_working_set_bytes,
+                memory_measured_ms,
+            });
+            if selected_weight > 0
+                && q.selected
+                    .as_ref()
+                    .is_none_or(|selected| selected.contains(&id))
+            {
+                pages.insert(
+                    id,
+                    api::DockerContainerSeries {
+                        container,
+                        points: page.points,
+                    },
+                );
+            }
+            // Only six point arrays may survive a candidate pass; rankings keep
+            // scalar weighted summaries, not every container's chart payload.
+            ranking.sort_by(|a, b| rank_order(a, b, q.metric));
+            if q.selected.is_none() {
+                let keep: BTreeSet<_> = ranking
+                    .iter()
+                    .filter(|r| comparison_value(r, q.metric).is_some())
+                    .take(6)
+                    .map(|r| r.container.id.as_str())
+                    .collect();
+                pages.retain(|id, _| keep.contains(id.as_str()));
+            }
+            ranking.truncate(500);
+            if !pin.valid() {
+                return Err("Comparison snapshot expired or was reset".into());
+            }
+        }
+        ranking.sort_by(|a, b| rank_order(a, b, q.metric));
+        ranking.truncate(500);
+        let selected = q.selected.clone().unwrap_or_else(|| {
+            let eligible = ranking
+                .iter()
+                .filter(|r| comparison_value(r, q.metric).is_some())
+                .count();
+            ranking
+                .iter()
+                .filter(|r| comparison_value(r, q.metric).is_some())
+                .take(if eligible <= 6 { 6 } else { 5 })
+                .map(|r| r.container.id.clone())
+                .collect()
+        });
+        let series = selected
+            .into_iter()
+            .filter_map(|id| pages.remove(&id))
+            .collect();
+        all_coverage.sort_by(|a, b| {
+            (a.start_ms, &a.container_id, &a.reason).cmp(&(b.start_ms, &b.container_id, &b.reason))
+        });
+        all_coverage.dedup_by(|a, b| {
+            if a.start_ms == b.start_ms && a.container_id == b.container_id && a.reason == b.reason
+            {
+                b.end_ms = b.end_ms.max(a.end_ms);
+                true
+            } else {
+                false
+            }
+        });
+        all_coverage.retain(|c| {
+            c.container_id.as_deref() != Some("")
+                && c.start_ms < q.to_ms
+                && c.end_ms.is_none_or(|end| end > q.from_ms)
+        });
+        let mut persistence = self.status();
+        let durable_start = snapshot
+            .as_ref()
+            .map(|snap| snap.retained_range())
+            .transpose()
+            .map_err(|e| e.to_string())?
+            .flatten()
+            .map(|(from, _)| from);
+        persistence.retained_from_ms = durable_start
+            .into_iter()
+            .chain(ring.iter().map(|b| b.bucket_ms))
+            .min();
+        let page = api::DockerComparisonPage {
+            generation,
+            ranking,
+            series,
+            coverage: all_coverage,
+            persistence,
+        };
+        if !pin.valid()
+            || serde_json::to_vec(&page).map_err(|e| e.to_string())?.len() > db::MAX_QUERY_BYTES
+        {
+            return Err("Comparison response expired or exceeded byte bound".into());
+        }
+        drop(ring);
+        drop(pin);
+        Ok(page)
+    }
+    fn history_page(
+        &self,
+        q: &api::DockerHistoryRequest,
+        snapshot: Option<&db::DockerReadSnapshot<'_>>,
+        ring: &[Arc<db::DockerBucket>],
+        metadata: Vec<db::DockerEntity>,
+        coverage: Vec<api::DockerCoverage>,
+        generation: u32,
+    ) -> Result<api::DockerHistoryPage, String> {
+        let started = Instant::now();
+        let range = q.to_ms - q.from_ms;
+        let desired = range / i64::from(q.max_points);
+        let mut tier = if desired <= 10_000 && range <= 86_400_000 {
+            Tier::S10
+        } else if desired <= 60_000 && range <= 7 * 86_400_000 {
+            Tier::M1
+        } else {
+            Tier::M15
+        };
+        let entity = q.container_id.as_deref().unwrap_or("");
+        let mut from = q.from_ms.div_euclid(tier.bucket_ms().unwrap_or(10_000))
+            * tier.bucket_ms().unwrap_or(10_000);
+        let mut persisted = if let Some(snapshot) = &snapshot {
+            snapshot
+                .history(&db::DockerHistoryQuery {
+                    entity: entity.into(),
+                    start_ms: from,
+                    end_ms: q.to_ms,
+                    tier,
+                    max_points: 10_000,
+                })
+                .map_err(|e| e.to_string())?
+        } else {
+            db::DockerHistory::default()
+        };
+        if let Some(snapshot) = &snapshot {
+            // Retention and pressure remove tiers independently. Prefer a
+            // coarser whole range whenever it contains evidence missing from
+            // the selected tier, avoiding overlapping mixed-tier additions.
+            for candidate in [Tier::M1, Tier::M15] {
+                let width = candidate.bucket_ms().unwrap_or(900_000);
+                if width <= tier.bucket_ms().unwrap_or(10_000) {
+                    continue;
+                }
+                let start = q.from_ms.div_euclid(width) * width;
+                let older = snapshot
+                    .history(&db::DockerHistoryQuery {
+                        entity: entity.into(),
+                        start_ms: start,
+                        end_ms: q.to_ms,
+                        tier: candidate,
+                        max_points: 10_000,
+                    })
+                    .map_err(|e| e.to_string())?;
+                let end = (q.to_ms - 1).div_euclid(width).saturating_add(1) * width;
+                let fine_width = tier.bucket_ms().unwrap_or(10000);
+                let comparable = if (end - start) / fine_width <= 10000 {
+                    snapshot
+                        .history(&db::DockerHistoryQuery {
+                            entity: entity.into(),
+                            start_ms: start,
+                            end_ms: end,
+                            tier,
+                            max_points: 10000,
+                        })
+                        .map_err(|e| e.to_string())?
+                        .buckets
+                } else {
+                    persisted.buckets.clone()
+                };
+                let finer = fold_ring(
+                    &comparable.into_iter().map(Arc::new).collect::<Vec<_>>(),
+                    candidate,
+                );
+                let additional = older.buckets.iter().any(|b| {
+                    finer
+                        .iter()
+                        .find(|fine| fine.bucket_ms == b.bucket_ms)
+                        .is_none_or(|fine| {
+                            b.metrics.iter().any(|m| {
+                                fine.metrics
+                                    .iter()
+                                    .find(|n| n.key == m.key)
+                                    .is_none_or(|n| n.weight_ms < m.weight_ms)
+                            })
+                        })
+                });
+                if additional {
+                    tier = candidate;
+                    from = start;
+                    persisted = older;
+                }
+            }
+        }
+        let width = tier.bucket_ms().unwrap_or(10_000);
+        let ring: Vec<_> = ring
+            .iter()
+            .filter(|b| b.bucket_ms >= from)
+            .cloned()
+            .collect();
+        let mut buckets: BTreeMap<i64, db::DockerBucket> = persisted
+            .buckets
+            .into_iter()
+            .map(|b| (b.bucket_ms, b))
+            .collect();
+        // Capture covered fine buckets from the *same* SQLite snapshot, then
+        // replace whole fine revisions with ring revisions before coarse folding.
+        let mut fine: BTreeMap<i64, Arc<db::DockerBucket>> = BTreeMap::new();
+        if tier != Tier::S10 && !ring.is_empty() {
+            let left = ring
+                .iter()
+                .map(|b| b.bucket_ms.div_euclid(width) * width)
+                .min()
+                .unwrap_or(from);
+            let right = ring
+                .iter()
+                .map(|b| (b.bucket_ms.div_euclid(width) + 1) * width)
+                .max()
+                .unwrap_or(q.to_ms);
+            if let Some(snapshot) = &snapshot {
+                for b in snapshot
+                    .history(&db::DockerHistoryQuery {
+                        entity: entity.into(),
+                        start_ms: left,
+                        end_ms: right,
+                        tier: Tier::S10,
+                        max_points: 10_000,
+                    })
+                    .map_err(|e| e.to_string())?
+                    .buckets
+                {
+                    fine.insert(b.bucket_ms, Arc::new(b));
+                }
+            }
+        }
+        for b in &ring {
+            if fine
+                .get(&b.bucket_ms)
+                .is_none_or(|old| b.revision > old.revision)
+            {
+                fine.insert(b.bucket_ms, Arc::clone(b));
+            }
+        }
+        let folded = fold_ring(&fine.into_values().collect::<Vec<_>>(), tier);
+        for b in folded {
+            // Pressure may have removed fine rows while retaining the coarse span.
+            // Never overwrite that coarse evidence with a smaller fine population.
+            let covers_old = buckets.get(&b.bucket_ms).is_none_or(|old| {
+                old.metrics.iter().all(|m| {
+                    b.metrics
+                        .iter()
+                        .any(|n| n.key == m.key && n.weight_ms >= m.weight_ms)
+                })
+            });
+            if buckets
+                .get(&b.bucket_ms)
+                .is_none_or(|old| covers_old && b.revision > old.revision)
+            {
+                buckets.insert(b.bucket_ms, b);
+            }
+        }
+        let mut display_width = width;
+        while buckets.len() > q.max_points as usize {
+            display_width = display_width.saturating_mul(2);
+            let mut coarse: BTreeMap<i64, db::DockerBucket> = BTreeMap::new();
+            for b in buckets.into_values() {
+                let at = b.bucket_ms.div_euclid(display_width) * display_width;
+                let target = coarse.entry(at).or_insert_with(|| db::DockerBucket {
+                    entity: b.entity.clone(),
+                    tier,
+                    bucket_ms: at,
+                    revision: 0,
+                    metrics: Vec::new(),
+                    populations: Vec::new(),
+                });
+                target.revision = target.revision.max(b.revision);
+                for m in b.metrics {
+                    if let Some(old) = target.metrics.iter_mut().find(|old| old.key == m.key) {
+                        old.merge(&m).map_err(|e| e.to_string())?;
+                    } else {
+                        target.metrics.push(m);
+                    }
+                }
+                target.populations.extend(b.populations);
+            }
+            for b in coarse.values_mut() {
+                for m in &mut b.metrics {
+                    m.expected_ms = display_width as u64;
+                }
+            }
+            buckets = coarse;
+        }
+        let mut points = Vec::new();
+        for b in buckets.into_values() {
+            let mut p = point(&b);
+            p.duration_ms = display_width.min(i64::from(u32::MAX)) as u32;
+            p.expected_ms = p.duration_ms;
+            points.push(p);
+        }
+        if points.len() > q.max_points as usize {
+            return Err("Select a coarser history range or more points".into());
+        }
+        let mut meta_rows: BTreeMap<(i64, i64), db::DockerEntity> = persisted
+            .metadata
+            .into_iter()
+            .chain(metadata)
+            .map(|e| ((e.effective_ms, e.revision), e))
+            .collect();
+        let predecessor = meta_rows
+            .keys()
+            .rfind(|(time, _)| *time < q.from_ms)
+            .copied();
+        meta_rows
+            .retain(|key, _| key.0 < q.to_ms && (key.0 >= q.from_ms || Some(*key) == predecessor));
+        for point in &mut points {
+            point.engine_capacity_bytes = meta_rows
+                .range(..=(point.time_ms, i64::MAX))
+                .next_back()
+                .and_then(|(_, e)| e.capacity.map(|v| v as f64));
+            point.explicit_limit_bytes = meta_rows
+                .range(..=(point.time_ms, i64::MAX))
+                .next_back()
+                .and_then(|(_, e)| e.explicit_limit.map(|v| v as f64));
+        }
+        let metas: Vec<api::DockerContainer> = meta_rows
+            .values()
+            .filter_map(|e| serde_json::from_slice(&e.extras).ok())
+            .collect();
+        let mut gaps: Vec<_> = persisted
+            .coverage
+            .into_iter()
+            .map(|c| api::DockerCoverage {
+                start_ms: c.start_ms,
+                end_ms: c.end_ms,
+                container_id: c.entity,
+                reason: c.reason,
+            })
+            .collect();
+        for c in coverage {
+            if let Some(old) = gaps.iter_mut().find(|g| {
+                g.start_ms == c.start_ms && g.container_id == c.container_id && g.reason == c.reason
+            }) {
+                old.end_ms = old.end_ms.max(c.end_ms);
+            } else {
+                gaps.push(c);
+            }
+        }
+        gaps.retain(|c| c.start_ms < q.to_ms && c.end_ms.is_none_or(|end| end > q.from_ms));
+        if started.elapsed() > Duration::from_secs(2) {
+            return Err("History snapshot expired".into());
+        }
+        let mut persistence = self.status();
+        let durable_start = snapshot
+            .as_ref()
+            .map(|snap| snap.retained_range())
+            .transpose()
+            .map_err(|e| e.to_string())?
+            .flatten()
+            .map(|(start, _)| start);
+        persistence.retained_from_ms = durable_start
+            .into_iter()
+            .chain(ring.iter().map(|b| b.bucket_ms))
+            .min();
+        let page = api::DockerHistoryPage {
+            generation,
+            points,
+            coverage: gaps,
+            metadata: metas,
+            persistence,
+        };
+        Ok(page)
     }
     /// Durable cursor only; callers may replay from it but must still disclose Docker's
     /// bounded replay uncertainty. Invoke from a blocking worker, never a sampler.
@@ -1488,8 +1891,12 @@ fn observe(
         b.revision = revision;
         let bytes = bucket_bytes(&b);
         let old_bytes = s.entries.get(&key).map_or(0, |e| e.bytes);
+        let replacing_read_payload = s.entries.get(&key).is_some_and(|e| {
+            s.shared_read_buckets
+                .contains_key(&(Arc::as_ptr(&e.bucket) as usize))
+        });
         if s.bytes
-            .saturating_sub(old_bytes)
+            .saturating_sub(if replacing_read_payload { 0 } else { old_bytes })
             .saturating_add(bytes)
             .saturating_add(s.aux_bytes)
             .saturating_add(s.reader_bytes)
@@ -1507,31 +1914,118 @@ fn observe(
                     durable,
                 },
             );
+            if replacing_read_payload {
+                recount_aux(s);
+            }
         } else {
             gap(s, engine, at, end, "ring_capacity");
         }
         at = end;
     }
 }
+fn comparison_value(
+    row: &api::DockerRankedContainer,
+    metric: api::DockerComparisonMetric,
+) -> Option<f64> {
+    match metric {
+        api::DockerComparisonMetric::Cpu => row.peak_cpu_pct,
+        api::DockerComparisonMetric::Memory => row.peak_working_set_bytes,
+    }
+}
+fn rank_order(
+    a: &api::DockerRankedContainer,
+    b: &api::DockerRankedContainer,
+    metric: api::DockerComparisonMetric,
+) -> std::cmp::Ordering {
+    match (comparison_value(a, metric), comparison_value(b, metric)) {
+        (Some(a), Some(b)) => b.total_cmp(&a),
+        (Some(_), None) => std::cmp::Ordering::Less,
+        (None, Some(_)) => std::cmp::Ordering::Greater,
+        (None, None) => std::cmp::Ordering::Equal,
+    }
+    .then_with(|| a.container.id.cmp(&b.container.id))
+}
 fn bucket_bytes(b: &db::DockerBucket) -> usize {
     256 + b.entity.len()
         + b.metrics.iter().map(|m| 80 + m.key.len()).sum::<usize>()
         + b.populations.len() * 32
 }
-fn queue(s: &mut State, a: Option<&Attached>, batch: db::DockerBatch, keys: Vec<Key>) {
+/// Fit the complete outgoing payload, including this cycle's fresh observations.
+/// Only a bounded prefix is submitted; excluded buckets stay dirty in the ring.
+fn bound_batch(s: &mut State, batch: &mut db::DockerBatch, keys: &mut Vec<Key>) {
+    let mut deferred = Retry::default();
+    let mut split = false;
+    while batch.logical_bytes().is_err() {
+        let mut reduced = false;
+        if batch.entities.len() > 1 {
+            deferred
+                .entities
+                .extend(batch.entities.split_off(batch.entities.len().div_ceil(2)));
+            reduced = true;
+        }
+        if batch.events.len() > 1 {
+            deferred
+                .events
+                .extend(batch.events.split_off(batch.events.len().div_ceil(2)));
+            reduced = true;
+        }
+        if batch.coverage.len() > 1 {
+            deferred
+                .coverage
+                .extend(batch.coverage.split_off(batch.coverage.len().div_ceil(2)));
+            reduced = true;
+        }
+        if batch.buckets.len() > 1 {
+            batch.buckets.truncate(batch.buckets.len().div_ceil(2));
+            let needed: BTreeSet<_> = batch
+                .buckets
+                .iter()
+                .flat_map(|bucket| bucket.populations.iter().map(|p| p.revision))
+                .collect();
+            batch.populations.retain(|p| needed.contains(&p.revision));
+            reduced = true;
+        }
+        if !reduced {
+            // A malformed individual row still reaches normal admission diagnostics;
+            // never spin here or discard it as if it had been written successfully.
+            break;
+        }
+        split = true;
+    }
+    if split {
+        let kept: BTreeSet<_> = batch
+            .buckets
+            .iter()
+            .map(|b| (b.entity.as_str(), b.bucket_ms))
+            .collect();
+        keys.retain(|(_, id, time)| kept.contains(&(id.as_str(), *time)));
+        // A replay cursor cannot pass deferred events or uncertainty coverage.
+        deferred.cursor = batch.cursor.take();
+        requeue(s, &batch.daemon_id, deferred);
+    }
+}
+fn queue(s: &mut State, a: Option<&Attached>, mut batch: db::DockerBatch, mut keys: Vec<Key>) {
     let Some(a) = a else {
         return;
     };
+    bound_batch(s, &mut batch, &mut keys);
     if batch.buckets.is_empty()
         && batch.entities.is_empty()
         && batch.events.is_empty()
         && batch.coverage.is_empty()
+        && batch.cursor.is_none()
     {
         return;
     }
     let engine = batch.daemon_id.clone();
     let start = batch.start_ms;
     let end = batch.end_ms;
+    let retry = Retry {
+        events: batch.events.clone(),
+        coverage: batch.coverage.clone(),
+        entities: batch.entities.clone(),
+        cursor: batch.cursor.clone(),
+    };
     match a.writer.write_docker(batch) {
         Ok(rx) => {
             for key in &keys {
@@ -1541,6 +2035,7 @@ fn queue(s: &mut State, a: Option<&Attached>, batch: db::DockerBatch, keys: Vec<
             }
             s.pending.push(Receipt {
                 rx,
+                retry,
                 keys,
                 engine,
                 start,
@@ -1549,11 +2044,14 @@ fn queue(s: &mut State, a: Option<&Attached>, batch: db::DockerBatch, keys: Vec<
         }
         Err(e) => {
             s.error = Some(e.to_string());
-            gap(s, &engine, start, end, "write_rejected");
+            requeue(s, &engine, retry);
         }
     }
 }
 fn drain(s: &mut State) {
+    drain_at(s, wall_ms());
+}
+fn drain_at(s: &mut State, now: i64) {
     let mut keep = Vec::new();
     for p in std::mem::take(&mut s.pending) {
         match p.rx.try_recv() {
@@ -1562,9 +2060,15 @@ fn drain(s: &mut State) {
                     ack.outcome,
                     db::DockerOutcome::Failed | db::DockerOutcome::Rejected
                 ) {
-                    s.error = ack.reason;
-                    gap(s, &p.engine, p.start, p.end, "write_failed");
-                } else if ack.outcome == db::DockerOutcome::Persisted {
+                    s.error = Some(
+                        ack.reason
+                            .unwrap_or_else(|| "Docker history write failed".into()),
+                    );
+                    if should_warn(s, &p.engine, now) {
+                        tracing::warn!(engine = %p.engine, reason = ?s.error, "Docker history write will retry");
+                    }
+                    requeue(s, &p.engine, p.retry);
+                } else if ack.outcome == db::DockerOutcome::Persisted && s.retry.is_empty() {
                     s.error = None;
                 }
                 for key in p.keys {
@@ -1579,6 +2083,7 @@ fn drain(s: &mut State) {
             Err(mpsc::TryRecvError::Empty) => keep.push(p),
             Err(mpsc::TryRecvError::Disconnected) => {
                 gap(s, &p.engine, p.start, p.end, "writer_disconnected");
+                requeue(s, &p.engine, p.retry);
                 for key in p.keys {
                     if let Some(e) = s.entries.get_mut(&key) {
                         e.pins = e.pins.saturating_sub(1);
@@ -1588,6 +2093,138 @@ fn drain(s: &mut State) {
         }
     }
     s.pending = keep;
+}
+fn should_warn(s: &mut State, engine: &str, now: i64) -> bool {
+    if s.last_warning
+        .get(engine)
+        .is_some_and(|last| now.saturating_sub(*last) < 60_000)
+    {
+        return false;
+    }
+    s.last_warning.insert(engine.into(), now);
+    true
+}
+fn merge_retry_coverage(rows: &mut Vec<db::DockerCoverage>, mut row: db::DockerCoverage) {
+    let mut index = 0;
+    while index < rows.len() {
+        let old = &rows[index];
+        if old.entity == row.entity
+            && old.metric == row.metric
+            && old.reason == row.reason
+            && old.end_ms.is_some_and(|end| end >= row.start_ms)
+            && row.end_ms.is_some_and(|end| end >= old.start_ms)
+        {
+            let old = rows.remove(index);
+            row.start_ms = row.start_ms.min(old.start_ms);
+            row.end_ms = row.end_ms.max(old.end_ms);
+            row.revision = row.revision.max(old.revision);
+            row.expected_ms = row
+                .end_ms
+                .unwrap_or(row.start_ms)
+                .saturating_sub(row.start_ms);
+        } else {
+            index += 1;
+        }
+    }
+    rows.push(row);
+}
+fn requeue(s: &mut State, engine: &str, mut content: Retry) {
+    let revision = next(s);
+    let retry = s.retry.entry(engine.into()).or_default();
+    retry.events.append(&mut content.events);
+    retry.events.sort_by_key(|e| e.time_ns);
+    retry.events.dedup_by(|a, b| a == b);
+    for coverage in content.coverage {
+        merge_retry_coverage(&mut retry.coverage, coverage);
+    }
+    for entity in content.entities {
+        if !retry
+            .entities
+            .iter()
+            .any(|e| e.external_id == entity.external_id && e.revision == entity.revision)
+        {
+            retry.entities.push(entity);
+        }
+    }
+    if content.cursor.as_ref().is_some_and(|c| {
+        retry
+            .cursor
+            .as_ref()
+            .is_none_or(|old| c.time_ns > old.time_ns)
+    }) {
+        retry.cursor = content.cursor;
+    }
+    let mut excess = s
+        .retry
+        .values()
+        .map(|retry| retry.events.len())
+        .sum::<usize>()
+        .saturating_sub(4096);
+    let mut lost: BTreeMap<String, (i64, i64)> = BTreeMap::new();
+    while excess > 0 {
+        let Some(engine) = s
+            .retry
+            .iter()
+            .filter_map(|(engine, retry)| retry.events.first().map(|event| (engine, event.time_ns)))
+            .min_by_key(|(_, time)| *time)
+            .map(|(engine, _)| engine.clone())
+        else {
+            break;
+        };
+        if let Some(retry) = s.retry.get_mut(&engine) {
+            let event = retry.events.remove(0);
+            let start = event.time_ns / 1_000_000;
+            lost.entry(engine)
+                .and_modify(|span| {
+                    span.0 = span.0.min(start);
+                    span.1 = span.1.max(start + 1);
+                })
+                .or_insert((start, start + 1));
+        }
+        excess -= 1;
+    }
+    for (engine, (start, end)) in lost {
+        if let Some(retry) = s.retry.get_mut(&engine) {
+            merge_retry_coverage(
+                &mut retry.coverage,
+                db::DockerCoverage {
+                    entity: None,
+                    metric: None,
+                    start_ms: start,
+                    end_ms: Some(end),
+                    reason: "event_replay_uncertain".into(),
+                    revision,
+                    sampled_ms: 0,
+                    expected_ms: end - start,
+                },
+            );
+        }
+    }
+}
+fn evict_entry(s: &mut State, key: &Key) {
+    if let Some(e) = s.entries.remove(key) {
+        s.bytes = s.bytes.saturating_sub(e.bytes);
+        if e.bucket.revision > e.durable {
+            let revision = next(s);
+            let coverage = db::DockerCoverage {
+                // Empty ID is the engine aggregate, not engine-wide coverage.
+                entity: Some(key.1.clone()),
+                metric: None,
+                start_ms: key.2,
+                end_ms: Some(key.2 + 10_000),
+                reason: "write_failed".into(),
+                revision,
+                sampled_ms: 0,
+                expected_ms: 10_000,
+            };
+            let mut retry = Retry::default();
+            if let Some(fact) = s.facts.get(&(key.0.clone(), key.1.clone())) {
+                retry.entities.push(fact.clone());
+            }
+            retry.coverage.push(coverage);
+            requeue(s, &key.0, retry);
+        }
+    }
 }
 fn gap(s: &mut State, engine: &str, start: i64, end: i64, reason: &str) {
     let gaps = s.coverage.entry(engine.into()).or_default();
@@ -1620,14 +2257,56 @@ fn bound_coverage(gaps: &mut Vec<api::DockerCoverage>) {
         });
     }
 }
+fn retry_bytes(retry: &Retry) -> usize {
+    retry
+        .events
+        .iter()
+        .map(|e| {
+            e.action.len()
+                + e.entity.as_ref().map_or(0, String::len)
+                + e.attributes
+                    .iter()
+                    .map(|(k, v)| k.len() + v.len() + 64)
+                    .sum::<usize>()
+                + 256
+        })
+        .sum::<usize>()
+        + retry
+            .coverage
+            .iter()
+            .map(|c| c.entity.as_ref().map_or(0, String::len) + c.reason.len() + 256)
+            .sum::<usize>()
+        + retry
+            .entities
+            .iter()
+            .map(|e| e.extras.len() + e.name.len() + e.image.len() + 512)
+            .sum::<usize>()
+        + retry.cursor.as_ref().map_or(0, |c| c.event_key.len() + 64)
+}
 fn recount_aux(s: &mut State) {
+    let mut read_payload = 0;
+    s.shared_read_buckets.retain(|address, read| {
+        let in_ring = s
+            .entries
+            .get(&read.key)
+            .is_some_and(|entry| Arc::as_ptr(&entry.bucket) as usize == *address);
+        if read.bucket.strong_count() <= usize::from(in_ring) {
+            return false;
+        }
+        // The map and its identity strings are owned even while payload is shared.
+        read_payload += 192 + read.key.0.len() + read.key.1.len();
+        if !in_ring {
+            read_payload += read.bytes;
+        }
+        true
+    });
     // Conservative owned-memory allowance: strings/serialized extras + map/allocator
     // overhead, including duplicate latest facts and fingerprints.
-    s.aux_bytes = s
-        .facts
-        .values()
-        .map(|e| e.extras.len() * 3 + e.name.len() + e.image.len() + 512)
-        .sum::<usize>()
+    s.aux_bytes = read_payload
+        + s.facts
+            .values()
+            .map(|e| e.extras.len() * 3 + e.name.len() + e.image.len() + 512)
+            .sum::<usize>()
         + s.metadata_history
             .iter()
             .map(|(_, e)| e.extras.len() + 512)
@@ -1657,13 +2336,16 @@ fn recount_aux(s: &mut State) {
         + s.pending
             .iter()
             .map(|p| {
-                p.keys
-                    .iter()
-                    .map(|(a, b, _)| a.len() + b.len() + 128)
-                    .sum::<usize>()
+                retry_bytes(&p.retry)
+                    + p.keys
+                        .iter()
+                        .map(|(a, b, _)| a.len() + b.len() + 128)
+                        .sum::<usize>()
                     + 256
             })
             .sum::<usize>()
+        + s.retry.values().map(retry_bytes).sum::<usize>()
+        + s.last_warning.len() * 384
         + s.observed.len() * 384
         + s.runtime.len() * 512
         + s.coverage.values().map(|g| g.len() * 512).sum::<usize>();
@@ -1676,9 +2358,7 @@ fn evict(s: &mut State, now: i64) {
         .map(|(k, _)| k.clone())
         .collect();
     for key in keys {
-        if let Some(e) = s.entries.remove(&key) {
-            s.bytes = s.bytes.saturating_sub(e.bytes);
-        }
+        evict_entry(s, &key);
     }
     s.events.retain(|e| e.time_ms >= now - HOUR);
     let active: BTreeSet<_> = s
@@ -1730,6 +2410,8 @@ fn evict(s: &mut State, now: i64) {
         .collect();
     s.populations.retain(|e, _| engines.contains(e));
     s.runtime.retain(|e, _| engines.contains(e));
+    s.last_warning
+        .retain(|e, _| engines.contains(e) || s.retry.contains_key(e));
     s.coverage.retain(|e, _| engines.contains(e));
     recount_aux(s);
     while s.bytes + s.aux_bytes + s.reader_bytes > RING_BYTES {
@@ -1740,9 +2422,8 @@ fn evict(s: &mut State, now: i64) {
             .min_by_key(|((_, _, t), _)| *t)
             .map(|(key, _)| key.clone())
         {
-            if let Some(e) = s.entries.remove(&key) {
-                s.bytes = s.bytes.saturating_sub(e.bytes);
-            }
+            evict_entry(s, &key);
+            recount_aux(s);
             continue;
         }
         if s.metadata_history.pop_front().is_some() {
@@ -1806,14 +2487,38 @@ fn point(b: &db::DockerBucket) -> api::DockerHistoryPoint {
             .find(|m| m.key == key)
             .and_then(db::WeightedMetric::average)
     };
-    let measured = b
+    let measured = |key: &str| {
+        b.metrics
+            .iter()
+            .find(|m| m.key == key)
+            .map_or(0, |m| m.weight_ms.min(u32::MAX as u64) as u32)
+    };
+    let minimum = |key: &str| {
+        b.metrics
+            .iter()
+            .find(|m| m.key == key && m.weight_ms > 0)
+            .map(|m| m.min)
+    };
+    let peak = |key: &str| {
+        b.metrics
+            .iter()
+            .find(|m| m.key == key && m.weight_ms > 0)
+            .map(|m| m.max)
+    };
+    let expected = b
         .metrics
         .iter()
-        .filter(|m| matches!(m.key.as_str(), "cpu_percent" | "memory_working_set"))
-        .map(|m| m.weight_ms)
-        .min()
-        .unwrap_or(0);
-    let expected = b.tier.bucket_ms().unwrap_or(10_000) as u32;
+        .map(|m| m.expected_ms)
+        .max()
+        .unwrap_or_else(|| b.tier.bucket_ms().unwrap_or(10_000) as u64)
+        .min(u32::MAX as u64) as u32;
+    // RFC docker-monitoring-ux Bug 1: 52–54% of real buckets miss <=100 ms.
+    const COVERAGE_TOLERANCE_DIVISOR: u32 = 50;
+    let covered = |weight: u32| {
+        weight > 0 && weight.saturating_add(expected / COVERAGE_TOLERANCE_DIVISOR) >= expected
+    };
+    let cpu_measured_ms = measured("cpu_percent");
+    let memory_measured_ms = measured("memory_working_set");
     api::DockerHistoryPoint {
         time_ms: b.bucket_ms,
         duration_ms: expected,
@@ -1827,9 +2532,31 @@ fn point(b: &db::DockerBucket) -> api::DockerHistoryPoint {
             block_read_bps: v("block_read"),
             block_write_bps: v("block_write"),
         },
-        measured_ms: measured.min(u32::MAX as u64) as u32,
+        cpu_measured_ms,
+        memory_measured_ms,
         expected_ms: expected,
-        covered: measured > 0 && measured >= u64::from(expected),
+        cpu_covered: covered(cpu_measured_ms),
+        memory_covered: covered(memory_measured_ms),
+        peak: api::DockerMetrics {
+            cpu_pct: peak("cpu_percent"),
+            working_set_bytes: peak("memory_working_set"),
+            raw_memory_bytes: peak("memory_raw"),
+            effective_limit_bytes: peak("memory_limit"),
+            network_rx_bps: peak("network_rx"),
+            network_tx_bps: peak("network_tx"),
+            block_read_bps: peak("block_read"),
+            block_write_bps: peak("block_write"),
+        },
+        minimum: api::DockerMetrics {
+            cpu_pct: minimum("cpu_percent"),
+            working_set_bytes: minimum("memory_working_set"),
+            raw_memory_bytes: minimum("memory_raw"),
+            effective_limit_bytes: minimum("memory_limit"),
+            network_rx_bps: minimum("network_rx"),
+            network_tx_bps: minimum("network_tx"),
+            block_read_bps: minimum("block_read"),
+            block_write_bps: minimum("block_write"),
+        },
         population_revision: b.populations.last().map_or(0, |p| p.revision),
         revision: b.revision.abs(),
         explicit_limit_bytes: None,
@@ -1896,6 +2623,7 @@ mod tests {
             capacity_observed_ms: Some(time),
         });
         s.containers = vec![api::DockerContainer {
+            auto_remove: Some(false),
             engine_id: "daemon".into(),
             metadata_available: true,
             metadata_observed_ms: Some(time),
@@ -1940,6 +2668,30 @@ mod tests {
             ..Default::default()
         };
         s
+    }
+    #[test]
+    fn aggregate_running_selection_excludes_selected_stopped_containers() {
+        let template = fixture(2000).containers.remove(0);
+        let rows: Vec<_> = (0..14)
+            .map(|i| {
+                let mut row = template.clone();
+                row.id = format!("c{i}");
+                row.monitored = i < 9;
+                row.lifecycle = if i < 9 {
+                    api::DockerLifecycle::Exited
+                } else {
+                    api::DockerLifecycle::Running
+                };
+                row
+            })
+            .collect();
+        let total = super::super::aggregate(&rows, None, true, 2000, 1000);
+        assert_eq!(total.expected, 0);
+        assert_eq!(total.running, 5);
+        assert_eq!(total.monitored, 9);
+        assert_eq!(total.total, 14);
+        assert_eq!((total.cpu_measured, total.memory_measured), (0, 0));
+        assert!(total.partial);
     }
     #[test]
     fn detail_reconciles_state_metadata_and_metrics_by_evidence_clock() {
@@ -2007,13 +2759,662 @@ mod tests {
             }],
             populations: vec![],
         };
-        assert!(point(&bucket).covered);
-        bucket.metrics[0].weight_ms = 9999;
-        assert!(!point(&bucket).covered);
-        bucket.metrics[0].weight_ms = 0;
-        assert!(!point(&bucket).covered);
+        for weight in [10_000, 9999, 9800] {
+            bucket.metrics[0].weight_ms = weight;
+            assert!(point(&bucket).cpu_covered);
+            assert!(!point(&bucket).memory_covered);
+            assert_eq!(point(&bucket).peak.cpu_pct, Some(10.));
+        }
+        for weight in [9799, 0] {
+            bucket.metrics[0].weight_ms = weight;
+            assert!(!point(&bucket).cpu_covered);
+        }
+        assert_eq!(point(&bucket).peak.cpu_pct, None);
         bucket.metrics.clear();
-        assert!(!point(&bucket).covered);
+        assert!(!point(&bucket).cpu_covered);
+    }
+    #[test]
+    fn comparison_keeps_removed_identity_ranks_ties_nulls_and_bounds_series() {
+        let (_dir, store, r) = setup();
+        let mut snapshot = fixture(10_000);
+        let template = snapshot.containers[0].clone();
+        snapshot.containers = (0..8)
+            .map(|n| {
+                let mut container = template.clone();
+                container.id = format!("c{n}");
+                container.name = if n < 2 {
+                    "recreated-name".into()
+                } else {
+                    format!("name-{n}")
+                };
+                container.project = (n == 7).then(|| "other".into());
+                container.metrics.cpu_pct = (n < 7).then_some(if n < 2 { 100. } else { n as f64 });
+                container.metrics.working_set_bytes = Some(1000.);
+                container
+            })
+            .collect();
+        r.record(&snapshot);
+        store.writer().flush().unwrap();
+        r.status();
+        let mut removed = snapshot.containers[0].clone();
+        removed.lifecycle = api::DockerLifecycle::Removed;
+        removed.last_seen_ms = 20_000;
+        removed.metadata_observed_ms = Some(20_000);
+        r.removed(&removed, 1);
+        store.writer().flush().unwrap();
+        // A fresh recorder proves candidates and removed metadata came from SQLite.
+        let r = DockerRecorder::new(host().id);
+        r.attach(store.writer(), store.path().to_path_buf());
+        let mut q = api::DockerComparisonRequest {
+            engine_id: "daemon".into(),
+            from_ms: 0,
+            to_ms: 30_000,
+            metric: api::DockerComparisonMetric::Cpu,
+            project: None,
+            selected: None,
+            max_points: 360,
+        };
+        let page = r.comparison(&q).unwrap();
+        assert_eq!(page.ranking.len(), 8);
+        assert_eq!(page.series.len(), 5);
+        assert_eq!(page.ranking[0].container.id, "c0");
+        assert_eq!(page.ranking[1].container.id, "c1");
+        assert_eq!(
+            page.ranking[0].container.lifecycle,
+            api::DockerLifecycle::Removed
+        );
+        assert_eq!(page.ranking[7].peak_cpu_pct, None);
+        assert_eq!(page.ranking[0].avg_cpu_pct, Some(100.));
+        assert_eq!(page.ranking[0].cpu_measured_ms, 1000);
+        q.to_ms = 15_000;
+        let historical = r.comparison(&q).unwrap();
+        assert_eq!(
+            historical.ranking[0].container.lifecycle,
+            api::DockerLifecycle::Removed
+        );
+        assert_eq!(
+            historical.ranking[0].last_lifecycle,
+            Some(api::DockerLifecycle::Running)
+        );
+        q.to_ms = 30_000;
+        q.selected = Some((0..6).map(|n| format!("c{n}")).collect());
+        q.max_points = 1;
+        let page = r.comparison(&q).unwrap();
+        assert_eq!(page.series.len(), 6);
+        assert!(page.series.iter().all(|s| s.points.len() <= 1));
+        q.selected.as_mut().unwrap().push("c7".into());
+        assert!(r.comparison(&q).is_err());
+        q.selected = None;
+        q.project = Some(String::new());
+        assert_eq!(r.comparison(&q).unwrap().ranking.len(), 7);
+        q.project = Some("other".into());
+        assert_eq!(r.comparison(&q).unwrap().ranking.len(), 1);
+        assert!(r.comparison(&q).unwrap().series.is_empty());
+        q.metric = api::DockerComparisonMetric::Memory;
+        assert_eq!(r.comparison(&q).unwrap().ranking[0].container.id, "c7");
+        q.max_points = 361;
+        assert!(r.comparison(&q).is_err());
+    }
+    #[test]
+    fn comparison_ranks_before_truncating_to_500_stored_identities() {
+        let (_dir, store, r) = setup();
+        let mut snapshot = fixture(10_000);
+        let template = snapshot.containers[0].clone();
+        snapshot.containers = (0..510)
+            .map(|n| {
+                let mut c = template.clone();
+                c.id = format!("c{n:03}");
+                c.metrics.cpu_pct = Some(n as f64);
+                c.metrics.working_set_bytes = Some(n as f64 + 1.);
+                c
+            })
+            .collect();
+        for chunk in snapshot.containers.chunks(128) {
+            let mut cycle = snapshot.clone();
+            cycle.containers = chunk.to_vec();
+            r.record(&cycle);
+            store.writer().flush().unwrap();
+            assert_eq!(r.status().status, "recording");
+        }
+        let r = DockerRecorder::new(host().id);
+        r.attach(store.writer(), store.path().to_path_buf());
+        let page = r
+            .comparison(&api::DockerComparisonRequest {
+                engine_id: "daemon".into(),
+                from_ms: 0,
+                to_ms: HOUR,
+                metric: api::DockerComparisonMetric::Cpu,
+                project: None,
+                selected: None,
+                max_points: 360,
+            })
+            .unwrap();
+        assert_eq!(page.ranking.len(), 500);
+        assert_eq!(page.ranking[0].container.id, "c509");
+        assert_eq!(page.ranking[499].container.id, "c010");
+        assert_eq!(page.series.len(), 5);
+        for metric in [
+            api::DockerComparisonMetric::Cpu,
+            api::DockerComparisonMetric::Memory,
+        ] {
+            for to_ms in [20_000, HOUR] {
+                let custom = r
+                    .comparison(&api::DockerComparisonRequest {
+                        engine_id: "daemon".into(),
+                        from_ms: 0,
+                        to_ms,
+                        metric,
+                        project: None,
+                        selected: Some(vec!["c000".into()]),
+                        max_points: 360,
+                    })
+                    .unwrap();
+                assert_eq!(custom.ranking.len(), 500);
+                assert!(custom.ranking.iter().all(|r| r.container.id != "c000"));
+                assert_eq!(custom.series.len(), 1);
+                assert!(!custom.series[0].points.is_empty());
+                let series = serde_json::to_value(&custom.series[0]).unwrap();
+                assert_eq!(
+                    series["container"]["id"], "c000",
+                    "selected chart metadata must survive ranking truncation"
+                );
+                assert_eq!(series["container"]["name"], template.name);
+            }
+        }
+    }
+    #[test]
+    fn full_hour_comparison_shares_payloads_for_128_containers() {
+        let r = DockerRecorder::new(host().id);
+        let mut snapshot = fixture(10_000);
+        let template = snapshot.containers[0].clone();
+        snapshot.containers = (0..128)
+            .map(|n| {
+                let mut c = template.clone();
+                c.id = format!("c{n:03}");
+                c
+            })
+            .collect();
+        r.record(&snapshot);
+        {
+            let mut s = r.state.lock_ok();
+            let seeds: Vec<_> = s
+                .entries
+                .iter()
+                .filter(|((_, id, _), _)| !id.is_empty())
+                .map(|(key, e)| (key.clone(), (*e.bucket).clone()))
+                .collect();
+            for (key, seed) in seeds {
+                for n in 1..360 {
+                    let mut bucket = seed.clone();
+                    bucket.bucket_ms = n * 10_000;
+                    let bytes = bucket_bytes(&bucket);
+                    s.bytes += bytes;
+                    s.entries.insert(
+                        (key.0.clone(), key.1.clone(), bucket.bucket_ms),
+                        Entry {
+                            bucket: Arc::new(bucket),
+                            bytes,
+                            pins: 0,
+                            durable: 0,
+                        },
+                    );
+                }
+            }
+            recount_aux(&mut s);
+            assert!(s.bytes + s.aux_bytes < RING_BYTES);
+        }
+        let started = Instant::now();
+        let page = r
+            .comparison(&api::DockerComparisonRequest {
+                engine_id: "daemon".into(),
+                from_ms: 0,
+                to_ms: HOUR,
+                metric: api::DockerComparisonMetric::Cpu,
+                project: None,
+                selected: None,
+                max_points: 360,
+            })
+            .unwrap();
+        assert_eq!(page.ranking.len(), 128);
+        assert_eq!(page.series.len(), 5);
+        assert!(page.series.iter().all(|series| series.points.len() == 360));
+        let s = r.state.lock_ok();
+        assert_eq!(s.reader_bytes, 0);
+        assert!(s.shared_read_buckets.is_empty());
+        assert!(s.bytes + s.aux_bytes < RING_BYTES);
+        eprintln!(
+            "128-container hour comparison: {:?}, ring={} bytes",
+            started.elapsed(),
+            s.bytes
+        );
+    }
+    #[test]
+    fn shared_reader_payload_charge_survives_ring_eviction() {
+        let r = DockerRecorder::new(host().id);
+        r.record(&fixture(10_000));
+        let mut s = r.state.lock_ok();
+        let key = ("daemon".into(), "c".into(), 0);
+        let bucket = Arc::clone(&s.entries.get(&key).unwrap().bucket);
+        let bytes = bucket_bytes(&bucket);
+        s.shared_read_buckets.insert(
+            Arc::as_ptr(&bucket) as usize,
+            SharedReadBucket {
+                key: key.clone(),
+                bucket: Arc::downgrade(&bucket),
+                bytes,
+            },
+        );
+        recount_aux(&mut s);
+        let before = s.bytes + s.aux_bytes;
+        // This bucket is already durable, so eviction creates no retry metadata.
+        s.entries.get_mut(&key).unwrap().durable = i64::MAX;
+        evict_entry(&mut s, &key);
+        recount_aux(&mut s);
+        assert_eq!(s.bytes + s.aux_bytes, before);
+        drop(bucket);
+        recount_aux(&mut s);
+        assert!(s.bytes + s.aux_bytes <= before - bytes);
+        assert!(s.shared_read_buckets.is_empty());
+    }
+    #[test]
+    fn rejected_content_retries_without_claiming_measurement_loss() {
+        let r = DockerRecorder::new(host().id);
+        r.record(&fixture(10_000));
+        let mut s = r.state.lock_ok();
+        let key = ("daemon".into(), "c".into(), 0);
+        s.entries.get_mut(&key).unwrap().pins = 1;
+        let (tx, rx) = mpsc::sync_channel(1);
+        let event = db::DockerEvent {
+            entity: Some("c".into()),
+            time_ns: 1000,
+            action: "start".into(),
+            attributes: BTreeMap::new(),
+        };
+        let coverage = db::DockerCoverage {
+            entity: Some("c".into()),
+            metric: None,
+            start_ms: 0,
+            end_ms: Some(1),
+            reason: "events_disconnected".into(),
+            revision: 1,
+            sampled_ms: 0,
+            expected_ms: 1,
+        };
+        s.pending.push(Receipt {
+            rx,
+            retry: Retry {
+                events: vec![event.clone()],
+                coverage: vec![coverage.clone()],
+                ..Default::default()
+            },
+            keys: vec![key.clone()],
+            engine: "daemon".into(),
+            start: 0,
+            end: 10_000,
+        });
+        tx.send(db::DockerAck {
+            generation: 1,
+            revision: 1,
+            outcome: db::DockerOutcome::Rejected,
+            reason: Some("queue full".into()),
+        })
+        .unwrap();
+        drain_at(&mut s, 10_000);
+        assert!(
+            s.coverage
+                .values()
+                .flatten()
+                .all(|g| g.reason != "write_failed")
+        );
+        let entry = s.entries.get(&key).unwrap();
+        assert_eq!(entry.pins, 0);
+        assert!(entry.bucket.revision > entry.durable);
+        let retry = r.batch(&mut s, "daemon", 1, 11_000);
+        assert_eq!(retry.events, vec![event]);
+        assert_eq!(retry.coverage, vec![coverage]);
+        assert!(s.retry.is_empty());
+    }
+    #[test]
+    fn eviction_records_one_scoped_contiguous_permanent_loss() {
+        let r = DockerRecorder::new(host().id);
+        r.record(&fixture(10_000));
+        r.record(&fixture(20_000));
+        let mut s = r.state.lock_ok();
+        evict(&mut s, HOUR + 20_000);
+        let gaps = &s.retry.get("daemon").unwrap().coverage;
+        let scoped: Vec<_> = gaps
+            .iter()
+            .filter(|g| g.entity.as_deref() == Some("c"))
+            .collect();
+        assert_eq!(scoped.len(), 1);
+        assert_eq!((scoped[0].start_ms, scoped[0].end_ms), (0, Some(20_000)));
+        assert_eq!(scoped[0].reason, "write_failed");
+        evict(&mut s, HOUR + 30_000);
+        assert_eq!(
+            s.retry
+                .get("daemon")
+                .unwrap()
+                .coverage
+                .iter()
+                .filter(|g| g.entity.as_deref() == Some("c"))
+                .count(),
+            1
+        );
+    }
+    #[test]
+    fn project_aggregates_exclude_stale_unmonitored_and_stopped_metrics() {
+        let mut rows = fixture(30_000).containers;
+        rows[0].project = Some("app".into());
+        rows[0].metrics.cpu_pct = Some(200.);
+        rows[0].metrics.working_set_bytes = Some(100.);
+        for (id, monitored, lifecycle, observed) in [
+            ("stale", true, api::DockerLifecycle::Running, 1000),
+            ("unmonitored", false, api::DockerLifecycle::Running, 30_000),
+            ("stopped", true, api::DockerLifecycle::Exited, 30_000),
+        ] {
+            let mut row = rows[0].clone();
+            row.id = id.into();
+            row.monitored = monitored;
+            row.lifecycle = lifecycle;
+            row.observed_ms = Some(observed);
+            row.metrics.cpu_pct = Some(900.);
+            row.metrics.working_set_bytes = Some(900.);
+            rows.push(row);
+        }
+        let mut standalone = rows[0].clone();
+        standalone.id = "standalone".into();
+        standalone.project = None;
+        rows.push(standalone);
+        let projects = super::super::project_aggregates(&rows, Some(1024.), true, 30_000, 1000);
+        assert_eq!(projects.len(), 2);
+        let project = &projects
+            .iter()
+            .find(|p| p.project.as_deref() == Some("app"))
+            .unwrap()
+            .aggregate;
+        assert_eq!(project.cpu_cores, Some(2.));
+        assert_eq!(project.working_set_bytes, Some(100.));
+        assert_eq!(
+            (
+                project.total,
+                project.running,
+                project.monitored,
+                project.expected
+            ),
+            (4, 3, 3, 2)
+        );
+        assert_eq!((project.cpu_measured, project.memory_measured), (1, 1));
+        assert!(project.partial);
+        let standalone = &projects
+            .iter()
+            .find(|p| p.project.is_none())
+            .unwrap()
+            .aggregate;
+        assert!(!standalone.partial);
+        assert_eq!(standalone.capacity_bytes, Some(1024.));
+        assert!(
+            super::super::project_aggregates(&rows, None, false, 30_000, 1000)
+                .iter()
+                .all(|p| p.aggregate.partial)
+        );
+    }
+    #[test]
+    fn aggregate_eviction_does_not_gap_durable_container_history() {
+        let (_dir, store, r) = setup();
+        r.record(&fixture(10_000));
+        store.writer().flush().unwrap();
+        {
+            let mut s = r.state.lock_ok();
+            drain(&mut s);
+            let key = ("daemon".into(), String::new(), 0);
+            let revision = next(&mut s);
+            Arc::make_mut(&mut s.entries.get_mut(&key).unwrap().bucket).revision = revision;
+            evict_entry(&mut s, &key);
+        }
+        r.record(&fixture(10_000));
+        store.writer().flush().unwrap();
+        let container = r.history(&query(0, 20_000, 10)).unwrap();
+        assert!(!container.points.is_empty());
+        assert!(
+            container
+                .coverage
+                .iter()
+                .all(|gap| gap.reason != "write_failed"),
+            "aggregate eviction must not invalidate durable container measurements"
+        );
+        let aggregate = r
+            .history(&api::DockerHistoryRequest {
+                container_id: None,
+                ..query(0, 20_000, 10)
+            })
+            .unwrap();
+        assert!(
+            aggregate
+                .coverage
+                .iter()
+                .any(|gap| gap.reason == "write_failed" && gap.container_id.as_deref() == Some(""))
+        );
+        let comparison = r
+            .comparison(&api::DockerComparisonRequest {
+                engine_id: "daemon".into(),
+                from_ms: 0,
+                to_ms: 20_000,
+                metric: api::DockerComparisonMetric::Cpu,
+                project: None,
+                selected: Some(vec!["c".into()]),
+                max_points: 10,
+            })
+            .unwrap();
+        assert_eq!(comparison.series.len(), 1);
+        assert!(
+            comparison
+                .coverage
+                .iter()
+                .all(|gap| gap.reason != "write_failed")
+        );
+    }
+    #[test]
+    fn oversized_fresh_and_retry_payloads_drain_without_losing_evidence() {
+        let (_dir, store, r) = setup();
+        r.record(&fixture(10_000));
+        store.writer().flush().unwrap();
+        let (attached, _) = r.context();
+        let mut s = r.state.lock_ok();
+        drain(&mut s);
+        let mut batch = r.batch(&mut s, "daemon", 1, 20_000);
+        batch.entities.extend((0..100).map(|n| db::DockerEntity {
+            external_id: format!("large{n}"),
+            revision: batch.revision,
+            name: "large".into(),
+            extras: vec![b'x'; 16 * 1024],
+            ..Default::default()
+        }));
+        batch.events.extend((0..500).map(|n| {
+            db::DockerEvent {
+                entity: None,
+                time_ns: (n + 1) * 1_000_000,
+                action: "start".into(),
+                attributes: ["name", "image", "exitCode", "signal", "health_status"]
+                    .into_iter()
+                    .map(|key| (key.into(), "x".repeat(1024)))
+                    .collect(),
+            }
+        }));
+        batch.coverage.extend((0..100).map(|n| db::DockerCoverage {
+            entity: Some(format!("large{n}")),
+            metric: None,
+            start_ms: 0,
+            end_ms: Some(1),
+            reason: "event_replay_uncertain".into(),
+            revision: batch.revision,
+            sampled_ms: 0,
+            expected_ms: 1,
+        }));
+        batch.cursor = Some(db::DockerCursor {
+            time_ns: 500_000_000,
+            event_key: batch.events.last().unwrap().key("daemon").unwrap(),
+        });
+        let seed = s
+            .entries
+            .get(&("daemon".into(), "c".into(), 0))
+            .unwrap()
+            .bucket
+            .clone();
+        for n in 0..1024 {
+            let mut bucket = (*seed).clone();
+            bucket.bucket_ms = n * 10_000;
+            bucket.revision = batch.revision;
+            let key = ("daemon".into(), "c".into(), bucket.bucket_ms);
+            s.entries.insert(
+                key,
+                Entry {
+                    bytes: bucket_bytes(&bucket),
+                    bucket: Arc::new(bucket),
+                    pins: 0,
+                    durable: 0,
+                },
+            );
+        }
+        for attempt in 0..20 {
+            let keys: Vec<_> = s
+                .entries
+                .iter()
+                .filter(|(_, e)| e.pins == 0 && e.bucket.revision > e.durable)
+                .map(|(key, _)| key.clone())
+                .collect();
+            batch.buckets = keys
+                .iter()
+                .map(|key| (*s.entries[key].bucket).clone())
+                .collect();
+            queue(&mut s, attached.as_ref(), batch, keys);
+            assert!(
+                s.error.is_none(),
+                "valid rows must be split before admission: {:?}",
+                s.error
+            );
+            assert!(!s.pending.is_empty());
+            if s.retry
+                .get("daemon")
+                .is_some_and(|retry| !retry.events.is_empty() || !retry.coverage.is_empty())
+            {
+                assert!(
+                    s.pending.iter().all(|p| p.retry.cursor.is_none()),
+                    "cursor skips deferred evidence"
+                );
+            }
+            if attempt == 0 {
+                assert!(s.retry.contains_key("daemon"));
+                assert!(
+                    s.entries
+                        .values()
+                        .any(|e| e.pins == 0 && e.bucket.revision > e.durable)
+                );
+            }
+            drop(s);
+            store.writer().flush().unwrap();
+            s = r.state.lock_ok();
+            drain(&mut s);
+            assert!(s.error.is_none(), "{:?}", s.error);
+            let conn = rusqlite::Connection::open(store.path()).unwrap();
+            let events: i64 = conn
+                .query_row("SELECT count(*) FROM docker_events", [], |row| row.get(0))
+                .unwrap();
+            let gaps: i64 = conn
+                .query_row(
+                    "SELECT count(*) FROM docker_coverage WHERE reason='event_replay_uncertain'",
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            let cursors: i64 = conn
+                .query_row("SELECT count(*) FROM docker_event_cursors", [], |row| {
+                    row.get(0)
+                })
+                .unwrap();
+            if cursors > 0 {
+                assert_eq!((events, gaps), (500, 100));
+            }
+            if s.retry.is_empty() && s.entries.values().all(|e| e.bucket.revision <= e.durable) {
+                assert!(attempt > 0, "oversized input must need multiple batches");
+                assert_eq!((events, gaps, cursors), (500, 100, 1));
+                let metadata: i64 = conn
+                    .query_row(
+                        "SELECT count(*) FROM docker_metadata WHERE name='large'",
+                        [],
+                        |row| row.get(0),
+                    )
+                    .unwrap();
+                assert_eq!(metadata, 100);
+                let buckets: i64 = conn.query_row("SELECT count(*) FROM docker_10s b JOIN docker_entities e ON e.id=b.entity_id WHERE e.external_id='c'", [], |row| row.get(0)).unwrap();
+                assert_eq!(buckets, 1024);
+                return;
+            }
+            batch = r.batch(&mut s, "daemon", 1, 20_000);
+        }
+        panic!("retry did not drain");
+    }
+    #[test]
+    fn retry_events_are_bounded_and_warning_clock_is_per_engine() {
+        let r = DockerRecorder::new(host().id);
+        let mut s = r.state.lock_ok();
+        let events = (0..4100)
+            .map(|n| db::DockerEvent {
+                entity: None,
+                time_ns: n * 1_000_000,
+                action: "start".into(),
+                attributes: BTreeMap::new(),
+            })
+            .collect();
+        requeue(
+            &mut s,
+            "a",
+            Retry {
+                events,
+                ..Default::default()
+            },
+        );
+        let retry = s.retry.get("a").unwrap();
+        assert_eq!(retry.events.len(), 4096);
+        assert_eq!(retry.coverage.len(), 1);
+        assert_eq!(
+            (retry.coverage[0].start_ms, retry.coverage[0].end_ms),
+            (0, Some(4))
+        );
+        assert_eq!(retry.coverage[0].reason, "event_replay_uncertain");
+        assert!(should_warn(&mut s, "a", 0));
+        assert!(!should_warn(&mut s, "a", 59_999));
+        assert!(should_warn(&mut s, "b", 59_999));
+        assert!(should_warn(&mut s, "a", 60_000));
+        requeue(
+            &mut s,
+            "b",
+            Retry {
+                events: (5000..5100)
+                    .map(|n| db::DockerEvent {
+                        entity: None,
+                        time_ns: n * 1_000_000,
+                        action: "start".into(),
+                        attributes: BTreeMap::new(),
+                    })
+                    .collect(),
+                ..Default::default()
+            },
+        );
+        assert_eq!(
+            s.retry
+                .values()
+                .map(|retry| retry.events.len())
+                .sum::<usize>(),
+            4096
+        );
+        let mut delivered = 0;
+        while let Some(engine) = s.retry.keys().next().cloned() {
+            let batch = r.batch(&mut s, &engine, 1, 10_000);
+            assert!(batch.events.len() <= 999);
+            assert!(batch.logical_bytes().is_ok());
+            delivered += batch.events.len();
+        }
+        assert_eq!(delivered, 4096);
     }
     fn at(s: &mut api::DockerSnapshot, time: i64, interval: u32) {
         s.observed_ms = time;
@@ -2034,6 +3435,92 @@ mod tests {
         }
     }
     #[test]
+    fn resumed_engine_closes_switch_gap_before_commit() {
+        let (_dir, store, r) = setup();
+        let t = wall_ms();
+        let mut s = fixture(t);
+        s.coverage.push(api::DockerCoverage {
+            start_ms: t + 50,
+            end_ms: None,
+            container_id: None,
+            reason: "engine_switch".into(),
+        });
+        r.record(&s);
+        store.writer().flush().unwrap();
+        s.coverage.clear();
+        at(&mut s, t + 2000, 1000);
+        r.record(&s);
+        let page = r.history(&query(t, t + 10000, 10)).unwrap();
+        let gaps: Vec<_> = page
+            .coverage
+            .iter()
+            .filter(|g| g.reason == "engine_switch")
+            .collect();
+        assert_eq!(gaps.len(), 1);
+        assert_eq!(gaps[0].end_ms, Some(t + 2000));
+        assert!(
+            r.history(&query(t + 2001, t + 10000, 10))
+                .unwrap()
+                .coverage
+                .iter()
+                .all(|g| g.reason != "engine_switch")
+        );
+        assert!(
+            r.comparison(&api::DockerComparisonRequest {
+                engine_id: "daemon".into(),
+                from_ms: t + 2001,
+                to_ms: t + 10000,
+                metric: api::DockerComparisonMetric::Cpu,
+                project: None,
+                selected: None,
+                max_points: 10
+            })
+            .unwrap()
+            .coverage
+            .iter()
+            .all(|g| g.reason != "engine_switch")
+        );
+        let comparison = r
+            .comparison(&api::DockerComparisonRequest {
+                engine_id: "daemon".into(),
+                from_ms: t,
+                to_ms: t + 10000,
+                metric: api::DockerComparisonMetric::Cpu,
+                project: None,
+                selected: None,
+                max_points: 10,
+            })
+            .unwrap();
+        let gaps: Vec<_> = comparison
+            .coverage
+            .iter()
+            .filter(|g| g.reason == "engine_switch")
+            .collect();
+        assert_eq!(gaps.len(), 1);
+        assert_eq!(gaps[0].end_ms, Some(t + 2000));
+    }
+    #[test]
+    fn a_new_gap_after_the_last_observation_does_not_poison_retries() {
+        let (_dir, store, r) = setup();
+        let t = wall_ms();
+        let mut snapshot = fixture(t);
+        snapshot.coverage.push(api::DockerCoverage {
+            start_ms: t + 50,
+            end_ms: None,
+            container_id: None,
+            reason: "event_replay_uncertain".into(),
+        });
+        r.record(&snapshot);
+        store.writer().flush().unwrap();
+        assert_eq!(r.status().error, None);
+        at(&mut snapshot, t + 11_000, 10_000);
+        snapshot.coverage[0].end_ms = Some(t + 11_000);
+        r.record(&snapshot);
+        store.writer().flush().unwrap();
+        assert_eq!(r.status().error, None);
+        assert!(r.state.lock_ok().retry.is_empty());
+    }
+    #[test]
     fn failed_writes_release_pins_and_replay_metadata_with_samples() {
         let (_dir, store, r) = setup();
         let t = wall_ms().div_euclid(900_000) * 900_000;
@@ -2049,7 +3536,11 @@ mod tests {
         {
             let state = r.state.lock_ok();
             assert!(state.entries.values().all(|e| e.pins == 0));
-            assert!(!state.coverage["daemon"].is_empty());
+            assert!(
+                state.coverage["daemon"]
+                    .iter()
+                    .all(|g| g.reason != "write_failed")
+            );
         }
         store.writer().set_fail_commits(false);
         at(&mut s, t + 21_000, 10000);
@@ -2146,7 +3637,7 @@ mod tests {
         r.record(&s);
         let page = r.history(&query(t, t + 3_600_000, 60)).unwrap();
         let first = page.points.first().unwrap();
-        assert!(first.measured_ms >= 59000, "{first:?}");
+        assert!(first.cpu_measured_ms >= 59000, "{first:?}");
         assert!(first.metrics.cpu_pct.unwrap() < 110.);
     }
     #[test]
@@ -2345,7 +3836,7 @@ mod tests {
             let page = fresh.history(&query(t, t + 3600000, 360)).unwrap();
             assert_eq!(page.points.len(), 1, "age={age}");
             assert_eq!(page.points[0].duration_ms, 60000);
-            assert_eq!(page.points[0].measured_ms, 60000);
+            assert_eq!(page.points[0].cpu_measured_ms, 60000);
             assert_eq!(page.points[0].metrics.cpu_pct, Some(100.));
         }
     }

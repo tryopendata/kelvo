@@ -11,6 +11,7 @@ struct Fixture {
 }
 struct FixtureState {
     count: AtomicUsize,
+    running_from: AtomicUsize,
     delay_ms: u64,
     active: AtomicUsize,
     maximum: AtomicUsize,
@@ -41,6 +42,7 @@ impl Fixture {
         let (logs, _) = broadcast::channel(8);
         let state = Arc::new(FixtureState {
             count: AtomicUsize::new(count),
+            running_from: AtomicUsize::new(0),
             delay_ms,
             active: AtomicUsize::new(0),
             maximum: AtomicUsize::new(0),
@@ -208,7 +210,7 @@ async fn serve(mut socket: UnixStream, state: Arc<FixtureState>) {
             );
             state.probe_requests.fetch_add(1, Ordering::SeqCst);
         }
-        let rows:Vec<_>=(0..state.count.load(Ordering::SeqCst)).map(|n|serde_json::json!({"Id":format!("c{n:04}"),"Names":[format!("/container-{n}")],"Image":"fixture","State":"running"})).collect();
+        let rows:Vec<_>=(0..state.count.load(Ordering::SeqCst)).map(|n|serde_json::json!({"Id":format!("c{n:04}"),"Names":[format!("/container-{n}")],"Image":"fixture","State":if n >= state.running_from.load(Ordering::SeqCst) { "running" } else { "exited" }})).collect();
         serde_json::to_string(&rows).unwrap()
     } else if path.contains("/stats") {
         state.stats.lock_ok().insert(id.clone());
@@ -229,8 +231,17 @@ async fn serve(mut socket: UnixStream, state: Arc<FixtureState>) {
             let _ = socket.write_all(body).await;
             return;
         }
+        let lifecycle = if id
+            .strip_prefix('c')
+            .and_then(|n| n.parse::<usize>().ok())
+            .is_none_or(|n| n >= state.running_from.load(Ordering::SeqCst))
+        {
+            "running"
+        } else {
+            "exited"
+        };
         format!(
-            r#"{{"Id":"{id}","State":{{"Status":"running","OOMKilled":false}},"HostConfig":{{"Memory":10000}},"RestartCount":0,"Config":{{"Env":["SECRET=not-published"],"Cmd":["hidden-command"]}}}}"#
+            r#"{{"Id":"{id}","State":{{"Status":"{lifecycle}","OOMKilled":false}},"HostConfig":{{"Memory":10000}},"RestartCount":0,"Config":{{"Env":["SECRET=not-published"],"Cmd":["hidden-command"]}}}}"#
         )
     };
     reply(&mut socket, body.as_bytes()).await;
@@ -865,6 +876,66 @@ async fn detail_inspection_does_not_steal_stats_capacity() {
     for task in tasks {
         assert!(task.await.unwrap().is_ok());
     }
+}
+
+#[tokio::test]
+async fn daemon_inventory_replaces_stopped_population_with_new_running_container() {
+    let fixture = Fixture::new(128, 0).await;
+    let handle = fixture.handle();
+    let mut adapter = fixture.adapter().await;
+    let mut rows = Vec::new();
+    let mut baseline = BTreeMap::new();
+    let mut cursor = 0;
+    let mut inventory_at = Instant::now();
+    let mut capacity_at = Instant::now();
+    let mut complete = true;
+    let mut population = BTreeSet::new();
+    let mut revision = 0;
+    for (count, running_from) in [(128, 0), (129, 128), (128, 0), (130, 0)] {
+        fixture.state.count.store(count, Ordering::SeqCst);
+        fixture
+            .state
+            .running_from
+            .store(running_from, Ordering::SeqCst);
+        assert!(
+            handle
+                .cycle(
+                    &mut adapter,
+                    &mut rows,
+                    &mut baseline,
+                    &mut cursor,
+                    &mut inventory_at,
+                    &mut capacity_at,
+                    &mut complete,
+                    &mut population,
+                    &mut revision,
+                    true,
+                    1
+                )
+                .await
+        );
+        assert_eq!(
+            rows.len(),
+            count,
+            "all provisioned containers remain visible"
+        );
+        assert_eq!(population.len(), 128);
+        let live = aggregate(&rows, None, complete, now_ms(), 1000);
+        assert_eq!(live.expected, (count - running_from).min(128) as u32);
+        assert_eq!(live.running, (count - running_from) as u32);
+        if count == 130 {
+            assert!(live.partial);
+        }
+        if count == 129 {
+            assert!(population.contains("c0128"));
+            assert!(baseline.contains_key("c0128"));
+            assert_eq!(baseline.len(), 1);
+        } else {
+            assert!(!population.contains("c0128"));
+            assert!(!baseline.contains_key("c0128"));
+        }
+    }
+    assert_eq!(revision, 3);
 }
 
 #[tokio::test(start_paused = true)]

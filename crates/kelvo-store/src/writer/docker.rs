@@ -4,17 +4,8 @@ use crate::docker::{invalid, pack, table, unpack};
 use crate::{Result, StoreError, docker::*};
 use kelvo_schema::{HostId, Tier, lock::LockExt};
 use rusqlite::{OptionalExtension, params};
-use std::collections::HashMap;
 use std::sync::{Arc, Mutex, mpsc};
 
-#[derive(Clone, Debug)]
-pub(super) struct Loss {
-    pub host: HostId,
-    pub daemon: String,
-    pub generation: i64,
-    pub start: i64,
-    pub end: i64,
-}
 #[derive(Default)]
 pub(super) struct Admission {
     pub pending_bytes: usize,
@@ -22,46 +13,26 @@ pub(super) struct Admission {
     pub logical_bytes: u64,
     pub allowance: u64,
     pub paused: bool,
-    pub lost: HashMap<(HostId, String), Loss>,
 }
-impl Admission {
-    fn lose(&mut self, loss: Loss) {
-        let key = (loss.host, loss.daemon.clone());
-        if let Some(old) = self.lost.get_mut(&key) {
-            old.start = old.start.min(loss.start);
-            old.end = old.end.max(loss.end);
-            old.generation = old.generation.max(loss.generation);
-        } else if self.lost.len() < 127 {
-            self.lost.insert(key, loss);
-        } else {
-            // One reserved, global overflow span conservatively marks every known
-            // engine. Empty daemon is an internal sentinel, never an admitted ID.
-            if let Some(old) = self.lost.values_mut().find(|v| v.daemon.is_empty()) {
-                old.start = old.start.min(loss.start);
-                old.end = old.end.max(loss.end);
-            } else {
-                let mut overflow = loss;
-                overflow.daemon.clear();
-                self.lost.insert((overflow.host, String::new()), overflow);
-            }
-        }
+pub(super) struct Applied {
+    pub generation: i64,
+    pub revision: i64,
+    pub reply: mpsc::SyncSender<DockerAck>,
+}
+impl Applied {
+    pub fn finish(self, outcome: DockerOutcome, reason: Option<String>) {
+        let _ = self.reply.send(DockerAck {
+            generation: self.generation,
+            revision: self.revision,
+            outcome,
+            reason,
+        });
     }
 }
 pub(super) struct Pending {
     pub batch: DockerBatch,
     pub bytes: usize,
     pub reply: mpsc::SyncSender<DockerAck>,
-}
-impl Pending {
-    fn loss(&self) -> Loss {
-        Loss {
-            host: self.batch.host,
-            daemon: self.batch.daemon_id.clone(),
-            generation: self.batch.generation,
-            start: self.batch.start_ms,
-            end: self.batch.end_ms,
-        }
-    }
 }
 impl Writer {
     /// Enqueue without waiting for SQLite. The returned receiver emits exactly one terminal
@@ -80,7 +51,6 @@ impl Writer {
                 || a.pending_bytes.saturating_add(bytes) > MAX_PENDING_BYTES
                 || self.s10_paused()
             {
-                a.lose(pending.loss());
                 let _ = pending.reply.send(DockerAck {
                     generation: pending.batch.generation,
                     revision: pending.batch.revision,
@@ -96,7 +66,6 @@ impl Writer {
             && let Op::Docker(pending) = err.0
         {
             let mut a = self.docker_admission.lock_ok();
-            a.lose(pending.loss());
             a.pending_bytes -= bytes;
             a.pending_writes -= 1;
             let _ = pending.reply.send(DockerAck {
@@ -173,7 +142,16 @@ impl State {
                 })
             });
         match res {
-            Ok(()) => self.docker_pending.push(pending),
+            Ok(()) => {
+                let mut a = self.docker_admission.lock_ok();
+                a.pending_bytes = a.pending_bytes.saturating_sub(pending.bytes);
+                a.pending_writes = a.pending_writes.saturating_sub(1);
+                self.docker_pending.push(Applied {
+                    generation: pending.batch.generation,
+                    revision: pending.batch.revision,
+                    reply: pending.reply,
+                });
+            }
             Err(err) => {
                 let outcome = if matches!(&err,StoreError::Docker(s) if s=="stale generation") {
                     DockerOutcome::Reset
@@ -193,9 +171,6 @@ impl State {
         reason: Option<String>,
     ) {
         let mut a = self.docker_admission.lock_ok();
-        if matches!(outcome, DockerOutcome::Failed | DockerOutcome::Rejected) {
-            a.lose(p.loss());
-        }
         a.pending_bytes = a.pending_bytes.saturating_sub(p.bytes);
         a.pending_writes = a.pending_writes.saturating_sub(1);
         drop(a);
@@ -259,7 +234,6 @@ impl State {
     }
     fn insert_docker(&mut self, b: &DockerBatch) -> Result<()> {
         let (host, engine) = self.engine(b)?;
-        self.docker_write_losses()?;
         for e in &b.entities {
             let entity = self.entity(host, engine, &e.external_id)?;
             self.conn.execute("INSERT INTO docker_metadata(entity_id,engine_id,host_id,effective_ms,revision,name,image,project,service,lifecycle,explicit_limit,effective_limit,capacity,last_seen_ms,tombstone,extras) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16) ON CONFLICT(entity_id,effective_ms,revision) DO NOTHING",params![entity,engine,host,e.effective_ms,e.revision,e.name,e.image,e.project,e.service,e.lifecycle,e.explicit_limit,e.effective_limit,e.capacity,e.last_seen_ms,e.tombstone,e.extras])?;
@@ -300,6 +274,14 @@ impl State {
         for c in &b.coverage {
             self.insert_docker_coverage(host, engine, c)?;
         }
+        if !b.buckets.is_empty() {
+            let open: Vec<(i64,i64)> = self.conn.prepare("SELECT id,start_ms FROM docker_coverage WHERE engine_id=?1 AND entity_id IS NULL AND reason='engine_switch' AND end_ms IS NULL")?.query_map([engine],|r|Ok((r.get(0)?,r.get(1)?)))?.collect::<std::result::Result<_,_>>()?;
+            for (id, start) in open {
+                if let Some(end) = resumed_after(&self.conn, engine, start)? {
+                    self.conn.execute("UPDATE docker_coverage SET end_ms=?1,expected_ms=?1-start_ms,revision=max(revision,?2) WHERE id=?3",params![end,b.revision,id])?;
+                }
+            }
+        }
         if let Some(c) = &b.cursor {
             self.conn.execute(
                 "INSERT INTO docker_event_cursors(engine_id,time_ns,event_key,generation)
@@ -322,7 +304,7 @@ impl State {
             .as_ref()
             .map(|e| self.entity(host, engine, e))
             .transpose()?;
-        let updated=self.conn.execute("UPDATE docker_coverage SET end_ms=?1,revision=?2,sampled_ms=?3,expected_ms=?4 WHERE engine_id=?5 AND entity_id IS ?6 AND metric IS ?7 AND start_ms=?8 AND reason=?9 AND revision<=?2",params![c.end_ms,c.revision,c.sampled_ms,c.expected_ms,engine,entity,c.metric,c.start_ms,c.reason])?;
+        let updated=self.conn.execute("UPDATE docker_coverage SET end_ms=coalesce(?1,end_ms),revision=?2,sampled_ms=?3,expected_ms=CASE WHEN ?1 IS NULL AND end_ms IS NOT NULL THEN expected_ms ELSE ?4 END WHERE engine_id=?5 AND entity_id IS ?6 AND metric IS ?7 AND start_ms=?8 AND reason=?9 AND revision<=?2",params![c.end_ms,c.revision,c.sampled_ms,c.expected_ms,engine,entity,c.metric,c.start_ms,c.reason])?;
         if updated > 0 {
             return Ok(());
         }
@@ -443,54 +425,6 @@ impl State {
         self.conn.execute(&format!("INSERT INTO {dst}_populations(entity_id,bucket_ms,layout_id,engine_id,host_id,segment,start_ms,end_ms,population_id) SELECT entity_id,?2,layout_id,engine_id,host_id,row_number() OVER (ORDER BY bucket_ms,segment),start_ms,end_ms,population_id FROM {src}_populations WHERE entity_id=?1 AND bucket_ms>=?2 AND bucket_ms<?3 AND layout_id=?4"),params![entity,start,end,layout])?;
         if target == Tier::M1 {
             self.recompute_docker(host, engine, entity, layout, start, Tier::M1, Tier::M15)?;
-        }
-        Ok(())
-    }
-    pub(super) fn docker_write_losses(&mut self) -> Result<()> {
-        let losses: Vec<_> = self
-            .docker_admission
-            .lock_ok()
-            .lost
-            .values()
-            .cloned()
-            .collect();
-        for loss in losses {
-            if loss.daemon.is_empty() {
-                // Scope overflow deliberately overstates affected engines rather than
-                // silently omitting an unknown daemon's loss. Bounded by identity cap.
-                self.conn.execute("DELETE FROM docker_coverage WHERE reason='loss_scope_overflow' AND start_ms>=?1 AND end_ms<=?2",params![loss.start,loss.end])?;
-                self.conn.execute("INSERT INTO docker_coverage(host_id,engine_id,metric,start_ms,end_ms,reason,revision,sampled_ms,expected_ms) SELECT host_id,id,NULL,?1,?2,'loss_scope_overflow',0,0,?2-?1 FROM docker_engines",params![loss.start,loss.end])?;
-                self.docker_recorded_losses.push(loss);
-                continue;
-            }
-            let host = self.host_ref(loss.host)?;
-            let engine: Option<i64> = self
-                .conn
-                .query_row(
-                    "SELECT id FROM docker_engines WHERE host_id=?1 AND daemon_id=?2",
-                    params![host, loss.daemon],
-                    |r| r.get(0),
-                )
-                .optional()?;
-            if let Some(engine) = engine {
-                // Replaced in the same transaction: repeated failed attempts never multiply rows.
-                self.conn.execute("DELETE FROM docker_coverage WHERE engine_id=?1 AND reason='write_failed' AND start_ms>=?2 AND end_ms<=?3",params![engine,loss.start,loss.end])?;
-                self.insert_docker_coverage(
-                    host,
-                    engine,
-                    &DockerCoverage {
-                        entity: None,
-                        metric: None,
-                        start_ms: loss.start,
-                        end_ms: Some(loss.end),
-                        reason: "write_failed".into(),
-                        revision: 0,
-                        sampled_ms: 0,
-                        expected_ms: loss.end.saturating_sub(loss.start),
-                    },
-                )?;
-                self.docker_recorded_losses.push(loss);
-            }
         }
         Ok(())
     }
@@ -658,10 +592,6 @@ impl State {
         self.commit_logged();
         self.apply(|s| s.docker_reset_rows(host, generation))?;
         self.commit()?;
-        self.docker_admission
-            .lock_ok()
-            .lost
-            .retain(|(h, daemon), _| daemon.is_empty() || *h != host);
         Ok(())
     }
 }

@@ -34,8 +34,16 @@ import { Switch } from "~/components/ui/switch";
 import { UnsupportedNotice } from "~/components/unsupported-notice";
 import { VolumeTable } from "~/components/volume-table";
 import { type ZoneRow, ZoneTable } from "~/components/zone-table";
+import { ChartChooser } from "~/routes/dashboard/containers/_components/chart-chooser";
+import { ComparisonChart } from "~/routes/dashboard/containers/_components/comparison-chart";
+import { HistoryNotice } from "~/routes/dashboard/containers/_components/history-notice";
 import type { Accent } from "~/widgets/lib/accent";
 import { GalleryItem } from "../_components/gallery-item";
+import {
+  DOCKER_COMPARISON,
+  DOCKER_NOTICE,
+  NOW_MS,
+} from "../_lib/chart-samples";
 
 const noop = () => {};
 
@@ -360,6 +368,52 @@ const CORNER_POS = {
 const panel = "overflow-hidden rounded-card border border-border bg-card";
 
 /** App components outside widgets/: tables, navigation, settings, states. */
+function ContainerComparisonSample() {
+  const [focused, setFocused] = useState<string | null>(null);
+  const [pinned, setPinned] = useState<string | null>(null);
+  const [chooser, setChooser] = useState(false);
+  const [ids, setIds] = useState(DOCKER_COMPARISON.map((s) => s.container.id));
+  const series = DOCKER_COMPARISON.filter((s) => ids.includes(s.container.id));
+  const slots = Object.fromEntries(series.map((s) => [s.container.id, s.slot]));
+  return (
+    <>
+      <ComparisonChart
+        series={series}
+        metric="cpu"
+        from={NOW_MS - 86_400_000}
+        to={NOW_MS}
+        live={false}
+        range="24h"
+        focused={focused}
+        pinnedFocus={pinned}
+        onFocus={setFocused}
+        onPinFocus={setPinned}
+        onChoose={() => setChooser(true)}
+        notice={
+          <HistoryNotice
+            snapshot={DOCKER_NOTICE}
+            coverage={[]}
+            metric="cpu"
+            onManage={noop}
+            onResume={noop}
+          />
+        }
+      />
+      <ChartChooser
+        open={chooser}
+        onOpenChange={setChooser}
+        candidates={DOCKER_COMPARISON.map((s) => s.container)}
+        liveRows={DOCKER_COMPARISON.map((s) => s.container)}
+        selected={ids}
+        slots={slots}
+        metric="cpu"
+        onChange={setIds}
+        onAutomatic={() => setIds(DOCKER_COMPARISON.map((s) => s.container.id))}
+      />
+    </>
+  );
+}
+
 export function AppComponentsSection() {
   const [sort, setSort] = useState<ProcessSort>({ by: "cpu", dir: "desc" });
   const [intervalMs, setIntervalMs] = useState("1000");
@@ -369,6 +423,12 @@ export function AppComponentsSection() {
 
   return (
     <div className="flex flex-col gap-8">
+      <GalleryItem
+        name="Container comparison, chooser & history notice"
+        usedIn="Containers"
+      >
+        <ContainerComparisonSample />
+      </GalleryItem>
       <div className="flex flex-wrap items-start gap-8">
         <GalleryItem name="Sidebar" usedIn="Dashboard sidebar" width={220}>
           <div className="h-[560px]">

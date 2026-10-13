@@ -217,6 +217,29 @@ export function settingsInvalidation(
 }
 
 export const dockerKeys = {
+  comparison: (
+    engine: string,
+    from: number,
+    to: number,
+    metric: "cpu" | "memory",
+    project: string | null,
+    selected: readonly string[] | null,
+    host: string,
+    generation: number
+  ) =>
+    [
+      "history",
+      host,
+      "docker",
+      engine,
+      "comparison",
+      from,
+      to,
+      metric,
+      project,
+      selected,
+      generation,
+    ] as const,
   storage: (engine: string, generation: number) =>
     ["docker", "storage", engine, generation] as const,
   operationRefresh: (engine: string) =>

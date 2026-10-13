@@ -91,6 +91,10 @@ export interface BrushOverlayProps {
   selectableToMs?: number;
   /** Distance from the positioned parent's left edge to the plot, px. */
   inset?: number;
+  /** History comparisons keep their own crosshair and keyboard navigation. */
+  onHoverTime?: (time: number | null, fractionY: number) => void;
+  onClickTime?: (time: number) => void;
+  keyboard?: boolean;
 }
 
 const pct = (f: number) => `${(f * 100).toFixed(3)}%`;
@@ -117,6 +121,9 @@ export function BrushOverlay({
   height,
   selectableToMs,
   inset = PLOT_INSET,
+  onHoverTime,
+  onClickTime,
+  keyboard = true,
 }: BrushOverlayProps) {
   const store = useBrushStore();
   const view = useBrush((s) => s.draft ?? s.range);
@@ -176,6 +183,8 @@ export function BrushOverlay({
   };
   const onPointerMove = (e: PointerEvent<HTMLDivElement>) => {
     const t = timeOf(e);
+    const rect = e.currentTarget.getBoundingClientRect();
+    onHoverTime?.(t, (e.clientY - rect.top) / rect.height);
     showHover(t);
     const d = drag.current;
     if (!d) return;
@@ -188,6 +197,10 @@ export function BrushOverlay({
     drag.current = null;
     if (!d) return;
     const s = store.getState();
+    if (!d.moved && onClickTime) {
+      onClickTime(d.anchorMs);
+      return;
+    }
     if (!d.moved && s.range !== null) {
       // A click with a selection up dismisses it; a drag replaces it.
       s.clear();
@@ -280,7 +293,7 @@ export function BrushOverlay({
   return (
     <div
       role="slider"
-      tabIndex={0}
+      tabIndex={keyboard ? 0 : -1}
       aria-label="Select a time range"
       aria-describedby={hintId}
       aria-valuemin={0}
@@ -294,7 +307,10 @@ export function BrushOverlay({
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerCancel}
-      onPointerLeave={hideHover}
+      onPointerLeave={() => {
+        hideHover();
+        onHoverTime?.(null, 0);
+      }}
       onFocus={onFocus}
       onBlur={() => setFocusMs(null)}
       onKeyDown={onKeyDown}

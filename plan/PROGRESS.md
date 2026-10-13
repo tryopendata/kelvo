@@ -70,6 +70,7 @@ Known follow-ups (small, not scheduled):
 | Sample holds and metric kinds on the live stream | [D-090](decisions.md) | Done | Rust publishes kinds and holds, charts join by them. The client-side data-semantics audit findings were decided and fixed in [D-092](decisions.md); the real app was checked over tray-only history with it (2026-10-06) |
 | Data-boundary follow-ups | [D-092](decisions.md) | Done; real-app check open | Group A done: engine, settings and history facts generated as constants (SAMPLING_PLANS, METRIC_CODES, tiers), process refusal from Rust. Group B done: net/disk totals as catalog metrics (gap when any part is), HostInfo gpu_dvfs_mhz and boot_mounts, LiveStatus primary_iface and power_source, self.cpu Mean, memory composition over mem_total_bytes, overview disk from disk.used, mock held staleness. Group C done: rollups weigh Mean/Rate samples by their span (capped at the previous sample's hold); the engine keeps the last hour of its emitted bucket rows plus the open buckets in `LiveHub`, and `query_history` merges them over the store (from them alone with history unavailable); `HistorySeries.hold_ms` (slowest period under the current settings, or the bucket) drives the timeline's joins, replacing the 1.5x rule and the ring stitching, and Live re-reads history when a bucket closes; `battery_hours` takes local hour boundaries; `seriesStats`, `bucketAverages` and a shared `windowMean` (popover footer, settings overhead) run on the `seriesWindow` grid; the mock has no `utun3`. `complete_to_ms` is not on the wire: the Live window still ends at the open bucket's start. Real app: the Power stack is continuous over tray-only history (2026-10-06). Open: check Timeline Live, the battery bars and history-unavailable in `bun run tauri dev` on real hardware |
 | Local Docker container monitoring | [Docker plan](docker-container-monitoring.md) | Implemented; merged | Reviews and automated verification passed; user authorized merge/cleanup/push with real-world acceptance deferred as follow-ups |
+| Containers monitoring UX revision | [UX RFC](docker-monitoring-ux-rfc.md) | Done (full gates, native recording and review; 2026-10-13) | October 13 product feedback: per-container CPU/Memory lines, two confirmed history bugs, bounded lists, monitoring settings and row Start/Stop |
 | Docker storage insights and cleanup | [Storage plan](docker-storage-cleanup.md) | Done | D-107; CE review approved, 863 Rust / 987 frontend tests and 294 browser checks passed; disposable OrbStack acceptance passed, Desktop/Colima follow-up remains |
 | v1.x QA and polish (manual, from source) | [v1](v1-local-monitor.md) | Next | The user runs the dev build day to day; sessions fix batches of filed issues |
 | v1.x Release: distribution, updater, install | [v1](v1-local-monitor.md) | Not started | After QA; the old v1.0 phase 6 distribution items (D-078) |
@@ -83,6 +84,46 @@ Known follow-ups (small, not scheduled):
 Status values: Not started, In progress, Blocked (say on what), Done (with the verification that proved it).
 
 ## Log
+
+### 2026-10-13 (Containers monitoring UX execution)
+
+Executing the accepted [UX RFC](docker-monitoring-ux-rfc.md) using the CE executing-plans workflow in an isolated worktree. Existing uncommitted planning inputs were copied from the main checkout.
+
+- [x] A: comparison chart, bounded table, monitoring dialog, notices, mocks and gallery (verification tracked in D).
+- [x] B: admission accounting, retries, per-metric quality, migration and regression tests (real recording acceptance tracked in D).
+- [x] C: comparison reads, brush/history investigation and guarded Start/Stop (acceptance tracked in D).
+- [x] D: full suites, screenshots/task script, real OrbStack acceptance, measured performance and review.
+
+Verification: R-44 real SQLite regression fails on old admission accounting and passes with 400 applied batches before commit. Collector Start/Stop fake suite: 17 passed; operation runner: 11 passed; component actions: 6 passed. Disabling generation revalidation makes its regression fail (Succeeded versus Skipped), restored green. Explicit disposable OrbStack fixture `kelvo-storage-test-start-ux`: Start then Stop succeeded, 1 ignored fixture test run by hand passed in 30.57 s; fixture removed afterwards. User containers were not acted on. Owner approved publishing `minimum: DockerMetrics` in addition to `peak` to satisfy R-23 min/avg/max tooltips. Full gates passed before native follow-ups: 880 Rust tests (34 hardware/fixture tests ignored), 1,033 frontend tests and 368 Chromium/WebKit checks. The owner superseded manual container selection: Docker daemon inventory now drives collection automatically, with running containers first within the 128-container cap (D-109). Old saved selections cannot exclude running containers.
+
+Native Start exposed a synchronous Tauri command starting async work without a runtime. Both action entrypoints now run asynchronously; a rebuilt installed app started the disposable fixture at 19:32:46 UTC and stopped it at 19:33:40 UTC through the confirmation flow. The fixture was removed, and preexisting containers were not acted on. An open engine-switch gap was then corrected: resumed collection closes the gap, including previously persisted open records. Display-only preferences now preserve collection generation and in-flight history. The final installed-app recording audit passed, as detailed below.
+
+Profiling removed closed chooser work, memoized static project/chart controls and shared one context menu across the table. An isolated Containers run measured 31.77 ms/s against the unchanged 35 ms/s limit; the first full performance run measured 35.44 ms/s during concurrent native UI checks, so the quiet follow-up passed 9 of 10 cases (Containers 34.56 ms/s), and the isolated hidden-resume case passed with no long tasks. The post-review Containers gate passed at 33.85 ms/s with no long tasks. The performance target runs one browser worker to avoid competing measurement sessions. No budget was raised.
+
+Review approved after seven fixes: chooser current values, selected-series metadata beyond the ranking cutoff, byte-bounded retries, aggregate-only coverage, header context menus, authoritative project aggregates and click-time return navigation. Each regression was verified against the original failure. Post-review `make check` passed: 886 Rust tests (34 ignored), 1,041 frontend tests, typecheck, Biome, clippy and app-store checks. Browser coverage passed 374 Chromium/WebKit checks. Real-collector performance tests failed during concurrent compilation/browser churn and passed in the final quiet gate, with no threshold changed. Native recording and coalition measurements are complete; their results and limits follow.
+
+Same-sitting whole-app benchmark on battery with the same five Docker containers: baseline tray 0.580% CPU / 110.4 MB; candidate tray 0.676% / 136.6 MB. Both pass the unchanged 1.111% regression ceiling, but both exceed the 0.5% product target; the candidate is +0.096 percentage points. The candidate footprint includes an additional 26.2 MB Metal compiler helper. Candidate visible measurements: popover 1.217% / 146.6 MB, Overview 8.352% / 256.1 MB, Processes 4.123% / 329.1 MB, Containers 7.639% / 563.0 MB. Power switched to AC during Overview; Processes and Containers ran on AC, so the baseline Containers result (3.313% / 583.1 MB on battery) is not a matched comparison. `make bench` passed its unchanged gate; visible scenarios have no configured baseline. This does not establish the fixed idle target as met.
+
+Visual comparison covered Containers against CPU, Memory, Network and the dev gallery, in both themes and Chromium/WebKit, plus 360 px and the 0/1/11/32/128/200 population matrix. Deliberate differences: the RFC's categorical line colors identify containers across CPU and Memory; the chart uses a 4 px internal gap and 12 px vertical padding instead of the neighboring 14/16 px spacing to retain the 240 px plot and five rows at 1280×900; 44 px rows truncate secondary health/time text with full titles. Narrow layouts use a 52 px icon sidebar and 12 px main padding, and move state into the identity cell. Unavailable PIDs remain “—”. Screenshots and native inspection confirmed these differences; no new status-card grid was added.
+
+Task-script evidence: Chromium/WebKit flows passed. Whole-test durations include setup and assertions; they are automation times, not measured human perception times.
+
+| RFC tasks | Chromium / WebKit | Result |
+| --- | --- | --- |
+| 1, 2, 4: top CPU/memory, swatch match, two scoped lines | 3.256 s / 2.941 s | Pass |
+| 3: removed spike and timestamp-preserving detail | 0.670 s / 0.951 s | Pass |
+| 5, 6: six-line limit and automatic recording distinction | 2.481 s / 2.203 s | Pass; manual collection selection superseded by D-109 |
+| 7: zeros/gaps and history reasons | 1.077 s / 1.233 s; separate notice flows 0.951–1.284 s | Pass for values and each notice branch |
+| 8: guarded Stop/Start with a stable row | 1.348 s / 1.734 s | Pass |
+| 9: expensive newcomer before promotion | 2.179 s / 1.558 s | Pass |
+
+Installed-app checks at 20:15–20:21 UTC passed automatic discovery, project totals/two-line CPU and memory comparison, six-line limit, Stop/Start, removed-spike history and Back. Two bounded disposable fixtures were removed afterwards; the original five containers stayed running. The retained 50% spike opened detail ending at its bucket end plus five minutes. Native event Details identified replay uncertainty, distinct from zero and missing readings; saving failures were covered by fixtures/tests rather than deliberately induced in the real history store. No individual native human task-time claim is made.
+
+The final reviewed production app recorded continuously from 20:15:50 to 20:45:50 UTC. A read-only SQLite backup after graceful shutdown contained all 180 expected 10-second buckets for each of the five original running containers, with 180/180 CPU-covered and memory-covered buckets per container (100%) and zero `write_failed` records since launch. Missing buckets were included in the denominator. Reopening the installed app restored five running / eleven provisioned containers and retained history; the intentional shutdown interval is explicitly marked. Evidence: `/tmp/kelvo-ux-evidence/installed-final-results.json`, `installed-final.sqlite`, and `audit-window.json`.
+
+### 2026-10-13 (I/O performance UX proposal)
+
+The user's follow-up asks how to detect I/O bottlenecks and identify responsible processes. [I/O UX proposal](io-performance-ux.md) recommends extending Disk with operation counts and average request time beside throughput, then current/historical process attribution. Network retains network I/O; Processes retains cross-resource inspection. CE planning-products/design applied. Read-only inspection found operation and total-request-time counters on this Mac, while separate latency counters are zero; no saturation percentage or queue depth is inferred. Implementation awaits the counter-validation spike described in the proposal.
 
 ### 2026-10-13 (Shared chart gaps after reconnect)
 
@@ -129,6 +170,40 @@ unlabelled holes are gone. No visual styling changed. Diagnostic app/server and
 the temporary baseline source archive were removed; no branches or worktrees
 were created.
 
+### 2026-10-13 (Containers monitoring UX RFC)
+
+Added [Containers that explain the load](docker-monitoring-ux-rfc.md), applying
+`ce:planning-products`, `ce:design` and Kelvo's design review guidance. The RFC
+replaces the aggregate-only overview proposal with per-container CPU/Memory
+comparison, a bounded table and diagnostic panel, explicit collection settings,
+and historical attribution that includes stopped/removed containers. It retains
+the existing separate Storage & cleanup scope and safeguards.
+
+Evidence: reviewed the supplied real-app screenshots, current route/chart/table
+and Rust history contracts, the original overview PDF, Docker's official docs,
+and browser/mock captures of Containers (both themes), CPU, Memory, Network and
+the dev gallery. Confirmed inline checkboxes change collection and incomplete
+history points are omitted; native write failures and the full cause of sparse
+history remain undiagnosed. Real-engine data validation is a prerequisite in the
+RFC, not claimed complete. A separate `ce:devils-advocate` UX review found no blocker
+to the direction; incorporated its findings on visible historical peaks, named
+prompts for newly expensive containers and simultaneous warning precedence.
+Final agent recheck found all three addressed and no remaining RFC blocker.
+A follow-up conventions review (Docker Desktop, `docker stats`, Grafana, Datadog)
+replaced the bespoke top-5 notices and per-trace whiskers with conventional top-N
+and extrema-preserving lines, added row swatches, a project scope, a Net column and
+explicit-limit memory, set a healthy-state status-copy budget, swapped the
+moderated study for a scripted task check, and moved named lines ahead of the
+history diagnostic. Rows get Start/Stop (user decision): Stop reuses D-107,
+Start is new guarded engine work needing a decision record.
+A read-only audit of the release database (07:45-12:52 local) confirmed two Docker
+history bugs: a strict 10,000 ms coverage check hides 52-54% of buckets that are short by
+100 ms or less, and the Docker write queue (128 slots, freed only at the 300 s commit)
+rejects batches for ~2 of every 5 minutes, leaving 58 false engine-wide `write_failed`
+rows although the retried buckets were saved. The RFC was rewritten as a numbered
+implementation spec with these fixes as slice B.
+Checked local Markdown targets and whitespace. Documentation-only work; no
+application changes or new runtime/performance claims.
 
 ### 2026-10-13 (shared process selection and bulk Quit)
 

@@ -210,6 +210,38 @@ impl DockerReadSnapshot<'_> {
         self.check(bytes)?;
         Ok(out)
     }
+    /// Latest metadata for each container with any retained bucket in the range.
+    /// Reads all tiers in this transaction so stopped, removed and recreated names
+    /// retain their original identities. The caller ranks before truncating.
+    pub fn comparison_candidates(&self, start: i64, end: i64) -> Result<Vec<DockerEntity>> {
+        bounds(start, end, 0)?;
+        let mut stmt = self.conn.prepare("SELECT e.external_id,m.effective_ms,m.revision,m.name,m.image,m.project,m.service,m.lifecycle,m.explicit_limit,m.effective_limit,m.capacity,m.last_seen_ms,m.tombstone,m.extras FROM docker_entities e JOIN docker_metadata m ON m.rowid=(SELECT rowid FROM docker_metadata latest WHERE latest.entity_id=e.id ORDER BY latest.effective_ms DESC,latest.revision DESC LIMIT 1) WHERE e.engine_id=?1 AND e.kind='container' AND (EXISTS(SELECT 1 FROM docker_10s b WHERE b.entity_id=e.id AND b.bucket_ms>=?2 AND b.bucket_ms<?3) OR EXISTS(SELECT 1 FROM docker_1m b WHERE b.entity_id=e.id AND b.bucket_ms>=?2 AND b.bucket_ms<?3) OR EXISTS(SELECT 1 FROM docker_15m b WHERE b.entity_id=e.id AND b.bucket_ms>=?2 AND b.bucket_ms<?3)) ORDER BY e.external_id")?;
+        let mut rows = stmt.query(params![self.engine, start, end])?;
+        let mut result = Vec::new();
+        let mut bytes = 0;
+        while let Some(r) = rows.next()? {
+            let entity = DockerEntity {
+                external_id: r.get(0)?,
+                effective_ms: r.get(1)?,
+                revision: r.get(2)?,
+                name: r.get(3)?,
+                image: r.get(4)?,
+                project: r.get(5)?,
+                service: r.get(6)?,
+                lifecycle: r.get(7)?,
+                explicit_limit: r.get(8)?,
+                effective_limit: r.get(9)?,
+                capacity: r.get(10)?,
+                last_seen_ms: r.get(11)?,
+                tombstone: r.get(12)?,
+                extras: r.get(13)?,
+            };
+            bytes += entity.extras.len() + entity.name.len() + entity.image.len() + 512;
+            self.check(bytes)?;
+            result.push(entity);
+        }
+        Ok(result)
+    }
     fn entity(&self, id: &str) -> Result<Option<i64>> {
         Ok(self
             .conn
@@ -365,7 +397,7 @@ impl DockerReadSnapshot<'_> {
         let mut rows = stmt.query(params![self.engine, start, end, entity])?;
         let mut result = Vec::new();
         while let Some(r) = rows.next()? {
-            let c = DockerCoverage {
+            let mut c = DockerCoverage {
                 start_ms: r.get(0)?,
                 end_ms: r.get(1)?,
                 metric: r.get(2)?,
@@ -375,6 +407,18 @@ impl DockerReadSnapshot<'_> {
                 expected_ms: r.get(6)?,
                 entity: r.get(7)?,
             };
+            if c.reason == "engine_switch"
+                && c.end_ms.is_none()
+                && c.entity.is_none()
+                && let Some(engine) = self.engine
+                && let Some(end) = super::resumed_after(self.conn, engine, c.start_ms)?
+            {
+                c.end_ms = Some(end);
+                c.expected_ms = end - c.start_ms;
+            }
+            if c.end_ms.is_some_and(|closed| closed <= start) {
+                continue;
+            }
             *bytes += pack(&c)?.len();
             self.check(*bytes)?;
             if result.len() >= 10_000 {

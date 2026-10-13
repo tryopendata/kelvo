@@ -14,7 +14,10 @@ import {
   type CapabilitiesChanged,
   type CommandError,
   commands,
+  type DockerComparisonPage,
+  type DockerComparisonRequest,
   type DockerContainer,
+  type DockerContainerAction,
   type DockerEngine,
   type DockerEventsPage,
   type DockerEventsRequest,
@@ -104,6 +107,14 @@ export interface Transport {
   /** The window label (`popover`, `dashboard`, `onboarding`). */
   windowLabel(): string;
 
+  dockerComparison(
+    request: DockerComparisonRequest
+  ): Promise<CommandResult<DockerComparisonPage>>;
+  dockerContainerAction(
+    engineId: string,
+    containerId: string,
+    action: DockerContainerAction
+  ): Promise<CommandResult<DockerStorageOperation>>;
   dockerStorageScan(force: boolean): Promise<CommandResult<DockerStorageView>>;
   dockerStoragePrepare(
     selections: DockerStorageSelection[]
@@ -368,6 +379,9 @@ export function createTauriTransport(label: string): Transport {
   return {
     kind: "tauri",
     windowLabel: () => label,
+    dockerComparison: (request) => commands.dockerComparison(request),
+    dockerContainerAction: (engineId, containerId, action) =>
+      commands.dockerContainerAction(engineId, containerId, action),
     dockerStorageScan: (force) => commands.dockerStorageScan(force),
     dockerStoragePrepare: (selections) =>
       commands.dockerStoragePrepare(selections),

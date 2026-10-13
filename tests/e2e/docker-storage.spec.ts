@@ -44,23 +44,23 @@ test("volume cleanup requires a separate confirmation and refreshes the inventor
   ).toHaveCount(0);
 });
 
-test("AutoRemove Stop remains disabled and confirmed ordinary Stop updates Activity", async ({
+test("Activity row Stop keeps AutoRemove disabled and confirms ordinary containers", async ({
   page,
 }) => {
   await page.goto(overview);
-  await page.getByRole("button", { name: "Review running containers" }).click();
-  await expect(page.getByRole("button", { name: "Stop web" })).toBeDisabled();
-  await page.getByRole("button", { name: "Stop worker" }).click();
-  await expect(page.getByRole("dialog")).toContainText("30 seconds");
+  const table = page.getByRole("table", { name: "Containers now" });
+  await expect(
+    table.getByRole("button", { name: "Stop web", exact: true })
+  ).toHaveAttribute("aria-disabled", "true");
+  await table.getByRole("button", { name: "Stop worker", exact: true }).click();
+  await expect(page.getByRole("alertdialog")).toContainText("30 seconds");
   await page
-    .getByRole("button", { name: "Stop containers", exact: true })
+    .getByRole("alertdialog")
+    .getByRole("button", { name: "Stop", exact: true })
     .click();
   await expect(
-    page.getByRole("heading", { name: "Operation complete" })
-  ).toBeVisible();
-  await expect(page.getByRole("button", { name: "Stop worker" })).toHaveCount(
-    0
-  );
+    table.getByRole("button", { name: "Start worker", exact: true })
+  ).toBeAttached();
 });
 
 for (const theme of ["dark", "light"] as const) {

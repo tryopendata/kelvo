@@ -3322,3 +3322,37 @@ Docker-managed object usage and reclaimable estimates are distinct from VM alloc
 and macOS free space. Unknown sizes, shared ownership, unused age and database identity
 are not invented. Storage snapshots/results are bounded session data, not new history
 series. Revisit for persistent storage trends, remote control, or database integrations.
+
+## D-108: Container rows expose Start and Stop
+
+Accepted 2026-10-13 in the [monitoring UX RFC](docker-monitoring-ux-rfc.md), R-48.
+
+Container rows get Start and Stop. Stop keeps the D-107 safeguards: 30 s grace,
+AutoRemove and unknown host config refused, one operation per engine, revalidate
+before dispatch, no automatic retry. Start is non-destructive and dispatches without
+confirmation under the same operation runner.
+
+The dedicated action command inspects only the selected container and reuses bounded
+session operation results. Its local action enum and the operation selection enum gain
+Start; no remote control or metric-series identity changes are introduced.
+
+## D-109: Docker inventory determines monitoring membership
+
+Accepted 2026-10-13 by the owner while executing the monitoring UX RFC.
+
+The selected Docker engine is the source of truth for provisioned containers. Kelvo
+reconciles its inventory automatically and collects running containers first, up to
+the existing 128-container collection limit. Newly created containers do not require
+selection. Stopped containers remain visible; removed containers remain in retained
+history. A partial-coverage notice explains when the running population exceeds the cap.
+
+Remove the manual monitoring list from settings and the UI. Old saved selection fields
+are ignored. Chart selection stays independent and controls only the displayed lines.
+
+
+Docker snapshots also publish project aggregates, including a null project for standalone
+containers. Rust applies the same monitored-population and sample-freshness rules as the
+engine total, so changing project scope cannot restore stale measurements. Comparison
+series carry their retained container metadata independently of the bounded ranking,
+keeping explicitly selected identities available below its cutoff. These extend the local
+Docker IPC view; metric-series identities and the sync wire format stay unchanged.

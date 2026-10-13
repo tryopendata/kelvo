@@ -8,8 +8,6 @@ pub struct DockerSettings {
     pub enabled: bool,
     /// Canonical Unix socket, persisted independently of the CLI context.
     pub selected_engine: Option<String>,
-    pub monitored_containers: Vec<String>,
-    pub explicit_selection: bool,
     pub show_popover: bool,
     pub show_tray_count: bool,
 }
@@ -75,6 +73,9 @@ pub struct DockerMetrics {
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, specta::Type)]
 pub struct DockerContainer {
+    /// None when the engine host configuration has not been inspected.
+    #[serde(default)]
+    pub auto_remove: Option<bool>,
     pub engine_id: String,
     pub id: String,
     pub name: String,
@@ -116,9 +117,11 @@ pub struct DockerAggregate {
     pub capacity_bytes: Option<f64>,
     pub cpu_measured: u32,
     pub memory_measured: u32,
+    /// Running containers within the monitoring budget; denominator for measured metrics.
     pub expected: u32,
     pub running: u32,
     pub total: u32,
+    /// Containers within the automatic monitoring budget, including stopped containers.
     pub monitored: u32,
     pub partial: bool,
     pub inventory_complete: bool,
@@ -144,11 +147,18 @@ pub struct DockerCoverage {
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, specta::Type)]
 pub struct DockerPersistence {
+    pub error: Option<String>,
     pub status: String,
     pub logical_bytes: f64,
     pub allowance_bytes: f64,
     #[specta(type = Option<JsSafeInt>)]
     pub retained_from_ms: Option<i64>,
+}
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, specta::Type)]
+pub struct DockerProjectAggregate {
+    /// None denotes standalone containers without a Compose project.
+    pub project: Option<String>,
+    pub aggregate: DockerAggregate,
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, specta::Type)]
 pub struct DockerSnapshot {
@@ -160,6 +170,7 @@ pub struct DockerSnapshot {
     pub settings: DockerSettings,
     pub containers: Vec<DockerContainer>,
     pub aggregate: DockerAggregate,
+    pub project_aggregates: Vec<DockerProjectAggregate>,
     pub runtime: DockerRuntimeFootprint,
     pub coverage: Vec<DockerCoverage>,
     #[specta(type = JsSafeInt)]
@@ -201,10 +212,13 @@ pub struct DockerHistoryPoint {
     pub time_ms: i64,
     pub duration_ms: u32,
     pub metrics: DockerMetrics,
-    pub measured_ms: u32,
+    pub cpu_measured_ms: u32,
+    pub memory_measured_ms: u32,
     pub expected_ms: u32,
-    /// Complete measured coverage of this bucket.
-    pub covered: bool,
+    pub cpu_covered: bool,
+    pub memory_covered: bool,
+    pub peak: DockerMetrics,
+    pub minimum: DockerMetrics,
     #[specta(type = JsSafeInt)]
     pub population_revision: i64,
     #[specta(type = JsSafeInt)]
@@ -300,4 +314,74 @@ pub struct DockerRetainedPage {
     pub containers: Vec<DockerContainer>,
     pub total: u32,
     pub next_offset: Option<u32>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum DockerComparisonMetric {
+    Cpu,
+    Memory,
+}
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, specta::Type)]
+pub struct DockerComparisonRequest {
+    pub engine_id: String,
+    #[specta(type = JsSafeInt)]
+    pub from_ms: i64,
+    #[specta(type = JsSafeInt)]
+    pub to_ms: i64,
+    pub metric: DockerComparisonMetric,
+    pub project: Option<String>,
+    pub selected: Option<Vec<String>>,
+    pub max_points: u32,
+}
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, specta::Type)]
+pub struct DockerComparisonPage {
+    pub generation: u32,
+    pub ranking: Vec<DockerRankedContainer>,
+    pub series: Vec<DockerContainerSeries>,
+    pub coverage: Vec<DockerCoverage>,
+    pub persistence: DockerPersistence,
+}
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, specta::Type)]
+pub struct DockerRankedContainer {
+    pub container: DockerContainer,
+    pub peak_cpu_pct: Option<f64>,
+    pub avg_cpu_pct: Option<f64>,
+    pub peak_working_set_bytes: Option<f64>,
+    pub avg_working_set_bytes: Option<f64>,
+    #[specta(type = JsSafeInt)]
+    pub cpu_measured_ms: u64,
+    #[specta(type = JsSafeInt)]
+    pub memory_measured_ms: u64,
+    pub last_lifecycle: Option<DockerLifecycle>,
+}
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, specta::Type)]
+pub struct DockerContainerSeries {
+    /// Metadata travels with the plotted series even below the ranking cutoff.
+    pub container: DockerContainer,
+    pub points: Vec<DockerHistoryPoint>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::DockerSettings;
+
+    #[test]
+    fn saved_manual_population_is_ignored_and_not_written_back() {
+        let settings: DockerSettings = serde_json::from_value(serde_json::json!({
+            "enabled": true,
+            "selected_engine": "/tmp/docker.sock",
+            "explicit_selection": true,
+            "monitored_containers": ["removed-container"]
+        }))
+        .unwrap();
+        assert!(settings.enabled);
+        assert_eq!(
+            settings.selected_engine.as_deref(),
+            Some("/tmp/docker.sock")
+        );
+        let saved = serde_json::to_value(settings).unwrap();
+        assert!(saved.get("explicit_selection").is_none());
+        assert!(saved.get("monitored_containers").is_none());
+    }
 }

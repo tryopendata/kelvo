@@ -1,17 +1,21 @@
+import { seriesColor } from "@core/chart-math/series-lines";
 import { formatBytes, formatPercent, formatRate } from "@core/format";
 import type { DockerContainer } from "@core/generated/bindings";
-import { CheckIcon } from "lucide-react";
+import { useVirtualizer } from "@tanstack/react-virtual";
+import { type ReactNode, useEffect, useRef, useState } from "react";
+import { Link, useLocation, useNavigate } from "react-router";
+import { SeriesSwatch } from "~/components/charts/chart-tooltip";
 import {
-  memo,
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-} from "react";
-import { Link, useLocation } from "react-router";
-import { Button } from "~/components/ui/button";
-import { useElementSize } from "~/hooks/use-element-size";
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuTrigger,
+} from "~/components/ui/context-menu";
+import { useUnits } from "~/hooks/use-units";
+import { cn } from "~/lib/utils";
+import {
+  containerReturnState,
+  isContainerDetailClick,
+} from "../_lib/navigation";
 import {
   type ContainerSort,
   containerPath,
@@ -19,269 +23,70 @@ import {
   lifecycleLabel,
   sortedContainers,
 } from "../_lib/presentation";
+import {
+  ContainerActionButton,
+  ContainerActionMenuItem,
+  containerAction,
+  useContainerActions,
+} from "./container-actions";
 import styles from "./container-table.module.css";
 
-// Rank changes replace rows at the page boundary. Use a native control here
-// to avoid mounting a Radix provider tree for each replacement, with the same
-// visual tokens as the shared checkbox and native keyboard/checked semantics.
-const ContainerMonitor = memo(function ContainerMonitor({
-  id,
-  name,
-  checked,
-  disabled,
-  onChange,
-}: {
-  id: string;
-  name: string;
-  checked: boolean;
-  disabled: boolean;
-  onChange: (id: string, checked: boolean) => void;
-}) {
-  return (
-    <span className="relative inline-flex size-4 align-middle">
-      <input
-        type="checkbox"
-        aria-label={`Monitor ${name}`}
-        checked={checked}
-        disabled={disabled}
-        onChange={(event) => onChange(id, event.currentTarget.checked)}
-        className="peer size-4 shrink-0 appearance-none rounded-chip border border-input outline-none checked:border-primary checked:bg-primary focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50 motion-safe:transition-shadow motion-safe:duration-(--motion-fast) motion-safe:ease-(--ease-out) dark:bg-input/30 dark:checked:bg-primary"
-      />
-      <CheckIcon
-        aria-hidden
-        className="pointer-events-none absolute inset-0 m-auto hidden size-3.5 text-primary-foreground peer-checked:block peer-disabled:opacity-50"
-      />
-    </span>
-  );
-});
-
-export const ContainerIdentity = memo(
-  function ContainerIdentity({
-    row,
-    monitoringFull,
-    onMonitored,
-    back,
-    scroll,
-  }: {
-    row: DockerContainer;
-    monitoringFull: boolean;
-    onMonitored: (id: string, checked: boolean) => void;
-    back: string;
-    scroll: number;
-  }) {
-    return (
-      <>
-        <td className="min-w-0 px-3 py-1.5 font-normal">
-          <span
-            className="float-left mt-1 mr-2"
-            title="Include this container in the monitored population"
-          >
-            <ContainerMonitor
-              id={row.id}
-              name={row.name}
-              checked={row.monitored}
-              disabled={!row.monitored && monitoringFull}
-              onChange={onMonitored}
-            />
-          </span>
-          <Link
-            to={containerPath(row.engine_id, row.id)}
-            state={{
-              back,
-              scroll,
-            }}
-            className="block truncate rounded-control text-[12px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            title={`${row.name} · ${row.image}`}
-          >
-            {row.name}
-          </Link>
-          <div
-            className="truncate text-[11px] text-muted-foreground"
-            title={row.image}
-          >
-            {row.image}
-          </div>
-          <div className={styles.narrow}>
-            {lifecycleLabel[row.lifecycle]} · {healthLabel[row.health]}
-            <span className={styles.narrowMemory}>
-              {" "}
-              · {formatBytes(row.metrics.working_set_bytes)}
-            </span>
-          </div>
-        </td>
-        <td className={`${styles.state} px-3 py-1.5 font-normal text-[12px]`}>
-          {lifecycleLabel[row.lifecycle]}
-          <div className="text-[11px] text-muted-foreground">
-            {healthLabel[row.health]}
-          </div>
-        </td>
-      </>
-    );
-  },
-  (a, b) =>
-    a.back === b.back &&
-    a.scroll === b.scroll &&
-    a.monitoringFull === b.monitoringFull &&
-    a.onMonitored === b.onMonitored &&
-    a.row.id === b.row.id &&
-    a.row.engine_id === b.row.engine_id &&
-    a.row.name === b.row.name &&
-    a.row.image === b.row.image &&
-    a.row.lifecycle === b.row.lifecycle &&
-    a.row.health === b.row.health &&
-    a.row.monitored === b.row.monitored &&
-    a.row.metrics.working_set_bytes === b.row.metrics.working_set_bytes
-);
-
-export const ContainerMemory = memo(
-  function ContainerMemory({ row, io }: { row: DockerContainer; io: boolean }) {
-    return (
-      <>
-        <td
-          className={`${styles.memory} figures px-3 py-1.5 text-right font-normal text-[12px]`}
-        >
-          {io
-            ? formatRate(row.metrics.block_read_bps)
-            : formatBytes(row.metrics.working_set_bytes)}
-          <div className="text-[10px] text-muted-foreground">
-            {io
-              ? `write ${formatRate(row.metrics.block_write_bps)}`
-              : !row.metadata_available
-                ? "Limit unavailable"
-                : row.explicit_limit_bytes === null
-                  ? "No explicit limit"
-                  : `/ ${formatBytes(row.explicit_limit_bytes)}`}
-          </div>
-        </td>
-        <td
-          className={`${styles.restarts} figures px-3 py-1.5 text-right font-normal text-[12px]`}
-        >
-          {row.restart_count ?? "—"}
-        </td>
-      </>
-    );
-  },
-  (a, b) =>
-    a.io === b.io &&
-    a.row.metadata_available === b.row.metadata_available &&
-    a.row.explicit_limit_bytes === b.row.explicit_limit_bytes &&
-    a.row.restart_count === b.row.restart_count &&
-    a.row.metrics.working_set_bytes === b.row.metrics.working_set_bytes &&
-    a.row.metrics.block_read_bps === b.row.metrics.block_read_bps &&
-    a.row.metrics.block_write_bps === b.row.metrics.block_write_bps
-);
-
-const ContainerUsage = memo(function ContainerUsage({
-  primary,
-  secondary,
-}: {
-  primary: string;
-  secondary: string;
-}) {
-  return (
-    <td className="figures whitespace-nowrap px-3 py-1.5 text-right font-normal text-[12px]">
-      {primary}
-      <div className="text-[10px] text-muted-foreground">{secondary}</div>
-    </td>
-  );
-});
-
-const ContainerGroupHeading = memo(function ContainerGroupHeading({
-  group,
-  count,
-  columns,
-  collapsed,
-  onToggle,
-}: {
-  group: string;
-  count: number;
-  columns: number;
-  collapsed: boolean;
-  onToggle: (group: string) => void;
-}) {
-  return (
-    <tr className="bg-raised/40">
-      <th colSpan={columns} className="px-3 py-1 text-left">
-        <button
-          type="button"
-          aria-expanded={!collapsed}
-          onClick={() => onToggle(group)}
-          className="flex w-full items-center gap-2 rounded-control py-1 text-[12px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <span aria-hidden>{collapsed ? "›" : "⌄"}</span>
-          {group}
-          <span className="font-normal text-muted-foreground">
-            {count} containers
-          </span>
-        </button>
-      </th>
-    </tr>
-  );
-});
-
-function ContainerTableImpl({
+export const needsAttention = (row: DockerContainer) =>
+  row.health === "unhealthy" || row.oom_killed || row.repeated_restarts;
+export function ContainerTable({
   rows,
   sort,
   onSort,
   grouped,
-  io,
-  collapsed,
+  collapsed = [],
   onCollapse,
-  onMonitored,
-  monitoringFull,
-  page = 0,
-  onPage,
+  slots = {},
+  focused = null,
+  onFocus,
+  columns = [],
+  filters,
+  attention,
+  historical = false,
+  title = "Containers now",
+  liveRows,
 }: {
-  onMonitored: (id: string, monitored: boolean) => void;
-  monitoringFull: boolean;
-  page?: number;
-  onPage?: (page: number) => void;
   rows: readonly DockerContainer[];
   sort: ContainerSort;
   onSort: (sort: ContainerSort) => void;
   grouped: boolean;
-  io: boolean;
-  collapsed: readonly string[];
+  collapsed?: readonly string[];
   onCollapse: (group: string) => void;
+  slots?: Record<string, number>;
+  focused?: string | null;
+  onFocus?: (id: string | null) => void;
+  columns?: readonly string[];
+  filters?: ReactNode;
+  attention?: ReactNode;
+  historical?: boolean;
+  title?: string;
+  liveRows?: readonly DockerContainer[];
 }) {
   const location = useLocation();
-  const monitorRef = useRef(onMonitored);
-  const collapseRef = useRef(onCollapse);
-  useLayoutEffect(() => {
-    monitorRef.current = onMonitored;
-    collapseRef.current = onCollapse;
-  }, [onMonitored, onCollapse]);
-  const toggleGroup = useCallback((group: string) => {
-    collapseRef.current(group);
-  }, []);
-  const changeMonitored = useCallback((id: string, checked: boolean) => {
-    monitorRef.current(id, checked);
-  }, []);
-  const [containerRef, width] = useElementSize("width", 1000);
-  const columns = width <= 420 ? 2 : width <= 640 ? 3 : 5;
+  const navigate = useNavigate();
+  const actions = useContainerActions();
+  const { bytes, rate } = useUnits();
+  const scroller = useRef<HTMLDivElement>(null);
   const [hovered, setHovered] = useState(false);
-  const [focused, setFocused] = useState(false);
-  const [orderVersion, setOrderVersion] = useState(0);
-  const held = useRef<{ version: number; ids: string[] }>({
-    version: -1,
-    ids: [],
-  });
-  const paused = hovered || focused;
-  const effectiveSort = io
-    ? sort === "cpu"
-      ? "network"
-      : sort === "memory"
-        ? "io"
-        : sort
-    : sort === "network"
-      ? "cpu"
-      : sort === "io"
-        ? "memory"
-        : sort;
-  const sorted = sortedContainers(rows, effectiveSort);
-  if (!paused || held.current.version !== orderVersion)
-    held.current = { version: orderVersion, ids: sorted.map((row) => row.id) };
-  const rank = new Map(held.current.ids.map((id, index) => [id, index]));
+  const [keyboard, setKeyboard] = useState(false);
+  const [contextId, setContextId] = useState<string | null>(null);
+  const [contextOpen, setContextOpen] = useState(false);
+  const contextRow = (liveRows ?? (historical ? [] : rows)).find(
+    (row) => row.id === contextId
+  );
+  const held = useRef<string[]>([]);
+  const previousSort = useRef(sort);
+  const paused =
+    hovered || keyboard || contextOpen || actions.pendingIds.size > 0;
+  const sorted = sortedContainers(rows, sort);
+  if (!paused || previousSort.current !== sort)
+    held.current = sorted.map((row) => row.id);
+  previousSort.current = sort;
+  const rank = new Map(held.current.map((id, index) => [id, index]));
   const ordered = paused
     ? [...rows].sort(
         (a, b) =>
@@ -289,207 +94,374 @@ function ContainerTableImpl({
           a.id.localeCompare(b.id)
       )
     : sorted;
-  const pageCount = Math.max(1, Math.ceil(ordered.length / 32));
-  const currentPage = Math.min(Math.max(0, page), pageCount - 1);
-  const pageRows = ordered.slice(currentPage * 32, (currentPage + 1) * 32);
-  const [scroll, setScroll] = useState(0);
-  useEffect(() => {
-    const main = document.querySelector("main");
-    if (!main) return;
-    const updateScroll = () => setScroll(main.scrollTop);
-    updateScroll();
-    main.addEventListener("scroll", updateScroll, { passive: true });
-    return () => main.removeEventListener("scroll", updateScroll);
-  }, []);
   const groups = grouped
-    ? [...new Set(pageRows.map((row) => row.project ?? "Standalone"))]
+    ? [...new Set(ordered.map((row) => row.project ?? "Standalone"))]
     : [""];
-  const items = groups.flatMap((group) => {
+  const items: (
+    | { kind: "group"; group: string; count: number }
+    | { kind: "row"; row: DockerContainer }
+  )[] = groups.flatMap((group) => {
     const members = grouped
-      ? pageRows.filter((row) => (row.project ?? "Standalone") === group)
-      : pageRows;
+      ? ordered.filter((row) => (row.project ?? "Standalone") === group)
+      : ordered;
     return [
       ...(grouped
-        ? [
-            <ContainerGroupHeading
-              key={`group:${group}`}
-              group={group}
-              count={
-                rows.filter((row) => (row.project ?? "Standalone") === group)
-                  .length
-              }
-              columns={columns}
-              collapsed={collapsed.includes(group)}
-              onToggle={toggleGroup}
-            />,
-          ]
+        ? [{ kind: "group" as const, group, count: members.length }]
         : []),
       ...(!grouped || !collapsed.includes(group)
-        ? members.map((row) => (
-            <tr
-              key={row.id}
-              className="border-border-subtle border-t hover:bg-selected/50"
-            >
-              <ContainerIdentity
-                row={row}
-                monitoringFull={monitoringFull}
-                onMonitored={changeMonitored}
-                back={`${location.pathname}${location.search}`}
-                scroll={scroll}
-              />
-              <ContainerUsage
-                primary={
-                  io
-                    ? formatRate(row.metrics.network_rx_bps)
-                    : formatPercent(row.metrics.cpu_pct)
-                }
-                secondary={
-                  io
-                    ? `↑ ${formatRate(row.metrics.network_tx_bps)}`
-                    : !row.monitored
-                      ? "Not monitored"
-                      : ""
-                }
-              />
-              <ContainerMemory row={row} io={io} />
-            </tr>
-          ))
+        ? members.map((row) => ({ kind: "row" as const, row }))
         : []),
     ];
   });
+  const virtual = useVirtualizer({
+    count: items.length,
+    getScrollElement: () => scroller.current,
+    estimateSize: () => 44,
+    overscan: 5,
+    enabled: rows.length > 100,
+    getItemKey: (index) => {
+      const item = items[index];
+      return !item
+        ? index
+        : item.kind === "group"
+          ? `group:${item.group}`
+          : item.row.id;
+    },
+  });
+  useEffect(() => {
+    const saved =
+      (location.state as { tableScroll?: number } | null)?.tableScroll ??
+      window.history.state?.containerTableScroll;
+    if (typeof saved === "number" && scroller.current)
+      scroller.current.scrollTop = saved;
+  }, [location.state]);
+  useEffect(() => {
+    if (!focused || hovered) return;
+    const index = items.findIndex(
+      (item) => item.kind === "row" && item.row.id === focused
+    );
+    if (index < 0) return;
+    if (rows.length > 100) virtual.scrollToIndex(index, { align: "auto" });
+    else {
+      const row = scroller.current?.querySelector(
+        `[data-container-id="${CSS.escape(focused)}"]`
+      );
+      if (row && scroller.current) {
+        const bounds = row.getBoundingClientRect();
+        const view = scroller.current.getBoundingClientRect();
+        if (bounds.top < view.top + 32 || bounds.bottom > view.bottom)
+          row.scrollIntoView({ block: "nearest" });
+      }
+    }
+  }, [focused, hovered, items, rows.length, virtual]);
+  const count = 7 + columns.length;
   const heading = (label: string, key: ContainerSort) => (
     <button
       type="button"
-      className="rounded-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      onClick={() => {
-        onSort(key);
-        setOrderVersion((v) => v + 1);
-      }}
+      onClick={() => onSort(key)}
+      className="rounded-control focus-visible:ring-2 focus-visible:ring-ring"
     >
       {label}
-      {effectiveSort === key ? (key === "name" ? " ↑" : " ↓") : ""}
+      {sort === key ? (key === "name" ? " ↑" : " ↓") : ""}
     </button>
   );
-  return (
-    <div ref={containerRef} className={styles.container}>
-      <div className="flex h-9 items-center justify-between px-3 text-[11px] text-muted-foreground">
-        <span>Now · {rows.length} shown</span>
-        {pageCount > 1 && (
-          <span className="flex items-center gap-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={currentPage === 0}
-              onClick={() => onPage?.(currentPage - 1)}
+  const byte = (value: number | null) => formatBytes(value, { units: bytes });
+  const render = (item: (typeof items)[number]) => {
+    if (item.kind === "group")
+      return (
+        <tr key={`group:${item.group}`} className="h-11 bg-raised/40">
+          <th colSpan={count} className="px-3 text-left">
+            <button
+              className="w-full text-left text-[12px]"
+              type="button"
+              aria-expanded={!collapsed.includes(item.group)}
+              onClick={() => onCollapse(item.group)}
             >
-              Previous rows
-            </Button>
-            <span className="figures">
-              {currentPage * 32 + 1}–
-              {Math.min(rows.length, (currentPage + 1) * 32)}
-            </span>
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={currentPage + 1 >= pageCount}
-              onClick={() => onPage?.(currentPage + 1)}
-            >
-              Next rows
-            </Button>
-          </span>
+              {collapsed.includes(item.group) ? "›" : "⌄"} {item.group}
+              <span className="ml-2 font-normal text-muted-foreground">
+                {item.count} containers
+              </span>
+            </button>
+          </th>
+        </tr>
+      );
+    const row = item.row;
+    const current =
+      liveRows?.find((r) => r.id === row.id) ?? (historical ? null : row);
+    const live = ["running", "paused", "restarting"].includes(row.lifecycle);
+    const metrics = historical || live ? row.metrics : null;
+    const health = [
+      row.health !== "no_check" && row.health !== "healthy"
+        ? healthLabel[row.health]
+        : null,
+      row.oom_killed ? "OOM-killed" : null,
+      row.repeated_restarts ? `${row.observed_restarts} restarts` : null,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+    return (
+      <tr
+        key={row.id}
+        data-container-id={row.id}
+        onPointerEnter={() => onFocus?.(slots[row.id] ? row.id : null)}
+        onPointerLeave={() => onFocus?.(null)}
+        onFocus={() => onFocus?.(slots[row.id] ? row.id : null)}
+        className={cn(
+          "group h-11 border-border-subtle border-t hover:bg-selected/50",
+          focused === row.id && "bg-selected"
         )}
-        <span className="flex items-center gap-2" role="status">
-          {paused && (
+      >
+        <td className="w-5 pl-3">
+          {slots[row.id] && (
+            <SeriesSwatch color={seriesColor(slots[row.id] ?? 1)} />
+          )}
+        </td>
+        <td className="min-w-0 px-2 py-1 text-[12px]">
+          <Link
+            to={containerPath(row.engine_id, row.id)}
+            onClick={(event) => {
+              if (!isContainerDetailClick(event)) return;
+              event.preventDefault();
+              void navigate(containerPath(row.engine_id, row.id), {
+                state: containerReturnState(location, scroller.current),
+              });
+            }}
+            className="block truncate rounded-control focus-visible:ring-2 focus-visible:ring-ring"
+            title={`${row.name} · ${row.image}`}
+          >
+            {row.name}
+            <span className="text-muted-foreground">
+              {row.project ? ` · ${row.project}` : ""}
+            </span>
+          </Link>
+          {actions.failures[row.id] && (
+            <p role="alert" className="text-[11px] text-destructive">
+              {actions.failures[row.id]}
+            </p>
+          )}
+          <span
+            className={styles.narrowState}
+            title={`${lifecycleLabel[row.lifecycle]} · ${health}`}
+          >
+            {lifecycleLabel[row.lifecycle]}
+            {health ? ` · ${health}` : ""}
+          </span>
+        </td>
+        <td className={`${styles.state} px-2 py-1 text-[12px]`}>
+          {lifecycleLabel[row.lifecycle]}
+          {health && (
+            <div
+              className="truncate text-[10px] text-muted-foreground"
+              title={`${health} · ${row.metadata_observed_ms ? new Date(row.metadata_observed_ms).toLocaleString() : "time unknown"}`}
+            >
+              {health} ·{" "}
+              {row.metadata_observed_ms
+                ? new Date(row.metadata_observed_ms).toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })
+                : "time unknown"}
+            </div>
+          )}
+        </td>
+        <td className="figures whitespace-nowrap px-2 py-1 text-right text-[12px]">
+          {formatPercent(metrics?.cpu_pct ?? null)}
+        </td>
+        <td
+          className={`${styles.memory} figures px-2 py-1 text-right text-[12px] leading-[14px]`}
+        >
+          <span className="whitespace-nowrap">
+            {byte(metrics?.working_set_bytes ?? null)}
+          </span>
+          {metrics && row.explicit_limit_bytes !== null && !historical && (
             <>
-              Order paused
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setOrderVersion((v) => v + 1)}
-              >
-                Reorder now
-              </Button>
+              {" "}
+              <span className="whitespace-nowrap">
+                / {byte(row.explicit_limit_bytes)}
+              </span>
             </>
           )}
-        </span>
-      </div>
-      <div
-        onPointerEnter={() => setHovered(true)}
-        onPointerLeave={() => setHovered(false)}
-        onFocusCapture={() => setFocused(true)}
-        onBlurCapture={(e) => {
-          if (!e.currentTarget.contains(e.relatedTarget)) setFocused(false);
-        }}
-      >
-        <table
-          className="w-full table-fixed border-collapse"
-          aria-label="Containers now"
+          {metrics && row.explicit_limit_bytes !== null && !historical && (
+            <div className="mt-1 ml-auto h-1 w-12 overflow-hidden rounded-mark bg-track">
+              <div
+                className="h-full origin-left bg-muted-foreground"
+                style={{
+                  transform: `scaleX(${Math.min(1, (metrics.working_set_bytes ?? 0) / Math.max(1, row.explicit_limit_bytes))})`,
+                }}
+              />
+            </div>
+          )}
+        </td>
+        <td
+          className={`${styles.net} figures whitespace-nowrap px-2 py-1 text-right text-[12px]`}
+          hidden={historical}
         >
-          <thead className="border-border border-y text-[11px] text-muted-foreground">
-            <tr>
-              <th
-                className="w-[32%] px-3 py-2 text-left font-normal"
-                aria-sort={sort === "name" ? "ascending" : "none"}
-              >
-                {heading("Name / image", "name")}
-              </th>
-              <th className={`${styles.state} px-3 py-2 text-left font-normal`}>
-                State / health
-              </th>
-              <th
-                className="px-3 py-2 text-right font-normal"
-                aria-sort={
-                  effectiveSort === (io ? "network" : "cpu")
-                    ? "descending"
-                    : "none"
-                }
-              >
-                {io
-                  ? heading("Network ↓ / ↑", "network")
-                  : heading("CPU", "cpu")}
-              </th>
-              <th
-                className={`${styles.memory} px-3 py-2 text-right font-normal`}
-                aria-sort={
-                  effectiveSort === (io ? "io" : "memory")
-                    ? "descending"
-                    : "none"
-                }
-              >
-                {io
-                  ? heading("Block I/O", "io")
-                  : heading("Memory / limit", "memory")}
-              </th>
-              <th
-                className={`${styles.restarts} w-20 px-3 py-2 text-right font-normal`}
-                aria-sort={sort === "restarts" ? "descending" : "none"}
-              >
-                {heading("Restarts", "restarts")}
-              </th>
-            </tr>
-          </thead>
-          <tbody>{items}</tbody>
-        </table>
+          {formatRate(
+            metrics?.network_rx_bps != null && metrics.network_tx_bps !== null
+              ? metrics.network_rx_bps + metrics.network_tx_bps
+              : null,
+            { units: rate }
+          )}
+        </td>
+        {columns.map((column) => (
+          <td
+            key={column}
+            className="figures max-w-32 truncate px-2 text-right text-[11px]"
+          >
+            {column === "io"
+              ? `${formatRate(metrics?.block_read_bps ?? null)} / ${formatRate(metrics?.block_write_bps ?? null)}`
+              : column === "image"
+                ? row.image
+                : column === "ports"
+                  ? row.ports.join(", ") || "—"
+                  : column === "restarts"
+                    ? (row.restart_count ?? "—")
+                    : "—"}
+          </td>
+        ))}
+        <td className="w-18 px-2 text-right">
+          {current && <ContainerActionButton row={current} reveal />}
+        </td>
+      </tr>
+    );
+  };
+  const virtualItems = virtual.getVirtualItems();
+  const top = virtualItems[0]?.start ?? 0;
+  const bottom = virtual.getTotalSize() - (virtualItems.at(-1)?.end ?? 0);
+  return (
+    <div className={styles.container}>
+      <div className="flex flex-wrap items-center gap-3 px-3 py-2">
+        <p className="mr-auto text-[14px]">{title}</p>
+        {filters}
+        <span className="text-[11px] text-muted-foreground">
+          {rows.length} matching containers
+        </span>
+        {attention}
       </div>
-      {rows.length === 0 && (
-        <p className="px-3 py-8 text-[12px] text-muted-foreground">
-          No containers match this view.
-        </p>
-      )}
+      <ContextMenu onOpenChange={setContextOpen}>
+        <ContextMenuTrigger asChild>
+          <div
+            onContextMenuCapture={(event) => {
+              const target =
+                event.target instanceof Element
+                  ? event.target.closest<HTMLElement>("tr[data-container-id]")
+                  : null;
+              const row = (liveRows ?? (historical ? [] : rows)).find(
+                (candidate) => candidate.id === target?.dataset.containerId
+              );
+              if (!row || !containerAction(row)) {
+                event.preventDefault();
+                setContextId(null);
+                return;
+              }
+              setContextId(row.id);
+            }}
+            data-container-table-scroll
+            ref={scroller}
+            className="max-h-88 overflow-y-scroll"
+            onPointerEnter={() => setHovered(true)}
+            onPointerLeave={() => {
+              setHovered(false);
+              onFocus?.(null);
+            }}
+            onFocusCapture={() => setKeyboard(true)}
+            onBlurCapture={(event) => {
+              if (!event.currentTarget.contains(event.relatedTarget)) {
+                setKeyboard(false);
+                onFocus?.(null);
+              }
+            }}
+          >
+            <table
+              className="w-full table-fixed border-collapse"
+              aria-label={title}
+            >
+              <thead className="sticky top-0 z-10 bg-card text-[11px] text-muted-foreground">
+                <tr className="h-8 border-border border-y">
+                  <th className="w-5">
+                    <span className="sr-only">Chart color</span>
+                  </th>
+                  <th
+                    className={`${styles.identity} px-2 text-left font-normal`}
+                    aria-sort={sort === "name" ? "ascending" : "none"}
+                  >
+                    {heading("Name / project", "name")}
+                  </th>
+                  <th className={`${styles.state} px-2 text-left font-normal`}>
+                    State
+                  </th>
+                  <th
+                    className={`${styles.cpu} px-2 text-right font-normal`}
+                    aria-sort={sort === "cpu" ? "descending" : "none"}
+                  >
+                    {heading(historical ? "Peak CPU" : "CPU", "cpu")}
+                  </th>
+                  <th
+                    className={`${styles.memory} px-2 text-right font-normal`}
+                    aria-sort={sort === "memory" ? "descending" : "none"}
+                  >
+                    {heading(historical ? "Peak memory" : "Memory", "memory")}
+                  </th>
+                  <th
+                    className={`${styles.net} px-2 text-right font-normal`}
+                    hidden={historical}
+                  >
+                    {heading("Net", "network")}
+                  </th>
+                  {columns.map((column) => (
+                    <th key={column} className="px-2 text-right font-normal">
+                      {column === "io"
+                        ? heading("Block I/O", "io")
+                        : column === "restarts"
+                          ? heading("Restarts", "restarts")
+                          : column === "image"
+                            ? "Image"
+                            : column === "ports"
+                              ? "Ports"
+                              : "PIDs"}
+                    </th>
+                  ))}
+                  <th className="w-18">
+                    <span className="sr-only">Action</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.length > 100 ? (
+                  <>
+                    {top > 0 && (
+                      <tr aria-hidden>
+                        <td colSpan={count} style={{ height: top }} />
+                      </tr>
+                    )}
+                    {virtualItems.map((item) => {
+                      const entry = items[item.index];
+                      return entry ? render(entry) : null;
+                    })}
+                    {bottom > 0 && (
+                      <tr aria-hidden>
+                        <td colSpan={count} style={{ height: bottom }} />
+                      </tr>
+                    )}
+                  </>
+                ) : (
+                  items.map(render)
+                )}
+              </tbody>
+            </table>
+            {!rows.length && (
+              <p className="px-3 py-8 text-[12px] text-muted-foreground">
+                No containers match this view.
+              </p>
+            )}
+          </div>
+        </ContextMenuTrigger>
+        {contextRow && (
+          <ContextMenuContent>
+            <ContainerActionMenuItem row={contextRow} />
+          </ContextMenuContent>
+        )}
+      </ContextMenu>
     </div>
   );
 }
-
-/** Callback references change with URL mirrors; only the view inputs draw rows. */
-export const ContainerTable = memo(
-  ContainerTableImpl,
-  (a, b) =>
-    a.page === b.page &&
-    a.rows === b.rows &&
-    a.sort === b.sort &&
-    a.grouped === b.grouped &&
-    a.io === b.io &&
-    a.monitoringFull === b.monitoringFull &&
-    a.onMonitored === b.onMonitored &&
-    a.collapsed.join("\0") === b.collapsed.join("\0")
-);

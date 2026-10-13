@@ -11,6 +11,7 @@
 #   popover    the popover shown
 #   overview   the dashboard on /dashboard/overview
 #   processes  the dashboard on /dashboard/processes
+#   containers the dashboard on /dashboard/containers (opt-in; use DOCKER_SOCKET)
 #
 # Reports % of one core and phys_footprint per scenario and per process, the distance
 # of tray-only to perf-budget.json's coalition.target, and fails (exit 1) if tray-only
@@ -106,6 +107,7 @@ route_of() {
     popover) echo popover ;;
     overview) echo "dashboard:/dashboard/overview" ;;
     processes) echo "dashboard:/dashboard/processes" ;;
+    containers) echo "dashboard:/dashboard/containers" ;;
     *) echo "bench-coalition: unknown scenario $1" >&2; exit 2 ;;
   esac
 }
@@ -172,7 +174,7 @@ visible_failed=0
 blocking="$(field "$BUDGET" coalition.visible.blocking 2>/dev/null || echo false)"
 vregress="$(field "$BUDGET" coalition.visible.regressionPct 2>/dev/null || echo 30)"
 for s in $SCENARIOS; do
-  case "$s" in popover|overview|processes) ;; *) continue ;; esac
+  case "$s" in popover|overview|processes|containers) ;; *) continue ;; esac
   cpu="$(field "$OUT/$s.json" cpu_pct)"
   vbase="$(field "$BUDGET" "coalition.visible.baseline.${s}CpuPct" 2>/dev/null || echo "")"
   if [ -z "$vbase" ]; then

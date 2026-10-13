@@ -1,3 +1,4 @@
+import { Monitor } from "lucide-react";
 import { memo } from "react";
 import { useLocation, useNavigate } from "react-router";
 import {
@@ -17,7 +18,7 @@ export const HostSwitcher = memo(function HostSwitcher() {
   const { pathname } = useLocation();
   if (!selection) return null;
   return (
-    <div className="px-1 pb-3">
+    <div className="px-1 pb-3 max-sm:px-0">
       <Select
         value={selection.selected}
         onValueChange={(id) => {
@@ -31,10 +32,17 @@ export const HostSwitcher = memo(function HostSwitcher() {
       >
         <SelectTrigger
           aria-label="Selected machine"
+          title={
+            selection.hosts.find((host) => host.id === selection.selected)
+              ?.display_name
+          }
           size="sm"
-          className="w-full text-[12px]"
+          className="w-full text-[12px] max-sm:justify-center max-sm:px-0 max-sm:[&>svg:last-child]:hidden"
         >
-          <SelectValue />
+          <Monitor aria-hidden className="hidden size-4 max-sm:block" />
+          <span className="min-w-0 truncate max-sm:sr-only">
+            <SelectValue />
+          </span>
         </SelectTrigger>
         <SelectContent>
           {selection.hosts.map((host) => (

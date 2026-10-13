@@ -13,6 +13,11 @@ export interface LegendItem {
   label: string;
   value: string;
   step: SwatchStep;
+  color?: string;
+  onFocus?: () => void;
+  onBlur?: () => void;
+  onClick?: () => void;
+  pressed?: boolean;
 }
 
 export interface LegendProps {
@@ -27,9 +32,17 @@ export interface LegendProps {
 }
 
 /** The 8 px legend key: a ramp swatch, the track, or an empty slot. */
-export function Swatch({ step, size = 8 }: { step: SwatchStep; size?: 7 | 8 }) {
+export function Swatch({
+  step,
+  size = 8,
+  color,
+}: {
+  step: SwatchStep;
+  size?: 7 | 8;
+  color?: string;
+}) {
   const dim = size === 8 ? "size-2" : "size-[7px]";
-  if (step === "none")
+  if (step === "none" && !color)
     return <span aria-hidden className={cn(dim, "shrink-0")} />;
   return (
     <span
@@ -41,7 +54,11 @@ export function Swatch({ step, size = 8 }: { step: SwatchStep; size?: 7 | 8 }) {
           "bg-track shadow-[inset_0_0_0_1px_var(--color-border)]"
       )}
       style={
-        step === "track" ? undefined : { background: rampBackground(step) }
+        color
+          ? { background: color }
+          : step === "track"
+            ? undefined
+            : { background: rampBackground(step === "none" ? 1 : step) }
       }
     />
   );
@@ -59,9 +76,28 @@ export function Legend({ items, accent, columns = "inline" }: LegendProps) {
             key={item.label}
             className="inline-flex items-center gap-1.5 font-normal text-[11px] text-fg-subtle"
           >
-            <Swatch step={item.step} />
-            {item.label}
-            <span className="figures text-foreground">{item.value}</span>
+            {item.onClick ? (
+              <button
+                type="button"
+                aria-pressed={item.pressed}
+                onPointerEnter={item.onFocus}
+                onPointerLeave={item.onBlur}
+                onFocus={item.onFocus}
+                onBlur={item.onBlur}
+                onClick={item.onClick}
+                className="inline-flex items-center gap-1.5 rounded-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <Swatch step={item.step} color={item.color} />
+                {item.label}
+                <span className="figures text-foreground">{item.value}</span>
+              </button>
+            ) : (
+              <>
+                <Swatch step={item.step} color={item.color} />
+                {item.label}
+                <span className="figures text-foreground">{item.value}</span>
+              </>
+            )}
           </li>
         ))}
       </ul>
@@ -78,7 +114,7 @@ export function Legend({ items, accent, columns = "inline" }: LegendProps) {
     >
       {items.map((item) => (
         <li key={item.label} className="flex items-center gap-1.5">
-          <Swatch step={item.step} />
+          <Swatch step={item.step} color={item.color} />
           <span className="flex-1 font-normal text-fg-subtle">
             {item.label}
           </span>

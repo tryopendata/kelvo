@@ -12,6 +12,16 @@ function setup(initial: Props) {
 }
 
 describe("useNiceCeiling", () => {
+  it("fits a newly selected series even when its newest point time is unchanged", () => {
+    const { result, rerender } = setup({
+      values: [19],
+      nowMs: 1000,
+      windowMs: 300_000,
+    });
+    expect(result.current).toBe(20);
+    rerender({ values: [19, 350], nowMs: 1000, windowMs: 300_000 });
+    expect(result.current).toBeGreaterThanOrEqual(350);
+  });
   it("holds a higher ceiling for 60 s while the window stays the same", () => {
     const { result, rerender } = setup({
       values: [19],

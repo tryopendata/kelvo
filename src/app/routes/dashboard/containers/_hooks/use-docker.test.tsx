@@ -11,19 +11,29 @@ it("keeps history defined while the next range is pending", async () => {
     historyRows: 1,
   });
   const history = transport.dockerHistory;
+  const initial = await history({
+    engine_id: "mock-orbstack",
+    container_id: null,
+    from_ms: 0,
+    to_ms: 900_000,
+    max_points: 360,
+  });
+  if (initial.status !== "ok") throw new Error("History fixture failed");
+  const initialText = `${initial.data.points.length} points`;
+  expect(initial.data.points.length).toBeGreaterThan(2);
   let resolve:
     | ((value: Awaited<ReturnType<typeof history>>) => void)
     | undefined;
   transport.dockerHistory = (request) =>
-    request.to_ms === 20_000
+    request.to_ms === 1_800_000
       ? new Promise((done) => {
           resolve = done;
         })
       : history(request);
   let change: (() => void) | undefined;
   function Harness() {
-    const [to, setTo] = useState(10_000);
-    change = () => setTo(20_000);
+    const [to, setTo] = useState(900_000);
+    change = () => setTo(1_800_000);
     const query = useDockerHistory("mock-orbstack", null, 0, to);
     return (
       <p>
@@ -34,15 +44,15 @@ it("keeps history defined while the next range is pending", async () => {
     );
   }
   const result = renderWithProviders(<Harness />, { transport });
-  expect(await screen.findByText("180 points")).toBeVisible();
+  expect(await screen.findByText(initialText)).toBeVisible();
   act(() => change?.());
   expect(screen.queryByText("Undefined history")).toBeNull();
-  expect(screen.getByText("180 points")).toBeVisible();
+  expect(screen.getByText(initialText)).toBeVisible();
   const page = await history({
     engine_id: "mock-orbstack",
     container_id: null,
     from_ms: 0,
-    to_ms: 20_000,
+    to_ms: 1_800_000,
     max_points: 360,
   });
   if (page.status !== "ok") throw new Error("History fixture failed");

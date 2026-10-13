@@ -48,13 +48,19 @@ export type ScenarioName =
   | "performance-mode"
   | "vpn"
   | "docker-0"
+  | "docker-11"
   | "docker-1"
   | "docker-32"
   | "docker-128"
   | "docker-200"
   | "docker-retained"
   | "docker-unavailable"
-  | "docker-idle";
+  | "docker-idle"
+  | "docker-history-gap"
+  | "docker-events-gap"
+  | "docker-save-failed"
+  | "docker-stop-failed"
+  | "docker-rerank";
 
 export const SCENARIOS: readonly ScenarioName[] = [
   "ssh-auth",
@@ -87,6 +93,7 @@ export const SCENARIOS: readonly ScenarioName[] = [
   "performance-mode",
   "vpn",
   "docker-0",
+  "docker-11",
   "docker-1",
   "docker-32",
   "docker-128",
@@ -94,6 +101,11 @@ export const SCENARIOS: readonly ScenarioName[] = [
   "docker-retained",
   "docker-unavailable",
   "docker-idle",
+  "docker-history-gap",
+  "docker-events-gap",
+  "docker-save-failed",
+  "docker-stop-failed",
+  "docker-rerank",
 ];
 
 /** The schema version the mock's "newer Kelvo" wrote, and the one it reads. */
@@ -285,9 +297,7 @@ export function defaultSettings(flags: ScenarioFlags): Settings {
   return {
     docker: {
       enabled: false,
-      explicit_selection: false,
       selected_engine: null,
-      monitored_containers: [],
       show_popover: false,
       show_tray_count: false,
     },

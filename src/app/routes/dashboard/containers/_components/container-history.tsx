@@ -54,7 +54,7 @@ export const ContainerHistory = memo(function ContainerHistory({
     for (const p of points) {
       const value = p.metrics[metric];
       const x = ((p.time_ms - from) / Math.max(1, to - from)) * 1000;
-      if (value === null || !p.covered) {
+      if (value === null || !(memory ? p.memory_covered : p.cpu_covered)) {
         contiguous = false;
         limitContiguous = false;
         previousEnd = null;
@@ -164,14 +164,6 @@ export const ContainerHistory = memo(function ContainerHistory({
             : "Loading recorded measurements…"}
         </p>
       )}
-      {page?.coverage.map((gap) => (
-        <p
-          key={`${gap.start_ms}-${gap.container_id}`}
-          className="text-[11px] text-muted-foreground"
-        >
-          Coverage gap: {gap.reason}
-        </p>
-      ))}
     </SectionCard>
   );
 });

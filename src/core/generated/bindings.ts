@@ -14,6 +14,7 @@ export const commands = {
 	dockerDetail: (engineId: string, containerId: string) => typedError<DockerContainer, CommandError>(__TAURI_INVOKE("docker_detail", { engineId, containerId })),
 	dockerRetained: (request: DockerRetainedRequest) => typedError<DockerRetainedPage, CommandError>(__TAURI_INVOKE("docker_retained", { request })),
 	dockerHistory: (request: DockerHistoryRequest) => typedError<DockerHistoryPage, CommandError>(__TAURI_INVOKE("docker_history", { request })),
+	dockerComparison: (request: DockerComparisonRequest) => typedError<DockerComparisonPage, CommandError>(__TAURI_INVOKE("docker_comparison", { request })),
 	dockerEvents: (request: DockerEventsRequest) => typedError<DockerEventsPage, CommandError>(__TAURI_INVOKE("docker_events", { request })),
 	dockerLogs: (request: DockerLogsRequest, channel: Channel<DockerLogBatch>) => typedError<number, CommandError>(__TAURI_INVOKE("docker_logs", { request, channel })),
 	dockerCloseLogs: (stream: number) => typedError<null, CommandError>(__TAURI_INVOKE("docker_close_logs", { stream })),
@@ -21,6 +22,7 @@ export const commands = {
 	dockerStoragePrepare: (selections: DockerStorageSelection[]) => typedError<DockerStorageReview, CommandError>(__TAURI_INVOKE("docker_storage_prepare", { selections })),
 	dockerStorageExecute: (token: string, confirmVolumes: boolean) => typedError<DockerStorageOperation, CommandError>(__TAURI_INVOKE("docker_storage_execute", { token, confirmVolumes })),
 	dockerStorageOperation: (operationId: string) => typedError<DockerStorageOperation, CommandError>(__TAURI_INVOKE("docker_storage_operation", { operationId })),
+	dockerContainerAction: (engineId: string, containerId: string, action: DockerContainerAction) => typedError<DockerStorageOperation, CommandError>(__TAURI_INVOKE("docker_container_action", { engineId, containerId, action })),
 	/**  Every host, the local one first. */
 	listHosts: () => __TAURI_INVOKE<HostRecord[]>("list_hosts"),
 	listRemoteHosts: () => __TAURI_INVOKE<RemoteHostRecord[]>("list_remote_hosts"),
@@ -520,15 +522,39 @@ export type DockerAggregate = {
 	capacity_bytes: number | null,
 	cpu_measured: number,
 	memory_measured: number,
+	/**  Running containers within the monitoring budget; denominator for measured metrics. */
 	expected: number,
 	running: number,
 	total: number,
+	/**  Containers within the automatic monitoring budget, including stopped containers. */
 	monitored: number,
 	partial: boolean,
 	inventory_complete: boolean,
 };
 
+export type DockerComparisonMetric = "cpu" | "memory";
+
+export type DockerComparisonPage = {
+	generation: number,
+	ranking: DockerRankedContainer[],
+	series: DockerContainerSeries[],
+	coverage: DockerCoverage[],
+	persistence: DockerPersistence,
+};
+
+export type DockerComparisonRequest = {
+	engine_id: string,
+	from_ms: number,
+	to_ms: number,
+	metric: DockerComparisonMetric,
+	project: string | null,
+	selected: string[] | null,
+	max_points: number,
+};
+
 export type DockerContainer = {
+	/**  None when the engine host configuration has not been inspected. */
+	auto_remove?: boolean | null,
 	engine_id: string,
 	id: string,
 	name: string,
@@ -559,6 +585,15 @@ export type DockerContainer = {
 	interval_ms: number | null,
 	monitored: boolean,
 	metrics: DockerMetrics,
+};
+
+/**  Explicit actions on one container; independent of storage cleanup reviews. */
+export type DockerContainerAction = "start" | "stop";
+
+export type DockerContainerSeries = {
+	/**  Metadata travels with the plotted series even below the ranking cutoff. */
+	container: DockerContainer,
+	points: DockerHistoryPoint[],
 };
 
 export type DockerCoverage = {
@@ -624,10 +659,13 @@ export type DockerHistoryPoint = {
 	time_ms: number,
 	duration_ms: number,
 	metrics: DockerMetrics,
-	measured_ms: number,
+	cpu_measured_ms: number,
+	memory_measured_ms: number,
 	expected_ms: number,
-	/**  Complete measured coverage of this bucket. */
-	covered: boolean,
+	cpu_covered: boolean,
+	memory_covered: boolean,
+	peak: DockerMetrics,
+	minimum: DockerMetrics,
 	population_revision: number,
 	revision: number,
 	explicit_limit_bytes: number | null,
@@ -670,10 +708,28 @@ export type DockerMetrics = {
 };
 
 export type DockerPersistence = {
+	error: string | null,
 	status: string,
 	logical_bytes: number | null,
 	allowance_bytes: number | null,
 	retained_from_ms: number | null,
+};
+
+export type DockerProjectAggregate = {
+	/**  None denotes standalone containers without a Compose project. */
+	project: string | null,
+	aggregate: DockerAggregate,
+};
+
+export type DockerRankedContainer = {
+	container: DockerContainer,
+	peak_cpu_pct: number | null,
+	avg_cpu_pct: number | null,
+	peak_working_set_bytes: number | null,
+	avg_working_set_bytes: number | null,
+	cpu_measured_ms: number,
+	memory_measured_ms: number,
+	last_lifecycle: DockerLifecycle | null,
 };
 
 export type DockerRetainedEngine = {
@@ -709,8 +765,6 @@ export type DockerSettings = {
 	enabled?: boolean,
 	/**  Canonical Unix socket, persisted independently of the CLI context. */
 	selected_engine?: string | null,
-	monitored_containers?: string[],
-	explicit_selection?: boolean,
 	show_popover?: boolean,
 	show_tray_count?: boolean,
 };
@@ -724,6 +778,7 @@ export type DockerSnapshot = {
 	settings: DockerSettings,
 	containers: DockerContainer[],
 	aggregate: DockerAggregate,
+	project_aggregates: DockerProjectAggregate[],
 	runtime: DockerRuntimeFootprint,
 	coverage: DockerCoverage[],
 	observed_ms: number,
@@ -736,7 +791,7 @@ export type DockerSnapshot = {
 
 export type DockerStatus = "disabled" | "connecting" | "connected" | "idle_suspended" | "paused" | "unavailable" | "permission_denied" | "incompatible";
 
-export type DockerStorageAction = "delete" | "stop";
+export type DockerStorageAction = "start" | "delete" | "stop";
 
 export type DockerStorageCategory = {
 	kind: DockerStorageKind,

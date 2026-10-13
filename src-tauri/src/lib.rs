@@ -67,10 +67,11 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
         .commands(collect_commands![
             docker::docker_discover, docker::docker_configure, docker::docker_snapshot,
             docker::docker_resume, docker::docker_subscribe, docker::docker_unsubscribe,
-            docker::docker_detail, docker::docker_retained, docker::docker_history, docker::docker_events,
+            docker::docker_detail, docker::docker_retained, docker::docker_history, docker::docker_comparison, docker::docker_events,
             docker::docker_logs, docker::docker_close_logs,
             docker::docker_storage_scan, docker::docker_storage_prepare,
             docker::docker_storage_execute, docker::docker_storage_operation,
+            docker::docker_container_action,
             commands::list_hosts,
             remote::list_remote_hosts,
             remote::remote_ssh_config_status,

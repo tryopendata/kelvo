@@ -12,8 +12,24 @@ pub enum DockerStorageKind {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "snake_case")]
 pub enum DockerStorageAction {
+    Start,
     Delete,
     Stop,
+}
+/// Explicit actions on one container; independent of storage cleanup reviews.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum DockerContainerAction {
+    Start,
+    Stop,
+}
+impl From<DockerContainerAction> for DockerStorageAction {
+    fn from(action: DockerContainerAction) -> Self {
+        match action {
+            DockerContainerAction::Start => Self::Start,
+            DockerContainerAction::Stop => Self::Stop,
+        }
+    }
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 pub struct DockerStorageSelection {

@@ -11,7 +11,7 @@ use uuid::Uuid;
 use crate::error::{Result, StoreError};
 
 /// The schema version this build writes. Bump it with a new step in [`MIGRATIONS`].
-pub const SCHEMA_VERSION: i64 = 6;
+pub const SCHEMA_VERSION: i64 = 7;
 
 /// Page size of new databases. 16 KiB packs wide M1 blobs (250 series = 3,000 B) five to
 /// a page instead of one; measured in D-057.
@@ -239,7 +239,8 @@ ALTER TABLE events ADD COLUMN source_id INTEGER;
 ALTER TABLE events ADD COLUMN source_seq INTEGER;
 CREATE UNIQUE INDEX events_source ON events(host_id, source_epoch, source_id);
 ";
-const MIGRATIONS: &[&str] = &[V1, V2, V3, V4, V5, crate::docker::SCHEMA];
+const V7: &str = "DELETE FROM docker_coverage WHERE reason IN ('write_failed', 'loss_scope_overflow') AND entity_id IS NULL;";
+const MIGRATIONS: &[&str] = &[V1, V2, V3, V4, V5, crate::docker::SCHEMA, V7];
 
 /// Opens or creates the database for writing and brings its schema up to date. Returns
 /// the connection and the `db_instance_uuid`.

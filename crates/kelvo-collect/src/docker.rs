@@ -270,6 +270,7 @@ impl DockerAdapter {
                     health: DockerHealth::Unknown,
                     restart_count: None,
                     metadata_available: false,
+                    auto_remove: None,
                     metadata_observed_ms: None,
                     observed_restarts: 0,
                     repeated_restarts: false,
@@ -335,6 +336,7 @@ impl DockerAdapter {
         // Consume allowlisted fields only; Env, Cmd, health output and commands die here.
         let has_healthcheck = c.config.as_ref().is_some_and(|c| c.healthcheck.is_some());
         row.metadata_available = true;
+        row.auto_remove = c.host_config.as_ref().and_then(|config| config.auto_remove);
         row.metadata_observed_ms = Some(now_ms());
         if let Some(state) = c.state {
             row.lifecycle = lifecycle(&state.status.map(|s| s.to_string()).unwrap_or_default());
@@ -647,6 +649,7 @@ mod tests {
             health: DockerHealth::Unknown,
             restart_count: None,
             metadata_available: false,
+            auto_remove: None,
             metadata_observed_ms: None,
             observed_restarts: 0,
             repeated_restarts: false,

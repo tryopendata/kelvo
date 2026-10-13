@@ -163,7 +163,7 @@ bindings: stub-dist
 # Main-thread and long-task budgets (perf-budget.json `frontend`), measured on macOS
 # Chromium, so they run in the pre-push hook rather than on Linux CI (D-096).
 e2e-perf:
-	bunx playwright test tests/e2e/perf-gate.spec.ts --project=chromium
+	bunx playwright test tests/e2e/perf-gate.spec.ts --project=chromium --workers=1
 
 # Fails if src/core/generated differs from the commit after regenerating, including
 # new untracked files.

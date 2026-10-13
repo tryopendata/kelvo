@@ -1,6 +1,6 @@
 //! Discarding a host's rows from a time on, and clearing a host's history.
 
-use kelvo_schema::{HostId, Tier, lock::LockExt};
+use kelvo_schema::{HostId, Tier};
 use rusqlite::params;
 
 use super::State;
@@ -55,16 +55,6 @@ impl State {
                 }
             }
         }
-        self.docker_admission.lock_ok().lost.retain(|(h, _), loss| {
-            if loss.daemon.is_empty() || *h != host {
-                return true;
-            }
-            if loss.start >= from {
-                return false;
-            }
-            loss.end = loss.end.min(from);
-            true
-        });
         self.commit()
     }
 

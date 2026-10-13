@@ -8,6 +8,38 @@ use std::collections::BTreeMap;
 
 pub(crate) mod read;
 pub use read::DockerReadSnapshot;
+
+/// A resumed observation closes an old engine switch, including rows left open
+/// by an earlier app instance. Population segments retain exact interval starts
+/// through rollups, so this does not invent a boundary from a bucket timestamp.
+pub(crate) fn resumed_after(
+    conn: &rusqlite::Connection,
+    engine: i64,
+    start: i64,
+) -> Result<Option<i64>> {
+    use rusqlite::OptionalExtension;
+    let mut earliest = None;
+    for (table, width) in [
+        ("docker_10s", 10_000),
+        ("docker_1m", 60_000),
+        ("docker_15m", 900_000),
+    ] {
+        let sql = format!(
+            "SELECT p.start_ms FROM {table} b JOIN {table}_populations p ON p.entity_id=b.entity_id AND p.bucket_ms=b.bucket_ms AND p.layout_id=b.layout_id WHERE b.engine_id=?1 AND b.bucket_ms>=?2 AND p.start_ms>=?3 ORDER BY b.bucket_ms,p.start_ms LIMIT 1"
+        );
+        let observed: Option<i64> = conn
+            .query_row(
+                &sql,
+                rusqlite::params![engine, start.div_euclid(width) * width, start],
+                |r| r.get(0),
+            )
+            .optional()?;
+        if let Some(observed) = observed {
+            earliest = Some(earliest.map_or(observed, |old: i64| old.min(observed)));
+        }
+    }
+    Ok(earliest)
+}
 /// Explicit lifecycle registration: reset/discard/prune use relational handlers in
 /// writer/docker.rs, not generic host timestamp deletion.
 #[cfg(test)]

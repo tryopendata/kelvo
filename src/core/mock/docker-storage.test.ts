@@ -62,7 +62,7 @@ it("rejects AutoRemove Stop, expired reviews and generation changes", async () =
   const snapshot = await unwrap(transport.dockerSnapshot());
   await transport.dockerConfigure({
     ...snapshot.settings,
-    show_tray_count: true,
+    enabled: false,
   });
   expect(
     (await transport.dockerStorageExecute(review.token, false)).status

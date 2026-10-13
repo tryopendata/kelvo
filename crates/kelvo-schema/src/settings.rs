@@ -644,19 +644,11 @@ impl Settings {
 
     /// Checks every value against the allowed sets in 6.4.
     pub fn validate(&self) -> Result<(), SettingsError> {
-        if self.docker.monitored_containers.len() > 128
-            || self.docker.monitored_containers.iter().any(|id| {
-                id.is_empty()
-                    || id.len() > 128
-                    || !id
-                        .bytes()
-                        .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
-            })
-            || self
-                .docker
-                .selected_engine
-                .as_ref()
-                .is_some_and(|s| !s.starts_with('/') || s.contains("://") || s.len() > 4096)
+        if self
+            .docker
+            .selected_engine
+            .as_ref()
+            .is_some_and(|s| !s.starts_with('/') || s.contains("://") || s.len() > 4096)
         {
             return Err(SettingsError::Docker);
         }

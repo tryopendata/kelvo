@@ -9,6 +9,7 @@ import type { CommandResult, Transport } from "@core/transport";
 
 type Methods = Pick<
   Transport,
+  | "dockerContainerAction"
   | "dockerStorageScan"
   | "dockerStoragePrepare"
   | "dockerStorageExecute"
@@ -168,7 +169,9 @@ export function createMockDockerStorage(
   now: () => number,
   getSnapshot: () => DockerSnapshot,
   stopContainer: (id: string) => void,
-  deleteContainer: (id: string) => void
+  deleteContainer: (id: string) => void,
+  startContainer: (id: string) => void = () => {},
+  failStop = false
 ) {
   let cached: DockerStorageSnapshot | null = null;
   let resumedGeneration: number | null = null;
@@ -221,6 +224,71 @@ export function createMockDockerStorage(
     }
   };
   const methods: Methods = {
+    async dockerContainerAction(engineId, containerId, action) {
+      if (active) return fail("An operation is already running.");
+      const snapshot = getSnapshot();
+      const operation: DockerStorageOperation = {
+        id: `operation-${++sequence}`,
+        engine_id: engineId,
+        generation: snapshot.generation,
+        started_ms: now(),
+        finished_ms: null,
+        results: [],
+        total: 1,
+      };
+      const selection = { kind: "container" as const, id: containerId, action };
+      operations.set(operation.id, operation);
+      active = operation.id;
+      setTimeout(() => {
+        const current = getSnapshot();
+        const row = current.containers.find((row) => row.id === containerId);
+        const eligible =
+          row &&
+          current.status === "connected" &&
+          current.engine?.id === engineId &&
+          current.generation === operation.generation &&
+          (action === "start"
+            ? ["exited", "created"].includes(row.lifecycle)
+            : ["running", "restarting", "paused"].includes(row.lifecycle) &&
+              row.auto_remove === false);
+        if (!eligible)
+          operation.results.push({
+            selection,
+            status: "skipped",
+            message: "Container or engine changed, or action is not eligible",
+            reclaimed_bytes: null,
+          });
+        else if (
+          (action === "start" && row.name === "worker") ||
+          (action === "stop" && failStop)
+        )
+          operation.results.push({
+            selection,
+            status: "failed",
+            message:
+              action === "start"
+                ? "Port 8080 is already in use"
+                : "Docker could not stop this container",
+            reclaimed_bytes: null,
+          });
+        else {
+          if (action === "stop") stopContainer(containerId);
+          else startContainer(containerId);
+          operation.results.push({
+            selection,
+            status: "succeeded",
+            message:
+              action === "stop" ? "Container stopped" : "Container started",
+            reclaimed_bytes: null,
+          });
+        }
+        operation.finished_ms = now();
+        active = null;
+        cached = null;
+        reviews.clear();
+      }, 500);
+      return ok(structuredClone(operation));
+    },
     async dockerStorageScan(force) {
       pruneOperations();
       const snapshot = getSnapshot();
@@ -253,6 +321,7 @@ export function createMockDockerStorage(
       if (!ready()) return fail("Resume monitoring before reviewing actions.");
       if (active) return fail("An operation is already running.");
       if (
+        selections.some((item) => item.action === "start") ||
         !selections.length ||
         selections.length > 128 ||
         new Set(selections.map(key)).size !== selections.length

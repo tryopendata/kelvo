@@ -1,3 +1,8 @@
+import {
+  mockContainer,
+  mockDockerSnapshot,
+  mockHistoryPoints,
+} from "@core/mock/docker";
 import type { BatteryHistoryBarsProps } from "~/widgets/battery-history-bars";
 import type { CoreHeatmapProps } from "~/widgets/core-heatmap";
 import {
@@ -238,4 +243,30 @@ export const BATTERY_HOURS: BatteryHistoryBarsProps = {
       label: "Optimized charging: held at 80%",
     },
   ],
+};
+
+/** Six categorical identities, a genuine gap, partial points and a one-minute peak. */
+export const DOCKER_COMPARISON = Array.from({ length: 6 }, (_, index) => {
+  const container = mockContainer(index, NOW_MS);
+  return {
+    container,
+    slot: index + 1,
+    points: mockHistoryPoints(
+      {
+        engine_id: container.engine_id,
+        container_id: container.id,
+        from_ms: NOW_MS - 86_400_000,
+        to_ms: NOW_MS,
+        max_points: 360,
+      },
+      container
+    ),
+  };
+});
+export const DOCKER_NOTICE = {
+  ...mockDockerSnapshot(6, NOW_MS),
+  persistence: {
+    ...mockDockerSnapshot(6, NOW_MS).persistence,
+    status: "write_failed" as const,
+  },
 };

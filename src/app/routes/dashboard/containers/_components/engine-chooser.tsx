@@ -12,7 +12,9 @@ export function EngineChooser({
   settings,
   onChange,
   onClose,
+  embedded = false,
 }: {
+  embedded?: boolean;
   settings: DockerSettings;
   onChange: (snapshot: DockerSnapshot) => void;
   onClose: () => void;
@@ -60,13 +62,17 @@ export function EngineChooser({
   return (
     <section
       aria-label="Choose Docker engine"
-      className="rounded-card border border-border bg-card p-4"
+      className={
+        embedded ? "" : "rounded-card border border-border bg-card p-4"
+      }
     >
       <div className="mb-3 flex items-center justify-between">
         <h2 className="text-[14px]">Local Docker engines</h2>
-        <Button variant="ghost" size="sm" onClick={onClose}>
-          Close
-        </Button>
+        {!embedded && (
+          <Button variant="ghost" size="sm" onClick={onClose}>
+            Close
+          </Button>
+        )}
       </div>
       <p className="mb-3 text-[12px] text-muted-foreground">
         Selection is independent of the Docker CLI context. Switching preserves
