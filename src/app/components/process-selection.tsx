@@ -359,8 +359,8 @@ function SelectionSession({
         )}
         {selected.length > 0 && (
           <div
-            className="flex shrink-0 items-center gap-2 border-border-subtle border-t px-3 text-[11px]"
-            style={{ height: SELECTION_BAR_PX }}
+            className="flex shrink-0 flex-wrap items-center gap-2 border-border-subtle border-t px-3 py-1 text-[11px]"
+            style={{ minHeight: SELECTION_BAR_PX }}
           >
             <span className="figures mr-auto whitespace-nowrap">
               {selected.length} selected

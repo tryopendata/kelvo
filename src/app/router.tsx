@@ -17,6 +17,7 @@ import NetworkRoute from "~/routes/dashboard/network/route";
 import OverviewRoute from "~/routes/dashboard/overview/route";
 import PendingPageRoute from "~/routes/dashboard/pending/route";
 import PowerRoute from "~/routes/dashboard/power/route";
+import ProcessDetailRoute from "~/routes/dashboard/processes/detail-route";
 import ProcessesRoute from "~/routes/dashboard/processes/route";
 import DashboardLayout from "~/routes/dashboard/route";
 import SettingsRoute from "~/routes/dashboard/settings/route";
@@ -67,6 +68,10 @@ export function appRoutes({
             { path: "disk", element: <DiskRoute /> },
             { path: "battery", element: <BatteryRoute /> },
             { path: "processes", element: <ProcessesRoute /> },
+            {
+              path: "processes/:pid/:startTime",
+              element: <ProcessDetailRoute />,
+            },
             { path: "containers", element: <ContainersRoute /> },
             {
               path: "containers/:engineId/:containerId",

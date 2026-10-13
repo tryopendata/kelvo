@@ -3356,3 +3356,35 @@ engine total, so changing project scope cannot restore stale measurements. Compa
 series carry their retained container metadata independently of the bounded ranking,
 keeping explicitly selected identities available below its cutoff. These extend the local
 Docker IPC view; metric-series identities and the sync wire format stay unchanged.
+
+## D-110: Disk request history preserves completed-operation integrals
+
+Accepted 2026-10-13 for [I/O performance](io-performance-ux.md). IOKit block-driver
+operation counters count completed requests; total-time counters sum their elapsed
+nanoseconds. Concurrent timings overlap. Their ratio is request time, never device
+utilization or application/queueing latency. Read-only inspection and bounded uncached
+sequential/random I/O on this Mac verified the units before implementation.
+
+Add per-device operation rates independently of timing support. Internal paired Rate
+series `disk.read_timed_ops` / `disk.read_time` and write equivalents contain operation
+rates and milliseconds per second from the same valid counter interval. Missing either
+counter, first observations and counter resets omit both members. Zero completed
+operations yields no request-time value. Throughput keeps its existing series identity.
+
+The new internal pairs have an integral-preserving rollup policy: their weighted sums
+are normalized by the full tier bucket width, including an open bucket. Width-weighted
+merging then preserves their operation/time integrals even when measured durations
+differ. Query-time request time divides summed time by summed paired operations; it
+never averages already-divided request times. NaN remains unavailable when no paired
+observation exists. This policy applies only to the new internal pairs and is exposed
+by a Rust catalog helper. Existing metric meanings, series keys, stored triple layout
+and CBOR frame format do not change.
+
+A bounded local IPC query publishes per-device or operation-weighted all-device history
+with explicit gaps. The typed live view computes the same ratios in Rust. On-demand
+IOKit metadata identifies available devices and an internal physical default, without
+adding hardware fields to HostInfo or inventing metadata for remote hosts. Process
+attribution remains host-wide; its disk averages use the existing covered selected
+interval, not a guessed per-device or per-process coverage clock.
+
+D-110 population clarification: All devices reads collector-authored `_total` series for operations and paired timing, just as throughput does. Each total is strict over the current probe population, so attaching or detaching a drive cannot change old chart values. Public downsampled points use an epoch-aligned bucket grid.

@@ -120,6 +120,8 @@ for (const [route, tableName] of [
     await page.goto(
       `/?window=dashboard&route=/dashboard/${route}&theme=dark&ticks=0`
     );
+    if (route === "disk")
+      await page.getByRole("button", { name: "By app", exact: true }).click();
     const table = page.getByRole("table", {
       name: `${tableName} by app`,
       exact: true,

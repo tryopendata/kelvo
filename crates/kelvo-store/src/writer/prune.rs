@@ -441,11 +441,17 @@ impl State {
         }
         let dst = F::DST;
         let mut written = 0;
+        let mut layouts = HashMap::new();
         for ((bucket, layout), fold) in folds {
             let Some(fold) = fold else {
                 continue;
             };
-            let blob = fold.into_blob();
+            let keys = if F::BY_LAYOUT {
+                crate::reader::load_layout(&self.conn, &mut layouts, layout)?
+            } else {
+                std::sync::Arc::from([])
+            };
+            let blob = fold.into_blob(&keys);
             let seq = self.alloc_seq();
             let n = if F::BY_LAYOUT {
                 self.conn
@@ -519,7 +525,7 @@ trait Fold: Sized {
     /// row that can be folded. Logs and skips a row that cannot.
     fn fold_row(slot: &mut Option<Self>, ts: i64, layout: u32, blob: &[u8]);
     /// The 15-minute row's blob.
-    fn into_blob(self) -> Vec<u8>;
+    fn into_blob(self, _layout: &[kelvo_schema::SeriesKey]) -> Vec<u8>;
 }
 
 /// `tier_1m` into `tier_15m`: min of mins, max of maxes, mean of averages per series
@@ -547,8 +553,12 @@ impl Fold for StatsFold {
         }
     }
 
-    fn into_blob(self) -> Vec<u8> {
-        blob::pack_f32s(&self.finish())
+    fn into_blob(self, _layout: &[kelvo_schema::SeriesKey]) -> Vec<u8> {
+        blob::pack_f32s(&self.finish_with_integrals(|i| {
+            _layout.get(i).is_some_and(|key| {
+                kelvo_schema::disk_io::preserves_request_integral(key.metric.as_str())
+            })
+        }))
     }
 }
 
@@ -569,7 +579,7 @@ impl Fold for TopFold {
         }
     }
 
-    fn into_blob(self) -> Vec<u8> {
+    fn into_blob(self, _layout: &[kelvo_schema::SeriesKey]) -> Vec<u8> {
         blob::pack_procs(&top_of_group(&self.0))
     }
 }
@@ -587,7 +597,7 @@ impl Fold for NetFold {
         }
     }
 
-    fn into_blob(self) -> Vec<u8> {
+    fn into_blob(self, _layout: &[kelvo_schema::SeriesKey]) -> Vec<u8> {
         let (header, apps) = self.finish();
         blob::pack_net(&header, &apps)
     }

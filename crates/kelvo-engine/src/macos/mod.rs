@@ -13,7 +13,7 @@ pub use power::MacPowerSignals;
 pub use ticker::GcdTicker;
 
 /// Host facts the collectors read, for the shell's `HostInfo` (D-092).
-pub use kelvo_collect::macos::disk::boot_mounts;
+pub use kelvo_collect::macos::disk::{boot_mounts, io_devices};
 pub use kelvo_collect::macos::gpu_dvfs_mhz;
 /// The sysctl reads behind the shell's host record (`string`, `int`, `boot_time`).
 pub use kelvo_collect::macos::sysctl;

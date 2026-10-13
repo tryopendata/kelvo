@@ -1,8 +1,40 @@
 import { createMockTransport } from "@core/mock-transport";
-import { act, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { renderWithProviders } from "@tests/test-utils";
 import { expect, it, vi } from "vitest";
 import ContainersRoute from "./route";
+
+it("pins the clicked history bucket without requiring a preceding hover", async () => {
+  const transport = createMockTransport({
+    scenarios: ["docker-11"],
+    historyRows: 1,
+  });
+  const result = renderWithProviders(<ContainersRoute />, {
+    transport,
+    route: "/dashboard/containers?end=1791900000000",
+  });
+  await waitFor(() =>
+    expect(
+      screen.getByRole("img", { name: /^CPU by container/ })
+    ).toHaveAttribute("aria-label", expect.stringContaining("retired-worker"))
+  );
+  const plot = screen.getByRole("slider", { name: "Select a time range" });
+  fireEvent.pointerDown(plot, { button: 0, pointerId: 1, clientX: 0 });
+  fireEvent.pointerUp(plot, { button: 0, pointerId: 1, clientX: 0 });
+  const tooltip = await screen.findByRole("tooltip");
+  expect(within(tooltip).getByRole("link", { name: "api" })).toHaveAttribute(
+    "href",
+    expect.stringContaining("/dashboard/containers/mock-orbstack/container-0?")
+  );
+  result.unmount();
+  transport.dispose();
+});
 
 it("shows current chooser values instead of measurements embedded in retained metadata", async () => {
   const transport = createMockTransport({

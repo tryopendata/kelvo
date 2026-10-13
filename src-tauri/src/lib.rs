@@ -88,6 +88,8 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             commands::subscribe_live,
             commands::set_process_interest,
             commands::query_history,
+            commands::query_disk_io,
+            commands::list_disk_io_devices,
             commands::query_processes_at,
             commands::query_network_by_app,
             commands::query_usage_by_app,

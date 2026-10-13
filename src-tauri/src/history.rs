@@ -253,6 +253,69 @@ impl History {
         ))
     }
 
+    /// Bounded disk query. Pairing and operation weighting remain in kelvo-store.
+    pub fn disk_io(
+        &self,
+        request: &kelvo_schema::disk_io::DiskIoRequest,
+        now_ms: i64,
+        recent: impl Fn() -> Vec<BucketRow>,
+    ) -> Result<kelvo_schema::disk_io::DiskIoPage, CommandError> {
+        if request.from_ms < 0
+            || request.to_ms <= request.from_ms
+            || request.to_ms > kelvo_schema::JS_SAFE_INT_MAX
+            || request.to_ms.saturating_sub(request.from_ms) > MAX_NET_SPAN_MS
+            || !(1..=2000).contains(&request.max_points)
+            || request.device.as_ref().is_some_and(|dev| {
+                dev.is_empty()
+                    || dev.len() > 64
+                    || !dev
+                        .bytes()
+                        .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+            })
+        {
+            return Err(CommandError::InvalidArgument {
+                message: "Disk I/O request exceeds device, range or point bounds".into(),
+            });
+        }
+        let labels = request
+            .device
+            .as_ref()
+            .map_or_else(Labels::new, |dev| Labels::single("dev", dev));
+        let query = HistoryQuery {
+            host: request.host,
+            from_ms: request.from_ms,
+            to_ms: request.to_ms,
+            tier: TierChoice::Auto,
+            max_points: ((request.to_ms - request.from_ms) / 10_000 + 2) as u32,
+            selectors: (if request.device.is_some() {
+                &kelvo_store::disk_io::DISK_IO_METRICS
+            } else {
+                &kelvo_schema::disk_io::TOTAL_METRICS
+            })
+            .iter()
+            .map(|id| kelvo_schema::SeriesSelector {
+                metric: MetricId::from_static(id),
+                labels: labels.clone(),
+            })
+            .collect(),
+        };
+        let read = self.history_through_now(&query, recent)?;
+        if read.series.len() > 1024 {
+            return Err(CommandError::InvalidArgument {
+                message: "Select a disk: this range contains more than 128 device identities"
+                    .into(),
+            });
+        }
+        Ok(kelvo_store::disk_io::disk_io_page(
+            read,
+            request.device.as_deref(),
+            request.from_ms,
+            request.to_ms,
+            now_ms,
+            request.max_points,
+        ))
+    }
+
     /// [`Reader::history_after`] with `recent`, called after the stored rows are read so
     /// its copies are never older than them; the recent rows alone when the store is
     /// unavailable. The store can close between a check and the read, so the read's own
@@ -824,6 +887,50 @@ mod tests {
     /// D-064 (#2): a store that opens but cannot take the local host makes history
     /// unavailable with the reason; it does not stop the launch. `reset_history` then
     /// recovers it.
+    #[test]
+    fn disk_io_requests_validate_bounds_before_reading_history() {
+        let history = History::unavailable();
+        let base = kelvo_schema::disk_io::DiskIoRequest {
+            host: local_record().id,
+            device: Some("disk0".into()),
+            from_ms: 0,
+            to_ms: 10_000,
+            max_points: 100,
+        };
+        for bad in [
+            kelvo_schema::disk_io::DiskIoRequest {
+                max_points: 0,
+                ..base.clone()
+            },
+            kelvo_schema::disk_io::DiskIoRequest {
+                max_points: 2001,
+                ..base.clone()
+            },
+            kelvo_schema::disk_io::DiskIoRequest {
+                from_ms: -1,
+                ..base.clone()
+            },
+            kelvo_schema::disk_io::DiskIoRequest {
+                to_ms: 0,
+                ..base.clone()
+            },
+            kelvo_schema::disk_io::DiskIoRequest {
+                to_ms: MAX_NET_SPAN_MS + 1,
+                ..base.clone()
+            },
+            kelvo_schema::disk_io::DiskIoRequest {
+                device: Some("disk0/escape".into()),
+                ..base.clone()
+            },
+        ] {
+            assert!(matches!(
+                history.disk_io(&bad, 10_000, Vec::new),
+                Err(CommandError::InvalidArgument { .. })
+            ));
+        }
+        assert!(history.disk_io(&base, 10_000, Vec::new).is_ok());
+    }
+
     #[test]
     fn a_store_that_cannot_take_the_host_goes_unavailable_and_reset_recovers_it() {
         let tmp = temp_dir("register-fails");

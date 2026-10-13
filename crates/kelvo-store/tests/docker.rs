@@ -769,8 +769,7 @@ fn retained_catalog_overlay_filters_counts_and_pages_without_duplicate_identitie
     );
 }
 
-#[test]
-fn open_engine_switch_recovers_from_observed_population_without_migration() {
+fn assert_open_interruption_recovers(reason: &str) {
     let dir = temp_dir("docker-switch-recovery");
     let store = open(&dir, "h.sqlite");
     let writer = store.writer();
@@ -790,15 +789,15 @@ fn open_engine_switch_recovers_from_observed_population_without_migration() {
     writer.write_docker(b).unwrap();
     writer.flush().unwrap();
     let conn = rusqlite::Connection::open(store.path()).unwrap();
-    conn.execute("INSERT INTO docker_coverage(host_id,engine_id,start_ms,end_ms,reason,revision,sampled_ms,expected_ms) SELECT host_id,id,?1,NULL,'engine_switch',1,0,0 FROM docker_engines", [T0+1000]).unwrap();
-    conn.execute("INSERT INTO docker_coverage(host_id,engine_id,start_ms,end_ms,reason,revision,sampled_ms,expected_ms) SELECT host_id,id,?1,NULL,'engine_switch',1,0,0 FROM docker_engines", [T0+15000]).unwrap();
+    conn.execute("INSERT INTO docker_coverage(host_id,engine_id,start_ms,end_ms,reason,revision,sampled_ms,expected_ms) SELECT host_id,id,?1,NULL,?2,1,0,0 FROM docker_engines", rusqlite::params![T0+1000, reason]).unwrap();
+    conn.execute("INSERT INTO docker_coverage(host_id,engine_id,start_ms,end_ms,reason,revision,sampled_ms,expected_ms) SELECT host_id,id,?1,NULL,?2,1,0,0 FROM docker_engines", rusqlite::params![T0+15000, reason]).unwrap();
     let mut reader = store.reader().unwrap();
     let snapshot = reader.docker_snapshot(host(1).id, "daemon").unwrap();
     let coverage = snapshot.event_coverage(None, T0, T0 + 20000).unwrap();
     assert_eq!(coverage[0].end_ms, Some(T0 + 2000));
     assert_eq!(
         coverage[1].end_ms, None,
-        "no later observation leaves a switch open"
+        "no later observation leaves the interruption open"
     );
     drop(snapshot);
     conn.execute_batch("PRAGMA foreign_keys=ON; DELETE FROM docker_10s; DELETE FROM docker_1m;")
@@ -814,8 +813,8 @@ fn open_engine_switch_recovers_from_observed_population_without_migration() {
     writer.flush().unwrap();
     let end: Option<i64> = conn
         .query_row(
-            "SELECT end_ms FROM docker_coverage WHERE reason='engine_switch' AND start_ms=?1",
-            [T0 + 1000],
+            "SELECT end_ms FROM docker_coverage WHERE reason=?2 AND start_ms=?1",
+            rusqlite::params![T0 + 1000, reason],
             |row| row.get(0),
         )
         .unwrap();
@@ -827,7 +826,7 @@ fn open_engine_switch_recovers_from_observed_population_without_migration() {
         metric: None,
         start_ms: T0 + 1000,
         end_ms: None,
-        reason: "engine_switch".into(),
+        reason: reason.into(),
         revision: 3,
         sampled_ms: 0,
         expected_ms: 0,
@@ -836,8 +835,8 @@ fn open_engine_switch_recovers_from_observed_population_without_migration() {
     writer.flush().unwrap();
     let end: Option<i64> = conn
         .query_row(
-            "SELECT end_ms FROM docker_coverage WHERE reason='engine_switch' AND start_ms=?1",
-            [T0 + 1000],
+            "SELECT end_ms FROM docker_coverage WHERE reason=?2 AND start_ms=?1",
+            rusqlite::params![T0 + 1000, reason],
             |row| row.get(0),
         )
         .unwrap();
@@ -846,6 +845,16 @@ fn open_engine_switch_recovers_from_observed_population_without_migration() {
         Some(T0 + 2000),
         "late retries must not reopen a closed interval"
     );
+}
+
+#[test]
+fn open_engine_switch_recovers_from_observed_population_without_migration() {
+    assert_open_interruption_recovers("engine_switch");
+}
+
+#[test]
+fn open_shutdown_recovers_from_observed_population_without_migration() {
+    assert_open_interruption_recovers("shutdown");
 }
 
 #[test]

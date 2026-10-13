@@ -47,9 +47,12 @@ describe("CPU page chart window (D-091)", () => {
 
     await act(() => router.navigate("/disk"));
     expect(
-      await screen.findByRole("img", { name: /last 30 minutes/ })
+      await screen.findByRole("img", { name: /^Disk I\/O:/ })
     ).toBeVisible();
     expect(screen.getByRole("radio", { name: "30m" })).toBeChecked();
+    expect(
+      await screen.findByRole("region", { name: "Recorded device byte totals" })
+    ).toHaveTextContent("Read · 30 min");
   });
 
   it("draws at the default 15m when settings could not be read", async () => {

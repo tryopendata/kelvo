@@ -1,6 +1,6 @@
 # I/O performance and process attribution
 
-Status: Draft product and UX proposal, 2026-10-13. Implementation has not started.
+Status: Implemented and installed, 2026-10-13. Counter validation, native workflows, responsive/theme checks, automated suites and CE review passed. Matched native whole-app CPU measurement remains unverified because the benchmark requires an active display; see [verification evidence](PROGRESS.md#2026-10-13-disk-io-implementation).
 
 Extend **Disk** to answer “Is storage slowing this Mac down, and which process was doing the work?” Keep network traffic in **Network**, and make **Processes** the place to inspect one process across resources. CPU remains focused on compute. This follows the resource organization already used by Kelvo and avoids putting disk activity behind a CPU label.
 
@@ -57,6 +57,13 @@ Acceptance tasks:
 - Read the selected device, interval, units and missing-data state without opening settings.
 - Keep charts and the first five attribution rows visible at 1280×900, support 360 px without page overflow, and pass keyboard, contrast and reduced-motion checks.
 - Validate new counters against real hardware and meet the existing collection, storage and UI budgets without raising thresholds.
+
+## Implementation sequence
+
+1. Validate the counter source with bounded uncached file I/O and a disposable device reconnect. Completed on the development Mac; see [progress evidence](PROGRESS.md#2026-10-13-disk-io-implementation).
+2. Collect independent operation rates and paired completed-operation/time deltas in Rust. Preserve paired integrals through open buckets and tiered rollups ([D-110](decisions.md#d-110-disk-request-history-preserves-completed-operation-integrals)); publish a bounded device/history query and live views through generated bindings.
+3. Build the Disk device selector, throughput and request-time/operations views, shared crosshair/brush, and host-wide process attribution. Keep an unavailable selected device stable while investigating history.
+4. Verify real collection, reset/missing data, unequal operation weights, PID reuse, responsive layouts, native UI behavior, and existing performance gates. Review the integrated change before merging.
 
 ## Handoff
 

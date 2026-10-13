@@ -1,3 +1,4 @@
+import { niceCeiling } from "@core/chart-math";
 import {
   buildSeriesRuns,
   type ComparisonMetric,
@@ -21,7 +22,6 @@ import {
 import { SectionCard } from "~/components/section-card";
 import { Button } from "~/components/ui/button";
 import { useElementSize } from "~/hooks/use-element-size";
-import { useNiceCeiling } from "~/hooks/use-nice-ceiling";
 import { useUnits } from "~/hooks/use-units";
 import { useBrushStoreOptional } from "~/stores/brush-store";
 import { GapBand } from "~/widgets/gap-band";
@@ -86,21 +86,31 @@ export function ComparisonChart({
   const { bytes } = useUnits();
   const format = (value: number | null) =>
     metric === "cpu"
-      ? formatPercent(value)
+      ? formatPercent(value, {
+          decimals:
+            value !== null && value !== 0 && Math.abs(value) < 0.1
+              ? 2
+              : value !== null && !Number.isInteger(value)
+                ? 1
+                : 0,
+        })
       : formatBytes(value, { units: bytes });
   const metricGaps = coverage.filter((gap) => !eventCoverage(gap));
   const series = sourceSeries.map((s) => ({
     ...s,
-    points: s.points.map((point) =>
-      metricGaps.some(
-        (gap) =>
-          (gap.container_id === null || gap.container_id === s.container.id) &&
-          gap.start_ms < point.time_ms + point.duration_ms &&
-          (gap.end_ms ?? to) > point.time_ms
-      )
-        ? { ...point, cpu_measured_ms: 0, memory_measured_ms: 0 }
-        : point
-    ),
+    points: s.points
+      .filter((point) => point.time_ms >= from && point.time_ms < to)
+      .map((point) =>
+        metricGaps.some(
+          (gap) =>
+            (gap.container_id === null ||
+              gap.container_id === s.container.id) &&
+            gap.start_ms < point.time_ms + point.duration_ms &&
+            (gap.end_ms ?? to) > point.time_ms
+        )
+          ? { ...point, cpu_measured_ms: 0, memory_measured_ms: 0 }
+          : point
+      ),
   }));
   const times = useMemo(
     () =>
@@ -113,11 +123,11 @@ export function ComparisonChart({
     () => series.flatMap((s) => s.points.map((p) => pointValue(p, metric))),
     [series, metric]
   );
-  const ceiling = useNiceCeiling(
-    values,
-    times.at(-1) ?? 0,
-    metric === "cpu" ? 10 : 64 * 1024 * 1024,
-    to - from
+  // The visible window already retains its peaks. Fit its plotted values directly:
+  // holding an older ceiling hides quiet workloads and never expires when paused.
+  const ceiling = niceCeiling(
+    Math.max(0, ...values.filter((value): value is number => value !== null)),
+    metric === "cpu" ? 0.1 : 1024 * 1024
   );
   const active = pinnedFocus ?? focused;
   const plotSeries = series.map((s) => ({
@@ -394,8 +404,15 @@ export function ComparisonChart({
                   height={240}
                   inset={0}
                   keyboard={false}
-                  onClickTime={() => {
-                    if (cursor !== null) setPinned((value) => !value);
+                  onClickTime={(time) => {
+                    if (!times.length) return;
+                    // Clicks (including touch) need not follow a rendered hover.
+                    setCursor(
+                      times.reduce((a, b) =>
+                        Math.abs(a - time) < Math.abs(b - time) ? a : b
+                      )
+                    );
+                    setPinned((value) => !value);
                   }}
                   onHoverTime={(time, fractionY) => {
                     if (pinned) return;

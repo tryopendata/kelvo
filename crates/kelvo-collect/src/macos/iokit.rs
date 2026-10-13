@@ -40,6 +40,13 @@ pub type InterestCallback = extern "C" fn(*mut c_void, u32, u32, *mut c_void);
 #[link(name = "IOKit", kind = "framework")]
 unsafe extern "C" {
     fn IOIteratorIsValid(iterator: IoObjectT) -> u32;
+    fn IORegistryEntrySearchCFProperty(
+        entry: IoObjectT,
+        plane: *const c_char,
+        key: core_foundation_sys::string::CFStringRef,
+        allocator: core_foundation_sys::base::CFAllocatorRef,
+        options: u32,
+    ) -> core_foundation_sys::base::CFTypeRef;
     fn IORegistryEntryGetChildEntry(
         entry: IoObjectT,
         plane: *const c_char,
@@ -98,6 +105,23 @@ impl std::ops::Deref for Key {
 }
 
 impl IoObject {
+    /// Searches this entry and its parents for a protocol property (IOService plane).
+    pub(crate) fn ancestor_property(&self, key: &CFString) -> Option<CFType> {
+        crate::calls::count(crate::calls::Api::IoKit);
+        // SAFETY: valid owned registry entry, immutable key and constant plane. The
+        // Search call returns a retained object; recursive|parents are documented flags.
+        let value = unsafe {
+            IORegistryEntrySearchCFProperty(
+                self.0,
+                SERVICE_PLANE.as_ptr(),
+                key.as_concrete_TypeRef(),
+                kCFAllocatorDefault,
+                3,
+            )
+        };
+        // SAFETY: a non-null return follows the Create ownership rule.
+        (!value.is_null()).then(|| unsafe { CFType::wrap_under_create_rule(value) })
+    }
     /// The first child in the IOService plane.
     pub(crate) fn first_child(&self) -> Option<IoObject> {
         let mut child: IoObjectT = 0;

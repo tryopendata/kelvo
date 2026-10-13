@@ -100,7 +100,16 @@ impl LayoutAcc {
                 let mx = self.max.get(i).copied().unwrap_or(f32::NAN);
                 let s = self.sum.get(i).copied().unwrap_or(f64::NAN);
                 let w = self.weight.get(i).copied().unwrap_or(f64::NAN);
-                stats.extend([mn, mx, (s / w) as f32]);
+                // D-110: paired request rates must retain their integrals across
+                // buckets with unequal observed spans, including open buckets.
+                let divisor = if self.series.get(i).is_some_and(|key| {
+                    kelvo_schema::disk_io::preserves_request_integral(key.metric.as_str())
+                }) {
+                    tier.bucket_ms().unwrap_or(1) as f64
+                } else {
+                    w
+                };
+                stats.extend([mn, mx, (s / divisor) as f32]);
             }
         }
         Some(BucketRow {
@@ -433,6 +442,76 @@ mod tests {
         v.into_iter().map(|v| (v, 1.0))
     }
 
+    #[test]
+    fn disk_request_integrals_survive_partial_open_and_unequal_spans() {
+        let host = HostId(Uuid::nil());
+        let series = keys(&["disk.read_timed_ops", "disk.read_time", "disk.read_ops"]);
+        let mut acc = TierAcc::new(Tier::S10);
+        let mut out = Vec::new();
+        acc.add(
+            host,
+            T0,
+            &series,
+            [(100., 1000.), (100., 1000.), (100., 1000.)].into_iter(),
+            &mut out,
+        );
+        acc.flush(host, &mut out);
+        assert_eq!(
+            (out[0].stats[2], out[0].stats[5], out[0].stats[8]),
+            (10., 10., 100.)
+        );
+        out.clear();
+        acc.add(
+            host,
+            T0 + 9000,
+            &series,
+            [(1., 9000.), (10., 9000.), (1., 9000.)].into_iter(),
+            &mut out,
+        );
+        acc.flush(host, &mut out);
+        assert!((out[0].stats[2] - 10.9).abs() < 0.0001);
+        assert_eq!(out[0].stats[5], 19.);
+        assert!((out[0].stats[5] / out[0].stats[2] - 190. / 109.).abs() < 0.0001);
+        // Later sample closes a superset of the prior open row, not a second integral.
+        out.clear();
+        acc.add(
+            host,
+            T0 + 10_000,
+            &series,
+            [(3., 1000.), (30., 1000.), (3., 1000.)].into_iter(),
+            &mut out,
+        );
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].stats[5], 19.);
+        acc.flush(host, &mut out);
+        let query = kelvo_store::HistoryQuery {
+            host,
+            selectors: series
+                .iter()
+                .map(|key| kelvo_schema::SeriesSelector {
+                    metric: key.metric.clone(),
+                    labels: key.labels.clone(),
+                })
+                .collect(),
+            from_ms: T0,
+            to_ms: T0 + 20_000,
+            tier: kelvo_store::TierChoice::Fixed(Tier::S10),
+            max_points: 1,
+        };
+        let merged = kelvo_store::history_recent(&query, &out).unwrap();
+        let value = |id: &str| {
+            merged
+                .series
+                .iter()
+                .find(|s| s.key.metric.as_str() == id)
+                .unwrap()
+                .points[0]
+                .avg
+        };
+        assert!(
+            (value("disk.read_time") / value("disk.read_timed_ops") - 220. / 112.).abs() < 0.0001
+        );
+    }
     #[test]
     fn closes_on_wall_clock_boundary_and_skips_nan() {
         let host = HostId(Uuid::nil());

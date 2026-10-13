@@ -51,7 +51,7 @@ for (const p of [
     chart: /^Upload above the line/,
     row: "Upload",
   },
-  { route: "/dashboard/disk", chart: /^Read above the line/, row: "Read" },
+  { route: "/dashboard/disk", chart: /^Disk I\/O: read above/, row: "Read" },
 ]) {
   test(`hovering a ${p.route} bar shows its values`, async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 1000 });

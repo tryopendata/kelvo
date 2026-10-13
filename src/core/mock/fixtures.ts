@@ -18,6 +18,10 @@ import type {
 import { trayStyleMenuBar } from "@core/settings-patch";
 
 export type ScenarioName =
+  | "disk-io-comparison"
+  | "disk-io-no-ops"
+  | "disk-io-unavailable"
+  | "disk-io-gap"
   | "ssh-auth"
   | "ssh-no-config"
   | "ssh-untrusted"
@@ -63,6 +67,11 @@ export type ScenarioName =
   | "docker-rerank";
 
 export const SCENARIOS: readonly ScenarioName[] = [
+  "disk-io-comparison",
+  "disk-io-no-ops",
+  "disk-io-unavailable",
+  "disk-io-gap",
+
   "ssh-auth",
   "ssh-untrusted",
   "ssh-no-config",
@@ -115,6 +124,9 @@ export const MOCK_SCHEMA = { found: 4, supported: 2 } as const;
 export const WIDE_LAYOUT_SERIES = 170;
 
 export interface ScenarioFlags {
+  diskIoComparison: boolean;
+  diskIoNoOps: boolean;
+  diskIoUnavailable: boolean;
   sleepGap: boolean;
   unknownChip: boolean;
   noBattery: boolean;
@@ -187,6 +199,9 @@ export function scenarioFlags(names: readonly ScenarioName[]): ScenarioFlags {
         ? { kind: "too_new", ...MOCK_SCHEMA }
         : null;
   return {
+    diskIoComparison: has("disk-io-comparison"),
+    diskIoNoOps: has("disk-io-no-ops"),
+    diskIoUnavailable: has("disk-io-unavailable"),
     sleepGap: has("sleep-gap"),
     unknownChip: has("unknown-chip"),
     noBattery: has("no-battery"),

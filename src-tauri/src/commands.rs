@@ -138,6 +138,50 @@ pub async fn query_history(
     .await
 }
 
+/// Disk throughput, independent operation rates and completed-request timings.
+#[tauri::command]
+#[specta::specta]
+pub async fn query_disk_io(
+    app: AppHandle,
+    request: kelvo_schema::disk_io::DiskIoRequest,
+) -> Result<kelvo_schema::disk_io::DiskIoPage, CommandError> {
+    blocking(app, move |state| {
+        state.host(request.host)?;
+        let host = request.host;
+        let start = recent_from(request.from_ms);
+        state
+            .history_for(host)?
+            .disk_io(&request, state.host_now(host), || {
+                state.recent_rows(host, start, request.to_ms)
+            })
+    })
+    .await
+}
+/// Device names are local IOKit facts, never inferred for a remote host.
+#[tauri::command]
+#[specta::specta]
+pub async fn list_disk_io_devices(
+    app: AppHandle,
+    host: HostId,
+) -> Result<kelvo_schema::disk_io::DiskIoDevices, CommandError> {
+    blocking(app, move |state| {
+        state.local_host(host)?;
+        Ok(disk_devices())
+    })
+    .await
+}
+#[cfg(target_os = "macos")]
+fn disk_devices() -> kelvo_schema::disk_io::DiskIoDevices {
+    kelvo_engine::macos::io_devices()
+}
+#[cfg(not(target_os = "macos"))]
+fn disk_devices() -> kelvo_schema::disk_io::DiskIoDevices {
+    kelvo_schema::disk_io::DiskIoDevices {
+        devices: Vec::new(),
+        default_device: None,
+    }
+}
+
 /// The hourly battery bars: for each local hour between consecutive `hour_starts_ms`
 /// (UTC ms, DST applied, as `query_heatmap` takes them), the charge in its last minute
 /// and whether it charged, through now. `invalid_argument` when there are fewer than 2

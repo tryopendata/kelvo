@@ -548,6 +548,10 @@ pub struct ProcessUsage {
     pub mem_peak_bytes: u64,
     pub read_bytes: f64,
     pub write_bytes: f64,
+    /// Average over the query's covered host process-sampling interval.
+    pub read_avg_bps: Option<f64>,
+    pub write_avg_bps: Option<f64>,
+    pub total_avg_bps: Option<f64>,
     pub energy_j: f64,
     pub avg_w: f64,
     /// It was in the newest process sample. An exited process cannot be quit.

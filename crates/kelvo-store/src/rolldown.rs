@@ -60,7 +60,11 @@ impl StatsFold {
 
     /// The folded row: `(min, max, avg)` per series, a `NaN` triple where no minute had a
     /// value.
+    #[cfg(test)]
     pub(crate) fn finish(&self) -> Vec<f32> {
+        self.finish_with_integrals(|_| false)
+    }
+    pub(crate) fn finish_with_integrals(&self, integral: impl Fn(usize) -> bool) -> Vec<f32> {
         let mut out = Vec::with_capacity(self.n.len() * 3);
         for i in 0..self.n.len() {
             match (
@@ -70,7 +74,11 @@ impl StatsFold {
                 self.sum.get(i),
             ) {
                 (Some(&n), Some(&mn), Some(&mx), Some(&s)) if n > 0 => {
-                    out.extend([mn, mx, (s / f64::from(n)) as f32]);
+                    out.extend([
+                        mn,
+                        mx,
+                        (s / if integral(i) { 15. } else { f64::from(n) }) as f32,
+                    ]);
                 }
                 _ => out.extend([f32::NAN; 3]),
             }

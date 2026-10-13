@@ -23,22 +23,38 @@ use super::PartSum;
 use super::iokit::{self, IoObject, Key, matching_services};
 use crate::{Cadence, CollectError, Collector, CollectorId, Probe, SampleBuf, Tick};
 
+const IO_METRICS: [&str; 8] = [
+    "disk.read",
+    "disk.write",
+    "disk.read_ops",
+    "disk.write_ops",
+    "disk.read_timed_ops",
+    "disk.write_timed_ops",
+    "disk.read_time",
+    "disk.write_time",
+];
+const IO_COUNTERS: [&str; 6] = [
+    "Bytes (Read)",
+    "Bytes (Write)",
+    "Operations (Read)",
+    "Operations (Write)",
+    "Total Time (Read)",
+    "Total Time (Write)",
+];
+type Counters = [Option<u64>; 6];
 struct Device {
     driver: IoObject,
-    read: SeriesKey,
-    write: SeriesKey,
-    prev: Option<(u64, u64)>,
+    keys: [SeriesKey; 8],
+    prev: Counters,
 }
 
-/// `disk.read` / `disk.write` per physical device.
+/// Independent byte/operation rates and paired completed-request timing rates.
 pub struct DiskIo {
     devices: Vec<Device>,
     prev_ns: u64,
-    read_total: SeriesKey,
-    write_total: SeriesKey,
+    totals: [SeriesKey; 8],
     k_stats: Key,
-    k_read: Key,
-    k_write: Key,
+    counters: [Key; 6],
     k_bsd: Key,
 }
 
@@ -53,25 +69,33 @@ impl DiskIo {
         Self {
             devices: Vec::new(),
             prev_ns: 0,
-            read_total: SeriesKey::bare(MetricId::from_static("disk.read_total")),
-            write_total: SeriesKey::bare(MetricId::from_static("disk.write_total")),
+            totals: kelvo_schema::disk_io::TOTAL_METRICS
+                .map(|id| SeriesKey::bare(MetricId::from_static(id))),
             k_stats: Key::new("Statistics"),
-            k_read: Key::new("Bytes (Read)"),
-            k_write: Key::new("Bytes (Write)"),
+            counters: IO_COUNTERS.map(Key::new),
             k_bsd: Key::new("BSD Name"),
         }
     }
 
     /// The device names found by the last probe.
     pub fn devices(&self) -> impl Iterator<Item = &str> {
-        self.devices.iter().filter_map(|d| d.read.labels.get("dev"))
+        self.devices
+            .iter()
+            .filter_map(|d| d.keys.first()?.labels.get("dev"))
     }
 
-    fn read_bytes(&self, driver: &IoObject) -> Option<(u64, u64)> {
-        let stats = iokit::dict_of(&driver.property(&self.k_stats)?)?;
-        let r = iokit::as_i64(&iokit::get(&stats, &self.k_read)?)?;
-        let w = iokit::as_i64(&iokit::get(&stats, &self.k_write)?)?;
-        Some((r.max(0) as u64, w.max(0) as u64))
+    fn read_counters(&self, driver: &IoObject) -> Counters {
+        let Some(stats) = driver
+            .property(&self.k_stats)
+            .and_then(|v| iokit::dict_of(&v))
+        else {
+            return [None; 6];
+        };
+        self.counters.each_ref().map(|key| {
+            iokit::get(&stats, key)
+                .and_then(|v| iokit::as_i64(&v))
+                .and_then(|v| u64::try_from(v).ok())
+        })
     }
 }
 
@@ -82,10 +106,102 @@ fn rate(prev: u64, cur: u64, secs: f64) -> Option<f32> {
 
 /// One device's read and write rates from its previous and current `(read, write)` byte
 /// counters; each side `None` without both readings or on a reset.
+#[cfg(test)]
 fn device_rates(prev: Option<(u64, u64)>, cur: Option<(u64, u64)>, secs: f64) -> [Option<f32>; 2] {
     match (prev, cur) {
         (Some((pr, pw)), Some((r, w))) => [rate(pr, r, secs), rate(pw, w, secs)],
         _ => [None, None],
+    }
+}
+
+/// Read/write pairing is independent. An unsupported timing counter never masks
+/// known operations/s, and an invalid timing pair never fabricates request time.
+fn counter_rates(prev: Counters, cur: Counters, secs: f64) -> [Option<f32>; 8] {
+    let values: [Option<f32>; 6] = std::array::from_fn(|i| rate(prev[i]?, cur[i]?, secs));
+    let mut out = [
+        values[0], values[1], values[2], values[3], None, None, None, None,
+    ];
+    for side in 0..2 {
+        if let (Some(ops), Some(ns)) = (values[2 + side], values[4 + side])
+            && (ops > 0. || ns == 0.)
+        {
+            out[4 + side] = Some(ops);
+            out[6 + side] = Some(ns / 1_000_000.);
+        }
+    }
+    out
+}
+
+fn fixed_internal(
+    internal: Option<bool>,
+    removable: Option<bool>,
+    ejectable: Option<bool>,
+) -> bool {
+    internal == Some(true) && removable == Some(false) && ejectable == Some(false)
+}
+
+/// On-demand metadata only; the sampler retains no device names beyond its labels.
+pub fn io_devices() -> kelvo_schema::disk_io::DiskIoDevices {
+    use kelvo_schema::disk_io::{DiskIoDevice, DiskIoDevices};
+    let bsd = Key::new("BSD Name");
+    let protocol = Key::new("Protocol Characteristics");
+    let location = Key::new("Physical Interconnect Location");
+    let stats = Key::new("Statistics");
+    let keys = IO_COUNTERS.map(Key::new);
+    let mut devices = Vec::new();
+    let mut internal_fixed = None;
+    let removable = Key::new("Removable");
+    let ejectable = Key::new("Ejectable");
+    for driver in matching_services(c"IOBlockStorageDriver")
+        .into_iter()
+        .take(128)
+    {
+        let Some(media) = driver.first_child() else {
+            continue;
+        };
+        let Some(dev) = media.property(&bsd).and_then(|v| iokit::as_string(&v)) else {
+            continue;
+        };
+        let name = media.name().unwrap_or_else(|| dev.clone());
+        let internal = driver
+            .ancestor_property(&protocol)
+            .and_then(|v| iokit::dict_of(&v))
+            .and_then(|d| iokit::get(&d, &location))
+            .and_then(|v| iokit::as_string(&v))
+            .and_then(|v| match v.as_str() {
+                "Internal" => Some(true),
+                "External" => Some(false),
+                _ => None,
+            });
+        let request_time_supported = driver
+            .property(&stats)
+            .and_then(|v| iokit::dict_of(&v))
+            .is_some_and(|d| {
+                keys[2..].iter().all(|k| {
+                    iokit::get(&d, k)
+                        .and_then(|v| iokit::as_i64(&v))
+                        .is_some_and(|v| v >= 0)
+                })
+            });
+        if fixed_internal(
+            internal,
+            media.property(&removable).and_then(|v| iokit::as_bool(&v)),
+            media.property(&ejectable).and_then(|v| iokit::as_bool(&v)),
+        ) {
+            internal_fixed.get_or_insert_with(|| dev.clone());
+        }
+        devices.push(DiskIoDevice {
+            dev,
+            name,
+            internal,
+            request_time_supported,
+        });
+    }
+    devices.sort_by(|a, b| a.dev.cmp(&b.dev));
+    let default_device = internal_fixed.or_else(|| devices.first().map(|d| d.dev.clone()));
+    DiskIoDevices {
+        devices,
+        default_device,
     }
 }
 
@@ -122,17 +238,16 @@ impl Collector for DiskIo {
             let key = |id| SeriesKey::new(MetricId::from_static(id), Labels::single("dev", &name));
             let dev = Device {
                 driver,
-                read: key("disk.read"),
-                write: key("disk.write"),
-                prev: None,
+                keys: IO_METRICS.map(key),
+                prev: [None; 6],
             };
-            series.extend([dev.read.clone(), dev.write.clone()]);
+            series.extend(dev.keys.iter().cloned());
             self.devices.push(dev);
         }
         if self.devices.is_empty() {
             Probe::NotPresent
         } else {
-            series.extend([self.read_total.clone(), self.write_total.clone()]);
+            series.extend(self.totals.iter().cloned());
             Probe::Supported(series)
         }
     }
@@ -144,33 +259,31 @@ impl Collector for DiskIo {
         } else {
             0.0
         };
-        let mut read_total = PartSum::default();
-        let mut write_total = PartSum::default();
+        let mut totals: [PartSum; 8] = std::array::from_fn(|_| PartSum::default());
         for i in 0..self.devices.len() {
             let Some(dev) = self.devices.get(i) else {
                 continue;
             };
-            let cur = self.read_bytes(&dev.driver);
+            let cur = self.read_counters(&dev.driver);
             let Some(dev) = self.devices.get_mut(i) else {
                 continue;
             };
-            let [read, write] = device_rates(dev.prev, cur, secs);
-            if let Some(v) = read {
-                out.push(&dev.read, v);
+            let values = counter_rates(dev.prev, cur, secs);
+            for (key, value) in dev.keys.iter().zip(values) {
+                if let Some(value) = value {
+                    out.push(key, value);
+                }
             }
-            if let Some(v) = write {
-                out.push(&dev.write, v);
+            for (total, value) in totals.iter_mut().zip(values) {
+                total.add(value);
             }
-            read_total.add(read);
-            write_total.add(write);
             dev.prev = cur;
         }
         if !self.devices.is_empty() {
-            if let Some(v) = read_total.total() {
-                out.push(&self.read_total, v);
-            }
-            if let Some(v) = write_total.total() {
-                out.push(&self.write_total, v);
+            for (key, total) in self.totals.iter().zip(totals) {
+                if let Some(value) = total.total() {
+                    out.push(key, value);
+                }
             }
         }
         self.prev_ns = now;
@@ -390,6 +503,15 @@ mod tests {
     use super::*;
 
     #[test]
+    fn default_prefers_fixed_internal_storage_over_a_builtin_card_reader() {
+        assert!(fixed_internal(Some(true), Some(false), Some(false)));
+        assert!(!fixed_internal(Some(true), Some(true), Some(true)));
+        assert!(!fixed_internal(Some(false), Some(false), Some(false)));
+        assert!(!fixed_internal(None, Some(false), Some(false)));
+        assert!(!fixed_internal(Some(true), None, Some(false)));
+    }
+
+    #[test]
     fn borrowed_capacity_samples_keep_probed_series_and_mount_filtering() {
         fn mount(path: &str, flags: u32, available: u64) -> libc::statfs {
             // SAFETY: statfs contains only numeric fields and fixed numeric arrays.
@@ -466,6 +588,57 @@ mod tests {
     }
 
     #[test]
+    fn request_pairs_handle_idle_unsupported_reset_and_one_sided_failure() {
+        let baseline = [Some(100); 6];
+        let current = [
+            Some(300),
+            Some(200),
+            Some(110),
+            Some(100),
+            Some(10_000_100),
+            Some(100),
+        ];
+        let rates = counter_rates(baseline, current, 2.);
+        assert_eq!(
+            rates,
+            [
+                Some(100.),
+                Some(50.),
+                Some(5.),
+                Some(0.),
+                Some(5.),
+                Some(0.),
+                Some(5.),
+                Some(0.)
+            ]
+        );
+        assert_eq!(
+            kelvo_schema::disk_io::request_ms(rates[6].map(f64::from), rates[4].map(f64::from)),
+            Some(1.)
+        );
+        assert_eq!(
+            kelvo_schema::disk_io::request_ms(rates[7].map(f64::from), rates[5].map(f64::from)),
+            None
+        );
+        let mut missing = current;
+        missing[4] = None;
+        let missing_rates = counter_rates(baseline, missing, 2.);
+        assert_eq!(
+            (missing_rates[2], missing_rates[4], missing_rates[6]),
+            (Some(5.), None, None)
+        );
+        assert_eq!(missing_rates[5], Some(0.));
+        let mut reset = current;
+        reset[4] = Some(1);
+        assert_eq!(counter_rates(baseline, reset, 2.)[4], None);
+        reset[2] = Some(1);
+        reset[4] = current[4];
+        assert_eq!(counter_rates(baseline, reset, 2.)[6], None);
+        assert_eq!(counter_rates([None; 6], current, 2.), [None; 8]);
+        assert_eq!(counter_rates(baseline, current, 0.), [None; 8]);
+        assert_eq!(counter_rates(current, current, 1.)[4..], [Some(0.); 4]);
+    }
+    #[test]
     fn reset_yields_no_rate() {
         assert_eq!(rate(100, 300, 2.0), Some(100.0));
         assert_eq!(rate(300, 100, 1.0), None);
@@ -523,6 +696,7 @@ mod tests {
     #[test]
     #[ignore = "reads live IOKit disk statistics and mounts; run by hand on a Mac"]
     fn live_smoke() {
+        eprintln!("disk metadata: {:?}", io_devices());
         let mut io = DiskIo::new();
         let mut cap = DiskCapacity::new();
         println!("io probe: {:?}", io.probe());
@@ -545,5 +719,20 @@ mod tests {
             println!("{} = {:.0}", s.key, s.value);
         }
         assert!(cap.volumes().iter().any(|v| v.is_boot));
+        // Reprobe starts a new registry population: reused BSD names must never
+        // compare a newly attached device against a previous device's counters.
+        io.probe();
+        buf.clear();
+        io.sample(
+            &Tick {
+                n: 3,
+                wall_ms: 0,
+                continuous_ns: super::super::sysctl::continuous_ns(),
+                interval_ms: 1000,
+            },
+            &mut buf,
+        )
+        .unwrap();
+        assert!(buf.values().is_empty(), "reprobe requires a fresh baseline");
     }
 }

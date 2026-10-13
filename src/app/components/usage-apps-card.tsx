@@ -92,6 +92,7 @@ export interface UsageTableConfig {
 export function UsageAppsCard(props: {
   windowMs: number;
   config: UsageTableConfig;
+  viewControl?: ReactNode;
 }) {
   const local = useIsLocalHost();
   return local ? (
@@ -106,9 +107,11 @@ export function UsageAppsCard(props: {
 function LocalUsageAppsCard({
   windowMs,
   config,
+  viewControl,
 }: {
   windowMs: number;
   config: UsageTableConfig;
+  viewControl?: ReactNode;
 }) {
   const { selection, range, keepPrevious } = useRangeScope(windowMs);
   const q = useUsageByApp(range, config.by, { keepPrevious });
@@ -155,6 +158,7 @@ function LocalUsageAppsCard({
         title={`${config.noun} by app, ${scopeWords(selection ? (shown ?? selection) : null, windowMs)}`}
         aside={
           <>
+            {viewControl}
             <SearchField
               value={query}
               onChange={setQuery}

@@ -93,6 +93,7 @@ import {
   RING_SPAN_MS,
 } from "@core/generated/bindings";
 import { CHART_WINDOWS } from "./live-window";
+import { mockDiskDevices, mockDiskIo } from "./mock/disk-io";
 import { createMockDocker } from "./mock/docker";
 import { createEmitter } from "./mock/emitter";
 import { mockEvents } from "./mock/events";
@@ -1394,6 +1395,36 @@ export function createMockTransport(
       emitters.hosts.emit({ hosts });
     },
     processInterest: () => (interestActive() ? interest : null),
+    async listDiskIoDevices(host) {
+      if (remotes.has(host)) {
+        record("list_disk_io_devices", host);
+        return err({ kind: "remote_host", host });
+      }
+      return hostCommand("list_disk_io_devices", host, [host], {}, () =>
+        ok(mockDiskDevices(options.scenarios ?? []))
+      );
+    },
+    async queryDiskIo(request) {
+      const remote = remotes.get(request.host);
+      if (remote) {
+        record("query_disk_io", request);
+        return remote.peer.queryDiskIo({ ...request, host: MOCK_HOST_ID });
+      }
+      return hostCommand(
+        "query_disk_io",
+        request.host,
+        [request],
+        { range: [request.from_ms, request.to_ms] },
+        () =>
+          ok(
+            mockDiskIo(
+              request,
+              options.scenarios ?? [],
+              mockGaps(flags, startMs)
+            )
+          )
+      );
+    },
     async queryHistory(request) {
       const remote = remotes.get(request.host);
       if (remote)

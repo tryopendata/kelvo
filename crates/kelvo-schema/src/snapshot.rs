@@ -212,6 +212,10 @@ pub struct DiskView {
     pub read_total_bps: Option<f32>,
     /// `disk.write_total`, gated like `read_total_bps`.
     pub write_total_bps: Option<f32>,
+    pub read_ops_per_sec: Option<f32>,
+    pub write_ops_per_sec: Option<f32>,
+    pub read_request_ms: Option<f32>,
+    pub write_request_ms: Option<f32>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, specta::Type)]
@@ -219,6 +223,14 @@ pub struct DiskDeviceView {
     pub dev: String,
     pub read_bps: Option<f32>,
     pub write_bps: Option<f32>,
+    pub read_ops_per_sec: Option<f32>,
+    pub write_ops_per_sec: Option<f32>,
+    pub read_request_ms: Option<f32>,
+    pub write_request_ms: Option<f32>,
+    /// Transient paired rates, consumed by this Rust projection only.
+    #[serde(skip)]
+    #[specta(skip)]
+    pub request_rates: [Option<f32>; 4],
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, specta::Type)]
@@ -431,16 +443,29 @@ impl Snapshot {
                     match id {
                         "disk.read_total" => d.read_total_bps = v,
                         "disk.write_total" => d.write_total_bps = v,
-                        "disk.read" | "disk.write" => {
+                        "disk.read"
+                        | "disk.write"
+                        | "disk.read_ops"
+                        | "disk.write_ops"
+                        | "disk.read_timed_ops"
+                        | "disk.write_timed_ops"
+                        | "disk.read_time"
+                        | "disk.write_time" => {
                             let mk = |dev| DiskDeviceView {
                                 dev,
                                 ..Default::default()
                             };
                             let dv = entry(&mut d.devices, label, |x| &x.dev, mk);
-                            if id == "disk.read" {
-                                dv.read_bps = v;
-                            } else {
-                                dv.write_bps = v;
+                            match id {
+                                "disk.read" => dv.read_bps = v,
+                                "disk.write" => dv.write_bps = v,
+                                "disk.read_ops" => dv.read_ops_per_sec = v,
+                                "disk.write_ops" => dv.write_ops_per_sec = v,
+                                "disk.read_timed_ops" => dv.request_rates[0] = v,
+                                "disk.write_timed_ops" => dv.request_rates[1] = v,
+                                "disk.read_time" => dv.request_rates[2] = v,
+                                "disk.write_time" => dv.request_rates[3] = v,
+                                _ => {}
                             }
                         }
                         "disk.used" | "disk.free" | "disk.total" => {
@@ -479,6 +504,29 @@ impl Snapshot {
                 Module::Unknown => {}
             }
         }
+        if let Some(disk) = &mut s.disk {
+            let ratio = |time: Option<f32>, ops: Option<f32>| {
+                crate::disk_io::request_ms(time.map(f64::from), ops.map(f64::from))
+                    .map(|v| v as f32)
+            };
+            for device in &mut disk.devices {
+                device.read_request_ms = ratio(device.request_rates[2], device.request_rates[0]);
+                device.write_request_ms = ratio(device.request_rates[3], device.request_rates[1]);
+            }
+            if !disk.devices.is_empty() {
+                let sum = |field: fn(&DiskDeviceView) -> Option<f32>| {
+                    disk.devices
+                        .iter()
+                        .try_fold(0., |sum, device| Some(sum + field(device)?))
+                };
+                disk.read_ops_per_sec = sum(|d| d.read_ops_per_sec);
+                disk.write_ops_per_sec = sum(|d| d.write_ops_per_sec);
+                disk.read_request_ms =
+                    ratio(sum(|d| d.request_rates[2]), sum(|d| d.request_rates[0]));
+                disk.write_request_ms =
+                    ratio(sum(|d| d.request_rates[3]), sum(|d| d.request_rates[1]));
+            }
+        }
         s
     }
 }
@@ -488,6 +536,41 @@ mod tests {
     use uuid::Uuid;
 
     use super::*;
+
+    #[test]
+    fn disk_live_requests_are_operation_weighted_and_missing_is_not_idle() {
+        let s = snap(
+            &[
+                "disk.read_ops{dev=disk0}",
+                "disk.read_timed_ops{dev=disk0}",
+                "disk.read_time{dev=disk0}",
+                "disk.read_ops{dev=disk8}",
+                "disk.read_timed_ops{dev=disk8}",
+                "disk.read_time{dev=disk8}",
+            ],
+            &[100., 100., 100., 1., 1., 10.],
+        );
+        let d = s.disk.unwrap();
+        assert_eq!(d.devices[0].read_request_ms, Some(1.));
+        assert_eq!(d.devices[1].read_request_ms, Some(10.));
+        assert!((d.read_request_ms.unwrap() - 110. / 101.).abs() < 0.0001);
+        assert_eq!(d.read_ops_per_sec, Some(101.));
+        let d = snap(
+            &[
+                "disk.read_ops{dev=disk0}",
+                "disk.read_timed_ops{dev=disk0}",
+                "disk.read_time{dev=disk0}",
+            ],
+            &[0., 0., 0.],
+        )
+        .disk
+        .unwrap();
+        assert_eq!(d.read_ops_per_sec, Some(0.));
+        assert_eq!(d.read_request_ms, None);
+        let d = snap(&["disk.read_ops{dev=disk0}"], &[3.]).disk.unwrap();
+        assert_eq!(d.read_ops_per_sec, Some(3.));
+        assert_eq!(d.read_request_ms, None);
+    }
 
     fn keys(ks: &[&str]) -> Vec<SeriesKey> {
         ks.iter().map(|k| SeriesKey::parse(k).unwrap()).collect()

@@ -81,6 +81,18 @@ const ADAPTIVE_METRICS = new Set([
   "disk.write",
   "disk.read_total",
   "disk.write_total",
+  "disk.read_ops",
+  "disk.write_ops",
+  "disk.read_timed_ops",
+  "disk.write_timed_ops",
+  "disk.read_time",
+  "disk.write_time",
+  "disk.read_ops_total",
+  "disk.write_ops_total",
+  "disk.read_timed_ops_total",
+  "disk.write_timed_ops_total",
+  "disk.read_time_total",
+  "disk.write_time_total",
 ]);
 
 const GHZ = 1e9;
@@ -280,8 +292,58 @@ export function buildSpecs(flags: ScenarioFlags): SeriesSpec[] {
   total("network", "net.tx_total", "net.tx");
 
   // Disk: 1 TB container, 612 GB free, Data 330 GB, System 58 GB.
-  add("disk", "disk.read", { dev: "disk3" }, 220e6, { noise: 90e6 });
-  add("disk", "disk.write", { dev: "disk3" }, 48e6, { noise: 25e6 });
+  add(
+    "disk",
+    "disk.read",
+    { dev: "disk3" },
+    flags.diskIoNoOps ? 0 : flags.diskIoComparison ? 420e6 : 220e6,
+    {
+      noise: flags.diskIoNoOps ? 0 : flags.diskIoComparison ? 60e6 : 90e6,
+    }
+  );
+  add(
+    "disk",
+    "disk.write",
+    { dev: "disk3" },
+    flags.diskIoNoOps ? 0 : flags.diskIoComparison ? 90e6 : 48e6,
+    {
+      noise: flags.diskIoNoOps ? 0 : flags.diskIoComparison ? 10e6 : 25e6,
+    }
+  );
+  if (flags.diskIoComparison) {
+    add("disk", "disk.read", { dev: "disk7" }, 4e6, { noise: 0.6e6 });
+    add("disk", "disk.write", { dev: "disk7" }, 1e6, { noise: 0.15e6 });
+  }
+  if (!flags.diskIoUnavailable) {
+    const timings = (
+      dev: string,
+      readOps: number,
+      writeOps: number,
+      readMs: number,
+      writeMs: number
+    ) => {
+      for (const [metric, value] of [
+        ["disk.read_ops", readOps],
+        ["disk.write_ops", writeOps],
+        ["disk.read_timed_ops", readOps],
+        ["disk.write_timed_ops", writeOps],
+        ["disk.read_time", readOps * readMs],
+        ["disk.write_time", writeOps * writeMs],
+      ] as const)
+        add("disk", metric, { dev }, flags.diskIoNoOps ? 0 : value);
+    };
+    timings("disk3", 5000, 1200, 0.15, 0.3);
+    if (flags.diskIoComparison) timings("disk7", 80, 30, 42, 65);
+    for (const metric of [
+      "disk.read_ops",
+      "disk.write_ops",
+      "disk.read_timed_ops",
+      "disk.write_timed_ops",
+      "disk.read_time",
+      "disk.write_time",
+    ])
+      total("disk", `${metric}_total`, metric);
+  }
   total("disk", "disk.read_total", "disk.read");
   total("disk", "disk.write_total", "disk.write");
   // Every APFS volume reports its container's figures, and Rust's

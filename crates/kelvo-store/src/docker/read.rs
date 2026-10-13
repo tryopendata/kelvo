@@ -407,9 +407,10 @@ impl DockerReadSnapshot<'_> {
                 expected_ms: r.get(6)?,
                 entity: r.get(7)?,
             };
-            if c.reason == "engine_switch"
+            if super::resumes_on_observation(&c.reason)
                 && c.end_ms.is_none()
                 && c.entity.is_none()
+                && c.metric.is_none()
                 && let Some(engine) = self.engine
                 && let Some(end) = super::resumed_after(self.conn, engine, c.start_ms)?
             {

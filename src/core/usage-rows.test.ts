@@ -91,6 +91,9 @@ describe("usage rows (D-099)", () => {
       write_bytes: 0,
       energy_j: 0,
       avg_w: 0,
+      read_avg_bps: 0,
+      write_avg_bps: 0,
+      total_avg_bps: 0,
       running: true,
       refusal: null,
     };

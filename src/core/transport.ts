@@ -14,6 +14,9 @@ import {
   type CapabilitiesChanged,
   type CommandError,
   commands,
+  type DiskIoDevices,
+  type DiskIoPage,
+  type DiskIoRequest,
   type DockerComparisonPage,
   type DockerComparisonRequest,
   type DockerContainer,
@@ -204,6 +207,8 @@ export interface Transport {
     view: ProcessView | null,
     stream: number | null
   ): Promise<CommandResult<null>>;
+  queryDiskIo(request: DiskIoRequest): Promise<CommandResult<DiskIoPage>>;
+  listDiskIoDevices(host: HostId): Promise<CommandResult<DiskIoDevices>>;
   queryHistory(request: HistoryRequest): Promise<CommandResult<HistoryPage>>;
   queryProcessesAt(
     host: HostId,
@@ -466,6 +471,8 @@ export function createTauriTransport(label: string): Transport {
     },
     setProcessInterest: (host, interested, view, stream) =>
       commands.setProcessInterest(host, interested, view, stream),
+    queryDiskIo: (request) => commands.queryDiskIo(request),
+    listDiskIoDevices: (host) => commands.listDiskIoDevices(host),
     queryHistory: (request) => commands.queryHistory(request),
     queryProcessesAt: (host, tMs) => commands.queryProcessesAt(host, tMs),
     queryNetworkByApp: (host, fromMs, toMs) =>

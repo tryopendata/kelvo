@@ -52,6 +52,7 @@ pub fn usage_by_app(
     refusal: impl Fn(i32, i64, &str) -> Option<SignalRefusal>,
 ) -> UsageByApp {
     let other = other(&e, stats, cores);
+    let rate = |bytes: f64| (e.covered_ms > 0).then(|| bytes * 1000. / e.covered_ms as f64);
     let app = |a: UsageApp| AppUsage {
         name: a.name.to_string(),
         cpu_avg_pct: a.cpu_avg_pct,
@@ -75,6 +76,9 @@ pub fn usage_by_app(
                 mem_peak_bytes: p.mem_peak_b,
                 read_bytes: p.read_b,
                 write_bytes: p.write_b,
+                read_avg_bps: rate(p.read_b),
+                write_avg_bps: rate(p.write_b),
+                total_avg_bps: rate(p.read_b + p.write_b),
                 energy_j: p.energy_j,
                 avg_w: p.avg_w,
                 running: p.running,
@@ -228,6 +232,41 @@ mod tests {
             max: Some(avg),
             integral: avg * measured_ms as f64 / 1_000.0,
         }
+    }
+
+    #[test]
+    fn disk_process_averages_use_covered_time_and_preserve_exited_identity() {
+        let mut proc = p(7, false, false);
+        proc.start_time_us = 123;
+        proc.read_b = 600.;
+        proc.write_b = 300.;
+        let input = kelvo_engine::UsageByApp {
+            from_ms: 0,
+            to_ms: 60_000,
+            covered_ms: 3_000,
+            apps: vec![app("app", vec![proc])],
+            ..Default::default()
+        };
+        let out = usage_by_app(input.clone(), None, 8, |_, _, _| None);
+        let proc = &out.apps[0].processes[0];
+        assert_eq!(
+            (proc.pid, proc.start_time_us, proc.running),
+            (7, 123, false)
+        );
+        assert_eq!(
+            (proc.read_avg_bps, proc.write_avg_bps, proc.total_avg_bps),
+            (Some(200.), Some(100.), Some(300.))
+        );
+        let out = usage_by_app(
+            kelvo_engine::UsageByApp {
+                covered_ms: 0,
+                ..input
+            },
+            None,
+            8,
+            |_, _, _| None,
+        );
+        assert_eq!(out.apps[0].processes[0].total_avg_bps, None);
     }
 
     #[test]

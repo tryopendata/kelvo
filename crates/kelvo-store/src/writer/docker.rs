@@ -275,9 +275,11 @@ impl State {
             self.insert_docker_coverage(host, engine, c)?;
         }
         if !b.buckets.is_empty() {
-            let open: Vec<(i64,i64)> = self.conn.prepare("SELECT id,start_ms FROM docker_coverage WHERE engine_id=?1 AND entity_id IS NULL AND reason='engine_switch' AND end_ms IS NULL")?.query_map([engine],|r|Ok((r.get(0)?,r.get(1)?)))?.collect::<std::result::Result<_,_>>()?;
-            for (id, start) in open {
-                if let Some(end) = resumed_after(&self.conn, engine, start)? {
+            let open: Vec<(i64,i64,String)> = self.conn.prepare("SELECT id,start_ms,reason FROM docker_coverage WHERE engine_id=?1 AND entity_id IS NULL AND metric IS NULL AND end_ms IS NULL")?.query_map([engine],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?)))?.collect::<std::result::Result<_,_>>()?;
+            for (id, start, reason) in open {
+                if resumes_on_observation(&reason)
+                    && let Some(end) = resumed_after(&self.conn, engine, start)?
+                {
                     self.conn.execute("UPDATE docker_coverage SET end_ms=?1,expected_ms=?1-start_ms,revision=max(revision,?2) WHERE id=?3",params![end,b.revision,id])?;
                 }
             }

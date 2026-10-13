@@ -9,7 +9,13 @@ use std::collections::BTreeMap;
 pub(crate) mod read;
 pub use read::DockerReadSnapshot;
 
-/// A resumed observation closes an old engine switch, including rows left open
+/// These interruptions outlive the published connection/process. A later
+/// observation from the same daemon closes them; other coverage is not inferred.
+pub fn resumes_on_observation(reason: &str) -> bool {
+    matches!(reason, "engine_switch" | "shutdown")
+}
+
+/// A resumed observation closes an old engine switch or shutdown, including rows left open
 /// by an earlier app instance. Population segments retain exact interval starts
 /// through rollups, so this does not invent a boundary from a bucket timestamp.
 pub(crate) fn resumed_after(

@@ -11,6 +11,7 @@
 #   popover    the popover shown
 #   overview   the dashboard on /dashboard/overview
 #   processes  the dashboard on /dashboard/processes
+#   disk       the dashboard on /dashboard/disk (opt-in)
 #   containers the dashboard on /dashboard/containers (opt-in; use DOCKER_SOCKET)
 #
 # Reports % of one core and phys_footprint per scenario and per process, the distance
@@ -108,6 +109,7 @@ route_of() {
     overview) echo "dashboard:/dashboard/overview" ;;
     processes) echo "dashboard:/dashboard/processes" ;;
     containers) echo "dashboard:/dashboard/containers" ;;
+    disk) echo "dashboard:/dashboard/disk" ;;
     *) echo "bench-coalition: unknown scenario $1" >&2; exit 2 ;;
   esac
 }
@@ -174,7 +176,7 @@ visible_failed=0
 blocking="$(field "$BUDGET" coalition.visible.blocking 2>/dev/null || echo false)"
 vregress="$(field "$BUDGET" coalition.visible.regressionPct 2>/dev/null || echo 30)"
 for s in $SCENARIOS; do
-  case "$s" in popover|overview|processes|containers) ;; *) continue ;; esac
+  case "$s" in popover|overview|processes|containers|disk) ;; *) continue ;; esac
   cpu="$(field "$OUT/$s.json" cpu_pct)"
   vbase="$(field "$BUDGET" "coalition.visible.baseline.${s}CpuPct" 2>/dev/null || echo "")"
   if [ -z "$vbase" ]; then

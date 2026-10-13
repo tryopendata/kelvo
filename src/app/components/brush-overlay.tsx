@@ -46,7 +46,7 @@ const INTERACTIVE = [
  * anywhere on the page (not while typing in a field or with a dialog open),
  * and a press on empty space outside the chart and its views.
  */
-function useDismissOutside(clear: () => void, active: boolean) {
+export function useDismissOutside(clear: () => void, active: boolean) {
   useEffect(() => {
     if (!active) return;
     const onKey = (e: globalThis.KeyboardEvent) => {
@@ -229,10 +229,18 @@ export function BrushOverlay({
     return Math.min(last, Math.max(first, start));
   };
   const onFocus = () => {
-    if (focusMs !== null) return;
-    setFocusMs(startFocus(store.getState().range));
+    if (!keyboard || focusMs !== null) return;
+    // Pointer-down precedes focus. Keep its hovered bucket; only keyboard
+    // entry should move the tooltip to the selection/newest observation.
+    const pointer = drag.current;
+    const time = pointer
+      ? floorTo(pointer.anchorMs)
+      : startFocus(store.getState().range);
+    setFocusMs(time);
+    if (!pointer) onHoverTime?.(time, 0);
   };
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (!keyboard) return;
     const s = store.getState();
     if (e.key === "Escape") {
       if (s.range === null && s.draft === null) return;
@@ -254,6 +262,7 @@ export function BrushOverlay({
     e.preventDefault();
     const next = Math.min(last, Math.max(first, cur + step * BRUSH_STEP_MS));
     setFocusMs(next);
+    onHoverTime?.(next, 0);
     if (!e.shiftKey) {
       anchor.current = null;
       return;
@@ -312,7 +321,10 @@ export function BrushOverlay({
         onHoverTime?.(null, 0);
       }}
       onFocus={onFocus}
-      onBlur={() => setFocusMs(null)}
+      onBlur={() => {
+        setFocusMs(null);
+        onHoverTime?.(null, 0);
+      }}
       onKeyDown={onKeyDown}
     >
       <span id={hintId} className="sr-only">

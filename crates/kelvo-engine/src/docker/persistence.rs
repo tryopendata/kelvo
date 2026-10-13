@@ -72,6 +72,7 @@ struct State {
     shared_read_buckets: BTreeMap<usize, SharedReadBucket>,
     error: Option<String>,
     runtime: BTreeMap<String, String>,
+    restored_coverage: BTreeSet<String>,
 }
 struct ReadPin<'a> {
     state: &'a Mutex<State>,
@@ -135,6 +136,7 @@ impl DockerRecorder {
                 shared_read_buckets: BTreeMap::new(),
                 error: None,
                 runtime: BTreeMap::new(),
+                restored_coverage: BTreeSet::new(),
             }),
         }
     }
@@ -258,7 +260,11 @@ impl DockerRecorder {
             let mut s = self.state.lock_ok();
             s.revision = s.revision.max(revision.saturating_add(1));
         }
-        self.state.lock_ok().suspended = false;
+        {
+            let mut state = self.state.lock_ok();
+            state.suspended = false;
+            state.restored_coverage.clear();
+        }
         *self.attached.lock_ok() = Some(Attached {
             writer,
             path,
@@ -291,6 +297,43 @@ impl DockerRecorder {
         s.runtime.insert(daemon.clone(), engine.runtime.clone());
         let now = snapshot.observed_ms;
         evict(&mut s, now);
+        // A new process has no published coverage from the previous process.
+        // Restore its open lifecycle intervals before the first observation so
+        // the ring can close them immediately, ahead of SQLite's commit cadence.
+        if !s.restored_coverage.contains(daemon)
+            && let Some(attached) = &attached
+        {
+            let restored = (|| -> Result<_, kelvo_store::StoreError> {
+                let mut reader = Reader::open(&attached.path)?;
+                let snapshot = reader.docker_snapshot(self.host, daemon)?;
+                snapshot.event_coverage(None, now.saturating_sub(db::MAX_RANGE_MS - 1), now + 1)
+            })();
+            match restored {
+                Ok(gaps) => {
+                    let coverage = s.coverage.entry(daemon.clone()).or_default();
+                    for gap in gaps.into_iter().filter(|g| {
+                        db::resumes_on_observation(&g.reason)
+                            && g.entity.is_none()
+                            && g.metric.is_none()
+                            && g.end_ms.is_none()
+                    }) {
+                        if !coverage
+                            .iter()
+                            .any(|g| g.start_ms == gap.start_ms && g.reason == gap.reason)
+                        {
+                            coverage.push(api::DockerCoverage {
+                                start_ms: gap.start_ms,
+                                end_ms: None,
+                                container_id: None,
+                                reason: gap.reason,
+                            });
+                        }
+                    }
+                    s.restored_coverage.insert(daemon.clone());
+                }
+                Err(error) => s.error = Some(error.to_string()),
+            }
+        }
         let mut batch = self.batch(&mut s, daemon, snapshot.generation, now);
         let capacity = engine
             .capacity_bytes
@@ -384,15 +427,14 @@ impl DockerRecorder {
             );
         }
         // configure() clears the published generation's coverage. The recorder
-        // still owns the old engine's switch until that daemon resumes.
+        // still owns the old engine interruption until that daemon resumes.
         let mut resumed = Vec::new();
         if snapshot.status == api::DockerStatus::Connected
             && let Some(gaps) = s.coverage.get_mut(daemon)
         {
-            for gap in gaps
-                .iter_mut()
-                .filter(|g| g.reason == "engine_switch" && g.end_ms.is_none() && g.start_ms < now)
-            {
+            for gap in gaps.iter_mut().filter(|g| {
+                db::resumes_on_observation(&g.reason) && g.end_ms.is_none() && g.start_ms < now
+            }) {
                 gap.end_ms = Some(now);
                 resumed.push(gap.clone());
             }
@@ -673,6 +715,7 @@ impl DockerRecorder {
             s.populations.clear();
             s.events.clear();
             s.coverage.clear();
+            s.restored_coverage.clear();
             s.pending.clear();
             s.retry.clear();
             s.last_warning.clear();
@@ -2348,6 +2391,7 @@ fn recount_aux(s: &mut State) {
         + s.last_warning.len() * 384
         + s.observed.len() * 384
         + s.runtime.len() * 512
+        + s.restored_coverage.len() * 320
         + s.coverage.values().map(|g| g.len() * 512).sum::<usize>();
 }
 fn evict(s: &mut State, now: i64) {
@@ -2413,6 +2457,7 @@ fn evict(s: &mut State, now: i64) {
     s.last_warning
         .retain(|e, _| engines.contains(e) || s.retry.contains_key(e));
     s.coverage.retain(|e, _| engines.contains(e));
+    s.restored_coverage.retain(|e| engines.contains(e));
     recount_aux(s);
     while s.bytes + s.aux_bytes + s.reader_bytes > RING_BYTES {
         if let Some(key) = s
@@ -2588,8 +2633,24 @@ mod tests {
             },
         }
     }
-    fn setup() -> (tempfile::TempDir, Store, DockerRecorder) {
-        let dir = tempfile::tempdir().unwrap();
+    // The product admits four history readers per process, including readers of
+    // different files. Keep independent database fixtures from consuming one
+    // another's permits when the Rust test harness runs them concurrently.
+    static DATABASE_TESTS: Mutex<()> = Mutex::new(());
+    struct DatabaseFixture {
+        dir: tempfile::TempDir,
+        _readers: std::sync::MutexGuard<'static, ()>,
+    }
+    impl DatabaseFixture {
+        fn path(&self) -> &std::path::Path {
+            self.dir.path()
+        }
+    }
+    fn setup() -> (DatabaseFixture, Store, DockerRecorder) {
+        let dir = DatabaseFixture {
+            _readers: DATABASE_TESTS.lock_ok(),
+            dir: tempfile::tempdir().unwrap(),
+        };
         let mut cfg = StoreConfig::new(dir.path().join("h.sqlite"));
         cfg.commit_interval = Duration::from_secs(300);
         let store = Store::open(cfg).unwrap();
@@ -3434,8 +3495,7 @@ mod tests {
             max_points,
         }
     }
-    #[test]
-    fn resumed_engine_closes_switch_gap_before_commit() {
+    fn assert_resumed_engine_closes_gap(reason: &str) {
         let (_dir, store, r) = setup();
         let t = wall_ms();
         let mut s = fixture(t);
@@ -3443,7 +3503,7 @@ mod tests {
             start_ms: t + 50,
             end_ms: None,
             container_id: None,
-            reason: "engine_switch".into(),
+            reason: reason.into(),
         });
         r.record(&s);
         store.writer().flush().unwrap();
@@ -3454,7 +3514,7 @@ mod tests {
         let gaps: Vec<_> = page
             .coverage
             .iter()
-            .filter(|g| g.reason == "engine_switch")
+            .filter(|g| g.reason == reason)
             .collect();
         assert_eq!(gaps.len(), 1);
         assert_eq!(gaps[0].end_ms, Some(t + 2000));
@@ -3463,7 +3523,7 @@ mod tests {
                 .unwrap()
                 .coverage
                 .iter()
-                .all(|g| g.reason != "engine_switch")
+                .all(|g| g.reason != reason)
         );
         assert!(
             r.comparison(&api::DockerComparisonRequest {
@@ -3478,7 +3538,7 @@ mod tests {
             .unwrap()
             .coverage
             .iter()
-            .all(|g| g.reason != "engine_switch")
+            .all(|g| g.reason != reason)
         );
         let comparison = r
             .comparison(&api::DockerComparisonRequest {
@@ -3494,10 +3554,99 @@ mod tests {
         let gaps: Vec<_> = comparison
             .coverage
             .iter()
-            .filter(|g| g.reason == "engine_switch")
+            .filter(|g| g.reason == reason)
             .collect();
         assert_eq!(gaps.len(), 1);
         assert_eq!(gaps[0].end_ms, Some(t + 2000));
+    }
+    #[test]
+    fn resumed_engine_closes_switch_gap_before_commit() {
+        assert_resumed_engine_closes_gap("engine_switch");
+    }
+    #[test]
+    fn resumed_engine_closes_shutdown_gap_before_commit() {
+        assert_resumed_engine_closes_gap("shutdown");
+    }
+    #[test]
+    fn quit_and_reopen_keeps_cpu_and_memory_visible_before_and_after_commit() {
+        let (dir, store, unused) = setup();
+        drop(unused);
+        let handle = super::super::DockerHandle::new(
+            host().id,
+            api::DockerSettings::default(),
+            PathBuf::new(),
+        );
+        handle
+            .recorder
+            .attach(store.writer(), store.path().to_path_buf());
+        let mut sample = fixture(wall_ms() - 1000);
+        sample.generation = handle.snapshot().generation;
+        handle.publish(sample);
+        handle.shutdown();
+        let shutdown = handle.snapshot().coverage.last().unwrap().start_ms;
+        drop(handle);
+        store.close().unwrap();
+
+        let mut config = StoreConfig::new(dir.path().join("h.sqlite"));
+        config.commit_interval = Duration::from_secs(300);
+        let store = Store::open(config).unwrap();
+        let restarted = DockerRecorder::new(host().id);
+        restarted.attach(store.writer(), store.path().to_path_buf());
+        // Deterministic source timestamps model downtime and a new process. No
+        // sampler, recorder, query, or SQLite implementation is mocked.
+        let resume = (shutdown + 20_000).div_euclid(10_000) * 10_000;
+        let before = restarted.history(&query(shutdown, resume, 10)).unwrap();
+        assert!(
+            before
+                .coverage
+                .iter()
+                .any(|g| g.reason == "shutdown" && g.end_ms.is_none())
+        );
+        restarted.record(&fixture(resume + 1000));
+        restarted.record(&fixture(resume + 2000));
+        for committed in [false, true] {
+            if committed {
+                restarted.record(&fixture(resume + 11_000));
+                store.writer().flush().unwrap();
+            }
+            for metric in [
+                api::DockerComparisonMetric::Cpu,
+                api::DockerComparisonMetric::Memory,
+            ] {
+                let page = restarted
+                    .comparison(&api::DockerComparisonRequest {
+                        engine_id: "daemon".into(),
+                        from_ms: shutdown,
+                        to_ms: resume + 10_000,
+                        metric,
+                        project: None,
+                        selected: None,
+                        max_points: 30,
+                    })
+                    .unwrap();
+                assert_eq!(page.series.len(), 1);
+                assert!(page.series[0].points.iter().any(|p| p.time_ms >= resume
+                    && p.metrics.cpu_pct == Some(100.)
+                    && p.metrics.working_set_bytes == Some(128.)));
+                let gaps: Vec<_> = page
+                    .coverage
+                    .iter()
+                    .filter(|g| g.reason == "shutdown")
+                    .collect();
+                assert_eq!(gaps.len(), 1);
+                assert!(
+                    gaps[0]
+                        .end_ms
+                        .is_some_and(|end| end > shutdown && end <= resume + 1000),
+                    "real downtime stays bounded after restart, committed={committed}: {gaps:?}"
+                );
+            }
+            let page = restarted
+                .history(&query(resume + 1001, resume + 10_000, 10))
+                .unwrap();
+            assert!(!page.points.is_empty());
+            assert!(page.coverage.iter().all(|g| g.reason != "shutdown"));
+        }
     }
     #[test]
     fn a_new_gap_after_the_last_observation_does_not_poison_retries() {

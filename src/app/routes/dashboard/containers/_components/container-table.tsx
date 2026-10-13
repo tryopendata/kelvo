@@ -2,7 +2,15 @@ import { seriesColor } from "@core/chart-math/series-lines";
 import { formatBytes, formatPercent, formatRate } from "@core/format";
 import type { DockerContainer } from "@core/generated/bindings";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import {
+  type MouseEvent,
+  memo,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 import { SeriesSwatch } from "~/components/charts/chart-tooltip";
 import {
@@ -165,6 +173,16 @@ export function ContainerTable({
       {sort === key ? (key === "name" ? " ↑" : " ↓") : ""}
     </button>
   );
+  const openDetail = useCallback(
+    (event: MouseEvent<HTMLAnchorElement>, engine: string, id: string) => {
+      if (!isContainerDetailClick(event)) return;
+      event.preventDefault();
+      void navigate(containerPath(engine, id), {
+        state: containerReturnState(location, scroller.current),
+      });
+    },
+    [navigate, location]
+  );
   const byte = (value: number | null) => formatBytes(value, { units: bytes });
   const render = (item: (typeof items)[number]) => {
     if (item.kind === "group")
@@ -216,54 +234,18 @@ export function ContainerTable({
             <SeriesSwatch color={seriesColor(slots[row.id] ?? 1)} />
           )}
         </td>
-        <td className="min-w-0 px-2 py-1 text-[12px]">
-          <Link
-            to={containerPath(row.engine_id, row.id)}
-            onClick={(event) => {
-              if (!isContainerDetailClick(event)) return;
-              event.preventDefault();
-              void navigate(containerPath(row.engine_id, row.id), {
-                state: containerReturnState(location, scroller.current),
-              });
-            }}
-            className="block truncate rounded-control focus-visible:ring-2 focus-visible:ring-ring"
-            title={`${row.name} · ${row.image}`}
-          >
-            {row.name}
-            <span className="text-muted-foreground">
-              {row.project ? ` · ${row.project}` : ""}
-            </span>
-          </Link>
-          {actions.failures[row.id] && (
-            <p role="alert" className="text-[11px] text-destructive">
-              {actions.failures[row.id]}
-            </p>
-          )}
-          <span
-            className={styles.narrowState}
-            title={`${lifecycleLabel[row.lifecycle]} · ${health}`}
-          >
-            {lifecycleLabel[row.lifecycle]}
-            {health ? ` · ${health}` : ""}
-          </span>
-        </td>
-        <td className={`${styles.state} px-2 py-1 text-[12px]`}>
-          {lifecycleLabel[row.lifecycle]}
-          {health && (
-            <div
-              className="truncate text-[10px] text-muted-foreground"
-              title={`${health} · ${row.metadata_observed_ms ? new Date(row.metadata_observed_ms).toLocaleString() : "time unknown"}`}
-            >
-              {health} ·{" "}
-              {row.metadata_observed_ms
-                ? new Date(row.metadata_observed_ms).toLocaleTimeString([], {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })
-                : "time unknown"}
-            </div>
-          )}
-        </td>
+        <ContainerIdentityCells
+          engineId={row.engine_id}
+          id={row.id}
+          name={row.name}
+          image={row.image}
+          project={row.project}
+          lifecycle={row.lifecycle}
+          metadataObservedMs={row.metadata_observed_ms}
+          health={health}
+          failure={actions.failures[row.id]}
+          onNavigate={openDetail}
+        />
         <td className="figures whitespace-nowrap px-2 py-1 text-right text-[12px]">
           {formatPercent(metrics?.cpu_pct ?? null)}
         </td>
@@ -465,3 +447,79 @@ export function ContainerTable({
     </div>
   );
 }
+
+// Sampling changes metrics every second; identity and lifecycle change independently.
+const ContainerIdentityCells = memo(function ContainerIdentityCells({
+  engineId,
+  id,
+  name,
+  image,
+  project,
+  lifecycle,
+  metadataObservedMs,
+  health,
+  failure,
+  onNavigate,
+}: {
+  engineId: string;
+  id: string;
+  name: string;
+  image: string;
+  project: string | null;
+  lifecycle: DockerContainer["lifecycle"];
+  metadataObservedMs: DockerContainer["metadata_observed_ms"];
+  health: string;
+  failure: string | undefined;
+  onNavigate: (
+    event: MouseEvent<HTMLAnchorElement>,
+    engine: string,
+    id: string
+  ) => void;
+}) {
+  return (
+    <>
+      <td className="min-w-0 px-2 py-1 text-[12px]">
+        <Link
+          to={containerPath(engineId, id)}
+          onClick={(event) => onNavigate(event, engineId, id)}
+          className="block truncate rounded-control focus-visible:ring-2 focus-visible:ring-ring"
+          title={`${name} · ${image}`}
+        >
+          {name}
+          <span className="text-muted-foreground">
+            {project ? ` · ${project}` : ""}
+          </span>
+        </Link>
+        {failure && (
+          <p role="alert" className="text-[11px] text-destructive">
+            {failure}
+          </p>
+        )}
+        <span
+          className={styles.narrowState}
+          title={`${lifecycleLabel[lifecycle]} · ${health}`}
+        >
+          {lifecycleLabel[lifecycle]}
+          {health ? ` · ${health}` : ""}
+        </span>
+      </td>
+      <td className={`${styles.state} px-2 py-1 text-[12px]`}>
+        {lifecycleLabel[lifecycle]}
+        {health && (
+          <div
+            className="truncate text-[10px] text-muted-foreground"
+            title={`${health} · ${metadataObservedMs ? new Date(metadataObservedMs).toLocaleString() : "time unknown"}`}
+          >
+            {health} ·{" "}
+            {metadataObservedMs
+              ? new Date(metadataObservedMs).toLocaleTimeString([], {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })
+              : "time unknown"}
+          </div>
+        )}
+      </td>
+    </>
+  );
+});

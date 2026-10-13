@@ -43,6 +43,7 @@ mod caps;
 mod catalog;
 mod codes;
 mod compat;
+pub mod disk_io;
 pub mod docker;
 pub mod docker_storage;
 mod event;

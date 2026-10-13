@@ -661,6 +661,8 @@ struct Merge<'q> {
     /// ("10 MIN AVG"): as few whole buckets as keep the slot count at or under
     /// `max_points`.
     slot_w: i64,
+    /// Source weights are minutes for M15 reads, otherwise one source bucket.
+    unit_w: i64,
     /// Result series in key order.
     index: BTreeMap<SeriesKey, usize>,
     /// Per series, accumulators by slot index.
@@ -677,6 +679,7 @@ impl<'q> Merge<'q> {
             q,
             base,
             slot_w: width * per_slot.max(1),
+            unit_w: if width == 900_000 { 60_000 } else { width },
             index: BTreeMap::new(),
             accs: Vec::new(),
         }
@@ -766,7 +769,13 @@ impl<'q> Merge<'q> {
                     t: self.base + slot * self.slot_w,
                     min: a.min,
                     max: a.max,
-                    avg: (a.sum / f64::from(a.weight)) as f32,
+                    avg: (a.sum
+                        / if kelvo_schema::disk_io::preserves_request_integral(key.metric.as_str())
+                        {
+                            (self.slot_w / self.unit_w) as f64
+                        } else {
+                            f64::from(a.weight)
+                        }) as f32,
                 })
                 .collect();
             if !points.is_empty() {
@@ -782,7 +791,7 @@ type Positions = Vec<(usize, usize)>;
 
 /// The series of layout `id`, through `cache`. A free function so a caller can hold a
 /// statement on `conn` while it resolves layouts (the borrows are disjoint).
-fn load_layout(
+pub(crate) fn load_layout(
     conn: &Connection,
     cache: &mut HashMap<u32, Arc<[SeriesKey]>>,
     id: u32,
