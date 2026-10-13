@@ -48,6 +48,28 @@ reserved output names. Relative skill links continue to work when the checkout
 moves and in Git worktrees; filesystem tools must distinguish directory symlinks
 from regular files when scanning the repository.
 
+## Personal plugin skills
+
+Repository skills already use relative directory links. Personal Claude Essentials
+skills use the same pattern at home: `~/.agents/skills/<name>` points to
+`~/.claude/plugins/marketplaces/claude-essentials/plugins/ce/skills/<name>`.
+The whole directory is linked so its `references/` resolve without copied files.
+`architecting-systems` and `planning-products` are the two planning skills used
+by Kelvo; their Claude plugin aliases are `ce:architecting-systems` and
+`ce:planning-products`.
+
+This follows OpenData's `scripts/agent-config/setup-home.sh` pattern, but that
+script only enumerates personal `~/.claude/skills/*`, not plugin skills. Kelvo's
+synchronizer deliberately does not change home configuration. Create each personal
+link only when its source `SKILL.md` exists and its destination is absent; leave
+collisions untouched. Prefer the marketplace path over a versioned cache path.
+Do not copy or run OpenData's broader global-instruction/import-sync migration.
+
+After linking, a fresh `codex debug prompt-input` should list both skills with
+paths ending in `<name>/SKILL.md`. Inspect only the skill entries; the rest of the
+prompt can contain private configuration. If a requested `ce:` skill is missing,
+follow the lookup instructions in canonical `CLAUDE.md` before declaring it absent.
+
 ## Harness behavior
 
 Claude keeps its existing instructions, skills, slash commands, permissions, and

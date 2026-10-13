@@ -71,6 +71,23 @@ Rules in `.claude/rules/` attach automatically by path. Read one directly when y
 
 Skill: `frontend-design-slop` before adding headers, card grids, badges or stat tiles.
 
+### Shared personal plugin skills
+
+`ce:architecting-systems` (module boundaries and system design) and
+`ce:planning-products` (feature scope and experience) are Claude Essentials skills.
+Their shared directory names are `architecting-systems` and `planning-products`;
+the skill metadata retains the `ce:` names. Share each whole skill directory
+through a symlink in `~/.agents/skills/`; keep the source
+and its relative `references/` together rather than copying instructions.
+
+If a requested `ce:` skill is absent from the session catalog, first look for
+`~/.claude/plugins/marketplaces/claude-essentials/plugins/ce/skills/<name>/SKILL.md`,
+then search the installed `~/.claude/plugins/cache/claude-essentials/ce/` versions.
+Read the matching skill and its relevant references. Do not assume an absent
+catalog entry means it is uninstalled, and do not install or overwrite skills
+just to resolve a lookup. This personal setup is separate from the repository's
+generated `.agents/skills` links; see `scripts/agent-config/README.md`.
+
 ## Prerequisites
 
 - **bun** (frontend package manager and runner)
