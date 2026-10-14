@@ -17,6 +17,17 @@ export const alias = {
 export default defineConfig(() => ({
   plugins: [react(), tailwindcss()],
   resolve: { alias },
+  build: {
+    // Local assets still cost WebKit startup time; keep a warning for bundle growth.
+    chunkSizeWarningLimit: 1500,
+    reportCompressedSize: false,
+    rolldownOptions: {
+      checks: {
+        // Plugin timings are build profiling diagnostics, not app performance warnings.
+        bundlerTimings: false,
+      },
+    },
+  },
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //

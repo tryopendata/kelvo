@@ -81,6 +81,16 @@ Status values: Not started, In progress, Blocked (say on what), Done (with the v
 
 ## Log
 
+### 2026-10-14 (Local frontend build diagnostics)
+
+Raised Vite's chunk warning threshold to 1,500 kB to retain a bundle-growth signal
+for locally loaded WebKit assets, disabled gzip size reporting, and suppressed
+Rolldown's build-time plugin timing diagnostic. Signing and notarization output
+remain unchanged. Verified `bun run build` (all TypeScript projects and production
+bundle) and `bunx biome check vite.config.ts`; the 1,165.98 kB main chunk builds
+without size/timing warnings or gzip columns. No disposable worktree was created;
+primary-checkout build outputs and caches are retained.
+
 ### 2026-10-14 (Architecture refactor — implementation and review complete)
 
 Completed all packages in the owner-revised [architecture plan](architecture-refactor-review.md).
