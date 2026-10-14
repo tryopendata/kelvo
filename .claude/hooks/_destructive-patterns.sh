@@ -111,7 +111,9 @@ _strip_git_global_options() {
         my $arg = qr/(?:"[^"\\]*(?:\\.[^"\\]*)*"|\x27[^\x27]*\x27|[^\s;&|]+)/;
         my $value = qr/(?:-C|-c|--git-dir|--work-tree|--namespace|--config-env)\s+$arg/;
         my $attached = qr/(?:--git-dir|--work-tree|--namespace|--config-env)=$arg|-[Cc]$arg/;
-        my $flag = qr/--no-pager|--paginate|-P|-p|--bare|--no-optional-locks/;
+        # Any other long global option (--literal-pathspecs, --exec-path=/x,
+        # --no-advice, ...) takes no value or an attached =value.
+        my $flag = qr/-P|-p|--[a-z][a-z-]*(?:=$arg)?/;
         1 while s{(\bgit\s+)(?:$value|$attached|$flag)\s+}{$1}g;
     '
 }
@@ -257,7 +259,8 @@ is_destructive() {
     fi
 
     # --- Git: force push (allow --force-with-lease as the safe alternative) ---
-    if echo "$git_command" | grep -qE 'git\s+push\s+(-[a-zA-Z]*f|--force)(\s|$)'; then
+    # Force flag or +refspec anywhere in the push (`git push origin main --force`, `git push origin +main`).
+    if echo "$git_command" | grep -qE 'git\s+push\b[^;&|]*\s(-[a-zA-Z]*f[a-zA-Z]*|--force|\+[^[:space:]]+)(\s|$)'; then
         printf '%s\t%s' "Force push rewrites remote history." "Ask the user before force pushing. Use --force-with-lease if you must."
         return 0
     fi

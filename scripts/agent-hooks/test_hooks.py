@@ -45,6 +45,9 @@ class HookTests(unittest.TestCase):
             "bash -c 'git -C /tmp/example reset --hard'",
             "git -C/tmp/example -ccore.foo=bar reset --hard",
             "xargs -0 -I '{}' git --no-pager --git-dir=/tmp/example clean -fd",
+            "git --literal-pathspecs reset --hard", "git --exec-path=/x reset --hard",
+            "git --no-replace-objects reset --hard", "git --no-advice clean -fd",
+            "git push origin main --force", "git push origin +main", "git -C /tmp/example push -u origin -f",
         ]:
             with self.subTest(command=command):
                 self.assertEqual(self.decision("pre-bash.sh", command).get("permissionDecision"), "deny")
@@ -75,6 +78,23 @@ class HookTests(unittest.TestCase):
         for command in ["env unknown-tool", "timeout 3 unknown-tool", "command unknown-tool", "xargs unknown-tool"]:
             with self.subTest(command=command):
                 self.assertNotEqual(self.decision("auto-approve.sh", command).get("permissionDecision"), "allow")
+
+    def test_rm_with_dangerous_target_prompts_bare_or_wrapped(self):
+        for command in [
+            "rm -rf $HOME", 'rm -rf "$HOME"', "rm -rf ~/x", "rm -rf /Users/example/Projects", "rm -rf ..",
+            "timeout 30 rm -rf $HOME", "timeout 30 rm -rf ~/Projects", "env rm -rf $HOME",
+            "nohup rm -rf ~/x", "command rm -rf ~/x", "env -S 'rm -rf ~'", "env --split-string='rm -rf ~/x'",
+            "bash -c 'rm -rf ${TARGET}'", "xargs rm -rf /Users/example",
+        ]:
+            with self.subTest(command=command):
+                self.assertNotEqual(self.decision("auto-approve.sh", command).get("permissionDecision"), "allow")
+        for command in [
+            "rm -rf build dist", "rm -f src/stale.ts", "rm -rf /tmp/kelvo-x", "rm -rf /private/tmp/kelvo-x",
+            "bash -c 'rm -rf build dist'", "timeout 30 rm -f /tmp/kelvo-build.json", "git push origin main",
+            "git push --force-with-lease origin feature", "git --no-pager log -1",
+        ]:
+            with self.subTest(command=command):
+                self.assertEqual(self.decision("auto-approve.sh", command).get("permissionDecision"), "allow")
 
     def test_existing_denials_and_inert_rm_arguments(self):
         for command in ["rm -rf /", "env A=1 rm -rf ~", "timeout 2 git reset --hard", "git clean -fd", "bun publish"]:

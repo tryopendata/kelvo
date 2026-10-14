@@ -32,7 +32,7 @@ pub struct TrustCandidate {
 }
 #[expect(
     clippy::too_many_lines,
-    reason = "service split tracked in architecture refactor package G"
+    reason = "split when substantially changed; architecture refactor section 10"
 )]
 pub async fn inspect_host(alias: &str) -> Result<TrustCandidate> {
     let _validated_command = crate::ssh_command(alias)?;

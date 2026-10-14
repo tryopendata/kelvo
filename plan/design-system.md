@@ -20,7 +20,7 @@ Token values live in `src/app/styles/theme.css`. This doc refers to tokens by na
 |---|---|---|---|
 | `@custom-variant dark (&:where(.dark, .dark *))` and the `@theme static` block | `shared/styles/theme.css` | `src/app/styles/theme.css` | Provider colors, `--od-*` aliases, Satoshi and Source Serif dropped. Kelvo tokens added |
 | shadcn token names (`background`, `card`, `popover`, `primary`, `border`, `input`, `ring`, `muted-foreground`, `destructive`) | `shared/styles/theme.css` | same | Dark `muted-foreground` changes to `#8a8f98`, light `surface-raised` becomes `--color-raised: #e4e4e7` |
-| `.ask-accent` corner glow, `--quiet` variant, accent tile | `shared/styles/tool-cards.css` | `src/app/styles/cards.css` as `.vt-card`, `.vt-card--chart` | Origin becomes a variable (`--o`), hover raises the tint to 22%, `@property --g` registered so the tint can transition |
+| `.ask-accent` corner glow, `--quiet` variant, accent tile | `shared/styles/tool-cards.css` | `src/app/widgets/card.module.css` as `.card` with `data-variant="chart"` (`@property --g` stays global in `src/app/styles/cards.css`) | Origin becomes a variable (`--o`), hover raises the tint to 22%, `@property --g` registered so the tint can transition |
 | `.data-mono` | `shared/styles/effects.css` | `src/app/styles/effects.css` | Replaced by `.figures` and `.figures-display` (D-101) |
 | Motion tokens (150 ms, 300 ms, `cubic-bezier(0.16,1,0.3,1)`) and the reduced-motion wrapper rule | `DESIGN.md` §10, `tool-cards.css` | `src/app/styles/motion.css` as `--motion-fast`, `--motion-entry`, `--ease-out` | The 500 ms word fade is not ported; Kelvo has no streaming prose |
 | Radius scale (2, 4, 6, 8, 12, 22, full) | `DESIGN.md` §5 | `theme.css` `--radius-*` | 1 px added for dense heatmap cells |
@@ -139,7 +139,7 @@ The menu bar image is the one exception: Rust draws it in bundled JetBrains Mono
 Every card is a `<section>` with an accessible name, `--radius-card`, a 1 px `--color-border`, and the corner glow on `--color-card` (or `--color-card-vibrant` in vibrant scopes).
 
 ```css
-.vt-card {
+.card {                  /* card.module.css; <Card> applies it */
   --a: var(--color-cpu);  /* module accent */
   --g: 9%;                /* tint */
   --o: 0% 0%;             /* glow origin */
@@ -148,7 +148,7 @@ Every card is a `<section>` with an accessible name, `--radius-card`, a 1 px `--
       color-mix(in srgb, var(--a) var(--g), transparent) 0%, transparent 60%),
     var(--color-card);
 }
-.vt-card--chart { --g: 6%; }   /* chart cards and all popover cards */
+.card[data-variant="chart"] { --g: 6%; }   /* chart cards and all popover cards */
 ```
 
 Hover raises `--g` to 22% and the border to `--color-border-strong` over 300 ms, inside `prefers-reduced-motion: no-preference`. Hover applies only to cards that are a link or open something (Overview module cards open their module page). Non-interactive cards do not react to hover.

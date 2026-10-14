@@ -323,7 +323,7 @@ impl DockerBatch {
     }
     #[expect(
         clippy::too_many_lines,
-        reason = "responsibility split tracked in architecture refactor package F1"
+        reason = "split when substantially changed; architecture refactor section 10"
     )]
     fn validate(&self) -> Result<()> {
         if self.daemon_id.is_empty()

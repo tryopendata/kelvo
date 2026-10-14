@@ -194,10 +194,23 @@
             "noRestrictedImports": {
               "level": "error",
               "options": {
+                "paths": {
+                  "@core/generated/bindings": {
+                    "importNames": ["commands", "events"],
+                    "message": "Go through @core/transport so the mock transport can stand in; generated types and constants are allowed."
+                  }
+                },
                 "patterns": [
                   {
                     "group": ["@tauri-apps/**"],
                     "message": "Go through @core/transport so the mock transport can stand in."
+                  },
+                  {
+                    "group": [
+                      "@core/transport/native",
+                      "@core/transport/native-*"
+                    ],
+                    "message": "The native adapter calls Tauri directly; go through @core/transport so the mock transport can stand in."
                   },
                   {
                     "group": [
@@ -300,6 +313,18 @@
                   {
                     "group": ["~/**", "!~/lib/utils", "!~/lib/motion/**"],
                     "message": "Widgets may only depend on the shared presentation utilities and motion primitives."
+                  },
+                  {
+                    "group": ["../../**", "../*/**", "../app", "../router"],
+                    "message": "Relative imports stay inside src/app/widgets; use the allowed ~/lib aliases for shared helpers."
+                  },
+                  {
+                    "group": [
+                      "@core/app-transport",
+                      "@core/mock-transport",
+                      "@core/mock/**"
+                    ],
+                    "message": "Widgets are render-only: take data as props; subscribe in the route or a hook."
                   },
                   {
                     "group": [

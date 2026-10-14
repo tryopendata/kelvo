@@ -533,7 +533,7 @@ impl Session<'_> {
     }
     #[expect(
         clippy::too_many_lines,
-        reason = "service split tracked in architecture refactor package G"
+        reason = "split when substantially changed; architecture refactor section 10"
     )]
     async fn incoming(&mut self, incoming: Option<Result<Message>>) -> Result<SessionAction> {
         let message =
@@ -848,7 +848,7 @@ impl Session<'_> {
     }
     #[expect(
         clippy::too_many_lines,
-        reason = "service split tracked in architecture refactor package G"
+        reason = "split when substantially changed; architecture refactor section 10"
     )]
     async fn tick(&mut self) -> Result<SessionAction> {
         // A reply that never arrives would otherwise park its tier (or recent history)

@@ -246,7 +246,7 @@ and a full-diff CE code review. The review narrative and delivery dependencies a
 preserved as the original audit, not a description of the completed code.
 
 - [x] P — Validated Docker ranges/timestamps and omission-safe settings patches, with regressions.
-- [x] A — Wrapper/global-option classification; checkout-owned reaping (including mixed paths); session-owned formatting. Routine command decisions remain autonomous.
+- [x] A — Wrapper/global-option classification; checkout-owned reaping (including mixed paths); session-owned formatting. Routine command decisions remain autonomous. Deliberate exception to "no command approved today should start prompting": a wrapper now takes its inner command's classification, so wrapped forms of commands that prompt bare (`timeout 30 docker compose up -d`, `timeout 60 gh pr merge 12`, `env A=1 curl -X POST …`, `timeout 5 ssh host uptime`) prompt too; they were approved before only because the wrapper's name was. `rm` is approved as a utility, but any `rm` (bare, wrapped or quoted) whose target is `/`, `~`, `.`, `..`, `*`, starts with `$`/`~`, or is an absolute path outside the temp directories defers to a prompt. Post-review: Git global-option stripping covers any long option, and force pushes are caught wherever the flag or `+refspec` sits.
 - [x] B — Stable macOS PR/push checks, Linux portable/remote coverage, production build and nonempty browser checks; pinned toolchains and dependency-audit policy.
 - [x] J — Biome function/file/complexity gates, Clippy function length, tested Rust production-file ceilings; native, local legacy exceptions.
 - [x] C — Tested Biome import boundaries and named Cargo dependency graph.
@@ -254,7 +254,7 @@ preserved as the original audit, not a description of the completed code.
 - [x] E1 — Feature-owned native adapters and mock services; small transport factories.
 - [x] E2 — Rust-produced protocol fixture consumed by mock tests; subscription cancellation/disconnect and typed failures. Corrected the mock's inclusive history boundary.
 - [x] F1 — Recorder ingestion/query/retention, Docker worker lifecycle/cycle and resource-specific collector classification; recovery behavior preserved.
-- [x] F2 — Typed Docker and mirror errors with retained internal causes, typed IPC mapping and regenerated bindings.
+- [x] F2 — Typed Docker and mirror errors with retained internal causes, typed IPC mapping and regenerated bindings. Mirror errors stay typed through `MirrorSink` and the session, and are flattened to `ConnectionStatus.history_error` text at publication, because the remote-host status IPC exposes only a sync state and a message and no consumer branches on the cause yet. Add a typed kind there when one does.
 - [x] G — Engine-owned history lifecycle/queries, mirror epoch/recent/commit ownership and setup phases; no additional crate edges.
 - [x] H — Containers controller/views and all named large components, including detail, comparison, storage, table, Timeline, host setup and process selection.
 - [x] D — Browser, test and Node ambient environments; exact optional properties and explicit environment keys, without blanket casts.

@@ -66,19 +66,30 @@ if [[ "$tool" == "Bash" ]]; then
     # Extract first word (the actual command)
     first_word=$(echo "$base_cmd" | awk '{print $1}')
 
-    # An executing wrapper runs an rm this file approves on the wrapper's name
-    # alone, and is_destructive scans an rm inside quotes only up to the next
-    # quote (so `grep "rm -rf" .` isn't a false positive). Close that gap here,
-    # narrowly: defer (normal prompt, not a deny) only when the wrapped rm has
-    # a dangerous target: a bare / ~ . .. or *, or one starting with $ or ~/.
-    # `bash -c 'rm -rf build dist'` and `timeout 30 rm -f /tmp/x.json` stay
-    # approved.
-    case "$first_word" in
-        bash|sh|zsh|eval|xargs|timeout|time|find|env|sudo|nohup|command|exec|ssh)
-            if echo "$command" | grep -qE "(^|[^[:alnum:]_.-])rm[[:space:]][^;&|]*([[:space:]]|=)['\"]?((/|~/?|\.\.?|\*)([[:space:]'\")]|$)|\\$|~/)"; then
-                exit 0
-            fi ;;
+    # rm is approved as a shell utility, and wrappers inherit the inner
+    # command's classification, so any rm reached here (bare, wrapped, or inside
+    # bash -c / env -S quoting) is screened for a dangerous target. Defer (normal
+    # prompt, not a deny) when a target is / ~ . .. or *, starts with $ or ~, or
+    # is an absolute path outside the temp directories. `rm -rf build dist` and
+    # `timeout 30 rm -f /tmp/x.json` stay approved.
+    orig_first=$(echo "$command" | awk '{print $1}')
+    case "$orig_first" in
+        bash|sh|zsh|eval|xargs|timeout|time|find|env|sudo|nohup|command|exec|ssh|rm) screen_rm=1 ;;
+        *) screen_rm=0 ;;
     esac
+    [[ "$first_word" == "rm" ]] && screen_rm=1
+    if [[ "$screen_rm" == 1 ]] && printf '%s\n%s\n' "$command" "$base_cmd" | perl -ne '
+        while (/(?:^|[^\w.-])rm\s([^;&|]*)/g) {
+            for my $t (split /\s+/, $1) {
+                $t =~ s/^["\x27]+//; $t =~ s/["\x27)]+$//;
+                next if $t eq "" || $t =~ /^-/;
+                $r = 1 if $t =~ m{^(?:/|\.\.?|\*)$} || $t =~ /^[\$~]/
+                    || ($t =~ m{^/} && $t !~ m{^/(?:private/)?tmp/|^/var/folders/});
+            }
+        }
+        END { exit($r ? 0 : 1) }'; then
+        exit 0
+    fi
 
     # --- Subcommand-aware approval (demoted from blanket first-word) ---
     if [[ "$first_word" == "docker" ]]; then

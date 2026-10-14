@@ -51,15 +51,32 @@ class BiomeRules(unittest.TestCase):
 
     def test_widgets_reject_transport_generated_commands_and_app_hooks(self):
         for module, symbol in (("@core/transport", "Transport"), ("@core/generated/bindings", "commands"),
-                               ("@core/generated/bindings", "events"), ("~/hooks/use-transport", "useTransport")):
+                               ("@core/generated/bindings", "events"), ("~/hooks/use-transport", "useTransport"),
+                               ("../hooks/use-remote-hosts", "useRemoteHosts"),
+                               ("../routes/dashboard/containers/_hooks/use-docker", "useDocker"),
+                               ("../../core/transport", "Transport"), ("../../core/generated/bindings", "commands"),
+                               ("../router", "router"), ("@core/app-transport", "appTransport"),
+                               ("@core/mock-transport", "createMockTransport"), ("@core/mock/fixtures", "MOCK_HOST_ID")):
             with self.subTest(module=module, symbol=symbol):
                 self.assert_rejected(f'import {{ {symbol} }} from "{module}";\n', directory="src/app/widgets")
+
+    def test_app_reaches_tauri_only_through_transport(self):
+        for module, symbol in (("@core/transport/native", "createNativeTransport"),
+                               ("@core/transport/native-docker", "dockerCommands"),
+                               ("@core/generated/bindings", "commands"), ("@core/generated/bindings", "events")):
+            with self.subTest(module=module, symbol=symbol):
+                self.assert_rejected(f'import {{ {symbol} }} from "{module}";\n', directory="src/app")
+        for source in ('import type { Snapshot } from "@core/generated/bindings";\n',
+                       'import { useTransport } from "@core/transport";\n'):
+            with self.subTest(source=source):
+                self.assert_allowed(source, directory="src/app")
 
     def test_widgets_allow_generated_types_constants_and_presentation_helpers(self):
         for source in ('import type { Snapshot } from "@core/generated/bindings";\n',
                        'import { HISTORY_PAGE_LIMIT } from "@core/generated/bindings";\n',
                        'import { cn } from "~/lib/utils";\n',
-                       'import { enter } from "~/lib/motion/variants";\n'):
+                       'import { enter } from "~/lib/motion/variants";\n',
+                       'import type { LegendProps } from "../legend";\n'):
             with self.subTest(source=source):
                 self.assert_allowed(source, directory="src/app/widgets")
 

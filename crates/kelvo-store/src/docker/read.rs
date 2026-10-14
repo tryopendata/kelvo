@@ -82,7 +82,7 @@ impl DockerReadSnapshot<'_> {
     #[allow(clippy::too_many_arguments)]
     #[expect(
         clippy::too_many_lines,
-        reason = "responsibility split tracked in architecture refactor package F1"
+        reason = "split when substantially changed; architecture refactor section 10"
     )]
     pub fn catalog_with_overlay(
         &self,
