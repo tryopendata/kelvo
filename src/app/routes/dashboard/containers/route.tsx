@@ -702,6 +702,7 @@ function LocalContainersRoute() {
                         </>
                       }
                       historical={historical}
+                      summaries={historical ? tableRanking : undefined}
                       title={
                         historical
                           ? `Containers · ${new Date(selection?.fromMs ?? from).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}–${new Date(selection?.toMs ?? to).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`

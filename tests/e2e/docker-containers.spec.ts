@@ -341,7 +341,7 @@ test("task script identifies top CPU and memory, links chart focus and scopes a 
   const chart = page.getByRole("img", { name: /^CPU by container/ });
   await api.hover();
   await expect(api).toHaveClass(/bg-selected/);
-  const highlighted = chart.locator('g[opacity="1"] path');
+  const highlighted = chart.locator('g[opacity="1"] path[stroke-width]');
   await expect(highlighted.first()).toHaveAttribute("stroke-width", "2");
   expect(
     await highlighted
@@ -513,7 +513,7 @@ test("chart keyboard table alternative preserves real gaps and partial readings"
     values.getByRole("cell", { name: "—", exact: true }).first()
   ).toBeAttached();
   await expect(
-    values.getByRole("cell", { name: "0%", exact: true }).first()
+    values.getByRole("cell", { name: "0% / 0% / 0%", exact: true }).first()
   ).toBeAttached();
   await page
     .getByRole("button", { name: "Show as chart", exact: true })
@@ -977,6 +977,8 @@ for (const metric of ["cpu", "memory"] as const) {
         .evaluateAll((nodes) => nodes.map((node) => node.getAttribute("d")));
     await expect.poll(async () => (await paths()).length).toBeGreaterThan(0);
     const before = await paths();
+    await expect(page.getByText(/10 s average · shaded min–max/)).toBeVisible();
+    await expect(chart.locator("path[fill-opacity]")).toBeVisible();
     const brush = page.getByRole("slider", { name: "Select a time range" });
     const box = await brush.boundingBox();
     if (!box) throw new Error("Missing comparison brush");
@@ -998,6 +1000,7 @@ for (const metric of ["cpu", "memory"] as const) {
     await page.mouse.move(box.x + box.width * 0.75, box.y + box.height * 0.5);
     const tip = page.getByRole("tooltip");
     await expect(tip).toBeVisible();
+    await expect(tip).toContainText("min / avg / max");
     const text = await tip.textContent();
     await page.mouse.move(box.x + box.width * 0.9, box.y + box.height * 0.5);
     await expect(tip).not.toHaveText(text ?? "");
@@ -1019,5 +1022,30 @@ for (const metric of ["cpu", "memory"] as const) {
       .click();
     await expect(page.getByTestId("brush-band")).toHaveCount(0);
     await expect.poll(paths).toEqual(before);
+  });
+}
+
+for (const metric of ["cpu", "memory"] as const) {
+  test(`container ${metric} statistics tooltip fits a narrow window`, async ({
+    page,
+  }, info) => {
+    await page.setViewportSize({ width: 360, height: 900 });
+    await page.goto(
+      `/?route=${encodeURIComponent(`/dashboard/containers?metric=${metric}&chart=container-0&end=1791900000000`)}&scenario=docker-11&ticks=0`
+    );
+    const brush = page.getByRole("slider", { name: "Select a time range" });
+    await brush.focus();
+    await brush.press("ArrowLeft");
+    const tooltip = page.getByRole("tooltip");
+    await expect(tooltip).toContainText("min / avg / max");
+    expect(
+      await tooltip.evaluate(
+        (element) => element.scrollWidth <= element.clientWidth + 1
+      )
+    ).toBe(true);
+    await page.screenshot({
+      path: `test-results/screens/containers-${metric}-statistics-narrow-${info.project.name}.png`,
+      animations: "disabled",
+    });
   });
 }

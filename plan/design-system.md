@@ -220,6 +220,15 @@ keyboard/pinned detail links. Module area charts keep their existing accent fill
 and fixed-domain semantics. These are data-specific differences, not separate
 chart chrome.
 
+Container comparisons keep the average as the thin line at every history tier,
+including 10 s. A 20% min–max band spans each measured bucket, and its peak is
+included in the fitted axis domain. Missing buckets remain empty; partial buckets
+use an isolated vertical range marker. The caption names the bucket duration and
+both encodings, and the tooltip/table alternative show min/average/max with the
+bucket interval. Selected-range rows show peak with a secondary average. These
+follow the same aggregation semantics at every range rather than switching the
+line from average to maximum when data rolls up.
+
 `BrushOverlay` owns pointer and keyboard range selection for module and container
 charts. A selection scopes attribution, never replaces the plotted window: all
 marks stay mounted and share `ChartSelectionVeil` outside the selected interval.

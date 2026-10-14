@@ -55,7 +55,7 @@ describe("comparison point geometry", () => {
     ]);
     expect(result.dots.map((p) => p.value)).toEqual([0]);
   });
-  it("uses per-metric quality and peaks only above the base tier", () => {
+  it("uses per-metric quality and keeps the average line consistent across tiers", () => {
     const p = point(0, {
       cpu_measured_ms: 0,
       memory_measured_ms: 7000,
@@ -64,7 +64,22 @@ describe("comparison point geometry", () => {
     expect(pointValue(p, "cpu")).toBeNull();
     expect(pointValue(p, "memory")).not.toBeNull();
     expect(pointValue(point(0), "cpu")).toBe(10);
-    expect(pointValue(point(0, { duration_ms: 60000 }), "cpu")).toBe(30);
+    expect(pointValue(point(0, { duration_ms: 60000 }), "cpu")).toBe(10);
+    expect(pointValue(point(0), "cpu", "maximum")).toBe(30);
+  });
+  it("keeps peaks in bucket bands without moving the average or spanning missing/partial time", () => {
+    const result = draw([
+      point(0),
+      point(10_000, { cpu_measured_ms: 0 }),
+      point(20_000, { cpu_covered: false, cpu_measured_ms: 7000 }),
+      point(90_000, { duration_ms: 60_000 }),
+    ]);
+    expect(result.dots.map((p) => p.value)).toEqual([10, 10, 10]);
+    expect(result.bands).toEqual([
+      { x: 0, width: 100, minimumY: 98, maximumY: 70, partial: false },
+      { x: 200, width: 0, minimumY: 98, maximumY: 70, partial: true },
+      { x: 900, width: 100, minimumY: 98, maximumY: 70, partial: false },
+    ]);
   });
   it("does not bridge overlaps or extend outside the selected range", () => {
     const result = draw([point(-10000), point(0), point(5000), point(100000)]);

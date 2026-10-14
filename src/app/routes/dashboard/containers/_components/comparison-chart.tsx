@@ -7,7 +7,7 @@ import {
   pointValue,
   seriesColor,
 } from "@core/chart-math/series-lines";
-import { formatBytes, MISSING } from "@core/format";
+import { formatBytes, formatPercent } from "@core/format";
 import type {
   DockerContainer,
   DockerCoverage,
@@ -64,9 +64,6 @@ export interface ComparisonSeries {
   slot: number;
 }
 const HEIGHT = DASHBOARD_CHART_HEIGHT;
-const percent = new Intl.NumberFormat("en-US", {
-  maximumSignificantDigits: 3,
-});
 export function ComparisonChart(props: ComponentProps<typeof ComparisonPlot>) {
   const provider = useBrushStoreOptional();
   return provider ? (
@@ -126,10 +123,12 @@ function ComparisonPlot({
   const { bytes } = useUnits();
   const format = (value: number | null) =>
     metric === "cpu"
-      ? value === null
-        ? MISSING
-        : `${percent.format(value)}%`
+      ? formatPercent(value, { significantDigits: 3 })
       : formatBytes(value, { units: bytes });
+  const statistics = (point: DockerHistoryPoint) =>
+    (["minimum", "average", "maximum"] as const)
+      .map((statistic) => format(pointValue(point, metric, statistic)))
+      .join(" / ");
   const metricGaps = coverage.filter((gap) => !eventCoverage(gap));
   const series = sourceSeries.map((s) => ({
     ...s,
@@ -162,7 +161,13 @@ function ComparisonPlot({
           Math.abs(a - time) < Math.abs(b - time) ? a : b
         );
   const values = useMemo(
-    () => series.flatMap((s) => s.points.map((p) => pointValue(p, metric))),
+    () =>
+      series.flatMap((s) =>
+        s.points.flatMap((p) => [
+          pointValue(p, metric),
+          pointValue(p, metric, "maximum"),
+        ])
+      ),
     [series, metric]
   );
   // The visible window already retains its peaks. Fit its plotted values directly:
@@ -219,6 +224,7 @@ function ComparisonPlot({
     new Date(time).toLocaleTimeString([], {
       hour: "2-digit",
       minute: "2-digit",
+      second: duration < 60_000 ? "2-digit" : undefined,
     });
   return (
     <div {...brushScopeProps}>
@@ -230,7 +236,7 @@ function ComparisonPlot({
         <div className="min-w-0">
           <div className="mb-1.5 text-[11px] text-muted-foreground">
             {metric === "cpu" ? "% of one core" : "Working set"}
-            {duration > 10_000 ? ` · peak per ${durationLabel}` : ""}
+            {` · ${durationLabel} average · shaded min–max`}
           </div>
           {asTable ? (
             <div className="h-60 overflow-auto">
@@ -238,6 +244,9 @@ function ComparisonPlot({
                 className="figures w-full text-[11px]"
                 aria-label="Container history values"
               >
+                <caption className="text-left text-muted-foreground">
+                  Per bucket: min / avg / max
+                </caption>
                 <thead className="sticky top-0 bg-card">
                   <tr>
                     <th className="p-2 text-left">Time</th>
@@ -260,7 +269,9 @@ function ComparisonPlot({
                             key={s.container.id}
                             className="whitespace-nowrap p-2 text-right"
                           >
-                            {format(value)}
+                            {point && value !== null
+                              ? statistics(point)
+                              : format(null)}
                             {value !== null &&
                             point &&
                             !pointCovered(point, metric)
@@ -320,6 +331,31 @@ function ComparisonPlot({
                     opacity={active && active !== s.container.id ? 0.3 : 1}
                     onPointerEnter={() => onFocus(s.container.id)}
                   >
+                    {/* Each band spans its own bucket; missing spans remain empty. */}
+                    <path
+                      d={s.geometry.bands
+                        .filter((band) => !band.partial)
+                        .map(
+                          (band) =>
+                            `M${band.x},${band.maximumY + 1}h${band.width}V${band.minimumY + 1}h${-band.width}Z`
+                        )
+                        .join(" ")}
+                      fill={seriesColor(s.slot)}
+                      fillOpacity={0.2}
+                    />
+                    <path
+                      d={s.geometry.bands
+                        .filter((band) => band.partial)
+                        .map(
+                          (band) =>
+                            `M${band.x},${band.maximumY + 1}V${band.minimumY + 1}`
+                        )
+                        .join(" ")}
+                      fill="none"
+                      stroke={seriesColor(s.slot)}
+                      strokeOpacity={0.2}
+                      vectorEffect="non-scaling-stroke"
+                    />
                     {s.geometry.runs.map((run) => (
                       <path
                         key={run[0]?.time}
@@ -417,9 +453,7 @@ function ComparisonPlot({
                 >
                   <div>
                     {clock(cursor)}
-                    {duration > 10_000
-                      ? `–${clock(cursor + (rows.find((r) => r.point)?.point?.duration_ms ?? duration))}`
-                      : ""}
+                    {`–${clock(cursor + (rows.find((r) => r.point)?.point?.duration_ms ?? duration))}`}
                   </div>
                   {rows.map((row) => (
                     <div
@@ -449,8 +483,8 @@ function ComparisonPlot({
                       <span className="figures">
                         {row.value === null
                           ? "no data"
-                          : row.point && row.point.duration_ms > 10_000
-                            ? `${format(metric === "cpu" ? row.point.minimum.cpu_pct : row.point.minimum.working_set_bytes)} / ${format(metric === "cpu" ? row.point.metrics.cpu_pct : row.point.metrics.working_set_bytes)} / ${format(row.value)}`
+                          : row.point
+                            ? statistics(row.point)
                             : format(row.value)}
                         {row.point &&
                         row.value !== null &&
@@ -460,11 +494,7 @@ function ComparisonPlot({
                       </span>
                     </div>
                   ))}
-                  {duration > 10_000 && (
-                    <span className="text-muted-foreground">
-                      min / avg / max
-                    </span>
-                  )}
+                  <span className="text-muted-foreground">min / avg / max</span>
                 </ChartTooltipShell>
               )}
             </ChartFrame>

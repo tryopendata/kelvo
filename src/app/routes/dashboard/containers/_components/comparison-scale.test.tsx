@@ -26,6 +26,8 @@ function point(time: number, cpu: number): DockerHistoryPoint {
     cpu_measured_ms: 10_000,
     cpu_covered: true,
     metrics: { ...template.metrics, cpu_pct: cpu },
+    peak: { ...template.peak, cpu_pct: cpu },
+    minimum: { ...template.minimum, cpu_pct: cpu },
   };
 }
 function Chart({
@@ -123,6 +125,7 @@ it("fits memory to measured working sets instead of a fixed 64 MiB minimum", () 
           memory_measured_ms: 10_000,
           memory_covered: true,
           metrics: { ...sample.metrics, working_set_bytes: 5_000_000 },
+          peak: { ...sample.peak, working_set_bytes: 5_000_000 },
         },
       ]}
     />
@@ -173,6 +176,7 @@ it.each([
             memory_measured_ms: 10_000,
             memory_covered: true,
             metrics: { ...sample.metrics, working_set_bytes: maximum },
+            peak: { ...sample.peak, working_set_bytes: maximum },
           },
         ]}
       />
@@ -192,7 +196,9 @@ it("keeps fractional CPU tooltip values consistent with the fitted axis", () => 
       key: "ArrowRight",
     }
   );
-  expect(within(screen.getByRole("tooltip")).getByText("0.17%")).toBeVisible();
+  expect(
+    within(screen.getByRole("tooltip")).getByText("0.17% / 0.17% / 0.17%")
+  ).toBeVisible();
   expect(screen.getByText("0.18%")).toBeVisible();
   result.unmount();
   result.transport.dispose();

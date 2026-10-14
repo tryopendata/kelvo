@@ -1,6 +1,9 @@
 import { seriesColor } from "@core/chart-math/series-lines";
 import { formatBytes, formatPercent, formatRate } from "@core/format";
-import type { DockerContainer } from "@core/generated/bindings";
+import type {
+  DockerContainer,
+  DockerRankedContainer,
+} from "@core/generated/bindings";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   type MouseEvent,
@@ -57,6 +60,7 @@ export function ContainerTable({
   historical = false,
   title = "Containers now",
   liveRows,
+  summaries,
 }: {
   rows: readonly DockerContainer[];
   sort: ContainerSort;
@@ -73,11 +77,13 @@ export function ContainerTable({
   historical?: boolean;
   title?: string;
   liveRows?: readonly DockerContainer[];
+  summaries?: readonly DockerRankedContainer[];
 }) {
   const location = useLocation();
   const navigate = useNavigate();
   const actions = useContainerActions();
   const { bytes, rate } = useUnits();
+  const summaryById = new Map(summaries?.map((row) => [row.container.id, row]));
   const scroller = useRef<HTMLDivElement>(null);
   const [hovered, setHovered] = useState(false);
   const [keyboard, setKeyboard] = useState(false);
@@ -204,6 +210,7 @@ export function ContainerTable({
         </tr>
       );
     const row = item.row;
+    const summary = historical ? summaryById.get(row.id) : undefined;
     const current =
       liveRows?.find((r) => r.id === row.id) ?? (historical ? null : row);
     const live = ["running", "paused", "restarting"].includes(row.lifecycle);
@@ -247,7 +254,15 @@ export function ContainerTable({
           onNavigate={openDetail}
         />
         <td className="figures whitespace-nowrap px-2 py-1 text-right text-[12px]">
-          {formatPercent(metrics?.cpu_pct ?? null)}
+          {formatPercent(
+            metrics?.cpu_pct ?? null,
+            historical ? { significantDigits: 3 } : {}
+          )}
+          {summary && (
+            <div className="text-[10px] text-muted-foreground">
+              {formatPercent(summary.avg_cpu_pct, { significantDigits: 3 })} avg
+            </div>
+          )}
         </td>
         <td
           className={`${styles.memory} figures px-2 py-1 text-right text-[12px] leading-[14px]`}
@@ -255,6 +270,11 @@ export function ContainerTable({
           <span className="whitespace-nowrap">
             {byte(metrics?.working_set_bytes ?? null)}
           </span>
+          {summary && (
+            <div className="whitespace-nowrap text-[10px] text-muted-foreground">
+              {byte(summary.avg_working_set_bytes)} avg
+            </div>
+          )}
           {metrics && row.explicit_limit_bytes !== null && !historical && (
             <>
               {" "}

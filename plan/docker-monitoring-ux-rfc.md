@@ -264,10 +264,14 @@ flag per metric (R-46). For the selected metric:
 | Covered, but no connectable neighbor on either side | Draw as a dot. |
 
 **R-12. Which value to plot.**
-- `duration_ms <= 10_000`: plot the bucket average (`metrics`).
-- `duration_ms > 10_000` (rolled-up tiers and server downsampling): plot the bucket peak
-  (`peak`, R-46) so short spikes stay visible. The Y caption gains ` · peak per {duration}`,
-  for example `% of one core · peak per 1 min`.
+- Updated after October 13 QA: at every duration, plot the bucket average (`metrics`)
+  as the thin main line, with a 20% minimum-to-maximum band (`minimum` / `peak`).
+  Include the band maximum in the axis domain. Never silently change the statistic
+  with retention tier. Each band covers its bucket only; partial buckets use an
+  isolated range marker and missing measurements stay empty.
+- The caption states the aggregation period and both encodings, for example
+  `% of one core · 10 s average · shaded min–max`. Selected table rows show the
+  published range peak and weighted average separately, using the chart's precision.
 
 **R-12a. Slice A only.**
 - Until R-46 lands, treat a point as covered when `measured_ms >= expected_ms * 0.98`.
@@ -362,8 +366,8 @@ one container.
 - Moving the pointer over the plot moves a vertical crosshair to the nearest point time.
 - A tooltip (`ChartTooltipShell`) lists every charted container, sorted by value
   descending: swatch, name, value with unit, and `partial` for a partial point or `no data`.
-- For points with `duration_ms > 10_000`, show `min / avg / max` and the bucket interval
-  (`11:20–11:21`), never an exact time for the peak.
+- At every tier show `min / avg / max` and the bucket interval
+  (`11:20:00–11:20:10` at 10 s, `11:20–11:21` at 1 min), never an exact time for the peak.
 
 **R-24. Pin and open.**
 - Clicking the plot pins the crosshair.

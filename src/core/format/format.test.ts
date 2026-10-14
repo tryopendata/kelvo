@@ -57,6 +57,17 @@ describe("formatPercent", () => {
   it("keeps a real zero", () => {
     expect(formatPercent(0)).toBe("0%");
   });
+
+  it("keeps small averages and large peaks readable with the same precision", () => {
+    for (const [value, expected] of [
+      [0.01734, "0.0173%"],
+      [2.3193, "2.32%"],
+      [58.56618, "58.6%"],
+      [0, "0%"],
+    ] as const)
+      expect(formatPercent(value, { significantDigits: 3 })).toBe(expected);
+    expect(formatPercent(null, { significantDigits: 3 })).toBe(MISSING);
+  });
 });
 
 describe("formatBytes", () => {

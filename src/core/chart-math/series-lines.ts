@@ -8,14 +8,28 @@ export interface SeriesVertex {
   value: number;
   partial: boolean;
 }
+export interface SeriesBand {
+  x: number;
+  width: number;
+  minimumY: number;
+  maximumY: number;
+  partial: boolean;
+}
 export function pointValue(
   point: DockerHistoryPoint,
-  metric: ComparisonMetric
+  metric: ComparisonMetric,
+  statistic: "average" | "minimum" | "maximum" = "average"
 ): number | null {
   const measured =
     metric === "cpu" ? point.cpu_measured_ms : point.memory_measured_ms;
   if (!measured) return null;
-  const values = point.duration_ms > 10_000 ? point.peak : point.metrics;
+  // Keep the statistic explicit and stable across every retention tier.
+  const values =
+    statistic === "average"
+      ? point.metrics
+      : statistic === "minimum"
+        ? point.minimum
+        : point.peak;
   return metric === "cpu" ? values.cpu_pct : values.working_set_bytes;
 }
 export function pointCovered(
@@ -36,6 +50,7 @@ export function buildSeriesRuns(
 ) {
   const runs: SeriesVertex[][] = [];
   const dots: SeriesVertex[] = [];
+  const bands: SeriesBand[] = [];
   let run: SeriesVertex[] = [];
   let previousEnd: number | null = null;
   const flush = () => {
@@ -59,6 +74,21 @@ export function buildSeriesRuns(
       value,
       partial,
     };
+    const minimum = pointValue(point, metric, "minimum");
+    const maximum = pointValue(point, metric, "maximum");
+    if (minimum !== null && maximum !== null) {
+      bands.push({
+        x: vertex.x,
+        width: partial
+          ? 0
+          : ((Math.min(to, point.time_ms + point.duration_ms) - point.time_ms) /
+              Math.max(1, to - from)) *
+            width,
+        minimumY: height - (minimum / ceiling) * height,
+        maximumY: height - (maximum / ceiling) * height,
+        partial,
+      });
+    }
     if (partial) {
       flush();
       dots.push(vertex);
@@ -70,7 +100,7 @@ export function buildSeriesRuns(
     previousEnd = point.time_ms + point.duration_ms;
   }
   flush();
-  return { runs, dots };
+  return { runs, dots, bands };
 }
 export interface RankedCandidate {
   id: string;
