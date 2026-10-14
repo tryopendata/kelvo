@@ -14,10 +14,13 @@ import { useHost } from "~/stores/host-store";
 export function SelectionSummary({
   windowMs,
   shown,
+  fromMs,
   inset = PLOT_INSET,
 }: {
   windowMs: number;
   shown?: TimeRange | null;
+  /** Explicit plot start for retained charts; live charts use the host clock. */
+  fromMs?: number;
   inset?: number;
 }) {
   const range = useBrushRange();
@@ -25,8 +28,8 @@ export function SelectionSummary({
   const offChart = useHost(
     (s) =>
       range !== null &&
-      s.lastTsMs !== null &&
-      range.toMs <= s.lastTsMs - windowMs
+      (fromMs !== undefined || s.lastTsMs !== null) &&
+      range.toMs <= (fromMs ?? (s.lastTsMs ?? 0) - windowMs)
   );
   const className = "mt-1 mb-0 font-normal text-[12px] text-muted-foreground";
 

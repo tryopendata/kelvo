@@ -8,7 +8,10 @@ import {
   dockerRuntimeScopeLabel,
 } from "@core/docker-labels";
 import { formatBytes, formatPercent } from "@core/format";
-import type { DockerSettings } from "@core/generated/bindings";
+import type {
+  DockerComparisonRequest,
+  DockerSettings,
+} from "@core/generated/bindings";
 import { DropdownMenu } from "radix-ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useSearchParams } from "react-router";
@@ -17,6 +20,7 @@ import { PageHeader } from "~/components/page-header";
 import { SearchField } from "~/components/search-field";
 import { SectionCard } from "~/components/section-card";
 import { SegmentedControl } from "~/components/segmented-control";
+import { SelectionChip } from "~/components/selection-chip";
 import { Button } from "~/components/ui/button";
 import {
   Select,
@@ -130,9 +134,10 @@ function LocalContainersRoute() {
   useEffect(() => {
     if (focusEngine.current === engine) return;
     focusEngine.current = engine;
+    brush.getState().clear();
     setFocused(null);
     setPinnedFocus(null);
-  }, [engine]);
+  }, [engine, brush]);
   const selected =
     custom ??
     (Object.keys(currentMembership.slots).length
@@ -142,16 +147,22 @@ function LocalContainersRoute() {
             (currentMembership.slots[b] ?? 0)
         )
       : null);
-  const comparison = useDockerComparison(
-    {
-      engine_id: engine,
-      from_ms: selection?.fromMs ?? from,
-      to_ms: selection?.toMs ?? to,
-      metric,
-      project,
-      selected,
-      max_points: 360,
-    },
+  const request: DockerComparisonRequest = {
+    engine_id: engine,
+    from_ms: from,
+    to_ms: to,
+    metric,
+    project,
+    selected,
+    max_points: 360,
+  };
+  const comparison = useDockerComparison(request, snapshot?.generation ?? 0);
+  // A brush scopes the table, never the plotted window. Identical unselected
+  // requests share the query cache, so live viewing still makes one read.
+  const selectedComparison = useDockerComparison(
+    selection
+      ? { ...request, from_ms: selection.fromMs, to_ms: selection.toMs }
+      : request,
     snapshot?.generation ?? 0
   );
   // Query placeholders belong to their original engine, even if container IDs match.
@@ -356,8 +367,13 @@ function LocalContainersRoute() {
   const memory = aggregate?.working_set_bytes ?? null;
   const partial = aggregate?.partial ?? false;
   const historical = end !== null || selection !== null;
+  const tableRanking = selection
+    ? selectedComparison.data?.ranking.filter(
+        (row) => row.container.engine_id === engine
+      )
+    : ranking;
   const tableRows = historical
-    ? (ranking ?? []).map((r) => ({
+    ? (tableRanking ?? []).map((r) => ({
         ...r.container,
         lifecycle: r.last_lifecycle ?? ("unknown" as const),
         metrics: {
@@ -461,7 +477,7 @@ function LocalContainersRoute() {
   );
   return (
     <ContainerActionProvider snapshot={snapshot}>
-      <div className="flex min-w-0 flex-col gap-3" {...brushScopeProps}>
+      <div className="flex min-w-0 flex-col gap-3">
         <PageHeader
           title="Containers"
           subtitle={`${snapshot.engine?.runtime ?? "Local Docker"} · ${statusLabel[snapshot.status]}`}
@@ -548,7 +564,7 @@ function LocalContainersRoute() {
                   metric={metric}
                   from={from}
                   to={to}
-                  live={end === null && !selection}
+                  live={end === null}
                   range={range}
                   controls={historyControls}
                   coverage={comparisonPage?.coverage}
@@ -634,80 +650,96 @@ function LocalContainersRoute() {
                     set("chart", null);
                   }}
                 />
-                <SectionCard
-                  accent="cpu"
-                  title="Containers now"
-                  hiddenTitle
-                  flush
-                >
-                  <ContainerTable
-                    liveRows={snapshot.containers}
-                    rows={shown}
-                    sort={sort}
-                    onSort={(value) => {
-                      sortOverride.current = value;
-                      set("sort", value);
-                    }}
-                    grouped={grouped}
-                    columns={columns}
-                    collapsed={collapsed}
-                    onCollapse={(group) =>
-                      setParams(
-                        (old) => {
-                          const next = new URLSearchParams(old);
-                          const values = next.getAll("collapsed");
-                          next.delete("collapsed");
-                          for (const v of values.includes(group)
-                            ? values.filter((v) => v !== group)
-                            : [...values, group])
-                            next.append("collapsed", v);
-                          return next;
-                        },
-                        { replace: true }
-                      )
-                    }
-                    slots={slots}
-                    focused={pinnedFocus ?? focused}
-                    onFocus={setFocused}
-                    filters={filters}
-                    historical={historical}
-                    title={
-                      historical
-                        ? `Containers · ${new Date(selection?.fromMs ?? from).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}–${new Date(selection?.toMs ?? to).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
-                        : "Containers now"
-                    }
-                    attention={
-                      hiddenAttention.length ? (
-                        <button
-                          type="button"
-                          className="text-[11px] underline"
-                          onClick={() => {
-                            setParams(
-                              (old) => {
-                                const next = new URLSearchParams(old);
-                                next.delete("q");
-                                next.delete("state");
-                                const targetGroup =
-                                  hiddenAttention[0]?.project ?? "Standalone";
-                                const hiddenGroups = next
-                                  .getAll("collapsed")
-                                  .filter((group) => group !== targetGroup);
-                                next.delete("collapsed");
-                                for (const group of hiddenGroups)
-                                  next.append("collapsed", group);
-                                return next;
-                              },
-                              { replace: true }
-                            );
-                            setFocused(hiddenAttention[0]?.id ?? null);
-                          }}
-                        >
-                          {hiddenAttention.length} need attention
-                        </button>
-                      ) : undefined
-                    }
-                  />
-                </SectionCard>
+                <div {...brushScopeProps}>
+                  {selection && selectedComparison.error && (
+                    <p
+                      role="alert"
+                      className="text-[11px] text-muted-foreground"
+                    >
+                      Selected history could not be read:{" "}
+                      {selectedComparison.error.message}
+                    </p>
+                  )}
+                  <SectionCard
+                    accent="cpu"
+                    title="Containers now"
+                    hiddenTitle
+                    flush
+                  >
+                    <ContainerTable
+                      liveRows={snapshot.containers}
+                      rows={shown}
+                      sort={sort}
+                      onSort={(value) => {
+                        sortOverride.current = value;
+                        set("sort", value);
+                      }}
+                      grouped={grouped}
+                      columns={columns}
+                      collapsed={collapsed}
+                      onCollapse={(group) =>
+                        setParams(
+                          (old) => {
+                            const next = new URLSearchParams(old);
+                            const values = next.getAll("collapsed");
+                            next.delete("collapsed");
+                            for (const v of values.includes(group)
+                              ? values.filter((v) => v !== group)
+                              : [...values, group])
+                              next.append("collapsed", v);
+                            return next;
+                          },
+                          { replace: true }
+                        )
+                      }
+                      slots={slots}
+                      focused={pinnedFocus ?? focused}
+                      onFocus={setFocused}
+                      filters={
+                        <>
+                          {selection && <SelectionChip range={selection} />}
+                          {filters}
+                        </>
+                      }
+                      historical={historical}
+                      title={
+                        historical
+                          ? `Containers · ${new Date(selection?.fromMs ?? from).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}–${new Date(selection?.toMs ?? to).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+                          : "Containers now"
+                      }
+                      attention={
+                        hiddenAttention.length ? (
+                          <button
+                            type="button"
+                            className="text-[11px] underline"
+                            onClick={() => {
+                              setParams(
+                                (old) => {
+                                  const next = new URLSearchParams(old);
+                                  next.delete("q");
+                                  next.delete("state");
+                                  const targetGroup =
+                                    hiddenAttention[0]?.project ?? "Standalone";
+                                  const hiddenGroups = next
+                                    .getAll("collapsed")
+                                    .filter((group) => group !== targetGroup);
+                                  next.delete("collapsed");
+                                  for (const group of hiddenGroups)
+                                    next.append("collapsed", group);
+                                  return next;
+                                },
+                                { replace: true }
+                              );
+                              setFocused(hiddenAttention[0]?.id ?? null);
+                            }}
+                          >
+                            {hiddenAttention.length} need attention
+                          </button>
+                        ) : undefined
+                      }
+                    />
+                  </SectionCard>
+                </div>
                 <details className="border-border-subtle border-y py-3 text-[12px]">
                   <summary className="cursor-pointer focus-visible:ring-2 focus-visible:ring-ring">
                     Runtime &amp; history

@@ -2,7 +2,7 @@ import { splitGaps } from "@core/chart-math";
 import { scaleLinear } from "d3-scale";
 import { area, line } from "d3-shape";
 import { type ReactNode, useId } from "react";
-import { ChartFrame, ChartGrid } from "./chart-frame";
+import { ChartFrame, ChartGrid, ChartSelectionVeil } from "./chart-frame";
 import { GapBands, type GapSpan } from "./gap-band";
 import { type Accent, accentVars, rampColor } from "./lib/accent";
 import { useTickScroll } from "./lib/use-tick-scroll";
@@ -53,8 +53,6 @@ export interface StreamAreaProps {
   /** Drawn over the plot area, sized to it (a brush layer). */
   overlay?: ReactNode;
 }
-
-const pct = (f: number) => `${(f * 100).toFixed(3)}%`;
 
 interface Pt {
   x: number;
@@ -192,21 +190,7 @@ export function StreamArea({
           rangeToMs={tEndMs}
         />
       )}
-      {highlight && (
-        <>
-          <div
-            aria-hidden
-            data-testid="stream-veil"
-            className="pointer-events-none absolute inset-y-0 left-0 bg-card/60"
-            style={{ width: pct(highlight.left) }}
-          />
-          <div
-            aria-hidden
-            className="pointer-events-none absolute inset-y-0 right-0 bg-card/60"
-            style={{ left: pct(highlight.left + highlight.width) }}
-          />
-        </>
-      )}
+      <ChartSelectionVeil highlight={highlight} />
       {drawn.flatMap(({ s, edges, stroke }) =>
         edges.map((p) => (
           <span

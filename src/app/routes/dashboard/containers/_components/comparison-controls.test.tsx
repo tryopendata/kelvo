@@ -177,11 +177,13 @@ it("provides partial values, interval min/avg/max, keyboard focus and pinned det
   );
   const chart = screen.getByRole("img", { name: /CPU by container/ });
   expect(chart.querySelectorAll("ellipse").length).toBeGreaterThan(0);
-  fireEvent.keyDown(chart, { key: "ArrowLeft" });
+  const brush = screen.getByRole("slider", { name: "Select a time range" });
+  fireEvent.keyDown(brush, { key: "ArrowLeft" });
+  fireEvent.keyDown(brush, { key: "Enter" });
   expect(screen.getByRole("tooltip")).toHaveTextContent("min / avg / max");
   const link = within(screen.getByRole("tooltip")).getByRole("link");
   expect(link.getAttribute("href")).toContain("metric=cpu&range=15m&end=");
-  fireEvent.keyDown(chart, { key: "ArrowDown" });
+  fireEvent.focus(screen.getByRole("button", { name: container.name }));
   expect(focus).toHaveBeenCalledWith(container.id);
   await result.user.click(
     screen.getByRole("button", { name: "Show as table" })

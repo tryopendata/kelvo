@@ -91,10 +91,8 @@ export interface BrushOverlayProps {
   selectableToMs?: number;
   /** Distance from the positioned parent's left edge to the plot, px. */
   inset?: number;
-  /** History comparisons keep their own crosshair and keyboard navigation. */
+  /** Optional metric readout; selection and keyboard behavior stay shared. */
   onHoverTime?: (time: number | null, fractionY: number) => void;
-  onClickTime?: (time: number) => void;
-  keyboard?: boolean;
 }
 
 const pct = (f: number) => `${(f * 100).toFixed(3)}%`;
@@ -122,8 +120,6 @@ export function BrushOverlay({
   selectableToMs,
   inset = PLOT_INSET,
   onHoverTime,
-  onClickTime,
-  keyboard = true,
 }: BrushOverlayProps) {
   const store = useBrushStore();
   const view = useBrush((s) => s.draft ?? s.range);
@@ -197,10 +193,6 @@ export function BrushOverlay({
     drag.current = null;
     if (!d) return;
     const s = store.getState();
-    if (!d.moved && onClickTime) {
-      onClickTime(d.anchorMs);
-      return;
-    }
     if (!d.moved && s.range !== null) {
       // A click with a selection up dismisses it; a drag replaces it.
       s.clear();
@@ -229,7 +221,7 @@ export function BrushOverlay({
     return Math.min(last, Math.max(first, start));
   };
   const onFocus = () => {
-    if (!keyboard || focusMs !== null) return;
+    if (focusMs !== null) return;
     // Pointer-down precedes focus. Keep its hovered bucket; only keyboard
     // entry should move the tooltip to the selection/newest observation.
     const pointer = drag.current;
@@ -240,9 +232,10 @@ export function BrushOverlay({
     if (!pointer) onHoverTime?.(time, 0);
   };
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-    if (!keyboard) return;
     const s = store.getState();
     if (e.key === "Escape") {
+      onHoverTime?.(null, 0);
+      setFocusMs(null);
       if (s.range === null && s.draft === null) return;
       e.preventDefault();
       s.clear();
@@ -302,7 +295,7 @@ export function BrushOverlay({
   return (
     <div
       role="slider"
-      tabIndex={keyboard ? 0 : -1}
+      tabIndex={0}
       aria-label="Select a time range"
       aria-describedby={hintId}
       aria-valuemin={0}

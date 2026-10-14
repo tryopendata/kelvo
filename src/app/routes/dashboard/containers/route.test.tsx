@@ -309,3 +309,83 @@ it("does not draw previous-engine history or reuse its selection while the next 
   result.unmount();
   transport.dispose();
 });
+
+it.each(["cpu", "memory"])(
+  "keeps the full %s chart and hover available while a brush scopes only the table",
+  async (metric) => {
+    const transport = createMockTransport({
+      scenarios: ["docker-11"],
+      historyRows: 1,
+      now: () => 1791900000000,
+    });
+    const result = renderWithProviders(<ContainersRoute />, {
+      transport,
+      route: `/dashboard/containers?metric=${metric}&chart=container-0&end=1791900000000`,
+    });
+    const chart = () => screen.getByRole("img", { name: /by container,/ });
+    await waitFor(() =>
+      expect(chart().querySelectorAll("g path").length).toBeGreaterThan(0)
+    );
+    const paths = () =>
+      [...chart().querySelectorAll("g path")].map((p) => p.getAttribute("d"));
+    const before = paths();
+    const brush = screen.getByRole("slider", { name: "Select a time range" });
+    brush.getBoundingClientRect = () =>
+      ({ left: 0, top: 0, width: 1000, height: 220 }) as DOMRect;
+    fireEvent.pointerDown(brush, { button: 0, clientX: 100 });
+    fireEvent.pointerMove(brush, { clientX: 250, clientY: 100 });
+    fireEvent.pointerUp(brush, { clientX: 250 });
+    await waitFor(() =>
+      expect(screen.getByRole("table", { name: /^Containers ·/ })).toBeVisible()
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Clear selection" })
+      ).toBeVisible()
+    );
+    expect(paths()).toEqual(before);
+    fireEvent.pointerMove(brush, { clientX: 750, clientY: 100 });
+    const first = screen.getByRole("tooltip").textContent;
+    fireEvent.pointerMove(brush, { clientX: 900, clientY: 100 });
+    expect(screen.getByRole("tooltip").textContent).not.toBe(first);
+    fireEvent.pointerDown(brush, { button: 0, clientX: 900 });
+    fireEvent.pointerUp(brush, { clientX: 900 });
+    expect(screen.queryByTestId("brush-band")).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Clear selection" })
+    ).toBeNull();
+    expect(paths()).toEqual(before);
+    result.unmount();
+    transport.dispose();
+  }
+);
+
+it("uses the shared keyboard selection and dismissal contract", async () => {
+  const transport = createMockTransport({
+    scenarios: ["docker-11"],
+    historyRows: 1,
+  });
+  const result = renderWithProviders(<ContainersRoute />, { transport });
+  const brush = await screen.findByRole("slider", {
+    name: "Select a time range",
+  });
+  expect(brush).toHaveAttribute("tabindex", "0");
+  fireEvent.focus(brush);
+  fireEvent.keyDown(brush, { key: "ArrowLeft" });
+  fireEvent.keyDown(brush, { key: "Enter" });
+  expect(screen.getByTestId("brush-band")).toBeVisible();
+  fireEvent.keyDown(brush, { key: "ArrowLeft", shiftKey: true });
+  expect(screen.getByTestId("selection-summary")).toHaveTextContent(
+    "press Esc to clear"
+  );
+  fireEvent.keyDown(brush, { key: "Escape" });
+  expect(screen.queryByTestId("brush-band")).toBeNull();
+  expect(screen.queryByRole("tooltip")).toBeNull();
+  fireEvent.keyDown(brush, { key: "Enter" });
+  fireEvent.pointerDown(screen.getByRole("heading", { name: "Containers" }), {
+    button: 0,
+  });
+  expect(screen.queryByTestId("brush-band")).toBeNull();
+  result.unmount();
+  transport.dispose();
+});

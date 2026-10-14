@@ -83,8 +83,9 @@ for (const via of ["tooltip", "keyboard"] as const) {
       </main>,
       { route }
     );
-    const chart = screen.getByRole("img");
+    const chart = screen.getByRole("slider", { name: "Select a time range" });
     fireEvent.keyDown(chart, { key: "ArrowLeft" });
+    fireEvent.keyDown(chart, { key: "Enter" });
     const main = result.container.querySelector("main");
     const scroller = result.container.querySelector(
       "[data-container-table-scroll]"
@@ -94,7 +95,10 @@ for (const via of ["tooltip", "keyboard"] as const) {
     scroller.scrollTop = 81;
     if (via === "tooltip")
       fireEvent.click(screen.getByRole("link", { name: "api" }));
-    else fireEvent.keyDown(chart, { key: "Enter" });
+    else {
+      screen.getByRole("link", { name: "api" }).focus();
+      await result.user.keyboard("{Enter}");
+    }
     await waitFor(() =>
       expect(result.router.state.location.state).toEqual({
         back: route,

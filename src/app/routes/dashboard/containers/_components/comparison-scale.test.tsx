@@ -186,9 +186,12 @@ it.each([
 
 it("keeps fractional CPU tooltip values consistent with the fitted axis", () => {
   const result = renderWithProviders(<Chart points={[point(10_000, 0.17)]} />);
-  fireEvent.keyDown(screen.getByRole("img", { name: /^CPU by container/ }), {
-    key: "ArrowRight",
-  });
+  fireEvent.keyDown(
+    screen.getByRole("slider", { name: "Select a time range" }),
+    {
+      key: "ArrowRight",
+    }
+  );
   expect(within(screen.getByRole("tooltip")).getByText("0.17%")).toBeVisible();
   expect(screen.getByText("0.18%")).toBeVisible();
   result.unmount();

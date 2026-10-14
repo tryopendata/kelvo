@@ -495,11 +495,11 @@ test("chart keyboard table alternative preserves real gaps and partial readings"
 }) => {
   await page.goto(activity);
   const chart = page.getByRole("img", { name: /^CPU by container/ });
-  await chart.focus();
-  await chart.press("ArrowLeft");
+  const brush = page.getByRole("slider", { name: "Select a time range" });
+  await brush.focus();
+  await brush.press("ArrowLeft");
   await expect(page.getByRole("tooltip").first()).toBeVisible();
-  await chart.press("ArrowDown");
-  await chart.press("Escape");
+  await brush.press("Escape");
   await expect(page.getByRole("tooltip")).toHaveCount(0);
   await page
     .getByRole("button", { name: "Show as table", exact: true })
@@ -890,12 +890,22 @@ for (const via of ["table", "tooltip", "keyboard"] as const) {
         element.scrollTop += 40;
       });
     } else {
-      await chart.focus();
-      await chart.press("ArrowLeft");
+      const brush = page.getByRole("slider", { name: "Select a time range" });
+      await brush.focus();
+      await brush.press("ArrowLeft");
+      await brush.press("Enter");
+      // Select enough recorded time to keep the history table populated (the
+      // mock deliberately includes a gap in each retained range).
+      for (let i = 0; i < 10; i++) await brush.press("Shift+ArrowLeft");
+      await expect(table.getByRole("link").first()).toBeVisible();
       await page.locator("main").evaluate((element) => {
         element.scrollTop = 100;
       });
     }
+    // Selecting through the shared brush refreshes the historical table.
+    await scroller.evaluate((element) => {
+      element.scrollTop = 150;
+    });
     const saved = await page.evaluate(() => ({
       main: document.querySelector("main")?.scrollTop ?? 0,
       table:
@@ -916,7 +926,10 @@ for (const via of ["table", "tooltip", "keyboard"] as const) {
         .getByRole("link", { name: "service-4", exact: true })
         .dispatchEvent("click", { button: 0 });
     } else {
-      await chart.press("Enter");
+      await page
+        .getByRole("tooltip")
+        .getByRole("link", { name: "service-4", exact: true })
+        .press("Enter");
     }
     await expect(
       page.getByRole("button", { name: "← Containers", exact: true })
@@ -945,5 +958,66 @@ for (const via of ["table", "tooltip", "keyboard"] as const) {
     await expect
       .poll(() => scroller.evaluate((element) => element.scrollTop))
       .toBe(saved.table);
+  });
+}
+
+for (const metric of ["cpu", "memory"] as const) {
+  test(`container ${metric} selection keeps the plot, supports hover and shares all clear gestures`, async ({
+    page,
+  }, info) => {
+    const end = 1791900000000;
+    await page.goto(
+      `/?route=${encodeURIComponent(`/dashboard/containers?metric=${metric}&chart=container-0&end=${end}`)}&scenario=docker-11&ticks=0`
+    );
+    const chart = page.getByRole("img", { name: /by container,/ });
+    await expect(chart).toHaveAttribute("aria-label", /api$/);
+    const paths = () =>
+      chart
+        .locator("g path")
+        .evaluateAll((nodes) => nodes.map((node) => node.getAttribute("d")));
+    await expect.poll(async () => (await paths()).length).toBeGreaterThan(0);
+    const before = await paths();
+    const brush = page.getByRole("slider", { name: "Select a time range" });
+    const box = await brush.boundingBox();
+    if (!box) throw new Error("Missing comparison brush");
+    const drag = async () => {
+      await page.mouse.move(box.x + box.width * 0.1, box.y + box.height * 0.5);
+      await page.mouse.down();
+      await page.mouse.move(
+        box.x + box.width * 0.25,
+        box.y + box.height * 0.5,
+        { steps: 8 }
+      );
+      await page.mouse.up();
+      await expect(
+        page.getByRole("button", { name: "Clear selection" })
+      ).toBeVisible();
+      await expect.poll(paths).toEqual(before);
+    };
+    await drag();
+    await page.mouse.move(box.x + box.width * 0.75, box.y + box.height * 0.5);
+    const tip = page.getByRole("tooltip");
+    await expect(tip).toBeVisible();
+    const text = await tip.textContent();
+    await page.mouse.move(box.x + box.width * 0.9, box.y + box.height * 0.5);
+    await expect(tip).not.toHaveText(text ?? "");
+    await page.screenshot({
+      path: `test-results/screens/containers-${metric}-selected-hover-${info.project.name}.png`,
+      animations: "disabled",
+    });
+    await page.mouse.click(box.x + box.width * 0.9, box.y + box.height * 0.5);
+    await expect(page.getByTestId("brush-band")).toHaveCount(0);
+    await drag();
+    await brush.press("Escape");
+    await expect(page.getByTestId("brush-band")).toHaveCount(0);
+    await drag();
+    await page.getByRole("button", { name: "Clear selection" }).click();
+    await expect(page.getByTestId("brush-band")).toHaveCount(0);
+    await drag();
+    await page
+      .getByRole("heading", { name: "Containers", exact: true })
+      .click();
+    await expect(page.getByTestId("brush-band")).toHaveCount(0);
+    await expect.poll(paths).toEqual(before);
   });
 }

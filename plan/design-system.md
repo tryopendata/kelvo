@@ -220,6 +220,15 @@ keyboard/pinned detail links. Module area charts keep their existing accent fill
 and fixed-domain semantics. These are data-specific differences, not separate
 chart chrome.
 
+`BrushOverlay` owns pointer and keyboard range selection for module and container
+charts. A selection scopes attribution, never replaces the plotted window: all
+marks stay mounted and share `ChartSelectionVeil` outside the selected interval.
+Hover remains active during selection. Click the plot, press Escape, use the
+table's `SelectionChip`, or click outside the chart/table scope to clear it.
+`SelectionSummary` supplies the same selected-range hint, including retained
+windows. Containers supplies only its multiline readout and detail links; pinned
+tooltip rows and placement stay stable while hover updates their values.
+
 ## Accessibility
 
 - Every chart is `role="img"` with an `aria-label` that states what it shows and the current value, for example ("CPU, last 60 seconds", "Upload above the line, download below, last 48 seconds"). The label is updated at most every 10 s so screen readers are not flooded.

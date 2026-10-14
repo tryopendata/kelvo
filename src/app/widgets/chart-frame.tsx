@@ -87,3 +87,28 @@ export function ChartGrid({
     </>
   );
 }
+
+/** Shared selection dimming for area and multiline plots; marks remain mounted. */
+export function ChartSelectionVeil({
+  highlight,
+}: {
+  highlight?: { left: number; width: number } | null;
+}) {
+  if (!highlight) return null;
+  const pct = (value: number) => `${(value * 100).toFixed(3)}%`;
+  return (
+    <>
+      <div
+        aria-hidden
+        data-testid="stream-veil"
+        className="pointer-events-none absolute inset-y-0 left-0 bg-card/60"
+        style={{ width: pct(highlight.left) }}
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-y-0 right-0 bg-card/60"
+        style={{ left: pct(highlight.left + highlight.width) }}
+      />
+    </>
+  );
+}
