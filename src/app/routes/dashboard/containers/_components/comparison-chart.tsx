@@ -1,4 +1,4 @@
-import { niceCeiling } from "@core/chart-math";
+import { fittedCeiling } from "@core/chart-math";
 import {
   buildSeriesRuns,
   type ComparisonMetric,
@@ -6,7 +6,7 @@ import {
   pointValue,
   seriesColor,
 } from "@core/chart-math/series-lines";
-import { formatBytes, formatPercent } from "@core/format";
+import { formatBytes, MISSING } from "@core/format";
 import type {
   DockerContainer,
   DockerCoverage,
@@ -38,6 +38,9 @@ export interface ComparisonSeries {
   points: readonly DockerHistoryPoint[];
   slot: number;
 }
+const percent = new Intl.NumberFormat("en-US", {
+  maximumSignificantDigits: 3,
+});
 export function ComparisonChart({
   series: sourceSeries,
   metric,
@@ -86,14 +89,9 @@ export function ComparisonChart({
   const { bytes } = useUnits();
   const format = (value: number | null) =>
     metric === "cpu"
-      ? formatPercent(value, {
-          decimals:
-            value !== null && value !== 0 && Math.abs(value) < 0.1
-              ? 2
-              : value !== null && !Number.isInteger(value)
-                ? 1
-                : 0,
-        })
+      ? value === null
+        ? MISSING
+        : `${percent.format(value)}%`
       : formatBytes(value, { units: bytes });
   const metricGaps = coverage.filter((gap) => !eventCoverage(gap));
   const series = sourceSeries.map((s) => ({
@@ -125,7 +123,7 @@ export function ComparisonChart({
   );
   // The visible window already retains its peaks. Fit its plotted values directly:
   // holding an older ceiling hides quiet workloads and never expires when paused.
-  const ceiling = niceCeiling(
+  const ceiling = fittedCeiling(
     Math.max(0, ...values.filter((value): value is number => value !== null)),
     metric === "cpu" ? 0.1 : 1024 * 1024
   );
@@ -367,7 +365,7 @@ export function ComparisonChart({
                           .join(" ")}
                         fill="none"
                         stroke={seriesColor(s.slot)}
-                        strokeWidth={active === s.container.id ? 3 : 2}
+                        strokeWidth={active === s.container.id ? 2 : 1}
                         strokeLinecap="round"
                         strokeLinejoin="round"
                         vectorEffect="non-scaling-stroke"

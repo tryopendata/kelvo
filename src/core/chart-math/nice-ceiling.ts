@@ -26,6 +26,18 @@ export function niceCeiling(value: number, minCeiling = 1): number {
   return 10 * base;
 }
 
+/**
+ * Fit a retained window with 5% breathing room, rounding upward using the peak's
+ * two-significant-digit step. Unlike the coarse streaming ladder, this leaves at most 15% headroom
+ * above a positive maximum (unless the explicit idle floor applies).
+ */
+export function fittedCeiling(value: number, minCeiling = 1): number {
+  if (!Number.isFinite(value) || value <= minCeiling) return minCeiling;
+  const step = 10 ** (Math.floor(Math.log10(value)) - 1);
+  const steps = Math.ceil(Number(((value * 1.05) / step).toPrecision(12)));
+  return Number((steps * step).toPrecision(12));
+}
+
 /** The ladder step just below `ceiling`, or 0 when `ceiling` is the floor. */
 export function stepBelow(ceiling: number, minCeiling = 1): number {
   if (ceiling <= minCeiling) return 0;

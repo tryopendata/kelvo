@@ -47,7 +47,8 @@ test("search leaves total usage intact and Back restores the table filter", asyn
   ).toHaveValue("worker");
 });
 
-// Two browsers × two themes × two viewports × six populations = 48 captures.
+// Two browsers × two themes × two viewports × six populations = 48 CPU captures,
+// plus eight matching RAM captures for the representative 11-container case.
 for (const theme of ["dark", "light"] as const) {
   for (const size of [
     { width: 1280, height: 900 },
@@ -96,6 +97,21 @@ for (const theme of ["dark", "light"] as const) {
           path: `test-results/screens/containers-${count}-${theme}-${size.width}x${size.height}-${info.project.name}.png`,
           animations: "disabled",
         });
+        if (count === 11) {
+          await page
+            .getByRole("radio", { name: "Memory", exact: true })
+            .click();
+          await expect(
+            page.getByRole("img", { name: /^Memory by container/ })
+          ).toBeVisible();
+          await expect(
+            page.getByText("Loading recorded measurements…")
+          ).toHaveCount(0);
+          await page.screenshot({
+            path: `test-results/screens/containers-memory-${theme}-${size.width}x${size.height}-${info.project.name}.png`,
+            animations: "disabled",
+          });
+        }
       });
     }
   }
@@ -326,7 +342,7 @@ test("task script identifies top CPU and memory, links chart focus and scopes a 
   await api.hover();
   await expect(api).toHaveClass(/bg-selected/);
   const highlighted = chart.locator('g[opacity="1"] path');
-  await expect(highlighted.first()).toHaveAttribute("stroke-width", "3");
+  await expect(highlighted.first()).toHaveAttribute("stroke-width", "2");
   expect(
     await highlighted
       .first()
