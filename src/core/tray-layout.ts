@@ -171,6 +171,7 @@ const marked = (
 
 const PCT_LABEL = { cpu: "CPU", gpu: "GPU", memory: "MEM" } as const;
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Existing cohesive logic; split when substantially changed (architecture refactor section 10).
 function ownItem(
   m: SettingsModule,
   mode: ItemMode,

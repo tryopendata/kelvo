@@ -114,6 +114,8 @@ interface Row {
   memBytes: number;
 }
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Existing deterministic fixture scenario logic; split by scenario before removing this local exception (architecture package J).
+// biome-ignore lint/complexity/noExcessiveLinesPerFunction: Existing deterministic fixture scenario logic; split by scenario before removing this local exception (architecture package J).
 export function mockUsageByApp({
   processes,
   user,

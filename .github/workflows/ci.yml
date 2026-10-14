@@ -17,16 +17,15 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
-# Runner choice: D-032. macOS minutes bill at 10x on a private repo, so the macOS
-# checks run in the pre-push hook (`make check bindings-check`, D-096) and the
-# macos job below only on a manual dispatch. Push and pull_request run the Linux
-# jobs: the frontend suite, the portable crates, and the dependency audit.
+# The repository is public: stable macOS checks run on every PR and main push.
+# Preview OS coverage is manual and advisory. Hosted VM checks do not replace
+# real hardware acceptance or the local pre-push checks.
 jobs:
   # ---------------------------------------------------------------------------
   # Frontend: Biome, typecheck, Vitest and Playwright against the mock transport.
   # None of it needs macOS or the Rust build; the generated bindings are
   # committed. The Playwright perf gates are skipped here: their budgets are
-  # macOS Chromium numbers, so the pre-push hook runs them (`make e2e-perf`, D-096).
+  # macOS Chromium numbers, so macOS CI and the pre-push hook run them separately.
   # ---------------------------------------------------------------------------
   frontend:
     runs-on: ubuntu-latest
@@ -36,17 +35,17 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
       - name: Check shared agent guidance and synchronizer
-        run: make agent-config-check agent-config-test
+        run: make agent-config-check agent-config-test agent-hooks-test
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
-          bun-version: "1.4.2"
+          bun-version-file: package.json
 
       # After setup-bun so real node outranks ~/.bun/bin in PATH (see the macos job).
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: "24"
+          node-version-file: .node-version
 
       - name: Cache bun dependencies
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -59,14 +58,20 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      - name: Architecture regression tests
+        run: make architecture-test
+
       - name: bun run check
         run: bun run check
+
+      - name: Production frontend build
+        run: bun run build
 
       - name: Install Playwright browsers
         run: bunx playwright install --with-deps chromium webkit
 
       - name: Playwright
-        run: bunx playwright test --pass-with-no-tests --grep-invert "performance gate"
+        run: bunx playwright test --grep-invert "performance gate"
 
       - name: Upload Playwright report
         if: failure()
@@ -77,8 +82,7 @@ jobs:
           retention-days: 7
 
   # ---------------------------------------------------------------------------
-  # macOS: everything, on both supported majors (D-028). Manual dispatch only
-  # (D-096); the pre-push hook runs the same checks on the developer's Mac.
+  # macOS: stable native coverage on PRs; preview only on manual dispatch (D-028).
   #   macos-26  GA arm64 image.
   #   xcode-27  GitHub's preview image; its base OS is macOS 27 since
   #             2026-09-16. There is no `macos-27` label yet. Preview capacity
@@ -87,18 +91,13 @@ jobs:
   # ---------------------------------------------------------------------------
   macos:
     name: macos (${{ matrix.runner }})
-    if: github.event_name == 'workflow_dispatch'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
     continue-on-error: ${{ matrix.preview }}
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - runner: macos-26
-            preview: false
-          - runner: xcode-27
-            preview: true
+        include: ${{ fromJSON(github.event_name == 'workflow_dispatch' && '[{"runner":"macos-26","preview":false},{"runner":"xcode-27","preview":true}]' || '[{"runner":"macos-26","preview":false}]') }}
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
@@ -106,19 +105,18 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
-          bun-version: "1.4.2"
+          bun-version-file: package.json
 
       # Runs AFTER setup-bun so real node outranks ~/.bun/bin in PATH. A
       # `node -> bun` shim would make vitest's `#!/usr/bin/env node` resolve to
       # Bun's runtime.
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: "24"
+          node-version-file: .node-version
 
       - name: Install Rust toolchain
-        run: |
-          rustup toolchain install stable --profile minimal --component rustfmt,clippy
-          rustup default stable
+        # rustup reads and installs rust-toolchain.toml, including components.
+        run: rustup show active-toolchain
 
       - name: Cache bun dependencies
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -135,7 +133,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: cargo-${{ matrix.runner }}-${{ hashFiles('Cargo.lock') }}
+          key: cargo-${{ matrix.runner }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
           restore-keys: |
             cargo-${{ matrix.runner }}-
 
@@ -199,7 +197,11 @@ jobs:
         run: bunx playwright install chromium webkit
 
       - name: Playwright
-        run: bunx playwright test --pass-with-no-tests
+        run: bunx playwright test --grep-invert "performance gate"
+
+      # Run after the functional browser suite, without competing workers.
+      - name: Frontend performance gates
+        run: make e2e-perf
 
       - name: Upload Playwright report
         if: failure()
@@ -223,7 +225,8 @@ jobs:
       # so this step is advisory: a failure shows on the run page but does not fail the
       # job. `make perf` blocks locally, and the allocation, call-count and store-volume
       # gates above fail the job.
-      - name: Engine CPU (advisory)
+      - name: Engine CPU (advisory, manual hardware diagnostic)
+        if: github.event_name == 'workflow_dispatch'
         continue-on-error: true
         shell: bash
         run: |
@@ -234,7 +237,8 @@ jobs:
   # Dependency audit: cargo-deny (deny.toml) and bun audit. Licenses, bans and
   # sources only change with our lockfiles, so they block. Advisories also change
   # when RustSec or npm publish one, which would fail unrelated PRs, so that
-  # check is shown but does not fail the run (cargo-deny's documented pattern).
+  # check is shown but does not fail the run. Ownership and response are documented
+  # in .github/dependency-audits.md.
   # ---------------------------------------------------------------------------
   deny:
     name: deny (${{ matrix.checks }})
@@ -251,12 +255,15 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
-      # The action's image ships Rust 1.85; edition 2024 manifests and the v4
-      # lockfile parse there, but `stable` keeps it in step with the other jobs.
+      - name: Read pinned Rust version
+        id: rust
+        run: python3 -c 'import tomllib; print("version=" + tomllib.load(open("rust-toolchain.toml", "rb"))["toolchain"]["channel"])' >> "$GITHUB_OUTPUT"
+
+      # Use the repository pin for cargo-deny's manifest parsing too.
       - name: cargo deny
         uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1 (cargo-deny 0.20.2)
         with:
-          rust-version: stable
+          rust-version: ${{ steps.rust.outputs.version }}
           command: check ${{ matrix.checks }}
 
   audit-frontend:
@@ -271,7 +278,7 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
-          bun-version: "1.4.2"
+          bun-version-file: package.json
 
       # Checks bun.lock against the npm advisory database.
       - name: bun audit
@@ -290,9 +297,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
       - name: Install Rust toolchain
-        run: |
-          rustup toolchain install stable --profile minimal
-          rustup default stable
+        run: rustup show active-toolchain
 
       - name: Cache cargo
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -301,19 +306,24 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: cargo-linux-${{ hashFiles('Cargo.lock') }}
+          key: cargo-linux-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
           restore-keys: |
             cargo-linux-
 
-      - name: cargo check
-        run: >
-          cargo check --all-targets
-          -p kelvo-schema -p kelvo-proto -p kelvo-collect -p kelvo-store -p kelvo-engine
+      # Remote trust tests exercise the real OpenSSH key fingerprinting command.
+      - name: Install remote test prerequisites
+        run: sudo apt-get update && sudo apt-get install --yes openssh-client
 
-      - name: cargo test
-        run: >
-          cargo test
-          -p kelvo-schema -p kelvo-proto -p kelvo-collect -p kelvo-store -p kelvo-engine
+      - name: Architecture boundaries and regression tests
+        run: make architecture-check
+
+      - name: Portable crate checks and tests
+        run: make rust-portable-check rust-portable-test
+
+      # This bridge ships for macOS only; Linux compilation catches portability
+      # regressions cheaply without claiming Linux product support.
+      - name: Remote helper compile check
+        run: cargo check -p kelvo-remote-helper --all-targets
 
       # 30 days of synthetic history through the real store writer, pruned, then
       # measured: fails if 150 series exceed 150 MB, and logs the 250-series size.

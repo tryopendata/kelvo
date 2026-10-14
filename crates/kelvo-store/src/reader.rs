@@ -433,6 +433,10 @@ impl Reader {
 
     /// Cursor export bounded by a source-clock retention floor. Gaps overlapping the
     /// floor are included, including open gaps. Limits are clamped to 1..=2000.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "split when substantially changed; architecture refactor section 10"
+    )]
     pub fn read_after_since(
         &mut self,
         host: HostId,

@@ -1,3 +1,4 @@
+#![allow(clippy::too_many_lines)] // Integration scenarios keep setup and assertions together.
 //! Forward compatibility of wire-facing and stored enums (D-040): a value this build has
 //! never seen, encoded as CBOR the way a newer peer would send it, decodes as the enum's
 //! `Unknown` variant instead of failing.

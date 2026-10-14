@@ -33,9 +33,9 @@ export interface MetricCardProps {
   legend: LegendItem[];
   body: MetricCardBody;
   /** A state line under the header ("Sensor read failed · last value 11:02"). */
-  notice?: string;
+  notice?: string | undefined;
   /** Module page the card opens. Without it the card is not interactive. */
-  href?: string;
+  href?: string | undefined;
   /** Called instead of following `href` (the route navigates in-app). */
   onOpen?: (href: string) => void;
 }
@@ -62,11 +62,7 @@ export function MetricCard({
     <>
       <header className="flex items-baseline justify-between gap-2">
         <div className="flex items-center gap-2">
-          <span
-            aria-hidden
-            className="size-2 rounded-mark"
-            style={{ background: "var(--a)" }}
-          />
+          <span aria-hidden className="size-2 rounded-mark bg-(--a)" />
           <h3 id={titleId} className="font-[590] text-[13px]">
             {title}
           </h3>

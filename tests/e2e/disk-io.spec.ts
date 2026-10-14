@@ -143,6 +143,33 @@ test("Disk process details never use a different incarnation of the same PID", a
   await expect(page.getByText(/A reused PID does not identify/)).toBeVisible();
 });
 
+test("a process checkbox at the viewport edge stays under the pointer during focus", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 360, height: 900 });
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.clock.setFixedTime(new Date("2026-10-13T17:30:05Z"));
+  await page.goto("/?window=dashboard&route=/dashboard/disk&ticks=0");
+  const checkbox = page.getByRole("checkbox", {
+    name: "Select Xcode (2214)",
+    exact: true,
+  });
+  await checkbox.evaluate((element) => {
+    const main = element.closest("main");
+    if (!main) throw new Error("Process table must be inside the scrollport");
+    // The checkbox is visible, but its taller row extends below the viewport.
+    // WebKit focuses that row on pointer-down; passive focus must not scroll it.
+    main.scrollTop += element.getBoundingClientRect().bottom - innerHeight + 1;
+  });
+  const bottom = await checkbox.evaluate(
+    (element) => element.getBoundingClientRect().bottom
+  );
+  expect(bottom).toBeGreaterThan(898);
+  expect(bottom).toBeLessThanOrEqual(900);
+  await checkbox.click();
+  await expect(checkbox).toBeChecked();
+});
+
 for (const width of [360, 1280]) {
   test(`Disk process selection keeps hidden targets and clears on a new interval at ${width}px`, async ({
     page,

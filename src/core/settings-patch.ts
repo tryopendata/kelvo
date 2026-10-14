@@ -157,7 +157,7 @@ export const DEFAULT_MENU_BAR: MenuBarSettings = trayStyleMenuBar("combined");
  * optional only because a file from before D-102 decodes without it.
  */
 export function menuBarOf(settings: {
-  menu_bar?: MenuBarSettings;
+  menu_bar?: MenuBarSettings | undefined;
 }): MenuBarSettings {
   return settings.menu_bar ?? DEFAULT_MENU_BAR;
 }

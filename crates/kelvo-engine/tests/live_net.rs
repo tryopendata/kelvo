@@ -1,3 +1,4 @@
+#![allow(clippy::too_many_lines)] // Integration scenarios keep setup and assertions together.
 //! Live network attribution on this Mac (D-089), tray-only: the real engine with its real
 //! collectors and a throwaway store, no window interest, while curl downloads. Checks
 //! that a sustained download and one that exits between samples are both named "curl"

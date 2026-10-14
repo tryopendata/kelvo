@@ -134,11 +134,7 @@ export function PowerStack({
               patternUnits="userSpaceOnUse"
               patternTransform="rotate(45)"
             >
-              <rect
-                width="2"
-                height="6"
-                style={{ fill: "var(--a)", fillOpacity: 0.7 }}
-              />
+              <rect width="2" height="6" fill="var(--a)" fillOpacity={0.7} />
             </pattern>
           </defs>
           <path
@@ -162,11 +158,8 @@ export function PowerStack({
                 key={b.key}
                 data-component={b.key}
                 d={areaGen(b.pts) ?? ""}
-                style={
-                  b.key === "ane"
-                    ? { fill: `url(#${uid}-ane)` }
-                    : { fill: "var(--a)", fillOpacity: OPACITY[b.key] }
-                }
+                fill={b.key === "ane" ? `url(#${uid}-ane)` : "var(--a)"}
+                fillOpacity={b.key === "ane" ? undefined : OPACITY[b.key]}
               />
             ))}
             {top && (

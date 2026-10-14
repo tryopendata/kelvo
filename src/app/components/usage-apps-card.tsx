@@ -175,6 +175,7 @@ function LocalUsageAppsCard({
   );
 }
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Existing cohesive logic; split when substantially changed (architecture refactor section 10).
 function UsageBody({
   data,
   config,

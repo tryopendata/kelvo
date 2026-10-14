@@ -1,5 +1,3 @@
-import { seriesColor } from "@core/chart-math/series-lines";
-import { formatBytes, formatPercent, formatRate } from "@core/format";
 import type {
   DockerContainer,
   DockerRankedContainer,
@@ -7,22 +5,19 @@ import type {
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   type MouseEvent,
-  memo,
   type ReactNode,
   useCallback,
   useEffect,
   useRef,
   useState,
 } from "react";
-import { Link, useLocation, useNavigate } from "react-router";
-import { SeriesSwatch } from "~/components/charts/chart-tooltip";
+import { useLocation, useNavigate } from "react-router";
 import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuTrigger,
 } from "~/components/ui/context-menu";
 import { useUnits } from "~/hooks/use-units";
-import { cn } from "~/lib/utils";
 import {
   containerReturnState,
   isContainerDetailClick,
@@ -30,18 +25,16 @@ import {
 import {
   type ContainerSort,
   containerPath,
-  healthLabel,
-  lifecycleLabel,
   sortedContainers,
 } from "../_lib/presentation";
 import {
-  ContainerActionButton,
   ContainerActionMenuItem,
   containerAction,
   useContainerActions,
 } from "./container-actions";
-import styles from "./container-table.module.css";
 
+import { ContainerDataRow } from "./container-data-row";
+import { ContainerTableHead } from "./container-table-head";
 export const needsAttention = (row: DockerContainer) =>
   row.health === "unhealthy" || row.oom_killed || row.repeated_restarts;
 export function ContainerTable({
@@ -77,7 +70,7 @@ export function ContainerTable({
   historical?: boolean;
   title?: string;
   liveRows?: readonly DockerContainer[];
-  summaries?: readonly DockerRankedContainer[];
+  summaries?: readonly DockerRankedContainer[] | undefined;
 }) {
   const location = useLocation();
   const navigate = useNavigate();
@@ -157,28 +150,10 @@ export function ContainerTable({
     if (index < 0) return;
     if (rows.length > 100) virtual.scrollToIndex(index, { align: "auto" });
     else {
-      const row = scroller.current?.querySelector(
-        `[data-container-id="${CSS.escape(focused)}"]`
-      );
-      if (row && scroller.current) {
-        const bounds = row.getBoundingClientRect();
-        const view = scroller.current.getBoundingClientRect();
-        if (bounds.top < view.top + 32 || bounds.bottom > view.bottom)
-          row.scrollIntoView({ block: "nearest" });
-      }
+      scrollFocusedRow(scroller.current, focused);
     }
   }, [focused, hovered, items, rows.length, virtual]);
   const count = 7 + columns.length;
-  const heading = (label: string, key: ContainerSort) => (
-    <button
-      type="button"
-      onClick={() => onSort(key)}
-      className="rounded-control focus-visible:ring-2 focus-visible:ring-ring"
-    >
-      {label}
-      {sort === key ? (key === "name" ? " ↑" : " ↓") : ""}
-    </button>
-  );
   const openDetail = useCallback(
     (event: MouseEvent<HTMLAnchorElement>, engine: string, id: string) => {
       if (!isContainerDetailClick(event)) return;
@@ -189,7 +164,6 @@ export function ContainerTable({
     },
     [navigate, location]
   );
-  const byte = (value: number | null) => formatBytes(value, { units: bytes });
   const render = (item: (typeof items)[number]) => {
     if (item.kind === "group")
       return (
@@ -210,128 +184,31 @@ export function ContainerTable({
         </tr>
       );
     const row = item.row;
-    const summary = historical ? summaryById.get(row.id) : undefined;
-    const current =
-      liveRows?.find((r) => r.id === row.id) ?? (historical ? null : row);
-    const live = ["running", "paused", "restarting"].includes(row.lifecycle);
-    const metrics = historical || live ? row.metrics : null;
-    const health = [
-      row.health !== "no_check" && row.health !== "healthy"
-        ? healthLabel[row.health]
-        : null,
-      row.oom_killed ? "OOM-killed" : null,
-      row.repeated_restarts ? `${row.observed_restarts} restarts` : null,
-    ]
-      .filter(Boolean)
-      .join(" · ");
     return (
-      <tr
+      <ContainerDataRow
         key={row.id}
-        data-container-id={row.id}
-        onPointerEnter={() => onFocus?.(slots[row.id] ? row.id : null)}
-        onPointerLeave={() => onFocus?.(null)}
-        onFocus={() => onFocus?.(slots[row.id] ? row.id : null)}
-        className={cn(
-          "group h-11 border-border-subtle border-t hover:bg-selected/50",
-          focused === row.id && "bg-selected"
-        )}
-      >
-        <td className="w-5 pl-3">
-          {slots[row.id] && (
-            <SeriesSwatch color={seriesColor(slots[row.id] ?? 1)} />
-          )}
-        </td>
-        <ContainerIdentityCells
-          engineId={row.engine_id}
-          id={row.id}
-          name={row.name}
-          image={row.image}
-          project={row.project}
-          lifecycle={row.lifecycle}
-          metadataObservedMs={row.metadata_observed_ms}
-          health={health}
-          failure={actions.failures[row.id]}
-          onNavigate={openDetail}
-        />
-        <td className="figures whitespace-nowrap px-2 py-1 text-right text-[12px]">
-          {formatPercent(
-            metrics?.cpu_pct ?? null,
-            historical ? { significantDigits: 3 } : {}
-          )}
-          {summary && (
-            <div className="text-[10px] text-muted-foreground">
-              {formatPercent(summary.avg_cpu_pct, { significantDigits: 3 })} avg
-            </div>
-          )}
-        </td>
-        <td
-          className={`${styles.memory} figures px-2 py-1 text-right text-[12px] leading-[14px]`}
-        >
-          <span className="whitespace-nowrap">
-            {byte(metrics?.working_set_bytes ?? null)}
-          </span>
-          {summary && (
-            <div className="whitespace-nowrap text-[10px] text-muted-foreground">
-              {byte(summary.avg_working_set_bytes)} avg
-            </div>
-          )}
-          {metrics && row.explicit_limit_bytes !== null && !historical && (
-            <>
-              {" "}
-              <span className="whitespace-nowrap">
-                / {byte(row.explicit_limit_bytes)}
-              </span>
-            </>
-          )}
-          {metrics && row.explicit_limit_bytes !== null && !historical && (
-            <div className="mt-1 ml-auto h-1 w-12 overflow-hidden rounded-mark bg-track">
-              <div
-                className="h-full origin-left bg-muted-foreground"
-                style={{
-                  transform: `scaleX(${Math.min(1, (metrics.working_set_bytes ?? 0) / Math.max(1, row.explicit_limit_bytes))})`,
-                }}
-              />
-            </div>
-          )}
-        </td>
-        <td
-          className={`${styles.net} figures whitespace-nowrap px-2 py-1 text-right text-[12px]`}
-          hidden={historical}
-        >
-          {formatRate(
-            metrics?.network_rx_bps != null && metrics.network_tx_bps !== null
-              ? metrics.network_rx_bps + metrics.network_tx_bps
-              : null,
-            { units: rate }
-          )}
-        </td>
-        {columns.map((column) => (
-          <td
-            key={column}
-            className="figures max-w-32 truncate px-2 text-right text-[11px]"
-          >
-            {column === "io"
-              ? `${formatRate(metrics?.block_read_bps ?? null)} / ${formatRate(metrics?.block_write_bps ?? null)}`
-              : column === "image"
-                ? row.image
-                : column === "ports"
-                  ? row.ports.join(", ") || "—"
-                  : column === "restarts"
-                    ? (row.restart_count ?? "—")
-                    : "—"}
-          </td>
-        ))}
-        <td className="w-18 px-2 text-right">
-          {current && <ContainerActionButton row={current} reveal />}
-        </td>
-      </tr>
+        row={row}
+        summary={historical ? summaryById.get(row.id) : undefined}
+        current={
+          liveRows?.find((r) => r.id === row.id) ?? (historical ? null : row)
+        }
+        slot={slots[row.id]}
+        isFocused={focused === row.id}
+        onFocus={onFocus}
+        failure={actions.failures[row.id]}
+        openDetail={openDetail}
+        historical={historical}
+        columns={columns}
+        bytes={bytes}
+        rate={rate}
+      />
     );
   };
   const virtualItems = virtual.getVirtualItems();
   const top = virtualItems[0]?.start ?? 0;
   const bottom = virtual.getTotalSize() - (virtualItems.at(-1)?.end ?? 0);
   return (
-    <div className={styles.container}>
+    <div className="@container">
       <div className="flex flex-wrap items-center gap-3 px-3 py-2">
         <p className="mr-auto text-[14px]">{title}</p>
         {filters}
@@ -378,56 +255,12 @@ export function ContainerTable({
               className="w-full table-fixed border-collapse"
               aria-label={title}
             >
-              <thead className="sticky top-0 z-10 bg-card text-[11px] text-muted-foreground">
-                <tr className="h-8 border-border border-y">
-                  <th className="w-5">
-                    <span className="sr-only">Chart color</span>
-                  </th>
-                  <th
-                    className={`${styles.identity} px-2 text-left font-normal`}
-                    aria-sort={sort === "name" ? "ascending" : "none"}
-                  >
-                    {heading("Name / project", "name")}
-                  </th>
-                  <th className={`${styles.state} px-2 text-left font-normal`}>
-                    State
-                  </th>
-                  <th
-                    className={`${styles.cpu} px-2 text-right font-normal`}
-                    aria-sort={sort === "cpu" ? "descending" : "none"}
-                  >
-                    {heading(historical ? "Peak CPU" : "CPU", "cpu")}
-                  </th>
-                  <th
-                    className={`${styles.memory} px-2 text-right font-normal`}
-                    aria-sort={sort === "memory" ? "descending" : "none"}
-                  >
-                    {heading(historical ? "Peak memory" : "Memory", "memory")}
-                  </th>
-                  <th
-                    className={`${styles.net} px-2 text-right font-normal`}
-                    hidden={historical}
-                  >
-                    {heading("Net", "network")}
-                  </th>
-                  {columns.map((column) => (
-                    <th key={column} className="px-2 text-right font-normal">
-                      {column === "io"
-                        ? heading("Block I/O", "io")
-                        : column === "restarts"
-                          ? heading("Restarts", "restarts")
-                          : column === "image"
-                            ? "Image"
-                            : column === "ports"
-                              ? "Ports"
-                              : "PIDs"}
-                    </th>
-                  ))}
-                  <th className="w-18">
-                    <span className="sr-only">Action</span>
-                  </th>
-                </tr>
-              </thead>
+              <ContainerTableHead
+                sort={sort}
+                onSort={onSort}
+                historical={historical}
+                columns={columns}
+              />
               <tbody>
                 {rows.length > 100 ? (
                   <>
@@ -468,78 +301,14 @@ export function ContainerTable({
   );
 }
 
-// Sampling changes metrics every second; identity and lifecycle change independently.
-const ContainerIdentityCells = memo(function ContainerIdentityCells({
-  engineId,
-  id,
-  name,
-  image,
-  project,
-  lifecycle,
-  metadataObservedMs,
-  health,
-  failure,
-  onNavigate,
-}: {
-  engineId: string;
-  id: string;
-  name: string;
-  image: string;
-  project: string | null;
-  lifecycle: DockerContainer["lifecycle"];
-  metadataObservedMs: DockerContainer["metadata_observed_ms"];
-  health: string;
-  failure: string | undefined;
-  onNavigate: (
-    event: MouseEvent<HTMLAnchorElement>,
-    engine: string,
-    id: string
-  ) => void;
-}) {
-  return (
-    <>
-      <td className="min-w-0 px-2 py-1 text-[12px]">
-        <Link
-          to={containerPath(engineId, id)}
-          onClick={(event) => onNavigate(event, engineId, id)}
-          className="block truncate rounded-control focus-visible:ring-2 focus-visible:ring-ring"
-          title={`${name} · ${image}`}
-        >
-          {name}
-          <span className="text-muted-foreground">
-            {project ? ` · ${project}` : ""}
-          </span>
-        </Link>
-        {failure && (
-          <p role="alert" className="text-[11px] text-destructive">
-            {failure}
-          </p>
-        )}
-        <span
-          className={styles.narrowState}
-          title={`${lifecycleLabel[lifecycle]} · ${health}`}
-        >
-          {lifecycleLabel[lifecycle]}
-          {health ? ` · ${health}` : ""}
-        </span>
-      </td>
-      <td className={`${styles.state} px-2 py-1 text-[12px]`}>
-        {lifecycleLabel[lifecycle]}
-        {health && (
-          <div
-            className="truncate text-[10px] text-muted-foreground"
-            title={`${health} · ${metadataObservedMs ? new Date(metadataObservedMs).toLocaleString() : "time unknown"}`}
-          >
-            {health} ·{" "}
-            {metadataObservedMs
-              ? new Date(metadataObservedMs).toLocaleTimeString([], {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })
-              : "time unknown"}
-          </div>
-        )}
-      </td>
-    </>
+function scrollFocusedRow(scroller: HTMLDivElement | null, focused: string) {
+  const row = scroller?.querySelector(
+    `[data-container-id="${CSS.escape(focused)}"]`
   );
-});
+  if (row && scroller) {
+    const bounds = row.getBoundingClientRect();
+    const view = scroller.getBoundingClientRect();
+    if (bounds.top < view.top + 32 || bounds.bottom > view.bottom)
+      row.scrollIntoView({ block: "nearest" });
+  }
+}

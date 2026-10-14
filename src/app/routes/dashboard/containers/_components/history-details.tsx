@@ -84,6 +84,7 @@ export function HistoryDetails({
             return items.length ? (
               <section key={label} className="mb-4">
                 <h3 className="mb-2 text-[13px]">{label}</h3>
+                {/** biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Controller and presentation split tracked in architecture refactor package H. */}
                 {items.map((row, index) => (
                   <div
                     key={`${row.reason}:${row.container_id}:${row.start_ms}`}

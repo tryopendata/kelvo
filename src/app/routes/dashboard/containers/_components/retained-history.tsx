@@ -15,13 +15,10 @@ import {
 import { useTransport } from "~/lib/transport-context";
 import { useHostId } from "~/stores/host-store";
 import { useDockerHistory } from "../_hooks/use-docker";
+import { dockerRange, historyEnd } from "../_lib/history-params";
 import { containerPath, lifecycleLabel } from "../_lib/presentation";
 import { ContainerHistory } from "./container-history";
-import {
-  DOCKER_RANGES,
-  type DockerRange,
-  HistoryControls,
-} from "./history-controls";
+import { DOCKER_RANGES, HistoryControls } from "./history-controls";
 
 export const RetainedHistory = memo(function RetainedHistory({
   enabled,
@@ -64,6 +61,7 @@ export const RetainedHistory = memo(function RetainedHistory({
   );
 });
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Controller and presentation split tracked in architecture refactor package H.
 function RetainedBrowser({ generation }: { generation: number }) {
   const transport = useTransport();
   const host = useHostId();
@@ -73,11 +71,8 @@ function RetainedBrowser({ generation }: { generation: number }) {
   const selected = params.get("retainedEngine");
   const search = params.get("retainedQuery") ?? "";
   const offset = Math.max(0, Number(params.get("retainedOffset")) || 0);
-  const range = (params.get("retainedRange") ?? "1h") as DockerRange;
-  const validRange = range in DOCKER_RANGES ? range : "1h";
-  const end = params.has("retainedEnd")
-    ? Number(params.get("retainedEnd"))
-    : null;
+  const validRange = dockerRange(params.get("retainedRange"), "1h");
+  const end = historyEnd(params.get("retainedEnd"));
   const set = (key: string, value: string | null, resetPage = false) =>
     setParams(
       (previous) => {

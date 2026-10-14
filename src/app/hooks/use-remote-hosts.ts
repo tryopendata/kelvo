@@ -9,7 +9,7 @@ export function useRemoteHosts<T = RemoteHostRecord[]>(
 ) {
   const transport = useTransport();
   return useQuery({
-    select,
+    ...(select ? { select } : {}),
     queryKey: hostKeys.remote(),
     queryFn: () => transport.listRemoteHosts(),
     refetchInterval: transport.windowLabel() === "dashboard" ? 5000 : false,

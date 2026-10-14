@@ -42,6 +42,7 @@ function Command({ text }: { text: string }) {
   );
 }
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Controller and presentation split tracked in architecture refactor package H.
 export function SshSetupHelp({
   lan,
   tailscale,

@@ -1,3 +1,4 @@
+#![allow(clippy::too_many_lines)] // Integration scenarios keep setup and assertions together.
 //! Opt-in acceptance against the actual packaged app and collectors, on one Mac.
 //! Launch the isolated com.tryopendata.kelvo.remoteqa build before running this test.
 #![allow(clippy::unwrap_used)]

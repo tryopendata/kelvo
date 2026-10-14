@@ -104,25 +104,16 @@ impl LogRegistry {
 pub(super) fn open(
     handle: &DockerHandle,
     request: DockerLogsRequest,
-) -> Result<LogSubscription, String> {
+) -> Result<LogSubscription, DockerServiceError> {
     let _gate = handle.gate.lock_ok();
-    if !kelvo_collect::docker::valid_id(&request.container_id) {
-        return Err("Invalid container ID".into());
-    }
-    let adapter = handle
-        .inner
-        .lock_ok()
-        .adapter
-        .clone()
-        .ok_or("Docker is not connected")?;
-    if adapter.engine.id != request.engine_id {
-        return Err("Logs are available only for the selected live engine".into());
-    }
+    let adapter = log_adapter(handle, &request)?;
     let generation = handle.control.borrow().generation;
     let key = format!("{generation}:{}", request.container_id);
     let mut registry = handle.logs.lock_ok();
     if registry.subscriptions.len() >= 32 {
-        return Err("Too many log panes are open".into());
+        return Err(DockerServiceError::ResourceLimit(
+            "Too many log panes are open",
+        ));
     }
     let id = registry.next.wrapping_add(1);
     registry.next = id;
@@ -161,7 +152,9 @@ pub(super) fn open(
         });
     }
     if registry.pipelines.len() >= 2 {
-        return Err("Two log streams are open; close one to continue".into());
+        return Err(DockerServiceError::ResourceLimit(
+            "Two log streams are open; close one to continue",
+        ));
     }
     let (sender, receiver) = broadcast::channel(16);
     let receiver = LogReceiver {
@@ -204,6 +197,27 @@ pub(super) fn open(
         receiver,
         initial: None,
     })
+}
+// The caller holds the configuration gate while selecting the live adapter.
+fn log_adapter(
+    handle: &DockerHandle,
+    request: &DockerLogsRequest,
+) -> Result<DockerAdapter, DockerServiceError> {
+    if !kelvo_collect::docker::valid_id(&request.container_id) {
+        return Err(DockerServiceError::InvalidRequest("Invalid container ID"));
+    }
+    let adapter = handle
+        .inner
+        .lock_ok()
+        .adapter
+        .clone()
+        .ok_or(DockerServiceError::Unavailable("Docker is not connected"))?;
+    if adapter.engine.id != request.engine_id {
+        return Err(DockerServiceError::Unavailable(
+            "Logs are available only for the selected live engine",
+        ));
+    }
+    Ok(adapter)
 }
 async fn pump(
     adapter: DockerAdapter,

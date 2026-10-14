@@ -253,6 +253,7 @@ const MAX_BATTERY_HOURS = 92 * 24;
  * charged when any minute did. `null` for an hour without minutes. A string
  * is the `invalid_argument` message.
  */
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Existing deterministic fixture scenario logic; split by scenario before removing this local exception (architecture package J).
 export function mockBatteryHours(
   host: string,
   hourStarts: readonly number[],
@@ -333,6 +334,7 @@ export function mockSeriesStats(
   return {
     from_ms: from,
     to_ms: to,
+    // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Existing deterministic fixture scenario logic; split by scenario before removing this local exception (architecture package J).
     metrics: metrics.map((metric) => {
       const module = (METRIC_MODULES as Record<string, string>)[metric];
       const gaps = page.gaps

@@ -516,6 +516,10 @@ fn run(
     rt.block_on(follow(app, entry, items, changed, scale, status));
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "split when substantially changed; architecture refactor section 10"
+)]
 async fn follow(
     app: &AppHandle,
     entry: &HostEntry,

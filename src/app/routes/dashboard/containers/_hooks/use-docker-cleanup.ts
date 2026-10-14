@@ -10,6 +10,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useTransport } from "~/lib/transport-context";
 
 /** Operations live in Rust; retaining their ID in the query cache survives route navigation. */
+// biome-ignore lint/complexity/noExcessiveLinesPerFunction: Controller and presentation split tracked in architecture refactor package H.
 export function useDockerCleanup(
   engine: string,
   generation: number,

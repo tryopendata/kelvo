@@ -1,35 +1,33 @@
 #!/bin/bash
 # Stop hook: format + lint only files changed in this session.
-# Uses git to find staged + unstaged changes, then routes each file
-# to the right formatter. Skips untracked files (new files not yet added).
-#
-# All commands redirect stderr to /dev/null to avoid spurious "hook error"
-# messages from Claude Code, which can cause a stop-hook feedback loop.
-
-# Script-relative fallback: a Stop hook fired from a cwd outside any work tree
-# (scratchpad, /tmp) used to exit here and leave the session's edits unformatted.
-repo_root="$(git rev-parse --show-toplevel 2>/dev/null || (cd "$(dirname "$0")/../.." && pwd))"
+# lint-on-write.sh records session writes; unrelated dirty files are not ours.
+# All formatter output is suppressed to avoid Stop-hook feedback loops.
+input=$(cat)
+session_id=$(printf '%s' "$input" | jq -r '.session_id // empty')
+repo_root="$(cd "$(dirname "$0")/../.." && pwd)"
+source "$(dirname "$0")/_session-files.sh"
+session_file=$(session_files_path "$repo_root" "$session_id") || exit 0
+[[ -f "$session_file" ]] || exit 0
 cd "$repo_root" || exit 0
-
-# Collect unique changed files (staged + unstaged, excluding deleted)
-changed_files=$(git diff --name-only --diff-filter=d HEAD 2>/dev/null; git diff --name-only --diff-filter=d --cached 2>/dev/null)
-changed_files=$(echo "$changed_files" | sort -u | grep -v '^$' || true)
-
-[[ -z "$changed_files" ]] && exit 0
 
 # Split by toolchain
 frontend_files=()
 rust_changed=0
 
-while IFS= read -r file; do
+while IFS= read -r -d '' file; do
     [[ ! -f "$repo_root/$file" ]] && continue
     case "$file" in
         src/core/generated/*) ;;
         src/*.ts|src/*.tsx|src/*.css|tests/*.ts|tests/*.tsx)
-                        frontend_files+=("$repo_root/$file") ;;
+                        # A file may be written many times in one turn.
+                        already_listed=false
+                        for listed in "${frontend_files[@]}"; do
+                            [[ "$listed" == "$repo_root/$file" ]] && already_listed=true
+                        done
+                        [[ "$already_listed" == true ]] || frontend_files+=("$repo_root/$file") ;;
         *.rs)           rust_changed=1 ;;
     esac
-done <<< "$changed_files"
+done < "$session_file"
 
 # Format + lint-fix frontend
 if [[ ${#frontend_files[@]} -gt 0 ]]; then

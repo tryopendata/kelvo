@@ -1,3 +1,4 @@
+#![allow(clippy::too_many_lines)] // Integration scenarios keep setup and assertions together.
 //! v1.1 reads over long ranges: the Timeline's 7d and 30d ranges (`auto` tier, merged
 //! slots, explicit gaps), the 30-day heatmap by local hour, and the CSV export.
 

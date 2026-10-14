@@ -1,3 +1,4 @@
+#![allow(clippy::too_many_lines)] // Integration scenarios keep setup and assertions together.
 //! Detectors and alert rules inside the engine (v1.2): an event is stored, readable
 //! before any batch commit (D-083), and published on the bus; alert rules follow
 //! settings.

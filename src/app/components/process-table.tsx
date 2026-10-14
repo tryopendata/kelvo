@@ -374,6 +374,7 @@ export function ProcessTable(props: ProcessTableProps) {
   );
 }
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Existing cohesive logic; split when substantially changed (architecture refactor section 10).
 function ProcessTableBody({
   rows,
   columns,

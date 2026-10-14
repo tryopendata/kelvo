@@ -27,6 +27,15 @@ pub enum CommandError {
     /// A bounded, sanitized Docker monitoring error.
     #[error("Docker: {message}")]
     Docker { message: String },
+    /// The requested container, retained run or storage resource no longer exists.
+    #[error("Docker: {message}")]
+    DockerNotFound { message: String },
+    /// The preview or inventory changed before the action could be performed.
+    #[error("Docker: {message}")]
+    DockerSnapshotExpired { message: String },
+    /// A bounded request exceeded the service's supported resource limit.
+    #[error("Docker: {message}")]
+    DockerResourceLimit { message: String },
     /// No host with this id is registered.
     #[error("unknown host {host}")]
     UnknownHost { host: HostId },
@@ -95,43 +104,7 @@ impl CommandError {
     }
 }
 
-/// Why history is unavailable, for the banner and for whether `reset_history` can help.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, specta::Type)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum HistoryUnavailableReason {
-    /// Another Kelvo process (a second copy, or an installed build next to a dev build
-    /// sharing its data) has the database open. Quit it; a reset cannot help.
-    Locked,
-    /// A newer Kelvo wrote the database.
-    TooNew {
-        #[specta(type = JsSafeInt)]
-        found: i64,
-        #[specta(type = JsSafeInt)]
-        supported: i64,
-    },
-    /// The database file is damaged.
-    Corrupt { message: String },
-    /// Anything else: an I/O error opening it, or the local host could not be registered.
-    Failed { message: String },
-}
-
-impl From<&StoreError> for HistoryUnavailableReason {
-    fn from(e: &StoreError) -> Self {
-        match e {
-            StoreError::Locked { .. } => HistoryUnavailableReason::Locked,
-            StoreError::TooNew { found, supported } => HistoryUnavailableReason::TooNew {
-                found: *found,
-                supported: *supported,
-            },
-            e if is_corrupt(e) => HistoryUnavailableReason::Corrupt {
-                message: e.to_string(),
-            },
-            e => HistoryUnavailableReason::Failed {
-                message: e.to_string(),
-            },
-        }
-    }
-}
+pub use kelvo_engine::HistoryUnavailableReason;
 
 fn sqlite_code(e: &StoreError) -> Option<ErrorCode> {
     match e {
@@ -173,6 +146,17 @@ impl From<StoreError> for CommandError {
             e => CommandError::Store {
                 message: e.to_string(),
             },
+        }
+    }
+}
+
+impl From<kelvo_engine::HistoryStoreError> for CommandError {
+    fn from(error: kelvo_engine::HistoryStoreError) -> Self {
+        match error {
+            kelvo_engine::HistoryStoreError::Unavailable { reason } => {
+                Self::HistoryUnavailable { reason }
+            }
+            kelvo_engine::HistoryStoreError::Store(error) => error.into(),
         }
     }
 }

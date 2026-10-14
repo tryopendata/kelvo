@@ -24,6 +24,7 @@ function render(page: React.ReactElement) {
   return renderWithProviders(page, { transport, backfillMs: 600_000 });
 }
 
+// biome-ignore lint/complexity/noExcessiveLinesPerFunction: Existing scenario grouping; keep individual scenarios focused (architecture refactor section 10).
 describe("Disk and Memory pages over a range (D-099)", () => {
   it("Disk: current process rates become retained interval totals on either brush", async () => {
     const { transport, user } = render(<DiskRoute />);

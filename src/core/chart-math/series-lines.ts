@@ -39,6 +39,7 @@ export function pointCovered(
   return metric === "cpu" ? point.cpu_covered : point.memory_covered;
 }
 /** Timestamp geometry only: quality and metric semantics arrive from Rust (R-11/R-46). */
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Existing cohesive logic; split when substantially changed (architecture refactor section 10).
 export function buildSeriesRuns(
   points: readonly DockerHistoryPoint[],
   metric: ComparisonMetric,
@@ -120,6 +121,7 @@ export interface Membership {
   streaks: Record<string, number>;
 }
 /** Stable slots survive re-ranking; three live evaluations are required for a replacement. */
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Existing cohesive logic; split when substantially changed (architecture refactor section 10).
 export function nextMembership(
   previous: Membership,
   candidates: readonly RankedCandidate[],

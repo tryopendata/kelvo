@@ -100,7 +100,7 @@ test("dashboard pages, dialog and select run under the shipped CSP", async ({
     ["memory", "Memory"],
     ["network", "Network"],
     ["timeline", "Timeline"],
-  ]) {
+  ] as const) {
     await page.goto(`${ORIGIN}/dashboard/${route}`);
     await expect(
       page.getByRole("heading", { name, exact: true }).first()

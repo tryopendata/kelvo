@@ -17,6 +17,7 @@ export function useProcessDrag(
       cancelAnimationFrame(frame);
       frame = 0;
     };
+    // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Existing cohesive logic; split when substantially changed (architecture refactor section 10).
     const tick = () => {
       frame = 0;
       const surface = root.current;

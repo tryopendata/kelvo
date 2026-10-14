@@ -321,6 +321,10 @@ impl DockerBatch {
         }
         Ok(bytes)
     }
+    #[expect(
+        clippy::too_many_lines,
+        reason = "responsibility split tracked in architecture refactor package F1"
+    )]
     fn validate(&self) -> Result<()> {
         if self.daemon_id.is_empty()
             || self.daemon_id.len() > 256

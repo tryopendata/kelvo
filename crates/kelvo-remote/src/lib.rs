@@ -1,8 +1,13 @@
+#![cfg_attr(test, allow(clippy::too_many_lines))]
 //! Persistent, direct SSH sessions. No network listener, collector, or Tauri dependency.
 mod clock;
 mod codec;
 pub mod install;
+mod mirror;
+mod mirror_error;
+pub use mirror_error::MirrorError;
 mod pages;
+pub use mirror::Mirror;
 mod server;
 mod socket;
 mod source;

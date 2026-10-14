@@ -1,0 +1,21 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["DOM", "DOM.Iterable", "ES2022"],
+    "types": [
+      "node",
+      "vite/client",
+      "vitest/globals",
+      "@testing-library/jest-dom"
+    ]
+  },
+  "include": [
+    "src/**/*.test.ts",
+    "src/**/*.test.tsx",
+    "src/vite-env.d.ts",
+    "tests/**/*.ts",
+    "tests/**/*.tsx",
+    "vitest.setup.ts"
+  ],
+  "exclude": ["tests/types/browser-environment.ts"]
+}

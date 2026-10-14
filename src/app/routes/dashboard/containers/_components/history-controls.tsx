@@ -1,12 +1,8 @@
 import { HistoryRangeControl } from "~/components/history-range-control";
-export const DOCKER_RANGES = {
-  "15m": 900_000,
-  "1h": 3_600_000,
-  "24h": 86_400_000,
-  "7d": 604_800_000,
-  "30d": 2_592_000_000,
-} as const;
-export type DockerRange = keyof typeof DOCKER_RANGES;
+import { DOCKER_RANGES, type DockerRange } from "../_lib/history-params";
+
+export { DOCKER_RANGES, type DockerRange } from "../_lib/history-params";
+
 const RANGES = (Object.keys(DOCKER_RANGES) as DockerRange[]).map((value) => ({
   value,
   label: value,

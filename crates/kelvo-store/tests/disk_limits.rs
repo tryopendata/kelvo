@@ -1,3 +1,4 @@
+#![allow(clippy::too_many_lines)] // Integration scenarios keep setup and assertions together.
 //! The byte cap and the low-disk guard (D-057), on real SQLite files.
 
 // clippy.toml allows unwrap inside #[test] functions only; the helpers in this test-only

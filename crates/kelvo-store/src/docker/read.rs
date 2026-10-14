@@ -80,6 +80,10 @@ impl DockerReadSnapshot<'_> {
     /// Ring facts override durable facts by daemon/container identity. Merge the
     /// sorted streams while retaining only the requested page, never all DB rows.
     #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "responsibility split tracked in architecture refactor package F1"
+    )]
     pub fn catalog_with_overlay(
         &self,
         engine: Option<&str>,

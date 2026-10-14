@@ -11,6 +11,7 @@ import {
   mergeCoverage,
 } from "./history-details";
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Controller and presentation split tracked in architecture refactor package H.
 export function HistoryNotice({
   snapshot,
   persistence = snapshot.persistence,
@@ -20,7 +21,7 @@ export function HistoryNotice({
   onResume,
 }: {
   snapshot: DockerSnapshot;
-  persistence?: DockerPersistence;
+  persistence?: DockerPersistence | undefined;
   coverage: readonly DockerCoverage[];
   metric: "cpu" | "memory";
   onManage: () => void;

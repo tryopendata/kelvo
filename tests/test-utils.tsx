@@ -35,14 +35,14 @@ export function createTestQueryClient() {
 export interface RenderWithProvidersOptions
   extends Omit<RenderOptions, "wrapper"> {
   transport?: MockTransport;
-  transportOptions?: MockTransportOptions;
+  transportOptions?: MockTransportOptions | undefined;
   queryClient?: QueryClient;
   /** Router path the element is mounted at. Default "/". */
   route?: string;
   /** Live backfill requested on subscribe. Default 60 s. */
   backfillMs?: number;
   /** Series the live channel is projected to (D-066). Default all. */
-  series?: readonly SeriesSelector[];
+  series?: readonly SeriesSelector[] | undefined;
 }
 
 export function renderWithProviders(

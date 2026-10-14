@@ -1,3 +1,4 @@
+import type { ScenarioName } from "@core/mock/fixtures";
 import { createMockTransport } from "@core/mock-transport";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import { Profiler } from "react";
@@ -7,11 +8,11 @@ import { HeatmapCard } from "./heatmap-card";
 const UNITS = { rate: "MBps", temperature: "C" } as const;
 const DAY = 86_400_000;
 
-function setup(onOpen = vi.fn(), scenarios: string[] = []) {
+function setup(onOpen = vi.fn(), scenarios: ScenarioName[] = []) {
   let commits = 0;
   const transport = createMockTransport({
     autoTick: false,
-    scenarios: scenarios as never,
+    scenarios,
   });
   const result = renderWithProviders(
     <Profiler id="heatmap" onRender={() => (commits += 1)}>

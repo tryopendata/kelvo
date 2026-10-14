@@ -31,6 +31,7 @@ const KEY = "self.cpu";
  * is nothing to say: both are null, and the sentence is hidden rather than
  * claiming 0%.
  */
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Existing cohesive logic; split when substantially changed (architecture refactor section 10).
 export function selfCpuAverage(
   state: Pick<
     HostLive,

@@ -46,6 +46,7 @@ export function sortedContainers(
   rows: readonly DockerContainer[],
   sort: ContainerSort
 ): DockerContainer[] {
+  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Controller and presentation split tracked in architecture refactor package H.
   return [...rows].sort((a, b) => {
     const delta =
       sort === "name"

@@ -116,6 +116,31 @@ describe("shared process interaction", () => {
     expect(screen.queryByText("3 selected")).toBeNull();
   });
 
+  it("records native row focus without scrolling, but keyboard navigation still reveals rows", () => {
+    renderWithProviders(<Harness />);
+    const first = row("python 1");
+    const last = row("python 3");
+    const passiveScroll = vi.fn();
+    const keyboardScroll = vi.fn();
+    first.scrollIntoView = passiveScroll;
+    last.scrollIntoView = keyboardScroll;
+
+    // WebKit can focus the row between checkbox pointer-down and pointer-up.
+    // Moving that row here would send the eventual click to its gutter instead.
+    act(() => first.focus());
+    expect(first).toHaveFocus();
+    expect(passiveScroll).not.toHaveBeenCalled();
+    expect(first).toHaveAttribute("tabindex", "0");
+
+    fireEvent.keyDown(first, { key: "End", metaKey: true });
+    expect(last).toHaveFocus();
+    expect(keyboardScroll).toHaveBeenCalledWith({ block: "nearest" });
+    keyboardScroll.mockClear();
+    // Explicit keyboard reveal remains effective even for the focused row.
+    fireEvent.keyDown(last, { key: "End", metaKey: true });
+    expect(keyboardScroll).toHaveBeenCalledWith({ block: "nearest" });
+  });
+
   it("gutter drag selects a range without a release click reducing it", () => {
     renderWithProviders(<Harness />);
     fireEvent.pointerDown(

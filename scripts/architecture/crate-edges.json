@@ -1,0 +1,25 @@
+{
+  "kelvo-schema": { "normal": [], "dev": [] },
+  "kelvo-proto": { "normal": ["kelvo-schema"], "dev": [] },
+  "kelvo-collect": { "normal": ["kelvo-schema"], "dev": [] },
+  "kelvo-store": { "normal": ["kelvo-schema"], "dev": ["kelvo-proto"] },
+  "kelvo-engine": {
+    "normal": ["kelvo-schema", "kelvo-collect", "kelvo-store"],
+    "dev": ["kelvo-collect", "kelvo-store"]
+  },
+  "kelvo-remote": {
+    "normal": ["kelvo-schema", "kelvo-proto", "kelvo-store", "kelvo-engine"],
+    "dev": []
+  },
+  "kelvo-remote-helper": { "normal": ["kelvo-remote"], "dev": [] },
+  "kelvo": {
+    "normal": [
+      "kelvo-schema",
+      "kelvo-proto",
+      "kelvo-store",
+      "kelvo-engine",
+      "kelvo-remote"
+    ],
+    "dev": []
+  }
+}

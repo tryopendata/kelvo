@@ -42,7 +42,7 @@ export interface MirrorHoverProps {
   down: readonly (number | null)[];
   upLabel: string;
   downLabel: string;
-  gaps?: readonly GapSpan[];
+  gaps?: readonly GapSpan[] | undefined;
   format: (v: number) => string;
   accent: Accent;
   /** Draw a column over the hovered bar (off when the brush draws its own). */

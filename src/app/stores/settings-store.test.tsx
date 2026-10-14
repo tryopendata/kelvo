@@ -1,4 +1,9 @@
-import { MOCK_HOST_ID } from "@core/mock/fixtures";
+import type { SettingsSnapshot } from "@core/generated/bindings";
+import {
+  defaultSettings,
+  MOCK_HOST_ID,
+  scenarioFlags,
+} from "@core/mock/fixtures";
 import { createMockTransport } from "@core/mock-transport";
 import { historyKeys, hostKeys } from "@core/query-keys";
 import { act, screen, waitFor } from "@testing-library/react";
@@ -9,15 +14,20 @@ import {
   useSettingsStatus,
 } from "./settings-store";
 
+const snapshot = (revision: number): SettingsSnapshot => ({
+  revision,
+  settings: defaultSettings(scenarioFlags([])),
+});
+
 describe("createSettingsStore", () => {
   it("drops a snapshot whose revision is not newer (D-050)", () => {
     const store = createSettingsStore();
-    const base = { revision: 5 } as never;
+    const base = snapshot(5);
     expect(store.getState().replace(base)).toBe(true);
-    expect(store.getState().replace({ revision: 4 } as never)).toBe(false);
-    expect(store.getState().replace({ revision: 5 } as never)).toBe(false);
+    expect(store.getState().replace(snapshot(4))).toBe(false);
+    expect(store.getState().replace(snapshot(5))).toBe(false);
     expect(store.getState().snapshot).toBe(base);
-    expect(store.getState().replace({ revision: 6 } as never)).toBe(true);
+    expect(store.getState().replace(snapshot(6))).toBe(true);
   });
 
   it("is failed only while no snapshot has arrived", () => {
@@ -25,7 +35,7 @@ describe("createSettingsStore", () => {
     expect(store.getState().status).toBe("loading");
     store.getState().fail();
     expect(store.getState().status).toBe("failed");
-    store.getState().replace({ revision: 1 } as never);
+    store.getState().replace(snapshot(1));
     expect(store.getState().status).toBe("ready");
     store.getState().fail();
     expect(store.getState().status).toBe("ready");

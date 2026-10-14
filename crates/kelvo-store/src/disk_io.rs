@@ -19,6 +19,10 @@ pub const DISK_IO_METRICS: [&str; 8] = [
 
 /// Each paired average is normalized by its whole output slot. Summing numerators
 /// and denominators therefore weights both devices and time by completed operations.
+#[expect(
+    clippy::too_many_lines,
+    reason = "split when substantially changed; architecture refactor section 10"
+)]
 pub fn disk_io_page(
     read: HistoryResult,
     device: Option<&str>,

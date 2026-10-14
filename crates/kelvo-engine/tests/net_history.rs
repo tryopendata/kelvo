@@ -1,3 +1,4 @@
+#![allow(clippy::too_many_lines)] // Integration scenarios keep setup and assertions together.
 //! Network history in the engine (D-089): the per-process network collector samples on
 //! the process ticks with no window open, per-app and interface bytes land in the same
 //! 10 s buckets, closed buckets reach the store and the hub's ring, and sleep, clock

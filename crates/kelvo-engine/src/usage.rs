@@ -675,6 +675,10 @@ impl UsageRing {
     /// Use per app over `[from_ms, to_ms)`, widened to whole buckets: the largest
     /// `limit` by `by`. A process with no resolved app forms its own group under its
     /// name.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "split when substantially changed; architecture refactor section 10"
+    )]
     pub fn by_app(&self, from_ms: i64, to_ms: i64, by: UsageKey, limit: usize) -> UsageByApp {
         let from = bucket_of(from_ms);
         let to = ceil_to(to_ms, USAGE_BUCKET_MS);

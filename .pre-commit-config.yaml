@@ -12,9 +12,11 @@ repos:
     rev: v5.0.0
     hooks:
       - id: trailing-whitespace
-        exclude: ^src/core/generated/
+        # Binary protocol fixtures and upstream font licenses are byte-preserved.
+        exclude: '(^src/core/generated/|^src-tauri/fonts/|\.cbor$)'
       - id: end-of-file-fixer
-        exclude: ^src/core/generated/
+        # Binary protocol fixtures and upstream font licenses are byte-preserved.
+        exclude: '(^src/core/generated/|^src-tauri/fonts/|\.cbor$)'
       - id: check-yaml
       - id: check-toml
       - id: check-json
@@ -88,7 +90,7 @@ repos:
         files: (\.rs|Cargo\.toml|Cargo\.lock|clippy\.toml)$
         pass_filenames: false
 
-  # The macOS checks hosted CI no longer runs on every push (D-096): the whole
+  # Local feedback alongside stable hosted macOS push/PR checks (D-111): the whole
   # `make check` (fmt, clippy, the appstore edition, cargo test with the engine
   # perf gates, Biome, typecheck, Vitest), the bindings freshness check and the
   # Playwright frontend perf gates, whose budgets are macOS numbers. Only

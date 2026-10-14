@@ -4,9 +4,9 @@ This file tracks where Kelvo is against the plan. Task-level checkboxes live in 
 
 Agents update this file whenever a phase starts or finishes. Each update adds a log entry: what changed, how it was verified, and anything left open. They also tick the matching checkboxes in the version doc.
 
-## Start here (handoff, 2026-10-12, QA and polish)
+## Start here (handoff, 2026-10-14, architecture refactor and QA)
 
-State: `main` holds v1.0, v1.1 and v1.2. The app runs from source with `bun run tauri dev`; `make check` and `bun run test:e2e` pass. There is no release path yet, by design (D-078): no DMG, updater, tap or tags until the user calls the dev build ready.
+State: `main` holds v1.0, v1.1 and v1.2. The app runs from source with `bun run tauri dev`. Verification evidence is dated in the log; older green runs do not establish the current refactor as complete. There is no release path yet, by design (D-078): no DMG, updater, tap or tags until the user calls the dev build ready.
 
 The local Docker feature and first Mac-to-Mac remote milestone are also merged.
 Remote setup guidance and error recovery are pushed through `ded22a7`, following
@@ -16,7 +16,7 @@ Use the [remote execution record](remote-macs-execution.md) and
 [Docker compatibility notes](docker-container-monitoring-compatibility.md) for their
 remaining acceptance work. Broader v4 Linux/agent features are still future scope.
 
-Stage: manual QA and polish (`v1-local-monitor.md` section 8, "v1.x QA and polish"). The user runs the dev build day to day and files bugs and UX issues; each session takes a batch, fixes it with a regression test where one fits, and logs it here. After QA comes the release phase (same section).
+Stage: the accepted [architecture refactor](architecture-refactor-review.md) is implemented and reviewed; its execution record contains the final automated, visual and performance evidence. Continue manual QA and polish (`v1-local-monitor.md` section 8, "v1.x QA and polish"). The user runs the dev build day to day and files bugs and UX issues; each session takes a batch, fixes it with a regression test where one fits, and logs it here. After QA comes the release phase (same section).
 
 How to work a QA session:
 1. Read the issues the user filed for the session. Reproduce each in the browser dev server (`bun run dev:fast`, mock transport) when it is a UI issue, or in `bun run dev` (the full app) when it needs real collectors.
@@ -39,20 +39,15 @@ Settled, don't reopen:
 
 Known follow-ups (small, not scheduled):
 - CPU power source note ("P cores", "uncalibrated") is on the popover Power card and the Power stack, not yet on the Overview card or the Timeline lane.
-- `query_history` does not merge the live ring, so the newest up to 5 minutes are missing from SQLite-only readers (Overview 24 h maxima). A ring merge there fixes every reader (D-070).
-- `HISTORY_COMMIT_MS` in `src/core/history-state.ts` mirrors the Rust constant by hand.
 - Rows dropped by the frontend ring as out of order are silent (no log or counter); a v4 producer must keep resume rows ahead of newer frames (D-072).
 - `live-selectors.ts` sums network rates across interfaces skipping nulls, so all-null reads 0; the disk card's per-process ranking adds read and write with `?? 0`.
 - Gap band label pill overlaps the x-axis tick row on module charts; a band can take up to a minute to appear after wake.
 - An unreadable `settings.json` is treated as a first run (onboarding shows).
 - `.window-state.json` and the log directory are not tightened to owner-only (D-074).
-- cargo-deny has not run against `deny.toml` yet; the first CI run is its test. No license is chosen for Kelvo, so the license check skips our crates.
-- The Biome widget-boundary rule has no fixture test proving it fails lint.
 - `EngineStatus::history_held_until` (D-070) reaches neither IPC nor the UI, so after a backward clock step history silently stops being written for up to an hour. Surfacing it in `LiveStatus` or `HistoryHealth`, for the Settings history banner, is the fix.
 - `StreamArea` rebuilds its path each tick instead of appending (D-063); fixed-window charts at slow intervals; HostInfo marketing name, GPU core count and primary interface; freeze a v1 decoder fixture at the first release tag.
 - Trademark search for "Kelvo" is still open.
 - Two `process_control` tests fail when the appstore-feature test build runs them (pre-existing, not part of `make check`).
-- The perf-gate spec shares the machine with the other e2e workers; running it as its own single-worker step would make it steadier under load.
 - The pushed-events buffer (`RecentEvents`) subscribes on the first `useEvents` mount, so a push before any events list has mounted is not buffered; a list that mounts later reads after the commit, so this only matters if that ordering changes.
 - Alert reset edge: after a reset, the hot-process hold covers only the first batch; a reported process sitting between 100% and 200% on that batch, then climbing back over 200%, can alert again once the cooldown ends (narrow, from the final v1.2 review).
 - The CPU page core heatmap rebuilds every cell element when a column closes every 10 s; reusing unchanged cells would cut dev-mode long-task risk.
@@ -62,7 +57,8 @@ Known follow-ups (small, not scheduled):
 | Milestone | Doc | Status | Notes |
 |---|---|---|---|
 | Planning package | [README](README.md) | Done | All 8 docs written, three devil's-advocate reviews applied, answers to Q1, Q3 and Q4 recorded (D-028, D-029) |
-| Agent ops and dev tooling | `CLAUDE.md`, `.claude/` | Done | `make check` passes: Biome, tsc, Vitest, cargo fmt, clippy and test |
+| Agent ops and dev tooling | `CLAUDE.md`, `.claude/` | Implemented; architecture hardening complete | Generated guidance, hook fixtures and autonomous task-owned cleanup; current verification is in the architecture execution log |
+| Architecture refactor | [Review and execution plan](architecture-refactor-review.md) | Done | Native size/boundary guards, service/React ownership, TypeScript environments, CSS and CI; final evidence in the execution record |
 | v1.0 Local monitor | [v1](v1-local-monitor.md) | Done (runs from source) | Phases 0 to 6 done; two architecture reviews fixed; release work moved after QA (D-078); performance accepted (D-078) |
 | v1.1 Long-range history, heatmap, CSV, tray styles | [v1](v1-local-monitor.md) | Done (runs from source) | `make check` and e2e pass; ⌘-drag persistence and the WindowServer re-measure are left to manual QA (D-080) |
 | v1.2 Per-process net/GPU, annotations, first alert | [v1](v1-local-monitor.md) | Done (runs from source) | 1.2-A network (D-082), 1.2-B GPU (D-085), 1.2-C detectors (D-083), 1.2-D alerts (D-084); two review rounds fixed; the optimized-charging pill and notification click routing are not built |
@@ -84,6 +80,69 @@ Known follow-ups (small, not scheduled):
 Status values: Not started, In progress, Blocked (say on what), Done (with the verification that proved it).
 
 ## Log
+
+### 2026-10-14 (Architecture refactor — implementation and review complete)
+
+Completed all packages in the owner-revised [architecture plan](architecture-refactor-review.md).
+The named large Rust/React/mock targets now have focused owners; lint limits and import/crate
+boundaries prevent new violations while preserving explicit legacy exceptions. Agent automation
+keeps broad routine autonomy, scopes cleanup/formatting to its owner and covers wrapper/global
+Git options. CI, generated guidance, TypeScript runtime environments and Tailwind-first styling
+match the executable architecture. Protocol parity tests repaired a real mock backfill boundary;
+route and optional-settings tests repaired the audited input bugs.
+
+Final `make check` and the subsequent frontend recheck passed 916 Rust tests (34 ignored), 1,132 frontend tests and all formatting,
+Clippy, App Store compile, Biome and TypeScript checks. Architecture/guidance/hook fixtures
+passed 25/17/7 tests. Production build and pre-commit checks passed. The frozen browser run passed 402/404; a traced pre-existing WebKit focus/scroll bug was fixed, and all 48 affected browser scenarios plus the new viewport-edge regression passed. The motion failure did not reproduce in sixteen matched samples or the final scoped suite.
+Matched Containers performance was 32.26 ms/s before and 32.46 after under the unchanged
+35 ms/s budget, with no long tasks; the first 37.43 ms/s sample is retained in the execution
+record rather than hidden or used to claim an improvement. The other nine frontend performance
+checks passed. Light/dark/narrow/reduced-motion/Performance-mode comparisons preserved layout
+and appearance; the full diff was approved after the two review findings were fixed.
+
+Remaining limits are explicit: native function exceptions and 24 Rust file ceilings are the
+accepted backlog; `base.css` is unchanged pending native transparency checks. Hosted CI and
+Linux execution were not observed locally. Existing two-Mac/SSH, Desktop/Colima and background
+CPU acceptance work remains open. Integration and task-owned worktree cleanup are recorded in
+the task handoff; primary-checkout caches are retained.
+
+### 2026-10-14 (Architecture refactor execution — intermediate record)
+
+Implementing the owner's revised plan in the shared architecture-refactor worktree.
+Canonical guidance now describes current remote/helper dependencies, history service
+ownership, TypeScript runtime environments, Tailwind-first styling and Performance mode's
+all-motion-off policy. D-111 supersedes manual-only macOS CI (D-096) and expands D-032's
+portable library coverage; D-112 records native lint limits and the executable Cargo
+edge policy. Apache-2.0 is already declared, history constants already come from generated
+bindings, and persisted queries already merge the recent tail (D-092); obsolete header
+follow-ups for those items were removed.
+
+Implemented work includes task-owned hook automation/classifier fixtures, stable macOS
+push/PR checks and pinned toolchains, browser/test/Node TypeScript projects with exact
+optional properties, tested import/size guards, transport/mock decomposition, Docker
+worker/recorder/classifier decomposition, history/mirror service extraction and typed
+internal errors, and Containers/controller/view splits. Production/mock contract tests
+also caught and repaired the mock's 120-versus-native-121 history boundary. These are
+implementation milestones, not a claim that the entire plan has passed final review.
+
+The service extraction passed the shell library suite (175 passed, two ignored), four
+engine history lifecycle tests and the remote suite (37 unit and seven session tests;
+one packaged-app fixture ignored). A reader-generation mutation and a typed-store-error
+mutation each failed their intended real-SQLite regression, then were restored. Scoped
+engine/remote/shell all-targets Clippy passed. Broader final validation is still being
+coordinated and will be recorded separately. No new hardware accuracy, two-Mac acceptance
+or whole-app performance result is claimed. `base.css` remains unchanged because its
+native popover transparency rule needs native Reduce Transparency verification. Existing
+Docker Desktop/Colima and remote native acceptance follow-ups remain open.
+
+
+### 2026-10-14 (Architecture and portfolio review)
+
+Completed the initial [architecture refactor plan](architecture-refactor-review.md), covering Rust/React ownership, TypeScript configuration and boundary enforcement, CSS, agent operations and CI. This is a proposal; implementation has not started. Confirmed import-rule bypasses with temporary lint fixtures, approval-classifier gaps with non-executing inputs, and cleanup ownership scope with synthetic dry-run process data. Generated guidance is current (17 synchronizer tests passed); lint and typecheck passed; 47 representative frontend tests and seven remote-session integration tests passed. Full/native/visual/performance validation was not rerun. No disposable worktree was created; primary checkout caches retained.
+
+Owner clarification incorporated: preserve autonomous development and broad development-tool access. Agent-ops changes should fix concrete destructive-command bypasses and interference with unrelated work, while retaining automatic task-owned cleanup/formatting and avoiding additional routine approval prompts. Plan updated only; hooks remain unchanged.
+
+Expanded the plan with explicit large-file/function extraction targets and Biome/Clippy prevention. AST inventory measured the mock transport factory at 1,488 physical lines and the Containers route function at 719. Trial complexity/length lints confirmed additional frontend and Rust hotspots. The proposal defines initial limits, narrow exceptions, and a temporary legacy baseline that blocks new/growing violations while extractions proceed. No lint configuration or application code changed.
 
 ### 2026-10-13 (Containers monitoring UX execution)
 

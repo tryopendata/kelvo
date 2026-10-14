@@ -1,4 +1,6 @@
-use crate::{EndpointConfig, HostClock, RemoteError, Result, Route, SshSession, codec, server};
+use crate::{
+    EndpointConfig, HostClock, MirrorError, RemoteError, Result, Route, SshSession, codec, server,
+};
 use kelvo_engine::{
     BusMsg, EngineStatus, FrameLayout, LiveFrame, ProcessBatch, Source, SourceControl, SourceError,
     SourceHandle, SourceSink,
@@ -30,7 +32,7 @@ pub struct ConnectionStatus {
     pub clock_offset_ms: i64,
 }
 pub type StatusCallback = Arc<dyn Fn(ConnectionStatus) + Send + Sync>;
-/// The shell owns the isolated mirror and its reset generation. Methods must reject
+/// Each sink owns its isolated mirror and reset generation. Methods must reject
 /// writes after that mirror was detached/reset. Failed sync never stops live metrics.
 pub trait MirrorSink: Send + Sync + 'static {
     fn cursor(
@@ -38,8 +40,8 @@ pub trait MirrorSink: Send + Sync + 'static {
         tier: Tier,
         epoch: uuid::Uuid,
         kinds: SyncKinds,
-    ) -> std::result::Result<Option<Cursor>, String>;
-    fn ingest(&self, page: SyncPage, kinds: SyncKinds) -> std::result::Result<(), String>;
+    ) -> std::result::Result<Option<Cursor>, MirrorError>;
+    fn ingest(&self, page: SyncPage, kinds: SyncKinds) -> std::result::Result<(), MirrorError>;
     fn recent(
         &self,
         _epoch: uuid::Uuid,
@@ -47,7 +49,7 @@ pub trait MirrorSink: Send + Sync + 'static {
         _complete_to_ms: i64,
         _layouts: Vec<WireLayout>,
         _rows: Vec<WireBucket>,
-    ) -> std::result::Result<(), String> {
+    ) -> std::result::Result<(), MirrorError> {
         Ok(())
     }
     fn truncated(
@@ -55,13 +57,13 @@ pub trait MirrorSink: Send + Sync + 'static {
         _tier: Tier,
         _epoch: uuid::Uuid,
         _earliest_ms: i64,
-    ) -> std::result::Result<(), String> {
+    ) -> std::result::Result<(), MirrorError> {
         Ok(())
     }
-    fn enforce_budget(&self, _now_ms: i64) -> std::result::Result<(), String> {
+    fn enforce_budget(&self, _now_ms: i64) -> std::result::Result<(), MirrorError> {
         Ok(())
     }
-    fn prune(&self, _now_ms: i64) -> std::result::Result<(), String> {
+    fn prune(&self, _now_ms: i64) -> std::result::Result<(), MirrorError> {
         Ok(())
     }
     fn history_floor(&self, tier: Tier, now_ms: i64) -> i64 {
@@ -460,7 +462,7 @@ impl Session<'_> {
                     Ok(cursor) => cursor,
                     Err(error) => {
                         self.history_failed = true;
-                        self.status.history_error = Some(error);
+                        self.status.history_error = Some(error.to_string());
                         self.status.catching_up = false;
                         (self.source.on_status)(self.status.clone());
                         return Ok(true);
@@ -529,6 +531,10 @@ impl Session<'_> {
         }
         Ok(SessionAction::Continue)
     }
+    #[expect(
+        clippy::too_many_lines,
+        reason = "service split tracked in architecture refactor package G"
+    )]
     async fn incoming(&mut self, incoming: Option<Result<Message>>) -> Result<SessionAction> {
         let message =
             incoming.ok_or_else(|| RemoteError::Transport("remote stream closed".into()))??;
@@ -741,7 +747,7 @@ impl Session<'_> {
                         self.history_failed = true;
                         self.next_tier = self.tiers.len();
                         self.last_sync = Instant::now();
-                        self.status.history_error = Some(error);
+                        self.status.history_error = Some(error.to_string());
                         self.status.catching_up = false;
                         (self.source.on_status)(self.status.clone());
                     } else {
@@ -786,7 +792,7 @@ impl Session<'_> {
                     && let Err(error) = mirror.truncated(tier, self.epoch, earliest_ts_ms)
                 {
                     self.history_failed = true;
-                    self.status.history_error = Some(error);
+                    self.status.history_error = Some(error.to_string());
                 }
                 self.floors.insert(tier, earliest_ts_ms);
                 self.restart_cursor.insert(tier);
@@ -815,7 +821,7 @@ impl Session<'_> {
                     && let Err(error) =
                         mirror.recent(remote_epoch, tier, complete_to_ms, layouts, rows)
                 {
-                    self.status.history_error = Some(error);
+                    self.status.history_error = Some(error.to_string());
                 }
             }
             Message::Error { message, .. } => {
@@ -840,6 +846,10 @@ impl Session<'_> {
         }
         Ok(SessionAction::Continue)
     }
+    #[expect(
+        clippy::too_many_lines,
+        reason = "service split tracked in architecture refactor package G"
+    )]
     async fn tick(&mut self) -> Result<SessionAction> {
         // A reply that never arrives would otherwise park its tier (or recent history)
         // for the rest of the session; reconnecting resynchronizes the stream.
@@ -909,7 +919,7 @@ impl Session<'_> {
                         .await
                         .map_err(|e| RemoteError::Transport(e.to_string()))?
                     {
-                        self.status.history_error = Some(error);
+                        self.status.history_error = Some(error.to_string());
                     }
                 }
                 self.status.catching_up = false;
@@ -1028,10 +1038,10 @@ mod tests {
             _: Tier,
             _: uuid::Uuid,
             _: SyncKinds,
-        ) -> std::result::Result<Option<Cursor>, String> {
+        ) -> std::result::Result<Option<Cursor>, MirrorError> {
             Ok(None)
         }
-        fn ingest(&self, _: SyncPage, _: SyncKinds) -> std::result::Result<(), String> {
+        fn ingest(&self, _: SyncPage, _: SyncKinds) -> std::result::Result<(), MirrorError> {
             self.0.fetch_add(1, Ordering::SeqCst);
             Ok(())
         }
@@ -1361,10 +1371,14 @@ mod tests {
                 tier: Tier,
                 _epoch: uuid::Uuid,
                 _kinds: SyncKinds,
-            ) -> std::result::Result<Option<Cursor>, String> {
+            ) -> std::result::Result<Option<Cursor>, MirrorError> {
                 Ok(self.cursors.lock_ok().get(&tier).copied())
             }
-            fn ingest(&self, page: SyncPage, _kinds: SyncKinds) -> std::result::Result<(), String> {
+            fn ingest(
+                &self,
+                page: SyncPage,
+                _kinds: SyncKinds,
+            ) -> std::result::Result<(), MirrorError> {
                 self.cursors.lock_ok().insert(
                     page.tier,
                     Cursor {
@@ -1380,11 +1394,11 @@ mod tests {
                 _tier: Tier,
                 _epoch: uuid::Uuid,
                 _earliest: i64,
-            ) -> std::result::Result<(), String> {
+            ) -> std::result::Result<(), MirrorError> {
                 self.truncated.fetch_add(1, Ordering::SeqCst);
                 Ok(())
             }
-            fn enforce_budget(&self, _now: i64) -> std::result::Result<(), String> {
+            fn enforce_budget(&self, _now: i64) -> std::result::Result<(), MirrorError> {
                 self.budgets.fetch_add(1, Ordering::SeqCst);
                 Ok(())
             }

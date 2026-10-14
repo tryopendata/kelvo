@@ -27,7 +27,7 @@ export const HostSwitcher = memo(function HostSwitcher() {
             pathname === "/dashboard/hosts" ||
             pathname === "/dashboard/settings"
           )
-            navigate("/dashboard/overview");
+            void navigate("/dashboard/overview");
         }}
       >
         <SelectTrigger

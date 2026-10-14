@@ -5,7 +5,7 @@ export interface HistoryUnavailableBannerProps {
   /** From `historyUnavailable` in `@core/history-state`. */
   message: string;
   /** Offer "Reset history"; passed when `historyUnavailable` says it can help. */
-  onReset?: () => void;
+  onReset?: (() => void) | undefined;
 }
 
 /**

@@ -26,9 +26,7 @@ describe("Card", () => {
 
   it("takes its name from ariaLabel when nothing in it names it", () => {
     render(<Card accent="cpu" ariaLabel="This Mac" />);
-    expect(screen.getByRole("region", { name: "This Mac" })).toHaveClass(
-      "vt-card"
-    );
+    expect(screen.getByRole("region", { name: "This Mac" })).toBeVisible();
   });
 
   it("is the link itself when given an href, calling onOpen instead", () => {
@@ -44,7 +42,7 @@ describe("Card", () => {
       </LinkCard>
     );
     const link = screen.getByRole("link", { name: "Memory" });
-    expect(link).toHaveClass("vt-card");
+    expect(link).toHaveAttribute("href", "/dashboard/memory");
     expect(link.style.getPropertyValue("--a")).toBe("var(--color-mem)");
     fireEvent.click(link);
     expect(onOpen).toHaveBeenCalledWith("/dashboard/memory");

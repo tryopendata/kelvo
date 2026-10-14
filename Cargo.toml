@@ -43,6 +43,8 @@ tauri-specta = { version = "=2.0.0-rc.25", features = ["typescript"] }
 [workspace.lints.clippy]
 # Denied in non-test code; clippy.toml allows it in tests.
 unwrap_used = "deny"
+# Native expectations document the existing backlog and fail once obsolete.
+too_many_lines = "warn"
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
 [profile.release]

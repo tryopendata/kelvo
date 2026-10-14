@@ -307,6 +307,7 @@ function heldFrom(
  * Apply one message. Returns a new state object (and a new `held` on frames)
  * so selectors see changes; the row ring is appended in place.
  */
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Existing cohesive logic; split when substantially changed (architecture refactor section 10).
 export function reduceLive(state: HostLive, msg: LiveMsg): HostLive {
   switch (msg.kind) {
     case "caps":
@@ -519,6 +520,7 @@ export function windowSlots(windowMs: number, intervalMs: number): number {
  * fills are display values only: nothing writes them anywhere
  * (data-boundary.md).
  */
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Existing cohesive logic; split when substantially changed (architecture refactor section 10).
 export function visitWindow(
   state: WindowState,
   key: string,

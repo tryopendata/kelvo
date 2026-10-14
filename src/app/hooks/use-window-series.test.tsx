@@ -128,6 +128,7 @@ describe("useWindowSeries", () => {
       endPhase: null,
     },
   ])("$name in one message", ({ rows, back, endPhase, wraps }) => {
+    // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Existing scenario grouping; keep individual scenarios focused (architecture refactor section 10).
     it("leaves no hole and matches a full recompute", async () => {
       const { transport } = setup(HOUR);
       await screen.findByText("points 1200");

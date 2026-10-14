@@ -579,6 +579,10 @@ impl State {
         }
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "split when substantially changed; architecture refactor section 10"
+    )]
     fn handle(&mut self, op: Op) {
         match op {
             Op::Docker(pending) => self.handle_docker(*pending),

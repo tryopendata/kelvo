@@ -10,8 +10,10 @@ globs: "**/src/app/routes/**/*.tsx,**/src/app/components/**/*.tsx,**/src/app/lib
 ## Expected errors
 
 tauri-specta commands return `Result`-shaped values (`{ status: "ok", data } | { status: "error", error }`).
-Branch on `status`; don't wrap them in try/catch and don't throw the error away. Map
-known error variants to UI states in `src/core/`, not in components.
+Branch on `status` for expected domain failures and map known variants to UI states in
+`src/core/`. The command promise can also reject when IPC/transport fails; handle that
+rejection at the workflow boundary, retain context, and settle loading/subscription
+state on every path. Do not convert a transport rejection into a successful empty result.
 
 ## Missing data is not an error
 

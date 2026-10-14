@@ -44,6 +44,7 @@ export default function DiskRoute() {
   );
 }
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Existing cohesive logic; split when substantially changed (architecture refactor section 10).
 function DiskPage() {
   const windowMs = useChartWindow()?.windowMs ?? null;
   const [params, setParams] = useSearchParams();

@@ -88,7 +88,7 @@ export interface BrushOverlayProps {
    * reaches into time that has not happened yet; that part cannot be
    * selected or focused. Defaults to the chart's end.
    */
-  selectableToMs?: number;
+  selectableToMs?: number | undefined;
   /** Distance from the positioned parent's left edge to the plot, px. */
   inset?: number;
   /** Optional metric readout; selection and keyboard behavior stay shared. */
@@ -231,6 +231,7 @@ export function BrushOverlay({
     setFocusMs(time);
     if (!pointer) onHoverTime?.(time, 0);
   };
+  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Existing cohesive logic; split when substantially changed (architecture refactor section 10).
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     const s = store.getState();
     if (e.key === "Escape") {

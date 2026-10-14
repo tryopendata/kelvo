@@ -84,6 +84,7 @@ export function ProcessRowActions({
  * Confirm dialog naming the process and PID. Force Quit says that unsaved
  * data is lost (D-029). Nothing is sent before the confirm button.
  */
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Existing cohesive logic; split when substantially changed (architecture refactor section 10).
 export function QuitDialog({ flow }: { flow: QuitFlow }) {
   const req = flow.pending;
   // The last request, so the dialog keeps its text while it fades out.

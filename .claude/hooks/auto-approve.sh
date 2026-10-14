@@ -59,8 +59,9 @@ if [[ "$tool" == "Bash" ]]; then
         exit 0
     fi
 
-    # Strip leading env vars (FOO=bar cmd → cmd)
-    base_cmd=$(echo "$command" | sed -E 's/^([A-Z_]+=[^ ]+ +)*//')
+    # Familiar wrappers inherit the inner command's classification. Keep broad
+    # dev-tool access; a wrapper is not evidence that a command is read-only.
+    base_cmd=$(printf '%s' "$command" | python3 "$(dirname "$0")/_command-prefix.py")
 
     # Extract first word (the actual command)
     first_word=$(echo "$base_cmd" | awk '{print $1}')
@@ -126,7 +127,7 @@ if [[ "$tool" == "Bash" ]]; then
 
     # Dev tools
     case "$first_word" in
-        bun|bunx|npm|npx|node|make|cargo|rustup|rustc|wait-for|on-port|free-port)
+        bun|bunx|npm|npx|node|python|python[0-9]*|perl|ruby|make|cargo|rustup|rustc|wait-for|on-port|free-port)
             approve "Dev tool" ;;
     esac
 
@@ -138,7 +139,7 @@ if [[ "$tool" == "Bash" ]]; then
 
     # Infrastructure / debugging
     case "$first_word" in
-        jq|grep|find|xargs|sort|uniq|diff|comm|tee|timeout|time|mkdir|chmod|cp|mv|touch|ln|basename|dirname|realpath|readlink)
+        jq|grep|find|xargs|sort|uniq|diff|comm|tee|timeout|time|mkdir|chmod|cp|mv|touch|ln|basename|dirname|realpath|readlink|nohup|command|rm)
             approve "Shell utility" ;;
     esac
 
@@ -146,7 +147,7 @@ if [[ "$tool" == "Bash" ]]; then
     # The pre-bash.sh destructive screen already checked for dangerous patterns,
     # so if we got here the chain doesn't contain blocked commands.
     case "$first_word" in
-        set|cd|export|if|for|while|bash)
+        set|cd|export|if|for|while|bash|sh|zsh)
             approve "Shell construct (destructive ops blocked by separate hook)" ;;
     esac
 fi

@@ -616,7 +616,7 @@ async fn retained_removed_detail_and_inspect_races_preserve_metadata_without_hid
         .detail_live("fixture-daemon", &row.id)
         .await
         .unwrap_err();
-    assert!(!error.contains("private daemon detail"));
+    assert!(!error.to_string().contains("private daemon detail"));
     handle.shutdown();
 }
 
@@ -883,14 +883,8 @@ async fn daemon_inventory_replaces_stopped_population_with_new_running_container
     let fixture = Fixture::new(128, 0).await;
     let handle = fixture.handle();
     let mut adapter = fixture.adapter().await;
-    let mut rows = Vec::new();
-    let mut baseline = BTreeMap::new();
-    let mut cursor = 0;
-    let mut inventory_at = Instant::now();
-    let mut capacity_at = Instant::now();
-    let mut complete = true;
-    let mut population = BTreeSet::new();
-    let mut revision = 0;
+    let mut inventory = Inventory::new(0);
+    let mut samples = Samples::new();
     for (count, running_from) in [(128, 0), (129, 128), (128, 0), (130, 0)] {
         fixture.state.count.store(count, Ordering::SeqCst);
         fixture
@@ -899,43 +893,31 @@ async fn daemon_inventory_replaces_stopped_population_with_new_running_container
             .store(running_from, Ordering::SeqCst);
         assert!(
             handle
-                .cycle(
-                    &mut adapter,
-                    &mut rows,
-                    &mut baseline,
-                    &mut cursor,
-                    &mut inventory_at,
-                    &mut capacity_at,
-                    &mut complete,
-                    &mut population,
-                    &mut revision,
-                    true,
-                    1
-                )
+                .cycle(&mut adapter, &mut inventory, &mut samples, true, 1)
                 .await
         );
         assert_eq!(
-            rows.len(),
+            inventory.rows.len(),
             count,
             "all provisioned containers remain visible"
         );
-        assert_eq!(population.len(), 128);
-        let live = aggregate(&rows, None, complete, now_ms(), 1000);
+        assert_eq!(inventory.population.len(), 128);
+        let live = aggregate(&inventory.rows, None, inventory.complete, now_ms(), 1000);
         assert_eq!(live.expected, (count - running_from).min(128) as u32);
         assert_eq!(live.running, (count - running_from) as u32);
         if count == 130 {
             assert!(live.partial);
         }
         if count == 129 {
-            assert!(population.contains("c0128"));
-            assert!(baseline.contains_key("c0128"));
-            assert_eq!(baseline.len(), 1);
+            assert!(inventory.population.contains("c0128"));
+            assert!(samples.baseline.contains_key("c0128"));
+            assert_eq!(samples.baseline.len(), 1);
         } else {
-            assert!(!population.contains("c0128"));
-            assert!(!baseline.contains_key("c0128"));
+            assert!(!inventory.population.contains("c0128"));
+            assert!(!samples.baseline.contains_key("c0128"));
         }
     }
-    assert_eq!(revision, 3);
+    assert_eq!(inventory.revision, 3);
 }
 
 #[tokio::test(start_paused = true)]

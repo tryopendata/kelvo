@@ -1,15 +1,9 @@
 import { eventLabel } from "@core/events";
-import {
-  formatClockSeconds,
-  formatPercent,
-  type RateUnit,
-  rateParts,
-} from "@core/format";
+import { formatClockSeconds, formatPercent } from "@core/format";
 import type { Event } from "@core/generated/bindings";
 import {
   type KeyboardEvent,
   type PointerEvent,
-  type ReactNode,
   useEffect,
   useMemo,
   useRef,
@@ -18,9 +12,8 @@ import {
 import { useElementSize } from "~/hooks/use-element-size";
 import { cn } from "~/lib/utils";
 import { Card } from "~/widgets/card";
-import { GapBand } from "~/widgets/gap-band";
 import { type LaneData, useProcessesAt } from "../_hooks/use-timeline-data";
-import { bucketAt, meanOf, peakOf } from "../_lib/buckets";
+import { meanOf, peakOf } from "../_lib/buckets";
 import { formatMetric, type LaneUnits } from "../_lib/format";
 import {
   type Band,
@@ -39,8 +32,9 @@ import {
   type Span,
 } from "../_lib/time";
 import { AnnotationRow } from "./annotation-row";
-import { CrosshairTooltip, type TooltipRow } from "./crosshair-tooltip";
+import { LaneCrosshair } from "./lane-crosshair";
 import { LaneLabel } from "./lane-label";
+import { LaneOverlays } from "./lane-overlays";
 import { LanePlot } from "./lane-plot";
 import { LaneTableDialog } from "./lane-table-dialog";
 
@@ -70,7 +64,6 @@ const SPAN_ARIA: Record<Span, string> = {
   "30d": "last 30 days",
 };
 
-const TOOLTIP_W = 276;
 /** Narrowest gap band, in px, that gets hollow dots at its edges. */
 const EDGE_DOT_MIN_PX = 16;
 
@@ -106,23 +99,6 @@ function subLine(
     default:
       return "↑ above · ↓ below";
   }
-}
-
-/** "8.2 / 0.4 MB/s": down then up, in the down figure's unit. */
-function downUp(
-  down: number | null,
-  up: number | null,
-  units: LaneUnits
-): string {
-  if (down === null || up === null) {
-    return `${formatMetric("net.rx_total", down, units)} / ${formatMetric("net.tx_total", up, units)}`;
-  }
-  const d = rateParts(down, { units: units.rate });
-  const u = rateParts(up, {
-    units: units.rate,
-    unit: d.unit as RateUnit,
-  });
-  return `${d.value} / ${u.value} ${d.unit}`;
 }
 
 /**
@@ -223,112 +199,25 @@ export function LanesCard({
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     const step = e.shiftKey ? bucketMs * 10 : bucketMs;
     const at = cursor ?? lastBucket;
-    const next =
-      e.key === "ArrowLeft"
-        ? at - step
-        : e.key === "ArrowRight"
-          ? at + step
-          : e.key === "Home"
-            ? fromMs
-            : e.key === "End"
-              ? lastBucket
-              : null;
+    let next: number | null = null;
+    switch (e.key) {
+      case "ArrowLeft":
+        next = at - step;
+        break;
+      case "ArrowRight":
+        next = at + step;
+        break;
+      case "Home":
+        next = fromMs;
+        break;
+      case "End":
+        next = lastBucket;
+        break;
+    }
     if (next === null) return;
     e.preventDefault();
     moveCursor(Math.floor(next / bucketMs) * bucketMs);
   };
-
-  let crosshair: ReactNode = null;
-  if (cursor !== null && width > 0) {
-    const frac = fractionAt(cursor + bucketMs / 2, fromMs, toMs);
-    const x = frac * width;
-    const gapHere = bands.find(
-      (b) => b.module === null && cursor >= b.fromMs && cursor < b.toMs
-    );
-    const value = (lane: LaneData | undefined, metric: string) =>
-      lane
-        ? (bucketAt(lane.series[metric] ?? [], cursor, bucketMs)?.avg ?? null)
-        : null;
-    const byId = (id: LaneDef["id"]) => lanes.find((l) => l.def.id === id);
-    const rows: TooltipRow[] = [];
-    const add = (
-      id: LaneDef["id"],
-      label: string,
-      metric: string,
-      accent: TooltipRow["accent"]
-    ) => {
-      const lane = byId(id);
-      if (lane) {
-        rows.push({
-          label,
-          accent,
-          value: formatMetric(metric, value(lane, metric), units),
-        });
-      }
-    };
-    add("cpu", "CPU", "cpu.total", "cpu");
-    add("gpu", "GPU", "gpu.util", "gpu");
-    add("memory", "Memory pressure", "mem.pressure", "mem");
-    add("power", "Power (system)", "power.system", "power");
-    add("temp", "Hottest SoC zone", "thermal.hottest", "temp");
-    const temp = byId("temp");
-    if (temp && (temp.series["fan.rpm"]?.length ?? 0) > 0) {
-      add("temp", "Fans", "fan.rpm", "temp");
-    }
-    const net = byId("network");
-    if (net) {
-      rows.push({
-        label: "Network ↓ / ↑",
-        accent: "net",
-        value: downUp(
-          value(net, "net.rx_total"),
-          value(net, "net.tx_total"),
-          units
-        ),
-      });
-    }
-
-    const tipLeft =
-      x + 14 + TOOLTIP_W <= width ? x + 14 : Math.max(0, x - 14 - TOOLTIP_W);
-    crosshair = (
-      <>
-        <div
-          aria-hidden
-          className="pointer-events-none absolute -top-1.5 bottom-0 w-px bg-foreground/45"
-          style={{ left: x }}
-        />
-        {models.flatMap((m, i) =>
-          m.series.map((s) => {
-            const v = value(lanes[i], s.metric);
-            if (v === null) return null;
-            const top =
-              i * (LANE_HEIGHT + LANE_GAP) +
-              m.yFraction(s.metric, v) * LANE_HEIGHT;
-            return (
-              <span
-                key={`${m.def.id}-${s.metric}`}
-                aria-hidden
-                className="pointer-events-none absolute -mt-1 -ml-[3.5px] size-[7px] rounded-full border-[1.5px] bg-background"
-                style={{
-                  left: x,
-                  top,
-                  borderColor: `var(--color-${s.accent}-ink)`,
-                }}
-              />
-            );
-          })
-        )}
-        <CrosshairTooltip
-          title={`${dayLabel(cursor)} · ${formatClockSeconds(cursor)}`}
-          resolution={resolution}
-          rows={rows}
-          processes={gapHere ? null : processes}
-          note={gapHere?.label}
-          style={{ left: tipLeft, top: 2 }}
-        />
-      </>
-    );
-  }
 
   return (
     <Card
@@ -382,72 +271,29 @@ export function LanesCard({
             ))}
           </div>
 
-          {ticks.map((t) => (
-            <div
-              key={t.tMs}
-              aria-hidden
-              className="pointer-events-none absolute inset-y-0 w-px bg-border-subtle"
-              style={{ left: `${fractionAt(t.tMs, fromMs, toMs) * 100}%` }}
-            />
-          ))}
+          <LaneOverlays
+            ticks={ticks}
+            bands={bands}
+            lanes={lanes}
+            shown={shown}
+            width={width}
+            fromMs={fromMs}
+            toMs={toMs}
+          />
 
-          {bands.map((b) => {
-            const lane = lanes.findIndex((l) => l.def.module === b.module);
-            if (b.module !== null && lane === -1) return null;
-            const wide = (b.toMs - b.fromMs) / (toMs - fromMs) > 0.12;
-            const mid = fractionAt((b.fromMs + b.toMs) / 2, fromMs, toMs);
-            return (
-              <div
-                key={`${b.fromMs}-${b.module ?? "all"}`}
-                className="pointer-events-none absolute inset-x-0"
-                style={
-                  b.module === null
-                    ? { top: 0, bottom: 0 }
-                    : {
-                        top: lane * (LANE_HEIGHT + LANE_GAP),
-                        height: LANE_HEIGHT,
-                      }
-                }
-              >
-                <GapBand
-                  fromMs={b.fromMs}
-                  toMs={b.toMs}
-                  label={b.label}
-                  rangeFromMs={fromMs}
-                  rangeToMs={toMs}
-                  labelPosition="none"
-                />
-                {wide && (
-                  <span
-                    aria-hidden
-                    className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2 whitespace-nowrap rounded-control border border-border bg-card px-2 py-[3px] font-normal text-[11px] text-muted-foreground"
-                    style={{ left: `${mid * 100}%` }}
-                  >
-                    {b.label}
-                  </span>
-                )}
-              </div>
-            );
-          })}
-
-          {width > 0 &&
-            shown.map((e) => {
-              // The episode, at least 3 px wide so an instant change shows.
-              const x0 = fractionAt(e.start_ms, fromMs, toMs) * width;
-              const x1 = fractionAt(e.ts_ms, fromMs, toMs) * width;
-              const w = Math.max(3, x1 - x0);
-              return (
-                <div
-                  key={`${e.detail.kind}-${e.ts_ms}`}
-                  aria-hidden
-                  data-event-band={e.ts_ms}
-                  className="pointer-events-none absolute inset-y-0 border-warning/20 border-x bg-warning/[0.07]"
-                  style={{ left: Math.min(x0, x1 - w + 1), width: w }}
-                />
-              );
-            })}
-
-          {crosshair}
+          <LaneCrosshair
+            lanes={lanes}
+            bands={bands}
+            models={models}
+            cursor={cursor}
+            width={width}
+            fromMs={fromMs}
+            toMs={toMs}
+            bucketMs={bucketMs}
+            units={units}
+            resolution={resolution}
+            processes={processes}
+          />
 
           <div
             ref={sliderRef}

@@ -22,6 +22,7 @@ function hash(s: string): number {
 }
 
 /** Average CPU % per local hour of `date` (`YYYY-MM-DD`), by the rules above. */
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Existing deterministic fixture scenario logic; split by scenario before removing this local exception (architecture package J).
 export function mockCpuHours(date: string): (number | null)[] {
   const [y, m, d] = date.split("-").map(Number);
   const weekday = new Date(y ?? 1970, (m ?? 1) - 1, d ?? 1).getDay();

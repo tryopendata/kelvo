@@ -99,6 +99,7 @@ export function DiskProcesses({ windowMs }: { windowMs: number }) {
   );
 }
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Existing cohesive logic; split when substantially changed (architecture refactor section 10).
 function DiskProcessList({
   windowMs,
   viewControl,

@@ -160,7 +160,26 @@ flowchart LR
 Dashed nodes and edges are later versions. The solid remote Mac path is implemented
 (D-104); its history is stored in isolated mirrors, not the local store. The WidgetKit
 feed is labelled v2.2 to match the current roadmap; if it moves again, change it here
-and in the roadmap table.
+and in the roadmap table. The exact Cargo edge policy, including direct schema/store
+imports and dev dependencies, is [crate-edges.json](../scripts/architecture/crate-edges.json),
+checked by `make architecture-check`; the diagram above describes data flow.
+
+A first reading through the implementation:
+
+1. `kelvo-collect` reads OS counters into schema series; `kelvo-engine` schedules samples,
+   publishes the live view and accumulates rollups. Metric meaning stays in Rust.
+2. `kelvo-store` persists series/gaps under one SQLite writer. Engine `HistoryStore`
+   owns store lifecycle and merges persisted/recent queries; remote `Mirror` owns each
+   host's separate synchronized history and cursor acknowledgements.
+3. `src-tauri` adapts these services to commands, channels, settings, windows and the tray.
+   Generated bindings carry those typed contracts to `src/core/transport`.
+4. The transport feeds scoped React stores and query hooks. Routes own subscriptions and
+   workflows; widgets receive props. The browser mock composes its own state owners and
+   domain handlers behind the same transport surface.
+
+This keeps native services testable without Tauri, and UI tests runnable without macOS
+collectors. Browser/mock checks cannot establish hardware accuracy, native transparency,
+SSH-agent interoperability or real two-Mac acceptance; those remain separate evidence.
 
 ## 9. Design at a glance
 
@@ -180,11 +199,11 @@ The original design mocks are retired (D-095). design-system.md and the app as b
 
 ## 11. Repo layout, tech stack, and how to read the plan
 
-The repo becomes a Cargo workspace plus a Bun app. Rust crates under `crates/` hold everything that a headless agent would also need (schema, proto, collectors, store, engine). `src-tauri/` is the app shell: tray, windows, commands. `src/` is the React frontend split into `core/` (plain TypeScript) and `app/` (React). `native/KelvoWidgets/` arrives in v2.2. The full tree is in [architecture.md](architecture.md#repository-layout).
+The repo is a Cargo workspace plus a Bun app. Rust crates under `crates/` hold everything that a headless agent would also need (schema, proto, collectors, store, engine and remote services). The bundled `kelvo-remote-helper` bridges SSH stdio to the running Mac app; a headless collector agent is still future scope. `src-tauri/` is the app shell: tray, windows, commands. `src/` is the React frontend split into `core/` (plain TypeScript) and `app/` (React). `native/KelvoWidgets/` arrives in v2.2. The full tree is in [architecture.md](architecture.md#repository-layout).
 
 | Layer | Choice |
 |---|---|
-| App shell | Tauri 2, `tauri-nspanel`, `tauri-plugin-store`, `tauri-plugin-updater`, `smappservice-rs` |
+| App shell | Tauri 2, `tauri-nspanel`, `tauri-plugin-store`, `smappservice-rs` (updater deferred to release work) |
 | Engine | Rust, sysinfo, vendored macmon IOReport and SMC/HID code, GCD timer |
 | Storage | SQLite (WAL, incremental vacuum), tiered |
 | Wire protocol | CBOR via `ciborium`, length-prefixed frames, handshake |
@@ -195,5 +214,16 @@ The repo becomes a Cargo workspace plus a Bun app. Rust crates under `crates/` h
 | Tray | tiny-skia and ab_glyph |
 | Widgets (v2.2) | SwiftUI WidgetKit extension |
 | Tests | cargo test, Vitest with happy-dom, Playwright against the Vite dev server with a mock transport |
+
+For development use `bun run dev:fast` for the browser mock, or `bun run dev` for native
+collectors. `bun run typecheck` checks browser, test and Node tooling environments;
+`bun run test -- <path>` and `cargo test -p <crate>` support focused iteration.
+`make check` includes application tests, native linting, generated guidance and
+hook/architecture fixtures. CI additionally checks production browser builds, functional
+browsers, generated bindings and macOS packaging; `make e2e-perf` is a separate macOS
+performance lane. Toolchain versions come from `package.json`, `.node-version` and
+`rust-toolchain.toml`. D-111 describes CI scope; D-112 describes native size/complexity
+limits and the remaining named exceptions. See [.claude/rules/verification.md](../.claude/rules/verification.md)
+for completion evidence.
 
 To read the plan: start with this README, then [architecture.md](architecture.md) for the shapes everything plugs into, then the version doc you are implementing. Each version doc has the same sections (goal, JTBD, Must/Should/Won't scope, experience mapped to mocks, architecture changes, schema changes, performance deltas, milestones, success criteria, risks, and the infrastructure it lays for later versions). When a decision is referenced by ID, it is in [decisions.md](decisions.md). Claims marked "(unverified)" need checking before anyone builds on them. Progress against the plan is tracked in [PROGRESS.md](PROGRESS.md).

@@ -1,3 +1,4 @@
+import type { ScenarioName } from "@core/mock/fixtures";
 import { createMockTransport } from "@core/mock-transport";
 import { act, screen, within } from "@testing-library/react";
 import { renderWithProviders } from "@tests/test-utils";
@@ -10,12 +11,12 @@ const S = 1000;
 const calls = (c: { command: string; args: unknown[] }[], command: string) =>
   c.filter((x) => x.command === command).map((x) => x.args.slice(1));
 
-function render(scenarios?: string[]) {
+function render(scenarios?: ScenarioName[]) {
   const transport = createMockTransport({
     now: () => NOW,
     autoTick: false,
     chartWindow: "5m",
-    ...(scenarios ? { scenarios: scenarios as never } : {}),
+    ...(scenarios ? { scenarios } : {}),
   });
   return renderWithProviders(<GpuRoute />, { transport, backfillMs: 600_000 });
 }

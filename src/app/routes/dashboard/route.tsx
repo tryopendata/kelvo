@@ -24,7 +24,7 @@ function useNavigateRequests() {
     () =>
       transport.onNavigateRequested(({ route }) => {
         if (route === "/dashboard" || route.startsWith("/dashboard/")) {
-          navigate(route);
+          void navigate(route);
         } else {
           console.warn("[dashboard] ignored navigate-requested", { route });
         }

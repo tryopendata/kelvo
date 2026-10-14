@@ -74,6 +74,10 @@ pub struct AppState {
 impl AppState {
     /// Builds the state and starts the local source. Runs in Tauri's `setup`, on the main
     /// thread.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "split when substantially changed; architecture refactor section 10"
+    )]
     pub fn start(app: &AppHandle) -> anyhow::Result<()> {
         let data_dir = app
             .path()
@@ -257,7 +261,7 @@ impl AppState {
             self.docker
                 .recorder
                 .reset(docker_generation)
-                .map_err(|message| CommandError::Docker { message })?;
+                .map_err(CommandError::from)?;
             let hosts: Vec<_> = self
                 .hosts
                 .all()

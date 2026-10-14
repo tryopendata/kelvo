@@ -1448,3 +1448,5 @@ async fn layout_carries_catalog_kinds_and_backfill_carries_holds() {
     });
     assert_eq!(holds, Some(vec![25_000, 2_500, 25_000, 2_500]));
 }
+
+mod protocol;

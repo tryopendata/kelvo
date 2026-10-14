@@ -60,7 +60,7 @@ export function GeneralPanel({ general }: { general: Settings["general"] }) {
         sub="Open Kelvo from Finder to show its dashboard when hidden."
       >
         <Switch
-          checked={general.show_menu_bar}
+          checked={general.show_menu_bar ?? true}
           aria-label="Show menu-bar icon"
           onCheckedChange={(on) => write({ general: { show_menu_bar: on } })}
         />

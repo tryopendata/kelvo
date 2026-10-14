@@ -30,11 +30,17 @@ src/app/                # React layer - uses ~/ alias
 
 src/core/               # Framework-agnostic TypeScript - uses @core/ alias
   generated/            # tauri-specta bindings (generated, never hand-edit)
-  transport.ts          # The seam: Tauri Channel in the app, mock in browser/tests
+  transport.ts          # Public facade and transport contract exports
+  transport/            # Domain contracts and real Tauri channel adapter
+  mock-transport.ts     # Small browser/test composition root
+  mock/                 # Stateful channel owners, domain commands, queries and fixtures
   ...                   # Query keys, formatters, unit conversion, pure chart math
 ```
 
-`src/core/` has zero React dependencies. Testable without rendering.
+`src/core/` has zero React dependencies. Testable without rendering. Biome rejects app
+imports through aliases or relative paths and rejects bare `zustand` (the React entry).
+Use `zustand/vanilla` for framework-independent stores. Production browser modules
+cannot import Node builtins, with or without the `node:` prefix.
 
 ### Path Aliases
 
@@ -78,12 +84,44 @@ Never build a query key inline.
 override in `biome.json`) forbids them from importing `@core/transport`, stores, `react-router` or `@tauri-apps/*`. The same
 component renders in the popover, overview cards, board windows and the composer preview,
 and its prop contract is what the v3 WidgetKit feed exposes. Fetch/subscribe in the route
-or a hook, pass values down.
+or a hook, pass values down. Generated binding types and constants are allowed; generated
+`commands` and `events` imports are not. The only app-layer imports allowed in widgets
+are `~/lib/utils` and `~/lib/motion/**`. Rule fixtures exercise both allowed and forbidden
+imports; do not weaken the boundary to share a helper.
 
 ### Routes
 
 React Router in data/library mode with memory history. Windows map to entry routes by
 window label. No loaders that fetch, no `.server` files, no SSR.
+
+## TypeScript projects
+
+`tsconfig.base.json` owns strictness, aliases and bundler settings. `tsconfig.json`
+checks browser production code with DOM and Vite globals only. `tsconfig.test.json`
+adds test/Node globals for tests; `tsconfig.node.json` checks build/test configuration
+with Node globals and no DOM library. `bun run typecheck` checks all three. The browser
+negative type fixture proves accidental Node/test globals remain unavailable.
+
+Keep `exactOptionalPropertyTypes`, `noUncheckedIndexedAccess`, `noImplicitReturns`,
+`noUncheckedSideEffectImports`, `verbatimModuleSyntax` and unused checks enabled.
+Omit absent patch fields instead of writing `undefined`; explicitly include `undefined`
+only when it is part of the API (for example forwarding an optional React prop).
+Use generated IPC types, discriminated unions and checked narrowing rather than casts
+that bypass a missing case. Import types with `import type`.
+
+## Size and complexity (D-112)
+
+Biome checks authored TS functions at 100 lines, TSX functions at 200, files at 500,
+and cognitive complexity at 15. Native line rules skip blank lines (and Biome excludes
+comment lines). Tests and the dev gallery use 200-line functions and 1,000-line files;
+the cognitive limit remains 15. Generated bindings are excluded.
+
+Existing function exceptions use local, reasoned `biome-ignore` comments; file ceilings
+are named Biome overrides rounded up to 50. Remove exceptions as their target is split.
+A component should own a presentation responsibility; a hook should own a lifecycle or
+state transition. Do not merely move an oversized function into a new file or spread
+one mutable state bag across helpers to satisfy a number. Run `make architecture-test`
+when changing these rules; fixtures prove limits and import boundaries reject violations.
 
 ## Rendering stability
 

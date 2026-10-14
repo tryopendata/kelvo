@@ -1,3 +1,4 @@
+#![allow(clippy::too_many_lines)] // Integration scenarios keep setup and assertions together.
 //! `history_growth`: the Settings size projection measured from the file. A few hours
 //! of recording must predict what the tables cost once they hold a full retention, and
 //! time Kelvo was not running must not dilute the rates.

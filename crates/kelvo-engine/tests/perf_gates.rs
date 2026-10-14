@@ -1,3 +1,4 @@
+#![allow(clippy::too_many_lines)] // Integration scenarios keep setup and assertions together.
 //! Performance gates on the real macOS collectors (D-062). Thresholds live in
 //! `perf-budget.json` at the repo root, section `engine`; raising one needs a decision
 //! entry.

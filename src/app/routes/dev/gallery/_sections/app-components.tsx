@@ -37,6 +37,7 @@ import { type ZoneRow, ZoneTable } from "~/components/zone-table";
 import { ChartChooser } from "~/routes/dashboard/containers/_components/chart-chooser";
 import { ComparisonChart } from "~/routes/dashboard/containers/_components/comparison-chart";
 import { HistoryNotice } from "~/routes/dashboard/containers/_components/history-notice";
+import cardStyles from "~/widgets/card.module.css";
 import type { Accent } from "~/widgets/lib/accent";
 import { GalleryItem } from "../_components/gallery-item";
 import {
@@ -523,7 +524,7 @@ export function AppComponentsSection() {
           {(m, origin) => (
             <section
               aria-label={m.label}
-              className="vt-card flex h-20 items-start justify-between p-4"
+              className={`${cardStyles.card} flex h-20 items-start justify-between p-4`}
               style={
                 {
                   "--a": `var(--color-${m.accent})`,
@@ -543,7 +544,7 @@ export function AppComponentsSection() {
       <div className="grid grid-cols-2 items-start gap-8">
         <GalleryItem name="ZoneTable" usedIn="Power & Sensors">
           <div
-            className="vt-card p-4"
+            className={`${cardStyles.card} p-4`}
             style={{ "--a": "var(--color-power)" } as CSSProperties}
           >
             <ZoneTable
@@ -632,7 +633,7 @@ export function AppComponentsSection() {
         usedIn="Processes and module usage tables"
       >
         <div
-          className="vt-card flex flex-col"
+          className={`${cardStyles.card} flex flex-col`}
           style={{ "--a": "var(--color-cpu)" } as CSSProperties}
         >
           <div className="flex items-center gap-3 px-4 pt-3.5 pb-1.5">

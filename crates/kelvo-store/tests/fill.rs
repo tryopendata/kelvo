@@ -1,3 +1,4 @@
+#![allow(clippy::too_many_lines)] // Integration scenarios keep setup and assertions together.
 //! Synthetic 30-day fill (architecture.md, Budget math): 31 simulated days of an engine's
 //! output written through the real writer, pruned at the end of each day the way the app
 //! prunes (rolling minutes older than 7 days into 15-minute rows, D-076), then measured on

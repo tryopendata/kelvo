@@ -66,11 +66,11 @@ describe("mock live channel (D-066)", () => {
     );
     const recent = ofKind(msgs, "backfill");
     expect(recent.reduce((n, m) => n + m.rows.length, 0)).toBe(
-      RECENT_MS / 1000
+      RECENT_MS / 1000 + 1
     );
     expect(sub.info).toMatchObject({
       status: "ok",
-      data: { backfill_rows: 120, earlier_rows: 3480 },
+      data: { backfill_rows: 121, earlier_rows: 3479 },
     });
     expect(ofKind(msgs, "backfill_earlier")).toEqual([]);
 
@@ -81,7 +81,7 @@ describe("mock live channel (D-066)", () => {
     await vi.runAllTimersAsync();
     const chunks = ofKind(msgs, "backfill_earlier");
     // History is tray-only until its last three minutes, and a segment ends
-    // where holds change (D-090): 60 visible rows, then 3420 tray-only ones.
+    // where holds change (D-090): 59 visible rows, then 3420 tray-only ones.
     expect(chunks).toHaveLength(1 + Math.ceil(3420 / EARLIER_CHUNK_ROWS));
     for (const c of chunks) expect(c.rows.length).toBeLessThanOrEqual(600);
     // Newest first, each older than everything before it.

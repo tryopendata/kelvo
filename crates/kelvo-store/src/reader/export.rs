@@ -81,6 +81,10 @@ impl Reader {
         Ok(summary)
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "split when substantially changed; architecture refactor section 10"
+    )]
     fn export_in_snapshot(
         &mut self,
         q: &ExportQuery,

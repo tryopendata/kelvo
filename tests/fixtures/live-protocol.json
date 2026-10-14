@@ -1,0 +1,48 @@
+{
+  "after_frame": [
+    {
+      "kind": "frame",
+      "ts_ms": 1501000
+    },
+    {
+      "kind": "backfill_earlier",
+      "rows": 179,
+      "start_ms": 1201000
+    },
+    {
+      "kind": "backfill_earlier",
+      "rows": 600,
+      "start_ms": 601000
+    },
+    {
+      "kind": "backfill_earlier",
+      "rows": 600,
+      "start_ms": 1000
+    }
+  ],
+  "cancelled": [],
+  "disconnected": [],
+  "initial": [
+    {
+      "kind": "caps"
+    },
+    {
+      "kind": "status"
+    },
+    {
+      "kind": "layout"
+    },
+    {
+      "kind": "backfill",
+      "rows": 121,
+      "start_ms": 1380000
+    }
+  ],
+  "typed_failure": {
+    "error": {
+      "host": "00000000-0000-0000-0000-000000000000",
+      "kind": "unknown_host"
+    },
+    "status": "error"
+  }
+}

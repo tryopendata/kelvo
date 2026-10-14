@@ -286,6 +286,10 @@ fn labeled(list: &mut Vec<LabeledValue>, label: &str, v: Option<f32>) {
 
 impl Snapshot {
     /// Builds the view from one frame. Missing series produce `None` fields, never zeros.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "split when substantially changed; architecture refactor section 10"
+    )]
     pub fn from_frame(host: HostId, frame: &FrameView<'_>, catalog: &Catalog) -> Snapshot {
         let mut s = Snapshot {
             host,

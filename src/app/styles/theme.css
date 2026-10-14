@@ -4,7 +4,7 @@
 /*
  * Names follow opendata's
  * shadcn set where the role matches, so shadcn primitives work unchanged.
- * `static` emits every token, so plain CSS (cards.css) can read them with var().
+ * `static` emits every token, so Card CSS Modules can read them with var().
  */
 @theme static {
   /* SF Pro: the system face, so the popover reads as part of the Mac. */

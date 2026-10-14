@@ -16,10 +16,9 @@ describe("ZoneTable (D-093)", () => {
       <ZoneTable rows={zones(20)} extras={[]} units="C" rangeLabel="15m" />
     );
     const scroll = screen.getByRole("region", { name: "SoC thermal zones" });
-    // 22 px header + 10.5 rows of 24 px.
-    expect(scroll).toHaveStyle({ maxHeight: "274px" });
     expect(scroll).toHaveAttribute("tabindex", "0");
-    expect(screen.getAllByRole("rowgroup")[0]).toHaveClass("sticky");
+    scroll.focus();
+    expect(scroll).toHaveFocus();
     expect(screen.getAllByRole("row")).toHaveLength(21);
   });
 

@@ -1,4 +1,4 @@
-use crate::{RemoteError, Result};
+use crate::MirrorError;
 use kelvo_proto::*;
 use kelvo_schema::{Gap, SyncKinds};
 use kelvo_store::*;
@@ -63,13 +63,13 @@ pub fn page_to_wire(read: CursorRead) -> Message {
         }),
     }
 }
-pub fn page_from_wire(p: SyncPage, kinds: SyncKinds) -> Result<CursorPage> {
+pub fn page_from_wire(p: SyncPage, kinds: SyncKinds) -> Result<CursorPage, MirrorError> {
     if p.rows.len() + p.gaps.len() + p.events.len() > 2000
         || p.layouts.len() > 2000
         || p.layouts.iter().any(|l| l.series.len() > 8192)
     {
-        return Err(RemoteError::Protocol(
-            "sync page cardinality exceeds bounds".into(),
+        return Err(MirrorError::ResourceLimit(
+            "invalid remote message: sync page cardinality exceeds bounds",
         ));
     }
     if p.gaps.iter().any(|g| g.source_id.is_none_or(|id| id <= 0))
@@ -77,8 +77,8 @@ pub fn page_from_wire(p: SyncPage, kinds: SyncKinds) -> Result<CursorPage> {
             .iter()
             .any(|e| e.source_id.is_none_or(|id| id <= 0))
     {
-        return Err(RemoteError::Protocol(
-            "sync mutations require stable source row identities".into(),
+        return Err(MirrorError::InvalidInput(
+            "invalid remote message: sync mutations require stable source row identities",
         ));
     }
     Ok(CursorPage {

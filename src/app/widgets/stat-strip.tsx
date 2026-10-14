@@ -8,9 +8,9 @@ export interface StatStripItem {
   label: string;
   value: string;
   /** Muted suffix ("of 72.6 Wh"). */
-  unit?: string;
+  unit?: string | undefined;
   /** Muted trailing figures after the value ("2.98 2.71" for load average). */
-  secondary?: string;
+  secondary?: string | undefined;
   /** Dim the value (Idle on the CPU page). */
   muted?: boolean;
   swatch?: SwatchStep;
@@ -18,7 +18,7 @@ export interface StatStripItem {
 
 export interface StatStripProps {
   /** The page's headline figure at hero size (CPU "Total 18%"). */
-  hero?: { label: string; value: string; unit?: string };
+  hero?: { label: string; value: string; unit?: string | undefined };
   items: StatStripItem[];
   /** Defaults to the accent in scope; only used by swatches. */
   accent?: Accent;

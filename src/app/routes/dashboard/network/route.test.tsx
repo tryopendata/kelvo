@@ -5,6 +5,7 @@ import type {
   ProcessView,
   SettingsSnapshot,
 } from "@core/generated/bindings";
+import type { ScenarioName } from "@core/mock/fixtures";
 import { createMockTransport } from "@core/mock-transport";
 import { act, screen, within } from "@testing-library/react";
 import { renderWithProviders } from "@tests/test-utils";
@@ -37,13 +38,16 @@ const names = (table: HTMLElement) =>
     .map((r) => within(r).queryAllByRole("cell")[0]?.textContent ?? "");
 
 /** The page at a 5m chart window unless `chartWindow` says otherwise. */
-function renderRoute(scenarios?: string[], chartWindow: ChartWindow = "5m") {
+function renderRoute(
+  scenarios?: ScenarioName[],
+  chartWindow: ChartWindow = "5m"
+) {
   return renderWithProviders(<NetworkRoute />, {
     backfillMs: 600_000,
     transportOptions: {
       now: () => NOW,
       chartWindow,
-      ...(scenarios ? { scenarios: scenarios as never } : {}),
+      ...(scenarios ? { scenarios } : {}),
     },
   });
 }
@@ -61,6 +65,7 @@ function renderCard(fromMs: number, toMs: number, transport = mock()) {
 const mock = () =>
   createMockTransport({ now: () => NOW, autoTick: false, chartWindow: "5m" });
 
+// biome-ignore lint/complexity/noExcessiveLinesPerFunction: Existing scenario grouping; keep individual scenarios focused (architecture refactor section 10).
 describe("Network page Apps card (D-089)", () => {
   it("lists apps over the whole window with the remainder rows, by total", async () => {
     const { transport } = renderRoute();

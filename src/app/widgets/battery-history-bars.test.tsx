@@ -36,9 +36,7 @@ describe("BatteryHistoryBars", () => {
 
   it("marks charging hours and labels every third hour", () => {
     const { container } = render(<BatteryHistoryBars {...props} />);
-    const marks = [...container.querySelectorAll<HTMLElement>(".h-1")].filter(
-      (m) => m.style.background === "var(--a)"
-    );
+    const marks = container.querySelectorAll('[title$=" · charging"]');
     expect(marks).toHaveLength(3);
     const labels = [...container.querySelectorAll(".text-center")]
       .map((l) => l.textContent)

@@ -1,4 +1,5 @@
 //! Typed Docker shell. No arbitrary endpoint or command crosses IPC.
+mod error;
 use crate::{AppState, error::CommandError, settings::SettingsPatch};
 use kelvo_schema::{docker::*, lock::LockExt};
 use std::{collections::HashMap, sync::Mutex};
@@ -95,11 +96,6 @@ impl DockerStreams {
         }
     }
 }
-fn error(message: impl ToString) -> CommandError {
-    CommandError::Docker {
-        message: message.to_string(),
-    }
-}
 #[tauri::command]
 #[specta::specta]
 pub async fn docker_discover(
@@ -157,7 +153,9 @@ pub fn docker_subscribe(
 ) -> Result<u32, CommandError> {
     let mut streams = state.docker_streams.streams.lock_ok();
     if streams.len() >= 32 {
-        return Err(error("Too many Docker subscriptions"));
+        return Err(CommandError::DockerResourceLimit {
+            message: "Too many Docker subscriptions".into(),
+        });
     }
     let id = state.docker_streams.next();
     let shown = state
@@ -173,7 +171,9 @@ pub fn docker_subscribe(
     if active {
         channel
             .send(receiver.borrow().clone())
-            .map_err(|_| error("Docker channel closed"))?;
+            .map_err(|_| CommandError::Docker {
+                message: "Docker channel closed".into(),
+            })?;
         state.docker.set_visible(true);
     }
     let handle = app.clone();
@@ -220,7 +220,7 @@ pub async fn docker_detail(
         .docker
         .detail_live(&engine_id, &container_id)
         .await
-        .map_err(error)
+        .map_err(CommandError::from)
 }
 #[tauri::command]
 #[specta::specta]
@@ -231,8 +231,8 @@ pub async fn docker_retained(
     let handle = state.docker.clone();
     tauri::async_runtime::spawn_blocking(move || handle.retained(&request))
         .await
-        .map_err(|_| error("Retained Docker catalog task failed"))?
-        .map_err(error)
+        .map_err(|source| error::task_failed("Retained Docker catalog task failed", source))?
+        .map_err(CommandError::from)
 }
 #[tauri::command]
 #[specta::specta]
@@ -243,8 +243,8 @@ pub async fn docker_comparison(
     let handle = state.docker.clone();
     tauri::async_runtime::spawn_blocking(move || handle.comparison(&request))
         .await
-        .map_err(|_| error("Docker comparison task failed"))?
-        .map_err(error)
+        .map_err(|source| error::task_failed("Docker comparison task failed", source))?
+        .map_err(CommandError::from)
 }
 #[tauri::command]
 #[specta::specta]
@@ -255,8 +255,8 @@ pub async fn docker_history(
     let handle = state.docker.clone();
     tauri::async_runtime::spawn_blocking(move || handle.history(&request))
         .await
-        .map_err(|_| error("Docker history task failed"))?
-        .map_err(error)
+        .map_err(|source| error::task_failed("Docker history task failed", source))?
+        .map_err(CommandError::from)
 }
 #[tauri::command]
 #[specta::specta]
@@ -267,8 +267,8 @@ pub async fn docker_events(
     let handle = state.docker.clone();
     tauri::async_runtime::spawn_blocking(move || handle.query_events(&request))
         .await
-        .map_err(|_| error("Docker events task failed"))?
-        .map_err(error)
+        .map_err(|source| error::task_failed("Docker events task failed", source))?
+        .map_err(CommandError::from)
 }
 #[tauri::command]
 #[specta::specta]
@@ -285,9 +285,14 @@ pub fn docker_logs(
         .copied()
         .unwrap_or_else(|| window.is_visible().unwrap_or(false))
     {
-        return Err(error("Open a visible container detail pane to read logs"));
+        return Err(CommandError::Docker {
+            message: "Open a visible container detail pane to read logs".into(),
+        });
     }
-    let mut sub = state.docker.open_logs(request).map_err(error)?;
+    let mut sub = state
+        .docker
+        .open_logs(request)
+        .map_err(CommandError::from)?;
     let id = sub.id;
     state.docker_streams.track_log(id, window.label());
     drop(visibility);
@@ -384,7 +389,7 @@ pub async fn docker_storage_prepare(
         .docker
         .storage_prepare(selections)
         .await
-        .map_err(error)
+        .map_err(CommandError::from)
 }
 #[tauri::command]
 #[specta::specta]
@@ -396,7 +401,7 @@ pub async fn docker_storage_execute(
     state
         .docker
         .storage_execute(&token, confirm_volumes)
-        .map_err(error)
+        .map_err(CommandError::from)
 }
 #[tauri::command]
 #[specta::specta]
@@ -404,7 +409,10 @@ pub fn docker_storage_operation(
     state: State<'_, AppState>,
     operation_id: String,
 ) -> Result<kelvo_engine::docker::storage::DockerStorageOperation, CommandError> {
-    state.docker.storage_operation(&operation_id).map_err(error)
+    state
+        .docker
+        .storage_operation(&operation_id)
+        .map_err(CommandError::from)
 }
 
 #[tauri::command]
@@ -418,5 +426,5 @@ pub async fn docker_container_action(
     state
         .docker
         .container_action(&engine_id, &container_id, action)
-        .map_err(error)
+        .map_err(CommandError::from)
 }

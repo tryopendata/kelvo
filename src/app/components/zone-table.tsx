@@ -3,6 +3,7 @@ import {
   type TemperatureUnits,
   temperatureParts,
 } from "@core/format";
+import type { CSSProperties } from "react";
 import { FIELD_LABEL } from "~/widgets/lib/classes";
 import { MeterTrack } from "~/widgets/meter-track";
 
@@ -57,8 +58,6 @@ function range(
  * Body rows are 24 px and the header 22 px; the table scrolls past ten and a
  * half rows, so the cut row says there is more.
  */
-const ROW_PX = 24;
-const HEAD_PX = 22;
 const MAX_ROWS = 10.5;
 
 /**
@@ -75,8 +74,9 @@ export function ZoneTable({ rows, extras, units, rangeLabel }: ZoneTableProps) {
     <div className="flex flex-col gap-2.5">
       <div
         data-testid="zone-scroll"
-        className="overflow-y-auto rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        style={{ maxHeight: HEAD_PX + ROW_PX * MAX_ROWS }}
+        className="max-h-[calc(var(--zone-head)+var(--zone-row)*var(--zone-visible-rows))] overflow-y-auto rounded-sm outline-none [--zone-head:22px] [--zone-row:24px] focus-visible:ring-2 focus-visible:ring-ring"
+        // The same row limit controls scroll-region keyboard focus and clipping.
+        style={{ "--zone-visible-rows": MAX_ROWS } as CSSProperties}
         {...(scrolls && {
           tabIndex: 0,
           role: "region",
@@ -92,7 +92,7 @@ export function ZoneTable({ rows, extras, units, rangeLabel }: ZoneTableProps) {
             <col className="w-[60px]" />
           </colgroup>
           <thead className="sticky top-0 z-10 bg-card">
-            <tr style={{ height: HEAD_PX }}>
+            <tr className="h-(--zone-head)">
               <th className={`${FIELD_LABEL} pb-1.5 text-left`}>Zone</th>
               <th className={`${FIELD_LABEL} pb-1.5 pl-2.5 text-left`}>
                 Sensor
@@ -108,7 +108,7 @@ export function ZoneTable({ rows, extras, units, rangeLabel }: ZoneTableProps) {
           </thead>
           <tbody>
             {rows.map((r) => (
-              <tr key={r.key} style={{ height: ROW_PX }}>
+              <tr key={r.key} className="h-(--zone-row)">
                 <td className="py-[3px] font-normal text-fg-subtle">
                   {r.name}
                 </td>

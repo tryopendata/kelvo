@@ -157,6 +157,7 @@ export function ContainerActionProvider({
     if (!operation || operation.finished_ms !== null) return;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout>;
+    // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Controller and presentation split tracked in architecture refactor package H.
     const poll = async () => {
       try {
         const result = await transport.dockerStorageOperation(operation.id);

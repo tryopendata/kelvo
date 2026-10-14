@@ -46,7 +46,9 @@ describe("figureAt", () => {
     }
     const r = parseFigure(formatRate(38.4e6));
     if (r) expect(figureAt(r, r.base)).toBe("38.4 MB/s");
-    expect(figureAt(parseFigure("1,840") as never, 1203.4)).toBe("1,203");
+    const grouped = parseFigure("1,840");
+    if (grouped === null) throw new Error("grouped figure did not parse");
+    expect(figureAt(grouped, 1203.4)).toBe("1,203");
   });
 });
 

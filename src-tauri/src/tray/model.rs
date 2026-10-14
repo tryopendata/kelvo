@@ -568,6 +568,10 @@ fn rates_parts(tx: Reading, rx: Reading, unit: NetworkUnit) -> (Graph, Option<St
 /// first (bars, then the readouts in [`Readout::ALL`] order), if it has anything to show
 /// or nothing else is shown, then the own items in module order. `paused` drops bars and
 /// graphs to their tracks and shows a dash for every text, as a gap does.
+#[expect(
+    clippy::too_many_lines,
+    reason = "split when substantially changed; architecture refactor section 10"
+)]
 pub fn build(
     readings: &Readings,
     history: &TrayHistory,

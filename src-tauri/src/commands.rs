@@ -523,7 +523,7 @@ pub async fn clear_history(app: AppHandle, host: HostId) -> Result<ByteCount, Co
             if cleared.is_ok() {
                 let reset = state.docker.recorder.reset(generation);
                 state.docker.recorder.resume();
-                reset.map_err(|message| CommandError::Docker { message })?;
+                reset.map_err(CommandError::from)?;
             } else {
                 state.docker.recorder.resume();
             }

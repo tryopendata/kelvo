@@ -120,6 +120,8 @@ const ZONES: [string, number][] = [
   ["PMU2 tdie3", 48],
 ];
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Existing deterministic fixture scenario logic; split by scenario before removing this local exception (architecture package J).
+// biome-ignore lint/complexity/noExcessiveLinesPerFunction: Existing deterministic fixture scenario logic; split by scenario before removing this local exception (architecture package J).
 export function buildSpecs(flags: ScenarioFlags): SeriesSpec[] {
   const specs: SeriesSpec[] = [];
   let seed = 1000;
@@ -136,11 +138,11 @@ export function buildSpecs(flags: ScenarioFlags): SeriesSpec[] {
       base,
       noise: opts.noise ?? 0,
       min: opts.min ?? 0,
-      max: opts.max,
+      ...(opts.max === undefined ? {} : { max: opts.max }),
       seed: opts.seed ?? seed++,
       cadence: opts.cadence ?? 1,
-      periodMs: opts.periodMs,
-      perTick: opts.perTick,
+      ...(opts.periodMs === undefined ? {} : { periodMs: opts.periodMs }),
+      ...(opts.perTick === undefined ? {} : { perTick: opts.perTick }),
       idleCadence: ADAPTIVE_METRICS.has(metric) ? 10 : (opts.cadence ?? 1),
     });
   };

@@ -1,3 +1,4 @@
+#![allow(clippy::too_many_lines)] // Integration scenarios keep setup and assertions together.
 //! The `appstore` gating (architecture.md, Platform and entitlement gating): with only
 //! `Entitlement::None` allowed, collectors on private APIs are replaced by stand-ins that
 //! report `MissingEntitlement`, and public-API collectors pass through untouched.

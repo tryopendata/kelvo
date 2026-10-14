@@ -12,7 +12,11 @@ const OFF: AlertSettings = { hot_process: false, thermal_serious: false };
  * not before (D-084). A fired alert is a notification and a Timeline event,
  * at most once every 30 minutes per rule.
  */
-export function AlertsPanel({ alerts = OFF }: { alerts?: AlertSettings }) {
+export function AlertsPanel({
+  alerts = OFF,
+}: {
+  alerts?: AlertSettings | undefined;
+}) {
   const write = useWriteSettings();
   return (
     <SettingsPanel

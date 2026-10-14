@@ -1,6 +1,6 @@
 #!/bin/bash
 # Stop / SubagentStop hook: kill orphaned dev-tool processes left behind by
-# this repo's checkouts.
+# this hook's checkout. Sibling worktrees are reported, never signalled.
 #
 # When an agent's Bash call is cut off (timeout, interrupt, a killed parent),
 # tsc / vitest workers / eslint / mypy can be reparented to PID 1 and keep a
@@ -17,8 +17,8 @@
 #     or node running a checkout script) -- what `bun run typecheck` and
 #     `uv run mypy` leave behind. Then that topmost launcher's whole tree goes,
 #   - the topmost process has run longer than REAP_ORPHANS_MIN_AGE seconds (120),
-#   - the tool's or a launcher's command line names a path inside one of this
-#     repo's checkouts (from `git worktree list`; sibling repos don't count),
+#   - the tool's or a launcher's command line names a path inside this
+#     checkout (other worktrees are only reported),
 #   - it is ours (ps -U <uid>) and not an ancestor of this hook.
 #
 # cargo, rustc and pytest are not in the tool list, so they never match.
@@ -40,6 +40,7 @@ min_age=${REAP_ORPHANS_MIN_AGE:-120}
 
 hook_root=$(cd "$(dirname "$0")/../.." 2>/dev/null && pwd)
 roots=${REAP_ORPHANS_ROOTS-$(git -C "$hook_root" worktree list --porcelain 2>/dev/null | sed -n 's/^worktree //p')}
+roots="$hook_root"$'\n'"$roots"
 roots=$(printf '%s' "$roots" | tr '\n' '|')
 [[ -z "$roots" ]] && exit 0
 
@@ -49,9 +50,9 @@ else
     listing=$(ps -ww -U "$(id -u)" -o pid=,ppid=,etime=,command= 2>/dev/null)
 fi
 
-# Output: one line per victim tree, "<top pid> <tool> <pid> <pid>..." (the
-# top's whole subtree, top first).
-victims=$(printf '%s\n' "$listing" | awk -v min_age="$min_age" -v roots="$roots" -v self="${REAP_ORPHANS_SELF:-$$}" '
+# Output: "<ownership> <top pid> <tool> <pid> <pid>..." per candidate tree.
+# A mixed-checkout tree is also left alone rather than killing a sibling child.
+victims=$(printf '%s\n' "$listing" | awk -v min_age="$min_age" -v roots="$roots" -v own="$hook_root" -v self="${REAP_ORPHANS_SELF:-$$}" '
     function secs(t,   d, n, p, s, i) {          # etime: [[dd-]hh:]mm:ss
         d = 0
         if (index(t, "-")) { d = substr(t, 1, index(t, "-") - 1); t = substr(t, index(t, "-") + 1) }
@@ -60,8 +61,33 @@ victims=$(printf '%s\n' "$listing" | awk -v min_age="$min_age" -v roots="$roots"
         return d * 86400 + s
     }
     function base(p) { sub(/.*\//, "", p); return p }
+    function checkout_at(p, start,   i, match_root) {
+        # Resolve nesting for this path occurrence, not for the whole command.
+        match_root = ""
+        for (i = 1; i <= nr; i++)
+            if (r[i] != "" && substr(cm[p], start, length(r[i]) + 1) == r[i] "/" && length(r[i]) > length(match_root)) match_root = r[i]
+        return match_root
+    }
     function names_checkout(p,   i) {
-        for (i = 1; i <= nr; i++) if (r[i] != "" && index(cm[p], r[i] "/")) return 1
+        for (i = 1; i <= nr; i++)
+            if (r[i] != "" && index(cm[p], r[i] "/")) return 1
+        return 0
+    }
+    function names_sibling(p,   start, root) {
+        for (start = 1; start <= length(cm[p]); start++) {
+            if (substr(cm[p], start, 1) != "/") continue
+            root = checkout_at(p, start)
+            if (root != "" && root != own) return 1
+            # An enclosing root at this same occurrence is only a prefix. Continue
+            # after the selected root so a separate sibling argument still counts.
+            if (root != "") start += length(root) - 1
+        }
+        return 0
+    }
+    function has_sibling(p,   k) {
+        if (names_sibling(p)) return 1
+        for (k = 1; k <= n; k++)
+            if (pp[order[k]] == p && has_sibling(order[k])) return 1
         return 0
     }
     function tool_of(p,   b0, b1) {
@@ -109,18 +135,26 @@ victims=$(printf '%s\n' "$listing" | awk -v min_age="$min_age" -v roots="$roots"
             }
             if (!ok || !named || et[top] <= min_age || (top in mine) || (top in done)) continue
             done[top] = 1
-            print top, t subtree(top)
+            print (has_sibling(top) ? "sibling" : "own"), top, t subtree(top)
         }
     }')
 
 [[ -z "$victims" ]] && exit 0
 
 killed=""
-while read -r top tool pids; do
+while read -r ownership top tool pids; do
+    if [[ "$ownership" == sibling ]]; then
+        echo "reap-orphans: left sibling-worktree orphan alone: $top $tool" >&2
+        continue
+    fi
     # shellcheck disable=SC2086  # $pids is a list
     [[ -z "${REAP_ORPHANS_DRY_RUN:-}" ]] && kill -TERM $pids 2>/dev/null
     killed+="${killed:+, }$top $tool"
 done <<< "$victims"
 
-[[ -n "$killed" ]] && echo "reap-orphans: killed orphaned dev processes: $killed" >&2
+if [[ -n "$killed" ]]; then
+    action="killed"
+    [[ -n "${REAP_ORPHANS_DRY_RUN:-}" ]] && action="would reap"
+    echo "reap-orphans: $action orphaned dev processes: $killed" >&2
+fi
 exit 0

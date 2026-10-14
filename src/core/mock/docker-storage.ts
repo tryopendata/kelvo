@@ -1,4 +1,5 @@
 import type {
+  CommandError,
   DockerSnapshot,
   DockerStorageOperation,
   DockerStorageResource,
@@ -16,13 +17,22 @@ type Methods = Pick<
   | "dockerStorageOperation"
 >;
 const ok = <T>(data: T): CommandResult<T> => ({ status: "ok", data });
-const fail = (message: string): CommandResult<never> => ({
+const fail = (
+  message: string,
+  kind:
+    | "invalid_argument"
+    | "docker"
+    | "docker_not_found"
+    | "docker_snapshot_expired"
+    | "docker_resource_limit" = "invalid_argument"
+): CommandResult<never> => ({
   status: "error",
-  error: { kind: "invalid_argument", message },
+  error: { kind, message } satisfies CommandError,
 });
 const MiB = 1024 ** 2;
 const key = (row: { kind: string; id: string }) => `${row.kind}:${row.id}`;
 
+// biome-ignore lint/complexity/noExcessiveLinesPerFunction: Existing deterministic fixture scenario logic; split by scenario before removing this local exception (architecture package J).
 export function mockStorageSnapshot(
   snapshot: DockerSnapshot,
   now: number
@@ -46,6 +56,7 @@ export function mockStorageSnapshot(
     fingerprint: "mock",
   };
   const resources: DockerStorageResource[] = [
+    // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Existing deterministic fixture scenario logic; split by scenario before removing this local exception (architecture package J).
     ...snapshot.containers.map((row, index): DockerStorageResource => {
       const stopped = row.lifecycle === "exited";
       const autoRemove = index === 1;
@@ -165,6 +176,7 @@ export function mockStorageSnapshot(
   };
 }
 
+// biome-ignore lint/complexity/noExcessiveLinesPerFunction: Existing deterministic fixture scenario logic; split by scenario before removing this local exception (architecture package J).
 export function createMockDockerStorage(
   now: () => number,
   getSnapshot: () => DockerSnapshot,
@@ -225,7 +237,11 @@ export function createMockDockerStorage(
   };
   const methods: Methods = {
     async dockerContainerAction(engineId, containerId, action) {
-      if (active) return fail("An operation is already running.");
+      if (active)
+        return fail(
+          "An operation is already running.",
+          "docker_resource_limit"
+        );
       const snapshot = getSnapshot();
       const operation: DockerStorageOperation = {
         id: `operation-${++sequence}`,
@@ -239,6 +255,7 @@ export function createMockDockerStorage(
       const selection = { kind: "container" as const, id: containerId, action };
       operations.set(operation.id, operation);
       active = operation.id;
+      // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Existing deterministic fixture scenario logic; split by scenario before removing this local exception (architecture package J).
       setTimeout(() => {
         const current = getSnapshot();
         const row = current.containers.find((row) => row.id === containerId);
@@ -317,9 +334,15 @@ export function createMockDockerStorage(
             .at(-1)?.id ?? null,
       });
     },
+    // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Existing deterministic fixture scenario logic; split by scenario before removing this local exception (architecture package J).
     async dockerStoragePrepare(selections) {
-      if (!ready()) return fail("Resume monitoring before reviewing actions.");
-      if (active) return fail("An operation is already running.");
+      if (!ready())
+        return fail("Resume monitoring before reviewing actions.", "docker");
+      if (active)
+        return fail(
+          "An operation is already running.",
+          "docker_resource_limit"
+        );
       if (
         selections.some((item) => item.action === "start") ||
         !selections.length ||
@@ -366,15 +389,21 @@ export function createMockDockerStorage(
       reviews.set(token, review);
       return ok(structuredClone(review));
     },
+    // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Existing deterministic fixture scenario logic; split by scenario before removing this local exception (architecture package J).
     async dockerStorageExecute(token, confirmVolumes) {
       pruneOperations();
       for (const [id, prepared] of reviews)
         if (prepared.expires_ms <= now()) reviews.delete(id);
-      if (active) return fail("An operation is already running.");
+      if (active)
+        return fail(
+          "An operation is already running.",
+          "docker_resource_limit"
+        );
       const review = reviews.get(token);
       if (!review || review.expires_ms <= now())
         return fail(
-          "Review expired or already consumed. Prepare another review."
+          "Review expired or already consumed. Prepare another review.",
+          "docker_snapshot_expired"
         );
       if (
         review.resources.some((row) => row.kind === "volume") &&
@@ -387,7 +416,10 @@ export function createMockDockerStorage(
         review.generation !== getSnapshot().generation ||
         review.engine_id !== getSnapshot().engine?.id
       )
-        return fail("Engine changed. Prepare another review.");
+        return fail(
+          "Engine changed. Prepare another review.",
+          "docker_snapshot_expired"
+        );
       const operation: DockerStorageOperation = {
         id: `operation-${++sequence}`,
         engine_id: review.engine_id,
@@ -400,6 +432,7 @@ export function createMockDockerStorage(
       operations.set(operation.id, operation);
       active = operation.id;
       const response = structuredClone(operation);
+      // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Existing deterministic fixture scenario logic; split by scenario before removing this local exception (architecture package J).
       queueMicrotask(() => {
         for (const selection of review.selections) {
           const previous = review.resources.find(
@@ -453,7 +486,7 @@ export function createMockDockerStorage(
       const operation = operations.get(id);
       return operation
         ? ok(structuredClone(operation))
-        : fail("Operation is no longer retained.");
+        : fail("Operation is no longer retained.", "docker_not_found");
     },
   };
   return {

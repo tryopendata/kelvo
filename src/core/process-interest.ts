@@ -25,6 +25,7 @@ export const FULL_TABLE: ProcessView = {
  * listening ports if any view shows them.
  * `null` when there are no views (no interest).
  */
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Existing cohesive logic; split when substantially changed (architecture refactor section 10).
 export function unionViews(views: readonly ProcessView[]): ProcessView | null {
   const first = views[0];
   if (!first) return null;

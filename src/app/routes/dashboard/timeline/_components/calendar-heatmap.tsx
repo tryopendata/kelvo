@@ -91,6 +91,7 @@ export const CalendarHeatmap = memo(function CalendarHeatmap({
       if (ctx.roundRect) ctx.roundRect(x, y, w, h, r);
       else ctx.rect(x, y, w, h);
     };
+    // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Controller and presentation split tracked in architecture refactor package H.
     rows.forEach((row, r) => {
       const y = r * (CELL_H + GAP);
       for (let h = 0; h < 24; h++) {

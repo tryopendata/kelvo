@@ -71,6 +71,7 @@ const TIER_REQUEST: TierRequest = "auto";
  * the open bucket, and the newest slots are read again each time a bucket
  * closes, so this re-renders once per closed bucket, not per tick.
  */
+// biome-ignore lint/complexity/noExcessiveLinesPerFunction: Controller and presentation split tracked in architecture refactor package H.
 export function useTimelineData(
   view: TimelineView,
   lanes: readonly LaneDef[],

@@ -57,9 +57,9 @@ export function ResidencyBar({
           clamp01(s.pct / 100) === 0 ? null : (
             <span
               key={s.label}
+              className="basis-0"
               style={{
                 flexGrow: s.pct,
-                flexBasis: 0,
                 background: color(s.label),
               }}
             />

@@ -1,3 +1,4 @@
+#![allow(clippy::too_many_lines)] // Integration scenarios keep setup and assertions together.
 //! The engine driven by a fake ticker, fake power signals and fake collectors, writing to
 //! a real SQLite store.
 

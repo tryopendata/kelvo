@@ -430,10 +430,8 @@ it("keeps maximum-length volume batches out of the final acknowledgement label",
     name: "I understand the permanent data loss and volume name reuse risk for the listed volumes.",
   });
   expect(acknowledgement).toBeVisible();
-  expect(within(dialog).getByRole("list")).toHaveClass(
-    "max-h-48",
-    "overflow-y-auto",
-    "break-words"
+  expect(within(dialog).getByRole("list")).toHaveTextContent(
+    `${"database-data-".repeat(15)}127`
   );
   expect(
     within(dialog).getByRole("button", { name: "Delete selected resources" })

@@ -1,3 +1,4 @@
+#![cfg_attr(test, allow(clippy::too_many_lines))]
 //! Kelvo's app shell: Tauri setup, the commands and events the webview reaches, settings
 //! ownership, live channels, and the local source's lifecycle. Business logic lives in
 //! the `kelvo-*` crates; see `state.rs` for the startup order and the API the tray and
@@ -176,6 +177,10 @@ pub fn export_bindings(builder: &Builder<tauri::Wry>) -> Result<(), specta_types
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "split when substantially changed; architecture refactor section 10"
+)]
 pub fn run() {
     let builder = specta_builder();
 

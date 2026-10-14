@@ -51,7 +51,7 @@ export function MonitoringDialog({
           <label htmlFor="docker-popover" className="flex items-center gap-2">
             <Checkbox
               id="docker-popover"
-              checked={snapshot.settings.show_popover}
+              checked={snapshot.settings.show_popover ?? false}
               onCheckedChange={(value) =>
                 void configure({ show_popover: value === true })
               }
@@ -61,7 +61,7 @@ export function MonitoringDialog({
           <label htmlFor="docker-tray" className="flex items-center gap-2">
             <Checkbox
               id="docker-tray"
-              checked={snapshot.settings.show_tray_count}
+              checked={snapshot.settings.show_tray_count ?? false}
               onCheckedChange={(value) =>
                 void configure({ show_tray_count: value === true })
               }

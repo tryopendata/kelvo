@@ -37,6 +37,7 @@ export function mockDiskDevices(
   };
 }
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Existing deterministic fixture scenario logic; split by scenario before removing this local exception (architecture package J).
 export function mockDiskIo(
   request: DiskIoRequest,
   scenarios: readonly ScenarioName[],

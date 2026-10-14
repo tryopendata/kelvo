@@ -340,6 +340,10 @@ fn draw_label(pixmap: &mut Pixmap, font: &FontRef<'_>, s: f32, x: f32, label: &s
     }
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "split when substantially changed; architecture refactor section 10"
+)]
 pub fn render(frame: &TrayFrame) -> Result<Rendered, RenderError> {
     let fonts = fonts().ok_or(RenderError::Font)?;
     let s = frame.scale.max(1) as f32;

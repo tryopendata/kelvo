@@ -25,15 +25,23 @@ function caps(modules: Capabilities["modules"]): Capabilities {
   };
 }
 
-const settings = (
+function settings(
   off: (keyof Settings["modules"])[] = []
-): Settings["modules"] =>
-  Object.fromEntries(
-    ["cpu", "gpu", "memory", "power", "network", "disk", "battery"].map((m) => [
-      m,
-      { enabled: !off.includes(m as never), menu_bar: "hidden" as const },
-    ])
-  ) as unknown as Settings["modules"];
+): Settings["modules"] {
+  const module = (name: keyof Settings["modules"]) => ({
+    enabled: !off.includes(name),
+    menu_bar: "hidden" as const,
+  });
+  return {
+    cpu: module("cpu"),
+    gpu: module("gpu"),
+    memory: module("memory"),
+    power: module("power"),
+    network: module("network"),
+    disk: module("disk"),
+    battery: module("battery"),
+  };
+}
 
 describe("moduleState", () => {
   it("reads every module as on before capabilities arrive", () => {

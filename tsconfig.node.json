@@ -1,15 +1,10 @@
 {
+  "extends": "./tsconfig.base.json",
   "compilerOptions": {
     "lib": ["ES2022"],
     "types": ["node"],
-    "target": "ES2022",
     "module": "ESNext",
-    "moduleResolution": "bundler",
-    "verbatimModuleSyntax": true,
-    "noEmit": true,
-    "allowImportingTsExtensions": true,
-    "skipLibCheck": true,
-    "strict": true
+    "allowImportingTsExtensions": true
   },
   "include": ["vite.config.ts", "vitest.config.ts", "playwright.config.ts"]
 }

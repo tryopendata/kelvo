@@ -19,7 +19,7 @@ import {
   reduceLive,
 } from "@core/live-state";
 import { ProcessInterest } from "@core/process-interest";
-import type { Transport } from "@core/transport";
+import type { LiveSubscription, Transport } from "@core/transport";
 import {
   createContext,
   type ReactNode,
@@ -224,24 +224,37 @@ function useLiveSubscription(
       }, delay);
     };
 
+    // Setup can finish after unmount or return a typed failure. Acquire the
+    // subscription only once those lifecycle outcomes have been handled.
+    const acceptSubscription = (
+      sub: LiveSubscription,
+      attempt: number,
+      backfill: number
+    ) => {
+      if (cancelled) {
+        sub.unsubscribe();
+        return;
+      }
+      if (sub.info.status === "error") {
+        sub.unsubscribe();
+        retry(attempt, sub.info.error, backfill);
+        return;
+      }
+      unsubscribe = sub.unsubscribe;
+      interest.setStream(sub.info.data.stream);
+      armStale();
+    };
+
     const connect = async (attempt: number, backfill: number) => {
+      const options = {
+        backfillMs: backfill,
+        ...(seriesRef.current === undefined
+          ? {}
+          : { series: seriesRef.current }),
+      };
       try {
-        const sub = await transport.subscribeLive(hostId, onMsg, {
-          backfillMs: backfill,
-          series: seriesRef.current,
-        });
-        if (cancelled) {
-          sub.unsubscribe();
-          return;
-        }
-        if (sub.info.status === "error") {
-          sub.unsubscribe();
-          retry(attempt, sub.info.error, backfill);
-          return;
-        }
-        unsubscribe = sub.unsubscribe;
-        interest.setStream(sub.info.data.stream);
-        armStale();
+        const sub = await transport.subscribeLive(hostId, onMsg, options);
+        acceptSubscription(sub, attempt, backfill);
       } catch (err) {
         if (!cancelled) retry(attempt, err, backfill);
       }
@@ -307,9 +320,9 @@ export function HostStoreProvider({
 }: {
   hostId: HostId;
   /** Ring history to request on subscribe (D-049). Default 60 s. */
-  backfillMs?: number;
+  backfillMs?: number | undefined;
   /** The series this window draws (D-066); omitted means every series. */
-  series?: readonly SeriesSelector[];
+  series?: readonly SeriesSelector[] | undefined;
   children: ReactNode;
 }) {
   const transport = useTransport();

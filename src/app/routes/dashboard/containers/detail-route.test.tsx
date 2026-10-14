@@ -53,6 +53,7 @@ it.each([false, true])(
     const subscribe = transport.dockerSubscribe;
     transport.dockerSubscribe = (cb) =>
       subscribe((snapshot) => {
+        // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Existing scenario grouping; keep individual scenarios focused (architecture refactor section 10).
         publish = () =>
           cb({
             ...snapshot,

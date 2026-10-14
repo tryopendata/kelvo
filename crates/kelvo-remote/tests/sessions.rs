@@ -1,3 +1,4 @@
+#![allow(clippy::too_many_lines)] // Integration scenarios keep setup and assertions together.
 //! Public remote server exercised through framed byte streams and real SQLite.
 //! The fixture adapter only supplies existing LiveHub/Store instances. Assertions
 //! are on client-visible protocol messages and queried mirrored history.

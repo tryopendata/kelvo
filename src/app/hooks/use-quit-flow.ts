@@ -51,6 +51,7 @@ export interface QuitFlow {
 }
 
 /** One immutable, host-bound request; every target still passes Rust's guards. */
+// biome-ignore lint/complexity/noExcessiveLinesPerFunction: Existing cohesive logic; split when substantially changed (architecture refactor section 10).
 export function useQuitFlow(): QuitFlow {
   const local = useIsLocalHost();
   const edition = useEdition();
@@ -97,6 +98,7 @@ export function useQuitFlow(): QuitFlow {
     setProgress(0);
   };
 
+  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Existing cohesive logic; split when substantially changed (architecture refactor section 10).
   const confirm = async () => {
     const req = pendingRef.current;
     if (

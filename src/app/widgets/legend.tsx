@@ -13,7 +13,7 @@ export interface LegendItem {
   label: string;
   value: string;
   step: SwatchStep;
-  color?: string;
+  color?: string | undefined;
   onFocus?: () => void;
   onBlur?: () => void;
   onClick?: () => void;
@@ -39,7 +39,7 @@ export function Swatch({
 }: {
   step: SwatchStep;
   size?: 7 | 8;
-  color?: string;
+  color?: string | undefined;
 }) {
   const dim = size === 8 ? "size-2" : "size-[7px]";
   if (step === "none" && !color)

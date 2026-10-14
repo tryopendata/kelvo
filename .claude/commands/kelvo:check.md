@@ -19,14 +19,17 @@ uvx pre-commit run --all-files
 
 If hooks auto-fix files, re-run once to confirm clean.
 
-## Step 2: Everything CI runs
+## Step 2: Shared quality gate
 
 ```bash
 make check
 ```
 
-That is `biome check` (format + lint), `tsc`, Vitest, `cargo fmt --check`, clippy with
-`-D warnings` and `cargo test`. It is the final gate; during iteration use scoped runs
+That is `biome check` (format + lint), all three TypeScript projects, Vitest,
+`cargo fmt --check`, clippy with `-D warnings`, the App Store compile check, `cargo test`,
+generated-guidance checks and hook/architecture fixtures. Hosted CI also runs bindings
+freshness, production frontend build, functional browsers and native packaging; macOS
+frontend performance checks run separately (`make e2e-perf`, D-111). It is the final gate; during iteration use scoped runs
 (see `.claude/rules/testing.md`).
 
 ## Success Criteria

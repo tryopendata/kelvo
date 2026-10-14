@@ -12,6 +12,10 @@ use std::{
 };
 
 #[tokio::main(flavor = "current_thread")]
+#[expect(
+    clippy::too_many_lines,
+    reason = "split when substantially changed; architecture refactor section 10"
+)]
 async fn main() -> anyhow::Result<()> {
     let seconds = std::env::args()
         .nth(1)

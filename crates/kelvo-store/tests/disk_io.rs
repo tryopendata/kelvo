@@ -1,3 +1,4 @@
+#![allow(clippy::too_many_lines)] // Integration scenarios keep setup and assertions together.
 //! Paired disk request integrals through real SQLite, overlays, read merging and roll-down.
 #![allow(clippy::unwrap_used)]
 mod common;

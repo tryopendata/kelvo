@@ -21,6 +21,7 @@ import { requestedBytes } from "../disk/_components/disk-processes";
 import { diskRange } from "../disk/_lib/disk-range";
 
 /** Focused I/O inspection, using the same retained batch as the Disk table. */
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Existing cohesive logic; split when substantially changed (architecture refactor section 10).
 export default function ProcessDetailRoute() {
   const { pid: rawPid, startTime } = useParams();
   const pid = Number(rawPid);

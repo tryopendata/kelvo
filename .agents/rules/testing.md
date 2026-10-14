@@ -23,8 +23,16 @@ bun run test           # Vitest
 bun run test:e2e       # Playwright (browser + mock transport)
 cargo test --workspace # Rust
 make test              # Both
-make check             # Format check, lint, typecheck, tests; the pre-push hook runs it
+make check             # Format, lint, typecheck, tests and repository-policy fixtures
+make architecture-check # Cargo edge policy and Rust file ceilings
+make architecture-test  # Biome import/size, Cargo edge and Rust-size positive/negative fixtures
+make agent-hooks-test   # Non-destructive hook classifier/ownership/formatting fixtures
 ```
+
+Architecture fixtures must prove both a forbidden input fails and a valid input passes.
+Hook fixtures use synthetic process/file/command inputs; never test destructive commands
+by executing them. Test function-size allowances keep setup and assertions together;
+they do not exempt production code from the native lint profiles (D-112).
 
 ## Scoped test runs are the default
 

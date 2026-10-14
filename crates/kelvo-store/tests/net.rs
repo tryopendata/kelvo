@@ -1,3 +1,4 @@
+#![allow(clippy::too_many_lines)] // Integration scenarios keep setup and assertions together.
 //! Per-app network history (D-089): the `proc_net_*` tiers through the public API, on
 //! real SQLite files.
 

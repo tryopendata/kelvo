@@ -120,3 +120,40 @@ it("requires a fresh review after another operation completes", async () => {
   ).toBe("error");
   transport.dispose();
 });
+
+it("preserves typed command failures for missing resources, stale reviews and busy operations", async () => {
+  const transport = createMockTransport({
+    scenarios: ["docker-32"],
+    historyRows: 1,
+  });
+  try {
+    expect(
+      await transport.dockerDetail("missing-engine", "missing-container")
+    ).toMatchObject({ status: "error", error: { kind: "docker_not_found" } });
+    expect(
+      await transport.dockerStorageOperation("missing-operation")
+    ).toMatchObject({ status: "error", error: { kind: "docker_not_found" } });
+    expect(
+      await transport.dockerStorageExecute("missing-review", false)
+    ).toMatchObject({
+      status: "error",
+      error: { kind: "docker_snapshot_expired" },
+    });
+    const review = await unwrap(
+      transport.dockerStoragePrepare([
+        { kind: "image", id: "sha256:old-image", action: "delete" },
+      ])
+    );
+    const running = transport.dockerStorageExecute(review.token, false);
+    const blocked = transport.dockerStoragePrepare([
+      { kind: "volume", id: "old-database-data", action: "delete" },
+    ]);
+    expect(await blocked).toMatchObject({
+      status: "error",
+      error: { kind: "docker_resource_limit" },
+    });
+    await running;
+  } finally {
+    transport.dispose();
+  }
+});

@@ -99,6 +99,10 @@ impl Engine {
     /// Samples the collectors due on `t` into the scratch frame and the latest-value
     /// cache, and returns the process rows with their network and GPU columns joined.
     /// `n`: the series in the current layout.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "split when substantially changed; architecture refactor section 10"
+    )]
     fn sample(&mut self, t: Tick, n: usize) -> Vec<ProcessSample> {
         let ts = t.wall_ms;
         let interval = t.interval_ms;

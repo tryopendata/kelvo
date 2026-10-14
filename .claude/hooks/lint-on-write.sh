@@ -39,6 +39,14 @@ rel_path="$(git -C "$file_dir" rev-parse --show-prefix 2>/dev/null)$(basename "$
 # layout; its files are not ours to format).
 [[ -f "$repo_root/.claude/hooks/lint-on-write.sh" ]] || exit 0
 
+# Record writes before formatting, including new/untracked source files. This
+# list belongs to the payload session; preexisting dirty files are never added.
+source "$(dirname "$0")/_session-files.sh"
+session_id=$(printf '%s' "$input" | jq -r '.session_id // empty')
+if session_file=$(session_files_path "$repo_root" "$session_id"); then
+    printf '%s\0' "$rel_path" >> "$session_file"
+fi
+
 # Trailing whitespace + end-of-file, byte-for-byte what pre-commit-hooks'
 # trailing-whitespace and end-of-file-fixer do (types: [text]). grep -I treats a file
 # with NUL bytes as binary. Gitignored files are skipped: pre-commit never sees

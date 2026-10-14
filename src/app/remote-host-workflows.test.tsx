@@ -56,6 +56,7 @@ function hostRow(name = "Studio Mac") {
   return within(row);
 }
 
+// biome-ignore lint/complexity/noExcessiveLinesPerFunction: Existing scenario grouping; keep individual scenarios focused (architecture refactor section 10).
 describe("remote Mac recovery workflows", () => {
   it("offers interactive trust verification separately from the saved-host SSH test", async () => {
     const source = transport();
@@ -533,6 +534,7 @@ describe("remote Mac recovery workflows", () => {
         ? { info: unavailable("Remote Mac is offline"), unsubscribe: () => {} }
         : subscribe(host, callback, options);
     const history = source.queryHistory;
+    // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Existing scenario grouping; keep individual scenarios focused (architecture refactor section 10).
     source.queryHistory = async (request) => {
       const result = await history(request);
       if (result.status === "ok") {

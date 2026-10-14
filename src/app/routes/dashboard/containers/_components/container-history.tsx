@@ -25,7 +25,7 @@ export const ContainerHistory = memo(function ContainerHistory({
   title: string;
   from: number;
   to: number;
-  events?: readonly DockerEvent[];
+  events?: readonly DockerEvent[] | undefined;
   compact?: boolean;
   aggregate?: boolean;
 }) {
@@ -33,13 +33,12 @@ export const ContainerHistory = memo(function ContainerHistory({
   const memory = metric.includes("bytes");
   const format = memory
     ? (value: number) =>
-        formatBytes(value, { decimals: value > 0 && value < 1 ? 1 : undefined })
+        formatBytes(value, value > 0 && value < 1 ? { decimals: 1 } : {})
     : metric === "cpu_pct"
       ? (value: number) => formatPercent(value, { decimals: 1 })
       : (value: number) =>
-          formatRate(value, {
-            decimals: value > 0 && value < 1 ? 1 : undefined,
-          });
+          formatRate(value, value > 0 && value < 1 ? { decimals: 1 } : {});
+  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Controller and presentation split tracked in architecture refactor package H.
   const chart = useMemo(() => {
     const points = page?.points ?? [];
     const ceiling = Math.max(

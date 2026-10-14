@@ -77,3 +77,46 @@ describe("live subscription while the window is hidden", () => {
     expect(getByTestId("stale").textContent).toBe("true");
   });
 });
+
+describe("subscription setup races", () => {
+  it("releases a subscription whose promise resolves after unmount", async () => {
+    const mock = createMockTransport();
+    let finish: (() => void) | undefined;
+    const gate = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const subscribeLive: Transport["subscribeLive"] = async (...args) => {
+      const subscription = await mock.subscribeLive(...args);
+      await gate;
+      return subscription;
+    };
+    const view = mount({ ...mock, subscribeLive });
+    await act(async () => {});
+    expect(mock.subscriberCount()).toBe(1);
+    view.unmount();
+    await act(async () => finish?.());
+    expect(mock.subscriberCount()).toBe(0);
+    mock.dispose();
+  });
+
+  it("does not retry when a pending subscription rejects after unmount", async () => {
+    vi.useFakeTimers();
+    const mock = createMockTransport();
+    let fail: ((reason: Error) => void) | undefined;
+    const pending = new Promise<never>((_resolve, reject) => {
+      fail = reject;
+    });
+    const subscribeLive = vi.fn(() => pending);
+    try {
+      const view = mount({ ...mock, subscribeLive });
+      view.unmount();
+      await act(async () => fail?.(new Error("channel closed during setup")));
+      await act(async () => vi.advanceTimersByTimeAsync(10_000));
+      expect(subscribeLive).toHaveBeenCalledTimes(1);
+      expect(mock.subscriberCount()).toBe(0);
+    } finally {
+      mock.dispose();
+      vi.useRealTimers();
+    }
+  });
+});

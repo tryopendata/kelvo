@@ -1,3 +1,4 @@
+#![allow(clippy::too_many_lines)] // Integration scenarios keep setup and assertions together.
 #![allow(clippy::unwrap_used)]
 mod common;
 use common::*;

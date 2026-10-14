@@ -48,6 +48,7 @@ const FULL_TABLE_GPU: ProcessView = { ...FULL_TABLE_PORTS, gpu: true };
  * holds while the pointer is over the table. Quit and Force Quit (D-029) are
  * a hover action and the row's context menu, each behind a confirm dialog.
  */
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Existing cohesive logic; split when substantially changed (architecture refactor section 10).
 export default function ProcessesRoute() {
   const local = useIsLocalHost();
   const processNetwork = useProcessNetwork();

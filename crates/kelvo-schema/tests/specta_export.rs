@@ -1,3 +1,4 @@
+#![allow(clippy::too_many_lines)] // Integration scenarios keep setup and assertions together.
 //! Exports every IPC-facing type with the same exporter and serde format tauri-specta
 //! uses (default `Typescript`, `specta_serde::PhasesFormat`). A type the app shell could
 //! not export (an unannotated `i64`, a serde attribute specta rejects) fails here.

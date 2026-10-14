@@ -1,7 +1,7 @@
 import { CHART_WINDOWS } from "./live-window";
 import type { ScenarioName } from "./mock/fixtures";
 import { SCENARIOS } from "./mock/fixtures";
-import { createTauriTransport, isTauri, type Transport } from "./transport";
+import type { Transport } from "./transport";
 
 /**
  * The transport for this window. Inside Tauri: the app transport, labelled by
@@ -15,7 +15,12 @@ import { createTauriTransport, isTauri, type Transport } from "./transport";
  *   ?chart_window=30m                      starting chart window (5m|15m|30m|1h)
  */
 export async function createAppTransport(search: string): Promise<Transport> {
-  if (isTauri() && import.meta.env.VITE_TRANSPORT !== "mock") {
+  if (
+    typeof window !== "undefined" &&
+    "__TAURI_INTERNALS__" in window &&
+    import.meta.env.VITE_TRANSPORT !== "mock"
+  ) {
+    const { createTauriTransport } = await import("./transport/native");
     const { getCurrentWindow } = await import("@tauri-apps/api/window");
     return createTauriTransport(getCurrentWindow().label);
   }
@@ -27,13 +32,17 @@ export async function createAppTransport(search: string): Promise<Transport> {
     );
   const { createMockTransport } = await import("./mock-transport");
   const windowLabel = params.get("window") ?? "dashboard";
+  const chartWindow = CHART_WINDOWS.find(
+    (w) => w === params.get("chart_window")
+  );
+  const intervalMs = Number(params.get("interval"));
   return createMockTransport({
     windowLabel,
     // The dashboard backfills an hour of ring (app.tsx); give the mock one.
-    historyRows: windowLabel === "dashboard" ? 3600 : undefined,
+    ...(windowLabel === "dashboard" ? { historyRows: 3600 } : {}),
     scenarios,
     autoTick: params.get("ticks") !== "0",
-    intervalMs: Number(params.get("interval")) || undefined,
-    chartWindow: CHART_WINDOWS.find((w) => w === params.get("chart_window")),
+    ...(intervalMs ? { intervalMs } : {}),
+    ...(chartWindow ? { chartWindow } : {}),
   });
 }

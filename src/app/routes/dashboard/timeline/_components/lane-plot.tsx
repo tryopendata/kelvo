@@ -77,25 +77,28 @@ export const LanePlot = memo(function LanePlot({
           stroke: quiet ? withAlpha(ink, 0.55) : ink,
           width: 1.5,
           fillTo: baseline,
-          fill:
-            s.look === "line"
-              ? undefined
-              : (u: uPlot) => {
-                  const top = u.bbox.top;
-                  const bottom = top + u.bbox.height;
-                  const zero = u.valToPos(baseline, "y", true);
-                  const a = AREA_ALPHA[s.look];
-                  const down = s.direction === "down";
-                  const g = u.ctx.createLinearGradient(
-                    0,
-                    down ? zero : top,
-                    0,
-                    down ? bottom : zero
-                  );
-                  g.addColorStop(0, withAlpha(fill, down ? 0.08 : a));
-                  g.addColorStop(1, withAlpha(fill, down ? a : 0));
-                  return g;
-                },
+          ...(s.look === "line"
+            ? {}
+            : {
+                fill:
+                  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Controller and presentation split tracked in architecture refactor package H.
+                  (u: uPlot) => {
+                    const top = u.bbox.top;
+                    const bottom = top + u.bbox.height;
+                    const zero = u.valToPos(baseline, "y", true);
+                    const a = AREA_ALPHA[s.look];
+                    const down = s.direction === "down";
+                    const g = u.ctx.createLinearGradient(
+                      0,
+                      down ? zero : top,
+                      0,
+                      down ? bottom : zero
+                    );
+                    g.addColorStop(0, withAlpha(fill, down ? 0.08 : a));
+                    g.addColorStop(1, withAlpha(fill, down ? a : 0));
+                    return g;
+                  },
+              }),
           points: {
             show: true,
             size: 7,

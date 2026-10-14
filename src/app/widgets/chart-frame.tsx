@@ -25,8 +25,8 @@ export function ChartFrame({
 }: {
   height: number;
   ceiling: number;
-  yTicks?: readonly ChartTick[];
-  xTicks?: readonly string[];
+  yTicks?: readonly ChartTick[] | undefined;
+  xTicks?: readonly string[] | undefined;
   gutter?: number;
   plotRef?: Ref<HTMLDivElement>;
   style?: CSSProperties;
@@ -92,7 +92,7 @@ export function ChartGrid({
 export function ChartSelectionVeil({
   highlight,
 }: {
-  highlight?: { left: number; width: number } | null;
+  highlight?: ({ left: number; width: number } | null) | undefined;
 }) {
   if (!highlight) return null;
   const pct = (value: number) => `${(value * 100).toFixed(3)}%`;

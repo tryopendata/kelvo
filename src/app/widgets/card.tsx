@@ -1,12 +1,13 @@
 import { Slot } from "radix-ui";
 import type { CSSProperties, MouseEvent, ReactNode } from "react";
 import { cn } from "~/lib/utils";
+import styles from "./card.module.css";
 import { type Accent, accentVars, type Corner } from "./lib/accent";
 
 export type CardProps = {
   accent: Accent;
   /** Glow origin. Defaults to top-left. */
-  origin?: Corner;
+  origin?: Corner | undefined;
   /** `chart` drops the glow tint to 6% (chart cards and every popover card). */
   variant?: "default" | "chart";
   /**
@@ -48,11 +49,8 @@ export function Card({
     <Comp
       aria-labelledby={labelledBy}
       aria-label={ariaLabel}
-      className={cn(
-        "vt-card",
-        variant === "chart" && "vt-card--chart",
-        className
-      )}
+      data-variant={variant}
+      className={cn(styles.card, className)}
       style={accentVars(accent, origin) as CSSProperties}
     >
       {children}
@@ -62,9 +60,9 @@ export function Card({
 
 export type LinkCardProps = CardProps & {
   /** Page the card opens. Without it the card is a plain, non-interactive card. */
-  href?: string;
+  href?: string | undefined;
   /** Called instead of following `href` (the route navigates in-app). */
-  onOpen?: (href: string) => void;
+  onOpen?: ((href: string) => void) | undefined;
 };
 
 /** A card that, given `href`, is itself the link to the page it opens. */

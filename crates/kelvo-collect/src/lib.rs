@@ -1,3 +1,4 @@
+#![cfg_attr(test, allow(clippy::too_many_lines))]
 //! Metric collectors: the [`Collector`] trait and one collector set per OS
 //! (`macos/` for sysinfo, IOReport, SMC/HID and IOKit; `linux/` is a stub until v4).
 //!

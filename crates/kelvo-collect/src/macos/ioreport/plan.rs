@@ -214,6 +214,10 @@ pub(crate) struct Plan {
 }
 
 impl Plan {
+    #[expect(
+        clippy::too_many_lines,
+        reason = "split when substantially changed; architecture refactor section 10"
+    )]
     pub(crate) fn new(metas: &[ChannelMeta], tables: &soc::DvfsTables, groups: Groups) -> Self {
         let m = MetricId::from_static;
 
@@ -375,6 +379,10 @@ pub(crate) struct Accum {
 }
 
 /// Reduces one tick. `elapsed` is the delta's measured interval.
+#[expect(
+    clippy::too_many_lines,
+    reason = "split when substantially changed; architecture refactor section 10"
+)]
 pub(crate) fn reduce(
     plan: &Plan,
     acc: &mut Accum,

@@ -17,48 +17,51 @@ export function storageRows(
   sort: StorageSort
 ) {
   const needle = query.trim().toLocaleLowerCase();
-  return resources
-    .filter((row) => {
-      if (
-        !`${row.name} ${row.id} ${row.project ?? ""} ${row.database ?? ""} ${row.references.join(" ")}`
-          .toLocaleLowerCase()
-          .includes(needle)
-      )
-        return false;
-      if (category !== "all" && row.kind !== category) return false;
-      if (
-        category === "container" &&
-        row.age_basis !== "stopped" &&
-        !row.can_delete
-      )
-        return false;
-      if (
-        (category === "image" || category === "volume") &&
-        row.references.length > 0
-      )
-        return false;
-      const hasAgeScope =
-        row.kind === "build_cache" ||
-        (row.kind === "container" &&
-          (row.can_delete || row.age_basis === "stopped"));
-      if (hasAgeScope && age !== "all") {
-        if (age === "unknown") return row.age_ms === null;
-        if (row.age_ms === null || row.age_ms < Number(age) * 86_400_000)
+  return (
+    resources
+      // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Controller and presentation split tracked in architecture refactor package H.
+      .filter((row) => {
+        if (
+          !`${row.name} ${row.id} ${row.project ?? ""} ${row.database ?? ""} ${row.references.join(" ")}`
+            .toLocaleLowerCase()
+            .includes(needle)
+        )
           return false;
-      }
-      return true;
-    })
-    .sort((a, b) => {
-      const result =
-        sort === "name"
-          ? a.name.localeCompare(b.name)
-          : sort === "references"
-            ? b.references.length - a.references.length
-            : sort === "age"
-              ? (b.age_ms ?? -1) - (a.age_ms ?? -1)
-              : (b.size_bytes ?? -1) - (a.size_bytes ?? -1);
-      return result || a.id.localeCompare(b.id);
-    });
+        if (category !== "all" && row.kind !== category) return false;
+        if (
+          category === "container" &&
+          row.age_basis !== "stopped" &&
+          !row.can_delete
+        )
+          return false;
+        if (
+          (category === "image" || category === "volume") &&
+          row.references.length > 0
+        )
+          return false;
+        const hasAgeScope =
+          row.kind === "build_cache" ||
+          (row.kind === "container" &&
+            (row.can_delete || row.age_basis === "stopped"));
+        if (hasAgeScope && age !== "all") {
+          if (age === "unknown") return row.age_ms === null;
+          if (row.age_ms === null || row.age_ms < Number(age) * 86_400_000)
+            return false;
+        }
+        return true;
+      })
+      .sort((a, b) => {
+        const result =
+          sort === "name"
+            ? a.name.localeCompare(b.name)
+            : sort === "references"
+              ? b.references.length - a.references.length
+              : sort === "age"
+                ? (b.age_ms ?? -1) - (a.age_ms ?? -1)
+                : (b.size_bytes ?? -1) - (a.size_bytes ?? -1);
+        return result || a.id.localeCompare(b.id);
+      })
+  );
 }
 export const storageResourceKey = (
   row: Pick<DockerStorageResource, "kind" | "id">

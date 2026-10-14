@@ -30,6 +30,10 @@ pub struct TrustCandidate {
     keys: Vec<u8>,
     created: Instant,
 }
+#[expect(
+    clippy::too_many_lines,
+    reason = "service split tracked in architecture refactor package G"
+)]
 pub async fn inspect_host(alias: &str) -> Result<TrustCandidate> {
     let _validated_command = crate::ssh_command(alias)?;
     // -G must precede the host; ssh_command's -- host is already last, so construct

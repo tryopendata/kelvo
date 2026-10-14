@@ -89,8 +89,8 @@ export function BatteryHistoryBars({
         {hours.map((h) => (
           <div
             key={h.tsMs}
-            className="h-1 rounded-full"
-            style={{ background: h.charging ? "var(--a)" : "transparent" }}
+            className="h-1 rounded-full bg-transparent data-[charging=true]:bg-(--a)"
+            data-charging={h.charging}
           />
         ))}
       </div>

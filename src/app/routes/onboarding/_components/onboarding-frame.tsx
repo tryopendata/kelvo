@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { KelvoMark } from "~/components/kelvo-mark";
 import { enter } from "~/lib/motion/enter";
 import { cn } from "~/lib/utils";
+import cardStyles from "~/widgets/card.module.css";
 
 /**
  * The onboarding window's frame: a top strip under the native
@@ -27,7 +28,9 @@ export function OnboardingFrame({
   const body = enter(1);
   const foot = enter(2, "fade");
   return (
-    <main className="vt-card flex h-svh flex-col overflow-hidden rounded-none border-0 text-foreground">
+    <main
+      className={`${cardStyles.card} flex h-svh flex-col overflow-hidden rounded-none border-0 text-foreground`}
+    >
       <div
         data-tauri-drag-region
         className="flex h-10 shrink-0 items-center px-4"

@@ -1,3 +1,4 @@
+#![allow(clippy::too_many_lines)] // Integration scenarios keep setup and assertions together.
 //! Codec round-trip and version-skew tests (architecture.md infra 3).
 //!
 //! `fixtures/v1/` holds one CBOR frame body per message variant, encoded by the v1 codec.

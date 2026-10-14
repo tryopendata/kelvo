@@ -24,7 +24,7 @@ export interface CrosshairTooltipProps {
   /** `undefined` while the query is in flight; `null` when nothing was stored then. */
   processes: ProcessesAt | null | undefined;
   /** A note in place of the rows, inside a gap ("Asleep 5h 15m · no samples"). */
-  note?: string;
+  note?: string | undefined;
   style: CSSProperties;
 }
 
@@ -48,7 +48,7 @@ export function CrosshairTooltip({
     .sort((a, b) => (b.cpu_pct ?? -1) - (a.cpu_pct ?? -1))
     .slice(0, TOP);
   return (
-    <ChartTooltipShell className="w-[276px]" style={style}>
+    <ChartTooltipShell className="top-0.5 w-[276px]" style={style}>
       <div className="flex items-baseline justify-between">
         <span className="figures text-[12px]">{title}</span>
         <span className={FIELD_LABEL}>{resolution}</span>

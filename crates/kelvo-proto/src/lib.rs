@@ -1,3 +1,4 @@
+#![cfg_attr(test, allow(clippy::too_many_lines))]
 //! The Kelvo sync protocol: length-prefixed framing, the CBOR codec (via `ciborium`),
 //! the [`Message`] enum, and the handshake with version negotiation.
 //!

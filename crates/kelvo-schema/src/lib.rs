@@ -1,3 +1,4 @@
+#![cfg_attr(test, allow(clippy::too_many_lines))]
 //! Kelvo's data vocabulary: the metric catalog, series keys (`metric_id` plus labels),
 //! host identity, capabilities, alert-rule data, settings and the typed `Snapshot` view.
 //!

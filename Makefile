@@ -1,7 +1,9 @@
-.PHONY: help install dev dev-web build test test-e2e test-fill test-read-perf lint format fix typecheck check rust-fmt rust-check rust-test rust-linux-check appstore-check check-deps deny perf bench bench-perf-mode bench-vs-stats bindings bindings-check e2e-perf hooks clean stub-dist
-.PHONY: agent-config agent-config-check agent-config-test
+.PHONY: help install dev dev-web build test test-e2e test-fill test-read-perf lint format fix typecheck check rust-fmt rust-check rust-test rust-linux-check rust-portable-check rust-portable-test appstore-check check-deps deny perf bench bench-perf-mode bench-vs-stats bindings bindings-check e2e-perf hooks clean stub-dist
+.PHONY: agent-config agent-config-check agent-config-test agent-hooks-test architecture-check architecture-test
 
-LINUX_CRATES := -p kelvo-schema -p kelvo-proto -p kelvo-store -p kelvo-engine -p kelvo-collect
+# All library crates are portable by default. New workspace crates enter this gate
+# automatically; only the macOS shell and separately checked helper are excluded.
+LINUX_CRATES := --workspace --exclude kelvo --exclude kelvo-remote-helper
 
 help:
 	@echo "Kelvo Development Commands"
@@ -31,6 +33,8 @@ help:
 	@echo "  make bindings-check  Regenerate the bindings and fail if they differ from the commit"
 	@echo "  make e2e-perf      Playwright frontend perf gates (perf-budget.json frontend; macOS budgets)"
 	@echo "  make rust-check    cargo fmt --check + clippy -D warnings"
+	@echo "  make rust-portable-check  cargo check all portable workspace crates on the current host"
+	@echo "  make rust-portable-test   cargo test all portable workspace crates on the current host"
 	@echo "  make rust-linux-check  cargo check the portable crates for x86_64-unknown-linux-gnu"
 	@echo "  make appstore-check    cargo check + clippy the sandboxed App Store edition (--features appstore)"
 	@echo "  make check-deps    Fail if the built app links a library macOS does not ship (D-058)"
@@ -52,6 +56,16 @@ agent-config-check:
 
 agent-config-test:
 	python3 -B -m unittest discover -s scripts/agent-config -p 'test_*.py' -v
+
+agent-hooks-test:
+	python3 -B -m unittest discover -s scripts/agent-hooks -p 'test_*.py' -v
+
+architecture-check:
+	python3 scripts/architecture/rust_size.py
+	bash -o pipefail -c 'cargo metadata --no-deps --format-version 1 | jq -e --slurpfile allowed scripts/architecture/crate-edges.json -f scripts/architecture/crate-edges.jq'
+
+architecture-test:
+	python3 -B -m unittest discover -s scripts/architecture -p 'test_*.py' -v
 
 hooks:
 	uvx pre-commit install --install-hooks -t pre-commit -t commit-msg -t pre-push
@@ -93,7 +107,7 @@ typecheck: stub-dist
 	bun run typecheck
 	cargo check --workspace --all-targets
 
-check: rust-check appstore-check rust-test
+check: agent-config-check agent-config-test agent-hooks-test architecture-check architecture-test rust-check appstore-check rust-test
 	bun run check
 
 rust-fmt:
@@ -112,6 +126,12 @@ rust-test: stub-dist
 appstore-check: stub-dist
 	cargo check -p kelvo --features appstore --all-targets
 	cargo clippy -p kelvo -p kelvo-engine -p kelvo-collect --features kelvo/appstore --all-targets -- -D warnings
+
+rust-portable-check:
+	cargo check --all-targets $(LINUX_CRATES)
+
+rust-portable-test:
+	cargo test $(LINUX_CRATES)
 
 rust-linux-check:
 	rustup target add x86_64-unknown-linux-gnu
@@ -161,7 +181,7 @@ bindings: stub-dist
 	cargo run --quiet -p kelvo --example export_bindings
 
 # Main-thread and long-task budgets (perf-budget.json `frontend`), measured on macOS
-# Chromium, so they run in the pre-push hook rather than on Linux CI (D-096).
+# Chromium, so they run separately on macOS CI and in the pre-push hook.
 e2e-perf:
 	bunx playwright test tests/e2e/perf-gate.spec.ts --project=chromium --workers=1
 

@@ -27,12 +27,14 @@ gallery at `/?route=/dev/gallery`), and compare. Name every difference you leave
 ## Architecture
 
 ```
-crates/                    Rust workspace (planned)
+crates/                    Rust workspace
   kelvo-schema/           metric catalog, series keys, HostInfo, Capabilities, Snapshot view
   kelvo-proto/            framing, CBOR codec, handshake, message types
   kelvo-collect/          Collector trait; macos/ (sysinfo, IOReport, SMC/HID, IOKit); linux/ stub
   kelvo-store/            SQLite: series interning, tiered rollups, gaps, cursors, pruning
-  kelvo-engine/           sampler loop (Ticker, PowerSignals), rollups, detectors, bus
+  kelvo-engine/           sampler loop, rollups, detectors, bus, history lifecycle and queries
+  kelvo-remote/           SSH sessions, protocol server/client, isolated history mirrors
+  kelvo-remote-helper/    bundled stdio-to-local-socket bridge
 src-tauri/                 app shell: HostRegistry, LocalSource, settings owner, tray, windows, commands
 src/
   core/                    plain TS, no React (~ @core/): transport, generated bindings, formatters, chart math
@@ -43,7 +45,7 @@ plan/                      planning docs (owned by the planning process; read, d
 
 **Critical rules:**
 
-- Crate dependencies run one way: schema → {proto, collect, store} → engine → app shell. See `.claude/rules/rust.md`.
+- Crate dependencies follow `scripts/architecture/crate-edges.json`, checked against Cargo metadata by `make architecture-check`. See `.claude/rules/rust.md` for ownership.
 - `src/core/` has no React imports. `src/app/widgets/**` is render-only: props in, no
   transport, stores, router or `@tauri-apps/*`. Biome (`noRestrictedImports` overrides) and a write hook both enforce this.
 - Rust types are the single source of truth for IPC. Regenerate `src/core/generated/`, never edit it.
@@ -90,10 +92,10 @@ generated `.agents/skills` links; see `scripts/agent-config/README.md`.
 
 ## Prerequisites
 
-- **bun** (frontend package manager and runner)
-- **Rust stable** with `rustfmt` and `clippy` (`rustup component add rustfmt clippy`)
+- **Bun** at the version in `package.json`; Node tooling uses `.node-version`.
+- **Rust** at the version in `rust-toolchain.toml`, including `rustfmt` and `clippy`.
 - **Xcode Command Line Tools** (macOS SDK for the collectors)
-- **pre-commit** (via `uvx pre-commit` or `brew install pre-commit`), then `make hooks`. The pre-push hook runs the macOS checks hosted CI skips (D-096)
+- **pre-commit** (via `uvx pre-commit` or `brew install pre-commit`), then `make hooks`. The pre-push hook provides local feedback; hosted stable macOS CI also checks pushes and PRs (D-111)
 
 ## Debugging Budget
 
@@ -128,13 +130,16 @@ bun run dev                # Full app (tauri dev: Vite on :1420 + Rust)
 bun run dev:fast           # Browser only, mock transport
 bun run seed               # Quit Kelvo first: replaces the dev build's history with 30 synthetic days (old DB kept beside it)
 bun run seed:prod          # Same for the release build's history (com.tryopendata.kelvo)
-bun run typecheck          # tsc
+bun run typecheck          # Browser, test and Node tooling TypeScript projects
 bun run lint               # Biome lint (includes boundary rules)
 bun run format             # Biome format + import/class sorting + safe fixes
 bun run test               # Vitest (scope with: bun run test -- <path>)
 bun run test:e2e           # Playwright against the dev server + mock transport
 bun run check              # biome check + typecheck + test
 make check                 # Frontend + Rust: what the pre-push hook runs, with bindings-check and e2e-perf
+make architecture-check    # Cargo dependency graph + Rust production file ceilings
+make architecture-test     # Positive/negative architecture-rule fixtures
+make agent-hooks-test      # Approval, formatting and task-owned cleanup fixtures
 make rust-check            # cargo fmt --check + clippy -D warnings
 make bindings              # Regenerate src/core/generated/ from Rust
 ```

@@ -44,6 +44,7 @@ export function CoreTiles({ clusters, accent = "cpu" }: CoreTilesProps) {
             aria-label={`${cluster.name} core load`}
             className="grid grid-cols-10 gap-0.5"
           >
+            {/** biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Existing cohesive logic; split when substantially changed (architecture refactor section 10). */}
             {cluster.cores.map((core) => {
               const load =
                 core.load === null || !Number.isFinite(core.load)

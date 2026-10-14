@@ -24,7 +24,7 @@ Related docs: [README](README.md), [decisions](decisions.md), [design system](de
 
 ## Repository layout
 
-The repo becomes a Cargo workspace plus a Bun app. Today it is the untouched `create-tauri-app` scaffold (`src-tauri/` with one crate named `kelvo`, `src/` with the template React app). Phase 0 of v1 moves Rust logic into `crates/` and leaves `src-tauri/` as a thin app shell.
+The repository is a Cargo workspace plus a Bun/React app. Shared collection, storage, history and remote services live in `crates/`; `src-tauri/` adapts them to macOS windows, IPC and application lifecycle. The Mac-to-Mac remote path is implemented; the headless Linux agent and WidgetKit extension remain planned.
 
 ```
 kelvo/
@@ -36,7 +36,9 @@ kelvo/
     kelvo-collect/         Collector trait; macos/ (sysinfo, IOReport, SMC/HID, IOKit, NetworkStatistics); linux/ (v4)
     kelvo-store/           series interning, layouts, tier tables, gaps, cursors, queries, pruning
     kelvo-engine/          sampler loop, Ticker + PowerSignals traits, accumulators, detectors, alerts, bus
-    kelvo-agent/           (v4) headless binary: engine + proto server on stdio
+    kelvo-remote/          SSH sessions, protocol server/client, isolated mirror synchronization
+    kelvo-remote-helper/   bundled stdio-to-local-socket bridge
+    kelvo-agent/           (future v4, not a workspace member) headless collector binary
   src-tauri/                app shell: HostRegistry, LocalSource, settings/layout owner, tray, windows, commands
   src/
     core/                   plain TypeScript, no React
@@ -50,30 +52,32 @@ kelvo/
 
 ## Crates and dependency direction
 
-Dependencies run one way. `kelvo-schema` is the root and knows nothing about I/O. `kelvo-proto`, `kelvo-collect` and `kelvo-store` each depend on schema and on nothing else in the workspace. `kelvo-engine` depends on collect and store. The app shell and the agent depend on engine and proto. There are no cycles, and the rule is enforced by the Cargo graph itself: a crate cannot import something it does not list.
+The executable policy is [`scripts/architecture/crate-edges.json`](../scripts/architecture/crate-edges.json).
+`make architecture-check` compares every workspace package's normal, build and dev
+dependencies with Cargo metadata, including target-specific edges. Cargo rejects cycles;
+the policy additionally rejects undeclared architectural edges and omitted members. Test
+edges are recorded separately (store uses proto for protocol fixtures).
+
+This diagram shows current normal dependencies, with arrows from dependency to consumer:
 
 ```mermaid
 flowchart LR
-  schema[kelvo-schema]
-  proto[kelvo-proto]
-  collect[kelvo-collect]
-  store[kelvo-store]
-  engine[kelvo-engine]
-  shell[src-tauri app shell]
-  agent[kelvo-agent v4]
-
-  schema --> proto
-  schema --> collect
-  schema --> store
+  schema[kelvo-schema] --> proto[kelvo-proto]
+  schema --> collect[kelvo-collect]
+  schema --> store[kelvo-store]
+  schema --> engine[kelvo-engine]
   collect --> engine
   store --> engine
-  engine --> shell
+  schema --> remote[kelvo-remote]
+  proto --> remote
+  store --> remote
+  engine --> remote
+  remote --> helper[kelvo-remote-helper]
+  schema --> shell[src-tauri kelvo]
   proto --> shell
-  engine -.-> agent
-  proto -.-> agent
-
-  classDef future stroke-dasharray: 5 5
-  class agent future
+  store --> shell
+  engine --> shell
+  remote --> shell
 ```
 
 | Crate | Owns | Must not |
@@ -82,11 +86,26 @@ flowchart LR
 | `kelvo-proto` | Length-prefixed framing, CBOR encode/decode via `ciborium`, `Message` enum, handshake and version negotiation, skew fixtures | Know about SQLite or collectors |
 | `kelvo-collect` | `Collector` trait, per-OS collector sets, IOReport delta logic (vendored from macmon), SMC/HID, sysinfo wrappers | Write to the store, hold timers, decide cadence on its own |
 | `kelvo-store` | SQLite schema and migrations, the single writer, read connections, series and layout interning, tier tables, gaps, process tables, events, cursors, pruning, budget enforcement | Sample anything, talk to the webview |
-| `kelvo-engine` | Sampler loop, `Ticker` and `PowerSignals` traits, cadence scheduling, 1s ring buffer, rollup accumulators, event detectors, alert evaluation, the bus; history housekeeping (`Housekeeping`: the prune schedule, the low-disk check, `HistoryHealth`) and process view shaping (`ProcessView`, `select_processes`), which the agent needs as much as the app | Know about Tauri or windows |
+| `kelvo-engine` | Sampler loop, `Ticker` and `PowerSignals` traits, cadence scheduling, 1s ring buffer, rollup accumulators, event detectors, alert evaluation, the bus; history housekeeping (`Housekeeping`: the prune schedule, the low-disk check, `HistoryHealth`), `HistoryStore` lifecycle and generation-safe reader/reset ownership, persisted/recent query merging, and process view shaping (`ProcessView`, `select_processes`) | Know about Tauri or windows |
+| `kelvo-remote` | SSH setup/session protocol, client/server state, `Mirror` durable cursors and transient recent rows, typed mirror failures | Depend on Tauri or windows |
+| `kelvo-remote-helper` | Bundled stdio-to-local-socket bridge for the running Mac app | Become a second collector or database writer |
 | `src-tauri` | `HostRegistry`, `LocalSource`, settings and layout ownership, tray rendering, popover panel, window and channel lifecycle, commands and events (tauri-specta) | Contain metric logic that the agent would also need |
 | `kelvo-agent` (v4) | `serve --stdio`, install/update self, user-level launchd/systemd unit | Depend on Tauri |
 
-The test for whether code belongs in the shell or in a crate: if `kelvo-agent` would need it on a headless Linux box, it does not belong in `src-tauri`.
+The shell keeps IPC conversion, installation/window actions and application lifetime;
+services own reusable behavior and are tested without a webview. `HistoryStore` in engine
+owns writer availability, reader pooling, health and reset. Its lock order is inner state
+then health; a reader queries outside the lock and returns to the pool only if its checked-out
+generation still matches. Reset advances that generation before replacing the store.
+`Mirror` in remote serializes epoch changes before touching recent rows, and advances
+durable coverage only after the store acknowledges the write. The shell delegates to
+these services; no new crate or dependency edge was needed for this separation.
+
+Docker collection has separate sampling, event-lane, publication and worker responsibilities;
+the recorder owns persistence accumulation and recovery, and storage classification owns
+resource-specific accounting. Internal failures remain typed through those services and
+are converted to IPC/status text at adapters, preserving error sources for diagnostics.
+See D-112 for the size policy that keeps these boundaries reviewable.
 
 ## Infrastructure laid in v1
 
@@ -922,7 +941,7 @@ Settings and layouts follow the single-writer rule from item 8: `get_settings`, 
 
 ## Frontend
 
-The frontend follows [opendata's frontend](https://github.com/tryopendata/opendata/tree/main/frontend) wherever its patterns carry over to a desktop app. The stack is React 19, Vite, TypeScript, Bun, Tailwind v4 (`@tailwindcss/vite`, `@theme`), shadcn "new-york" primitives on Radix with `cva` and `cn()`, and lucide icons. Fonts are self-hosted Inter Variable and JetBrains Mono Variable with `cv01` and `ss03`.
+The frontend follows [opendata's frontend](https://github.com/tryopendata/opendata/tree/main/frontend) wherever its patterns carry over to a desktop app. The stack is React 19, Vite, TypeScript, Bun, Tailwind v4 (`@tailwindcss/vite`, `@theme`), shadcn "new-york" primitives on Radix with `cva` and `cn()`, and lucide icons. The UI uses system SF Pro and SF Pro Rounded headline figures (D-101); bundled JetBrains Mono remains a tray-rendering dependency.
 
 ### Directory split
 
@@ -932,7 +951,10 @@ The frontend follows [opendata's frontend](https://github.com/tryopendata/openda
 src/
   core/
     generated/            tauri-specta output (commands, events, types). Never edited by hand.
-    transport.ts          Transport interface + tauri and mock implementations
+    transport.ts          public contract/adapter facade
+    transport/            domain contracts and real Tauri channel adapter
+    mock-transport.ts     browser/test composition root
+    mock/                 owned stream/ring/settings/remote/Docker state and domain handlers
     query-keys.ts
     format/               bytes, rates, temps, durations
     units.ts
@@ -953,11 +975,23 @@ src/
     stores/               host store factory, settings mirror
 ```
 
-Files are kebab-case. Named exports everywhere except route modules. Unit tests sit next to the code they test. Path aliases are `~/` for `src/app` and `@core/` for `src/core`. tsconfig is strict with `noUncheckedIndexedAccess` and `verbatimModuleSyntax`.
+Files are kebab-case. Named exports everywhere except route modules. Unit tests sit next to the code they test. Path aliases are `~/` for `src/app` and `@core/` for `src/core`. `tsconfig.base.json` owns strict settings, including `exactOptionalPropertyTypes`,
+`noUncheckedIndexedAccess`, `noImplicitReturns` and `verbatimModuleSyntax`. Browser,
+test and Node tooling projects explicitly select their ambient globals, and
+`bun run typecheck` checks all three. Production browser code cannot import Node builtins.
+Biome also prohibits React/app imports in core (including relative paths), and keeps
+widgets render-only: only the app's utils/motion allowlist is shared; generated types
+and constants are allowed, generated command/event helpers are not.
+
+`Transport` remains the public compatibility facade over domain contracts. The native
+adapter owns channels and generated commands. The browser mock composes owners with
+explicit state/lifecycle methods for streams, ring data, settings, remote connections
+and Docker; domain handlers consume those owners rather than a shared mutable context.
+Mocks exercise browser presentation and transport contracts, not native OS behavior.
 
 ### Typed IPC
 
-`tauri-specta` generates TS bindings for every command, event and `kelvo-schema` type into `src/core/generated/`, and a test fails if the checked-in output differs from what the build generates. This plays the role Orval plays in opendata: Rust types are the single source of truth and the frontend never hand-writes them. tauri-specta for Tauri 2 may still be a release candidate, so the version is pinned and its status checked in phase 0 (unverified).
+`tauri-specta` generates TS bindings for every command, event and `kelvo-schema` type into `src/core/generated/`, and a test fails if the checked-in output differs from what the build generates. This plays the role Orval plays in opendata: Rust types are the single source of truth and the frontend never hand-writes them. The workspace pins the tauri-specta/specta versions; `make bindings-check` detects drift.
 
 `seq` and timestamps cross the bridge as `i64` exported as `number`. Millisecond epochs and seq counts stay far below 2^53, and `kelvo-schema` documents that bound next to the types.
 
@@ -1093,7 +1127,15 @@ The WidgetKit extension in v2.2 is a separate, sandboxed target. The main Tauri 
 
 ## Linux cross-check CI
 
-From v1.0, a CI job runs `cargo check` and `cargo test` for `kelvo-schema`, `kelvo-proto`, `kelvo-store`, `kelvo-engine` and `kelvo-collect` on an `ubuntu-latest` runner. The macOS collectors are `cfg(target_os = "macos")`; the Linux module is a stub until v4.1 that returns `Unsupported`. Running natively on Linux is simpler than `--target x86_64-unknown-linux-gnu` from macOS, because bundled SQLite runs a C build script that would need a cross compiler. The job's purpose is to catch a macOS-only API leaking into a shared crate years before the agent needs to build there.
+CI runs `make rust-portable-check rust-portable-test` for the six portable libraries:
+`kelvo-schema`, `kelvo-proto`, `kelvo-store`, `kelvo-engine`, `kelvo-collect` and
+`kelvo-remote` on `ubuntu-latest` (D-111, amending D-032). `LINUX_CRATES` in Makefile
+selects the workspace with only the macOS app and remote helper excluded, so new
+libraries automatically enter the check. The helper receives a separate Linux
+`cargo check --all-targets`; Linux helper runtime support is not a product promise.
+Stable hosted macOS CI checks the native shell, collectors, bindings and packaging on
+push/PR; preview macOS is manual and advisory. Local pre-push checks remain useful
+feedback. Workflow triggers do not establish branch-protection requirements. The macOS collectors are `cfg(target_os = "macos")`; the Linux module is a stub until v4.1 that returns `Unsupported`. Running natively on Linux is simpler than `--target x86_64-unknown-linux-gnu` from macOS, because bundled SQLite runs a C build script that would need a cross compiler. The job's purpose is to catch a macOS-only API leaking into a shared crate years before the agent needs to build there.
 
 ## Deliberately deferred
 

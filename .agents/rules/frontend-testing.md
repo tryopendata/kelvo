@@ -74,7 +74,8 @@ script + layout + style time per second on the popover and the Overview at 1 Hz,
 any long task over 50 ms after warm-up. The thresholds live in `perf-budget.json` at the
 repo root and nowhere else. **Raising a threshold needs a decision entry in
 `plan/decisions.md`** that names the change that made the screen more expensive (D-060).
-Lowering one does not. The gate only catches gross regressions; selector discipline is
+Lowering one does not. Hosted CI runs it as a separate macOS-only, single-worker
+`make e2e-perf` step after the functional browser suite (D-111). The gate only catches gross regressions; selector discipline is
 still the job of the render-count tests above.
 
 ## Integration Test Helper

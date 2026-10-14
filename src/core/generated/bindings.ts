@@ -468,6 +468,12 @@ export type CommandError =
 { kind: "remote_unreachable"; message: string } |
 /**  A bounded, sanitized Docker monitoring error. */
 { kind: "docker"; message: string } |
+/**  The requested container, retained run or storage resource no longer exists. */
+{ kind: "docker_not_found"; message: string } |
+/**  The preview or inventory changed before the action could be performed. */
+{ kind: "docker_snapshot_expired"; message: string } |
+/**  A bounded request exceeded the service's supported resource limit. */
+{ kind: "docker_resource_limit"; message: string } |
 /**  No host with this id is registered. */
 { kind: "unknown_host"; host: HostId } |
 /**

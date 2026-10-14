@@ -1,3 +1,4 @@
+#![allow(clippy::too_many_lines)] // Integration scenarios keep setup and assertions together.
 //! In-process sync (architecture.md infra 3 and 4): store A (an agent's database) syncs
 //! into store B (a controller's) through the cursor API, with every request and reply
 //! encoded and decoded as real `kelvo-proto` messages. Covers paging, a replayed page,

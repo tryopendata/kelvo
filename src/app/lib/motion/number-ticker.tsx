@@ -26,7 +26,13 @@ function countMs(el: Element): number {
  * `unit` is for figures whose unit sits outside the text (a ring's "GB USED"
  * label): when it changes the number can't be counted, so it lands.
  */
-export function NumberTicker({ text, unit }: { text: string; unit?: string }) {
+export function NumberTicker({
+  text,
+  unit,
+}: {
+  text: string;
+  unit?: string | undefined;
+}) {
   const ref = useRef<HTMLSpanElement>(null);
   const run = useRef<{
     text: string;
@@ -38,6 +44,7 @@ export function NumberTicker({ text, unit }: { text: string; unit?: string }) {
     tween: Tween | null;
   } | null>(null);
 
+  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Existing cohesive logic; split when substantially changed (architecture refactor section 10).
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;

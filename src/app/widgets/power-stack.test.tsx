@@ -49,7 +49,7 @@ describe("PowerStack", () => {
     const ane = container.querySelector<SVGPathElement>(
       '[data-component="ane"]'
     );
-    expect(ane?.style.fill).toMatch(/^url\(#/);
+    expect(ane?.getAttribute("fill")).toMatch(/^url\(#/);
   });
 
   it("breaks the whole stack when one component is missing", () => {

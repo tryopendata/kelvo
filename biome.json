@@ -26,7 +26,9 @@
     "lineWidth": 80
   },
   "css": {
-    "parser": { "tailwindDirectives": true }
+    "parser": {
+      "tailwindDirectives": true
+    }
   },
   "javascript": {
     "formatter": {
@@ -37,7 +39,11 @@
   },
   "assist": {
     "enabled": true,
-    "actions": { "source": { "organizeImports": "on" } }
+    "actions": {
+      "source": {
+        "organizeImports": "on"
+      }
+    }
   },
   "linter": {
     "enabled": true,
@@ -49,7 +55,9 @@
         "useHookAtTopLevel": "error",
         "noUnusedVariables": {
           "level": "error",
-          "options": { "ignoreRestSiblings": true }
+          "options": {
+            "ignoreRestSiblings": true
+          }
         },
         "noUnusedImports": "error"
       },
@@ -57,7 +65,33 @@
         "useSortedClasses": {
           "level": "error",
           "fix": "safe",
-          "options": { "functions": ["cn", "cva", "clsx"] }
+          "options": {
+            "functions": ["cn", "cva", "clsx"]
+          }
+        }
+      },
+      "complexity": {
+        "noExcessiveLinesPerFunction": {
+          "level": "error",
+          "options": {
+            "maxLines": 100,
+            "skipBlankLines": true
+          }
+        },
+        "noExcessiveCognitiveComplexity": {
+          "level": "error",
+          "options": {
+            "maxAllowedComplexity": 15
+          }
+        }
+      },
+      "style": {
+        "noExcessiveLinesPerFile": {
+          "level": "error",
+          "options": {
+            "maxLines": 500,
+            "skipBlankLines": true
+          }
         }
       }
     }
@@ -77,12 +111,73 @@
                   "react-dom/client": "src/core/ has no React imports.",
                   "react/jsx-runtime": "src/core/ has no React imports.",
                   "@tanstack/react-query": "Define query keys and fetchers in core; the hooks live in src/app/.",
-                  "zustand/react": "Use zustand/vanilla in core; bind to React in src/app/."
+                  "zustand/react": "Use zustand/vanilla in core; bind to React in src/app/.",
+                  "zustand": "Use zustand/vanilla in core; bind to React in src/app/."
                 },
                 "patterns": [
                   {
                     "group": ["~/**"],
                     "message": "src/core/ must not import the app layer (~/)."
+                  },
+                  {
+                    "group": ["**/app/**", "**/app"],
+                    "message": "src/core/ must not import the app layer through relative paths."
+                  },
+                  {
+                    "group": [
+                      "node:*",
+                      "assert",
+                      "assert/**",
+                      "buffer",
+                      "child_process",
+                      "cluster",
+                      "console",
+                      "constants",
+                      "crypto",
+                      "dgram",
+                      "diagnostics_channel",
+                      "dns",
+                      "dns/**",
+                      "domain",
+                      "events",
+                      "fs",
+                      "fs/**",
+                      "http",
+                      "http2",
+                      "https",
+                      "inspector",
+                      "inspector/**",
+                      "module",
+                      "net",
+                      "os",
+                      "path",
+                      "path/**",
+                      "perf_hooks",
+                      "process",
+                      "punycode",
+                      "querystring",
+                      "readline",
+                      "readline/**",
+                      "repl",
+                      "stream",
+                      "stream/**",
+                      "string_decoder",
+                      "sys",
+                      "timers",
+                      "timers/**",
+                      "tls",
+                      "trace_events",
+                      "tty",
+                      "url",
+                      "util",
+                      "util/**",
+                      "v8",
+                      "vm",
+                      "wasi",
+                      "worker_threads",
+                      "zlib"
+                    ],
+                    "message": "Browser code has no Node runtime; keep Node imports in tooling."
                   }
                 ]
               }
@@ -103,6 +198,62 @@
                   {
                     "group": ["@tauri-apps/**"],
                     "message": "Go through @core/transport so the mock transport can stand in."
+                  },
+                  {
+                    "group": [
+                      "node:*",
+                      "assert",
+                      "assert/**",
+                      "buffer",
+                      "child_process",
+                      "cluster",
+                      "console",
+                      "constants",
+                      "crypto",
+                      "dgram",
+                      "diagnostics_channel",
+                      "dns",
+                      "dns/**",
+                      "domain",
+                      "events",
+                      "fs",
+                      "fs/**",
+                      "http",
+                      "http2",
+                      "https",
+                      "inspector",
+                      "inspector/**",
+                      "module",
+                      "net",
+                      "os",
+                      "path",
+                      "path/**",
+                      "perf_hooks",
+                      "process",
+                      "punycode",
+                      "querystring",
+                      "readline",
+                      "readline/**",
+                      "repl",
+                      "stream",
+                      "stream/**",
+                      "string_decoder",
+                      "sys",
+                      "timers",
+                      "timers/**",
+                      "tls",
+                      "trace_events",
+                      "tty",
+                      "url",
+                      "util",
+                      "util/**",
+                      "v8",
+                      "vm",
+                      "wasi",
+                      "worker_threads",
+                      "zlib"
+                    ],
+                    "message": "Browser code has no Node runtime; keep Node imports in tooling."
                   }
                 ]
               }
@@ -127,7 +278,11 @@
                   "@core/transport": "Widgets are render-only: take data as props; subscribe in the route or a hook.",
                   "react-router": "Widgets take hrefs/callbacks as props.",
                   "@tanstack/react-query": "Widgets take data as props; query in the route or a hook.",
-                  "zustand": "Widgets take state as props."
+                  "zustand": "Widgets take state as props.",
+                  "@core/generated/bindings": {
+                    "importNames": ["commands", "events"],
+                    "message": "Widgets take data and callbacks as props; generated types and constants are allowed."
+                  }
                 },
                 "patterns": [
                   {
@@ -143,8 +298,179 @@
                     "message": "Widgets take state as props."
                   },
                   {
-                    "group": ["~/routes/**"],
-                    "message": "Widgets must not depend on a route."
+                    "group": ["~/**", "!~/lib/utils", "!~/lib/motion/**"],
+                    "message": "Widgets may only depend on the shared presentation utilities and motion primitives."
+                  },
+                  {
+                    "group": [
+                      "node:*",
+                      "assert",
+                      "assert/**",
+                      "buffer",
+                      "child_process",
+                      "cluster",
+                      "console",
+                      "constants",
+                      "crypto",
+                      "dgram",
+                      "diagnostics_channel",
+                      "dns",
+                      "dns/**",
+                      "domain",
+                      "events",
+                      "fs",
+                      "fs/**",
+                      "http",
+                      "http2",
+                      "https",
+                      "inspector",
+                      "inspector/**",
+                      "module",
+                      "net",
+                      "os",
+                      "path",
+                      "path/**",
+                      "perf_hooks",
+                      "process",
+                      "punycode",
+                      "querystring",
+                      "readline",
+                      "readline/**",
+                      "repl",
+                      "stream",
+                      "stream/**",
+                      "string_decoder",
+                      "sys",
+                      "timers",
+                      "timers/**",
+                      "tls",
+                      "trace_events",
+                      "tty",
+                      "url",
+                      "util",
+                      "util/**",
+                      "v8",
+                      "vm",
+                      "wasi",
+                      "worker_threads",
+                      "zlib"
+                    ],
+                    "message": "Browser code has no Node runtime; keep Node imports in tooling."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["**/*.tsx"],
+      "linter": {
+        "rules": {
+          "complexity": {
+            "noExcessiveLinesPerFunction": {
+              "level": "error",
+              "options": {
+                "maxLines": 200,
+                "skipBlankLines": true
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": [
+        "**/*.test.ts",
+        "**/*.test.tsx",
+        "tests/**",
+        "src/app/routes/dev/**"
+      ],
+      "linter": {
+        "rules": {
+          "complexity": {
+            "noExcessiveLinesPerFunction": {
+              "level": "error",
+              "options": {
+                "maxLines": 200,
+                "skipBlankLines": true
+              }
+            }
+          },
+          "style": {
+            "noExcessiveLinesPerFile": {
+              "level": "error",
+              "options": {
+                "maxLines": 1000,
+                "skipBlankLines": true
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["tests/e2e/docker-containers.spec.ts"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noExcessiveLinesPerFile": {
+              "level": "error",
+              "options": {
+                "maxLines": 1050,
+                "skipBlankLines": true
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["src/core/**/*.test.ts", "src/core/**/*.test.tsx"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "paths": {
+                  "react": "src/core/ has no React imports.",
+                  "react-dom": "src/core/ has no React imports.",
+                  "react-dom/client": "src/core/ has no React imports.",
+                  "react/jsx-runtime": "src/core/ has no React imports.",
+                  "@tanstack/react-query": "Define query keys and fetchers in core; the hooks live in src/app/.",
+                  "zustand/react": "Use zustand/vanilla in core; bind to React in src/app/.",
+                  "zustand": "Use zustand/vanilla in core; bind to React in src/app/."
+                },
+                "patterns": [
+                  {
+                    "group": ["~/**"],
+                    "message": "src/core/ must not import the app layer (~/)."
+                  },
+                  {
+                    "group": ["**/app/**", "**/app"],
+                    "message": "src/core/ must not import the app layer through relative paths."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["src/app/**/*.test.ts", "src/app/**/*.test.tsx"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["@tauri-apps/**"],
+                    "message": "Go through @core/transport so the mock transport can stand in."
                   }
                 ]
               }

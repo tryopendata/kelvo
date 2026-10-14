@@ -63,7 +63,7 @@ describe("mock transport", () => {
     ]);
     expect(sub.info.status).toBe("ok");
     const backfill = msgs[3];
-    expect(backfill?.kind === "backfill" && backfill.rows.length).toBe(60);
+    expect(backfill?.kind === "backfill" && backfill.rows.length).toBe(61);
   });
 
   it("splits the backfill around the sleep-gap hole", async () => {
@@ -153,8 +153,8 @@ describe("mock transport", () => {
     expect(msgs[1]).toMatchObject({ kind: "status", interval_ms: 30_000 });
     const backfill = msgs.find((m) => m.kind === "backfill");
     expect(backfill?.kind === "backfill" && backfill.interval_ms).toBe(30_000);
-    // The default 60 s backfill holds two 30 s rows.
-    expect(backfill?.kind === "backfill" && backfill.rows.length).toBe(2);
+    // The 60 s backfill includes both endpoints: three 30 s rows.
+    expect(backfill?.kind === "backfill" && backfill.rows.length).toBe(3);
   });
 
   it("validates the history size limit", async () => {

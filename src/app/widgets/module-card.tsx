@@ -12,7 +12,7 @@ export interface ModuleCardProps {
   /** Headline figure on the right ("18%", "17.6"). */
   value?: string;
   /** Muted suffix after the value (" / 24 GB", " system"). */
-  unit?: string;
+  unit?: string | undefined;
   /**
    * Shown on the right instead of a value: muted text ("Wi‑Fi · en0") or a
    * field label ("% load").
@@ -28,7 +28,7 @@ export interface ModuleCardProps {
   /** Popover cards share one light source (design-system.md): top left. */
   origin?: Corner;
   /** A state line under the header ("Sensor read failed · last value 11:02"). */
-  notice?: string;
+  notice?: string | undefined;
   /** Dashboard page the card opens. Without it the card is not interactive. */
   href?: string;
   /** Called instead of following `href` (the popover opens the dashboard). */
@@ -106,7 +106,7 @@ export function ModuleCard({
       onOpen={onOpen}
       className={cn(
         "flex flex-col gap-2 p-3",
-        // No focus ring: `.vt-card` focus-visible already lifts the glow and
+        // No focus ring: Card focus-visible already lifts the glow and
         // border, and WebKit keeps a ring on the card after it is clicked.
         href !== undefined && "group text-inherit no-underline outline-none"
       )}

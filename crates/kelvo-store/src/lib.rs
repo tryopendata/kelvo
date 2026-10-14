@@ -1,3 +1,4 @@
+#![cfg_attr(test, allow(clippy::too_many_lines))]
 //! Local history in SQLite: series and layout interning, tiered rollups, explicit gaps,
 //! sync cursors, pruning, and the single writer.
 //!

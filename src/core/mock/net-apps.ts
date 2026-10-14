@@ -249,6 +249,7 @@ export interface NetByAppInput {
 }
 
 /** `query_network_by_app` over the mock's ring rows. */
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Existing deterministic fixture scenario logic; split by scenario before removing this local exception (architecture package J).
 export function mockNetworkByApp(input: NetByAppInput): NetworkByApp {
   const from = floorTo(input.fromMs, NET_BUCKET_MS);
   const to = Math.max(from, ceilTo(input.toMs, NET_BUCKET_MS));

@@ -25,6 +25,7 @@ import { AddMacDialog, HOST_INPUT } from "./_components/add-mac-dialog";
 import { RemoteSetupError } from "./_components/remote-setup-error";
 import { SshSetupHelp } from "./_components/ssh-setup-help";
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Controller and presentation split tracked in architecture refactor package H.
 function HostSettings({
   remote,
   close,
@@ -260,7 +261,7 @@ export default function HostsRoute() {
   const [error, setError] = useState<string | null>(null);
   const show = (id: string) => {
     selection?.select(id);
-    navigate("/dashboard/overview");
+    void navigate("/dashboard/overview");
   };
   const retry = async (id: string) => {
     setError(null);

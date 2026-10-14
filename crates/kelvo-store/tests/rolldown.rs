@@ -1,3 +1,4 @@
+#![allow(clippy::too_many_lines)] // Integration scenarios keep setup and assertions together.
 //! The 15-minute tier (D-076): pruning rolls minutes older than the M1 window into
 //! `tier_15m` and `proc_top_15m`, reads pick the tier by where the range starts, and the
 //! 15-minute history is pruned with the rest of retention.

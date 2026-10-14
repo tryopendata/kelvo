@@ -18,15 +18,15 @@ Durations and easing come from the tokens in `src/app/styles/motion.css`, never 
 numbers in components. They are split by cost: per-tick tweens run every second a window
 is visible, everything else runs once per interaction.
 
-| Token | Value | Use for | Power saver |
+| Token | Value | Use for | Performance mode |
 |-------|-------|---------|-------------|
 | `--motion-tick` | 150ms | Per-tick tweens: chart scroll, bar `scaleX`, ring dashoffset, core-tile alpha | off |
 | `--motion-count` | 450ms | A headline number counting to its next value (`NumberTicker`, read from JS) | off |
-| `--motion-fast` | 150ms | Hover/press feedback, toggles, segmented thumb, menus, sidebar pill | on |
-| `--motion-entry` | 300ms | Hover glow, dialogs | on |
-| `--motion-enter` | 280ms | One-shot entrance (lift) | on |
-| `--motion-stagger` | 30ms | Delay step between entering items, index capped at 8 | on |
-| `--motion-crossfade` | 150ms | Keyed state swap | on |
+| `--motion-fast` | 150ms | Hover/press feedback, toggles, segmented thumb, menus, sidebar pill | off |
+| `--motion-entry` | 300ms | Hover glow, dialogs | off |
+| `--motion-enter` | 280ms | One-shot entrance (lift) | off |
+| `--motion-stagger` | 30ms | Delay step between entering items, index capped at 8 | off |
+| `--motion-crossfade` | 150ms | Keyed state swap | off |
 | `--ease-out` | `cubic-bezier(0.16,1,0.3,1)` | Everything except per-tick tweens | |
 | `--ease-tick` | `cubic-bezier(0.33,1,0.68,1)` | Per-tick tweens | |
 

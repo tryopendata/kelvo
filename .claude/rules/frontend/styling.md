@@ -26,7 +26,7 @@ Before adding a section header, eyebrow/kicker label, card grid, stat tile, badg
 Three tiers, in order. Reach for the next one only when the one above cannot express what you need.
 
 1. **Tailwind utilities in the markup.** The default for spacing, colour, typography, layout, borders, radius and one-off tweaks. Semantic tokens (`bg-card`, `text-muted-foreground`), on-scale spacing.
-2. **Custom CSS, scoped by the tool, not by naming.** For what utilities cannot express (the decision table below: keyframes, pseudo-elements, structural selectors, `clamp()`, dense media blocks). Use a co-located CSS Module, `thing.module.css`, imported as `styles` and applied as `className={styles.title}`. Vite hashes the names, so they can be short and local (`.title`, `.isOpen`). Plain stylesheets that must stay global wrap a component's rules in native `@scope (.block) { … }` and stay in the right `@layer`. No BEM. State and variants are `is-*` / `has-*` companion classes or `data-*` attributes; never encode state in the class name itself.
+2. **Custom CSS, scoped by the tool, not by naming.** For complex paint, keyframes or structural rules where a utility representation is less clear (see the decision table). Tailwind v4 supports pseudo-elements, arbitrary values such as `clamp()`, media/container queries and many structural variants; these are not automatic reasons to add CSS. Use a co-located CSS Module, `thing.module.css`, imported as `styles` and applied as `className={styles.title}`. Vite hashes the names, so they can be short and local (`.title`, `.isOpen`). Plain stylesheets that must stay global wrap a component's rules in native `@scope (.block) { … }` and stay in the right `@layer`. No BEM. State and variants are `is-*` / `has-*` companion classes or `data-*` attributes; never encode state in the class name itself.
 3. **Inline `style` only when the value comes from JS.** A measured width, a gauge fraction, a series colour from the accent ramp, a CSS custom property set from state. If the value is static, it belongs in tier 1 or 2.
 
 ## Design System Quick Reference
@@ -57,7 +57,7 @@ Values change every second. Styling must not make that expensive or jittery:
 
 ## CSS File Organization
 
-**Default: style in the markup with Tailwind utility classes.** Reach for a `.css` file only for the things utilities genuinely can't express.
+**Default: style in the markup with Tailwind utility classes.** Reach for a `.css` file when utilities cannot express the behavior clearly; keep ownership local and the reason evident.
 
 ### When CSS, when utility
 
@@ -65,10 +65,10 @@ Values change every second. Styling must not make that expensive or jittery:
 | ---------------------------------------------------------------------------- | ------------------------------------ |
 | Spacing, color, typography, flexbox, basic grid, borders, radius, one-offs   | Tailwind utilities in `className`     |
 | `@keyframes` and the rules that drive them                                   | Co-located `.module.css`              |
-| Pseudo-elements (`::before`/`::after`), `::-webkit-*` form controls          | Co-located `.module.css`              |
-| `nth-child`/`nth-last-child` structural logic, complex descendant selectors  | Co-located `.module.css`              |
-| `clamp()`, `mask-image`, `clip-path`                                         | Co-located `.module.css`              |
-| `@media`/`prefers-reduced-motion`/`prefers-reduced-transparency` blocks      | Co-located `.module.css`              |
+| Simple pseudo-elements and responsive/container-query states              | Tailwind variants; CSS Module for complex browser-specific controls |
+| Structural selectors and descendants                                      | Tailwind variants first; CSS Module for dense structural behavior |
+| `clamp()`, masks and clipping                                              | Tailwind/arbitrary utilities first; CSS Module for complex paint |
+| Media queries and preference states                                       | Tailwind variants first; shared motion/token policy in CSS |
 | Theme tokens (`@theme`), global base resets                                  | the global theme stylesheet           |
 
 ### Avoiding god files
@@ -80,7 +80,7 @@ Values change every second. Styling must not make that expensive or jittery:
 
 ## Avoid
 
-- Inline `style={}` props, **except** the sanctioned dynamic cases: CSS custom properties set from JS, values computed from props/state/data (gauge fractions, series colours, bar widths), and properties with no Tailwind utility.
+- Inline `style={}` props, **except** the sanctioned dynamic cases: CSS custom properties set from JS, values computed from props/state/data (gauge fractions, series colours, bar widths), or localized imperative updates with a lifecycle/performance reason. Static properties in a mixed style object still belong in classes/CSS. Prefer SVG presentation attributes when appropriate, and keep shared geometry in one source rather than duplicating constants in CSS and TS.
 - `!important`, **except** to override a third-party library's styles or inside a `prefers-reduced-motion` block.
 - Color values outside theme tokens.
 - **Off-scale spacing in className.** Prefer the scale: `p-4` not `p-[16px]`. Arbitrary values are an escape hatch, not the default.

@@ -264,7 +264,7 @@ function PerformanceChanges({
   const next = performanceNextLever({
     sampling,
     modules,
-    menu_bar: menuBar ?? undefined,
+    ...(menuBar == null ? {} : { menu_bar: menuBar }),
   });
   return (
     <div

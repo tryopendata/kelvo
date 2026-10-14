@@ -28,6 +28,7 @@ const maxOrNull = (a: number | null, b: number | null) =>
  * minima and maxima, which bounds the total's own range from outside: it can
  * only look wider than it was, never hide a spike.
  */
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Controller and presentation split tracked in architecture refactor package H.
 export function combineSeries(
   series: readonly { points: readonly Bucket[] }[],
   combine: Combine
@@ -166,6 +167,7 @@ export function bucketAt(
  * bucket) before the band starts, or starts no more than that after it
  * ends. A series sampled every minute still gets its dot on a 10 s page.
  */
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Controller and presentation split tracked in architecture refactor package H.
 export function gapEdgeIndices(
   x: readonly number[],
   avg: Readonly<Column>,

@@ -38,9 +38,7 @@ export function rangeQueryOptions<T>(
       q.state.status === "error" || isFinal(q.state.data)
         ? false
         : pollMs(q.state.data, q.state.dataUpdateCount),
-    placeholderData: keepPrevious
-      ? (keepPreviousData as <D>(previous: D | undefined) => D | undefined)
-      : undefined,
+    ...(keepPrevious ? { placeholderData: keepPreviousData } : {}),
   };
 }
 
@@ -67,7 +65,7 @@ export function useRangeQuery<T>(
     ) => Promise<T>;
     isFinal: (data: T | undefined, toMs: number) => boolean;
     keepPrevious?: boolean;
-    pollMs?: RangePoll<T>;
+    pollMs?: RangePoll<T> | undefined;
   }
 ) {
   const transport = useTransport();

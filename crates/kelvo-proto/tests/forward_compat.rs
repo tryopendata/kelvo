@@ -1,3 +1,4 @@
+#![allow(clippy::too_many_lines)] // Integration scenarios keep setup and assertions together.
 //! Messages from a newer peer that carry enum values this build has never seen (D-040).
 //!
 //! `fixtures/skew/` holds CBOR bodies built by hand, the way a hypothetical v2 peer would

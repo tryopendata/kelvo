@@ -41,7 +41,7 @@ See [README](README.md) for the roadmap and [architecture.md](architecture.md) f
 | D-029 | Quit and Force Quit on the Processes page in v1, with guardrails | Accepted |
 | D-030 | Tauri 2.12.1; atomic tray icon + template setter | Accepted |
 | D-031 | tauri-specta 2.0.0-rc.25, exact pins | Accepted |
-| D-032 | CI on hosted runners: macos-26 plus the xcode-27 preview image | Accepted |
+| D-032 | CI on hosted runners: macos-26 plus the xcode-27 preview image | Amended by D-111 |
 | D-033 | Popover panel via tauri-nspanel 2.1.0 works; hide on resign-key, not the panel delegate | Accepted |
 | D-034 | Native vibrancy without the macOSPrivateApi flag | Accepted |
 | D-035 | WebContent termination via Tauri's on_web_content_process_terminate | Accepted |
@@ -102,13 +102,15 @@ See [README](README.md) for the roadmap and [architecture.md](architecture.md) f
 | D-092 | Rust publishes the remaining data facts: engine constants, process refusal, totals, host facts and span-weighted history | Accepted |
 | D-093 | Energy by app over the chart window from an in-memory ring; local and public IP on Network; brush selections dismiss like a d3 brush; °F by default | Accepted |
 | D-095 | Public release prep: Apache-2.0, bundle identifier com.tryopendata.kelvo, design mocks retired | Accepted |
-| D-096 | macOS checks move to a pre-push hook; hosted CI runs Linux jobs on push | Accepted |
+| D-096 | macOS checks move to a pre-push hook; hosted CI runs Linux jobs on push | Superseded by D-111 |
 | D-098 | Network page totals over the chart window, from the stored interface totals | Accepted |
 | D-100 | The engine's process view and usage key carry their own IPC derives | Accepted |
 | D-101 | SF Pro for the UI, SF Pro Rounded for headline figures; no monospace or uppercase labels | Accepted |
 | D-102 | Menu bar settings: bars, readouts after the bars, and separate items as three independent choices | Accepted |
 | D-103 | Local Docker monitoring has its own clock and history | Accepted |
 | D-104 | Remote Macs reuse the app and isolate mirrored history | Accepted |
+| D-111 | Stable hosted macOS PR checks and automatic portable-library coverage | Accepted |
+| D-112 | Native size/complexity limits and executable dependency boundaries | Accepted |
 
 ---
 
@@ -802,7 +804,7 @@ tauri-specta 2.0 ships stable, or an RC bump fixes something we need.
 
 ## D-032: CI on hosted runners, macos-26 plus the xcode-27 preview image
 
-Status: Accepted. Date: 2026-10-05. Closes the phase 0 CI runner items.
+Status: Accepted. Date: 2026-10-05. Amended 2026-10-14 by D-111: stable macOS runs on push/PR, preview is manual, and Linux covers all six portable libraries including remote plus a helper compile check. The original decision below records phase 0.
 
 ### Context
 
@@ -3073,7 +3075,7 @@ The repo is about to go public. It had no license, the bundle identifier still n
 
 ## D-096: macOS checks move to a pre-push hook; hosted CI runs Linux jobs on push
 
-Status: Accepted. Date: 2026-10-07. CI, developer hooks.
+Status: Superseded by D-111 (2026-10-14). Original date: 2026-10-07. The local pre-push hook remains; hosted macOS is no longer manual-only. Historical context and decision follow.
 
 ### Context
 
@@ -3388,3 +3390,79 @@ attribution remains host-wide; its disk averages use the existing covered select
 interval, not a guessed per-device or per-process coverage clock.
 
 D-110 population clarification: All devices reads collector-authored `_total` series for operations and paired timing, just as throughput does. Each total is strict over the current probe population, so attaching or detaching a drive cannot change old chart values. Public downsampled points use an epoch-aligned bucket grid.
+
+
+## D-111: Stable hosted macOS PR checks and automatic portable-library coverage
+
+Status: Accepted. Date: 2026-10-14. Supersedes D-096 and amends D-032.
+
+The architecture review verified that `tryopendata/kelvo` is public on 2026-10-14,
+meeting D-096's revisit trigger. Native correctness must be checked independently of
+whether a contributor installed or bypassed a local hook.
+
+The workflow runs one stable `macos-26` leg on main pushes and pull requests, covering
+Rust formatting/Clippy/tests, bindings freshness, the App Store build configuration,
+functional browser tests, debug packaging and runtime dependency checks. Frontend
+performance gates run separately with one worker and unchanged macOS budgets. The
+`xcode-27` preview leg is manual and advisory. Hardware acceptance and whole-app
+benchmarks remain separate; hosted checks do not establish their results. Local
+pre-push checks remain for early feedback. These are workflow settings, not a claim
+that remote branch protection requires a particular check.
+
+Linux runs the frontend checks, production build and nonempty functional browser suite.
+Portable Rust check/test membership comes from Makefile's workspace selection, excluding
+only `kelvo` and `kelvo-remote-helper`. It therefore includes `kelvo-remote` alongside the
+original five libraries and includes future libraries by default. The helper gets a
+separate Linux compile check; its runtime target remains the bundled Mac app. Audits
+and action SHA pins remain in CI; advisory handling is documented in
+`.github/dependency-audits.md`.
+
+Bun, Node and Rust versions are committed in `package.json`, `.node-version` and
+`rust-toolchain.toml`; CI reads those sources. Toolchain/dependency updates must retain
+production builds and nonzero tests, not just installation success.
+
+## D-112: Native size/complexity limits and executable dependency boundaries
+
+Status: Accepted. Date: 2026-10-14. Architecture refactor enforcement.
+
+Large mixed-responsibility functions and files made state ownership hard to review.
+Use the language's existing lint diagnostics and local suppressions, with one small
+custom file counter where Rust has no native file-size lint. Splits must give a module
+or function a coherent responsibility; moving a large function intact or distributing
+one mutable state bag does not complete an extraction.
+
+- Biome: authored TS functions 100 lines, TSX functions 200, files 500, cognitive
+  complexity 15. Line rules skip blanks and use Biome's native comment handling.
+  Tests and the dev gallery use 200-line functions/1,000-line files with the same
+  cognitive limit; generated bindings are excluded. Legacy function exceptions use
+  native `biome-ignore` with a reason; named file overrides use ceilings rounded to 50.
+- Rust: Clippy `too_many_lines` at 100 with local `#[expect(..., reason = "...")]`
+  exceptions. Existing targeted lints remain; no all-pedantic/nursery profile or Rust
+  cognitive-complexity gate. Test roots allow long scenarios; non-test all-targets
+  compilation still enforces production limits.
+- `rust_size.py` counts nonblank authored production lines, including comments,
+  excluding rustfmt-aligned top-level `#[cfg(test)]` modules (inline or external)
+  and the named vendored collector directory. Other conditional code still counts. The 500-line
+  default has a plain-text list of existing file ceilings rounded to 50. New/growing
+  violations and stale/missing entries fail. Remove each exception with its completed
+  extraction; do not add a separate TypeScript baseline/parser or complexity registry.
+
+Native function suppressions do not impose a per-symbol growth ceiling; changes to an
+exempt function still need review. File ceilings limit growth, and unused native
+suppressions surface when the function no longer violates its rule. This tradeoff
+avoids maintaining a second parser or symbol baseline.
+
+Biome import restrictions protect React-free core and render-only widgets, including
+relative app imports, bare Zustand, generated command/event helpers and production
+Node builtins. The exact Cargo normal/build/dev edge policy lives in
+`scripts/architecture/crate-edges.json`, checked against metadata including inactive
+platform dependencies. Positive and negative fixtures prove the rules reject violations
+and accept intended uses. `make architecture-check architecture-test` runs these checks;
+`make check` includes them.
+
+Routine work and justified local exceptions remain autonomous within the user's scope.
+A new architectural edge needs an ownership rationale and policy/test update; the checks
+are reviewable guardrails, not a new approval queue. History lifecycle/query ownership
+in engine and mirror synchronization in remote use existing edges and leave IPC/wire
+contracts intact. Their generation/epoch invariants are documented beside the services
+and exercised with real SQLite tests.

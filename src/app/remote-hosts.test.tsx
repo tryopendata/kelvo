@@ -14,7 +14,7 @@ function setup(remoteSetupDelayMs?: number) {
   const transport = createMockTransport({
     scenarios: ["multi-host"],
     historyRows: 60,
-    remoteSetupDelayMs,
+    ...(remoteSetupDelayMs === undefined ? {} : { remoteSetupDelayMs }),
   });
   const view = render(
     <App transport={transport} router={{ initialEntry: "/dashboard/hosts" }} />

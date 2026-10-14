@@ -10,7 +10,7 @@ export interface MirrorBarsProps {
   down: (number | null)[];
   intervalMs: number;
   /** Timestamp of the last bar; when it advances by one interval the bars slide. */
-  tEndMs?: number;
+  tEndMs?: number | undefined;
   accent: Accent;
   ariaLabel: string;
   /** Scale ceilings per side. Default: the largest value on that side. */
@@ -102,8 +102,11 @@ export function MirrorBars({
           <span
             key={i}
             data-gap={downH[i] == null || undefined}
-            className={cn("flex-1 rounded-b-hair", dim(i) && "opacity-35")}
-            style={{ height: downH[i] ?? 0, background: "var(--a)" }}
+            className={cn(
+              "flex-1 rounded-b-hair bg-(--a)",
+              dim(i) && "opacity-35"
+            )}
+            style={{ height: downH[i] ?? 0 }}
           />
         ))}
       </div>

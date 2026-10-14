@@ -65,10 +65,9 @@ export function StackBar({
           return (
             <span
               key={s.key}
-              className={s.step === "track" ? "bg-track" : undefined}
+              className={s.step === "track" ? "basis-0 bg-track" : "basis-0"}
               style={{
                 flexGrow: f,
-                flexBasis: 0,
                 background:
                   s.step === "track" || s.step === "none"
                     ? undefined

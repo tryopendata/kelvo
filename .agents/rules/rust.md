@@ -11,15 +11,28 @@ No opendata equivalent; written for Kelvo. Architecture lives in `plan/architect
 
 ## Crate boundaries
 
-Dependencies run one way. No cycles, no shortcuts.
+The executable dependency policy is `scripts/architecture/crate-edges.json`.
+`make architecture-check` compares normal, build and dev edges against Cargo metadata,
+including inactive target-specific dependencies. Cargo alone prevents cycles; this check
+also prevents an otherwise valid dependency from crossing an ownership boundary.
+
+Current normal dependencies (left side depends on the right):
 
 ```
-kelvo-schema  <- kelvo-proto
-kelvo-schema  <- kelvo-collect
-kelvo-schema  <- kelvo-store
-{kelvo-collect, kelvo-store} <- kelvo-engine
-kelvo-engine  <- src-tauri (app shell), kelvo-agent (v4)
+kelvo-schema        -> none
+kelvo-proto         -> schema
+kelvo-collect       -> schema
+kelvo-store         -> schema
+kelvo-engine        -> schema, collect, store
+kelvo-remote        -> schema, proto, store, engine
+kelvo-remote-helper -> remote
+kelvo (src-tauri)   -> schema, proto, store, engine, remote
 ```
+
+The policy records dev edges separately (including store's protocol fixtures). Do not
+copy a new dependency into the policy simply to silence a failure: explain the ownership
+change in the implementation/decision record and test the boundary. Authorized refactors
+can proceed autonomously within their agreed scope.
 
 - `kelvo-schema` is pure data: metric catalog, series keys (`metric_id` + labels), HostInfo,
   Capabilities, alert-rule data, the typed `Snapshot` view. No I/O, no platform code.
@@ -31,17 +44,18 @@ kelvo-engine  <- src-tauri (app shell), kelvo-agent (v4)
 - `kelvo-collect` reads the OS. It knows nothing about storage or the UI.
 - `kelvo-store` knows SQLite and series layouts. It knows nothing about collectors.
 - `kelvo-engine` wires collectors to the store and bus through the `Ticker` and
-  `PowerSignals` traits.
+  `PowerSignals` traits. It also owns `HistoryStore` lifecycle, generation-safe reader
+  checkout/reset and persisted/recent history query merging.
+- `kelvo-remote` owns SSH/session orchestration and `Mirror` storage synchronization;
+  `kelvo-remote-helper` is the bundled stdio-to-local-socket bridge, not a collector agent.
 - `src-tauri` is a thin shell: commands, windows, tray, settings ownership. Business logic
   that isn't Tauri-specific belongs in a crate, where it is testable without a webview.
-
-Adding a dependency edge not in this list is a design change. Raise it, don't add it.
 
 Zero runtime dependencies (D-058): the app links only `/System/Library/` frameworks and
 `/usr/lib/` libraries. A crate with a C library must use its bundled or vendored build
 (like `rusqlite`'s `bundled`); never require a Homebrew or system install. Dev-only tools
 (macmon for the accuracy script) stay optional. `make check-deps` enforces this on
-the built binary (locally, and in the manual macOS CI job).
+the built binary locally and in stable hosted macOS CI (D-111).
 
 ## Error handling
 
@@ -75,9 +89,13 @@ macOS API are isolated:
 
 - Platform code is `#[cfg(target_os = "macos")]` / `#[cfg(target_os = "linux")]`, at module
   level, not sprinkled through function bodies.
-- `kelvo-schema`, `kelvo-proto`, `kelvo-store`, `kelvo-engine` and `kelvo-collect` must
+- `kelvo-schema`, `kelvo-proto`, `kelvo-store`, `kelvo-engine`, `kelvo-collect` and
+  `kelvo-remote` must
   `cargo check` and `cargo test` on Linux (a native ubuntu CI job enforces this; `make rust-linux-check` cross-checks locally). Linux collectors are
-  stubs until v4, but they compile.
+  stubs until v4, but they compile. `LINUX_CRATES` in Makefile selects all workspace
+  members except the macOS shell and separately compile-checked remote helper, so new
+  library members enter the portable gate automatically. Helper Linux runtime support
+  is not promised (D-111).
 - Never gate on `target_arch` when you mean the OS, or on the OS when you mean Apple Silicon.
 
 ## Lints and formatting
@@ -85,6 +103,24 @@ macOS API are isolated:
 - `cargo fmt --all` (config in `rustfmt.toml`). The format-on-write hook runs it on edited files.
 - `cargo clippy --workspace --all-targets -- -D warnings`. Warnings fail the pre-commit hook. Fix them; don't
   `#[allow]` without a comment saying why.
+
+### Size and complexity (D-112)
+
+- Clippy `too_many_lines` limits production functions to 100 lines. Use a local
+  `#[expect(clippy::too_many_lines, reason = "...")]` only for a cohesive exception;
+  name why it remains together, and remove it when extraction makes it unnecessary.
+  Unfulfilled expectations fail `-D warnings`. Do not enable all pedantic or nursery
+  lints, or add a Rust cognitive-complexity gate.
+- `scripts/architecture/rust_size.py` limits authored source files to 500 nonblank
+  production lines, including comments. Rustfmt-aligned top-level `#[cfg(test)]`
+  modules (inline or external) and the named vendored collector directory are excluded;
+  other conditional code, ordinary helpers and examples remain checked.
+  Existing oversized files have explicit ceilings rounded up to 50 in
+  `rust-size-ceilings.txt`. New violations, growth beyond the ceiling, and stale entries
+  fail. A completed extraction removes its entry in the same change.
+- Test builds narrowly allow function length at crate/test roots so scenario setup can
+  stay with assertions. `--all-targets` also checks the non-test library and binaries.
+  Split by responsibility and reduce state coupling, not by arbitrary line ranges.
 
 ## Data model rules
 

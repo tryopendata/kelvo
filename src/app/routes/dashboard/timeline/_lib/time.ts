@@ -228,6 +228,7 @@ export interface AxisTick {
  * range to the right edge are dropped so they do not collide with the
  * "now" label.
  */
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Controller and presentation split tracked in architecture refactor package H.
 export function axisTicks(
   fromMs: number,
   toMs: number,

@@ -105,3 +105,27 @@ for (const theme of THEMES) {
     });
   }
 }
+
+// Real CSS layout verifies the shared geometry token; JSDOM cannot measure it.
+test("thermal zones keep the clipping boundary and sticky header", async ({
+  page,
+}) => {
+  await openGallery(page, "dark");
+  const zones = page.getByTestId("zone-scroll").first();
+  expect(await zones.evaluate((el) => getComputedStyle(el).maxHeight)).toBe(
+    "274px"
+  );
+  const header = zones.locator("thead");
+  expect(await header.evaluate((el) => getComputedStyle(el).position)).toBe(
+    "sticky"
+  );
+  expect(
+    await header.locator("tr").evaluate((el) => getComputedStyle(el).height)
+  ).toBe("22.5px");
+  expect(
+    await zones
+      .locator("tbody tr")
+      .first()
+      .evaluate((el) => getComputedStyle(el).height)
+  ).toBe("24px");
+});

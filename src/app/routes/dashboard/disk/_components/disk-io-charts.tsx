@@ -56,6 +56,7 @@ export function DiskIoCharts({
     );
   }, [page.points, page.bucket_ms, count, first]);
   const paint = useCallback(
+    // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Existing cohesive logic; split when substantially changed (architecture refactor section 10).
     (time: number | null) => {
       hovered.current = time;
       const root = host.current;

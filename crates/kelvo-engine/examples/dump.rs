@@ -328,6 +328,10 @@ struct Baseline {
     threads: BTreeMap<String, u64>,
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "split when substantially changed; architecture refactor section 10"
+)]
 fn main() -> Result<()> {
     let args = parse_args()?;
     let mut settings = Settings::default();

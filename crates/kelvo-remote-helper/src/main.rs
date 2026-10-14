@@ -1,3 +1,4 @@
+#![cfg_attr(test, allow(clippy::too_many_lines))]
 //! Only bridges authenticated local sockets; it never starts a collector or opens SQLite.
 use kelvo_remote::{ControlRequest, SocketPaths, control_request};
 

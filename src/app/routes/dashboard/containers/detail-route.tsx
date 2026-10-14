@@ -1,4 +1,4 @@
-import { formatBytes, formatPercent } from "@core/format";
+import type { DockerContainer, DockerSnapshot } from "@core/generated/bindings";
 import { dockerKeys } from "@core/query-keys";
 import { unwrap } from "@core/transport";
 import { useQuery } from "@tanstack/react-query";
@@ -19,7 +19,10 @@ import {
   ContainerActionProvider,
 } from "./_components/container-actions";
 import { ContainerHistory } from "./_components/container-history";
+import { ContainerLifecycle } from "./_components/container-lifecycle";
 import { ContainerLogs } from "./_components/container-logs";
+import { ContainerMetadata } from "./_components/container-metadata";
+import { ContainerObservation } from "./_components/container-observation";
 import { DockerLocalOnly } from "./_components/docker-local-only";
 import {
   DOCKER_RANGES,
@@ -31,6 +34,7 @@ import {
   useDockerEvents,
   useDockerHistory,
 } from "./_hooks/use-docker";
+import { dockerRange, historyEnd } from "./_lib/history-params";
 import { healthLabel, lifecycleLabel, statusLabel } from "./_lib/presentation";
 
 export default function ContainerDetailRoute() {
@@ -48,18 +52,13 @@ function LocalContainerDetailRoute() {
   const navigate = useNavigate();
   const location = useLocation();
   const [params] = useSearchParams();
-  const [range, setRange] = useState<DockerRange>(() => {
-    const requested = params.get("range");
-    return requested && requested in DOCKER_RANGES
-      ? (requested as DockerRange)
-      : "15m";
-  });
+  const [range, setRange] = useState<DockerRange>(() =>
+    dockerRange(params.get("range"), "15m")
+  );
   const [end, setEnd] = useState<number | null>(() =>
     params.has("end")
-      ? Number(params.get("end"))
-      : params.has("at")
-        ? Number(params.get("at")) + 60_000
-        : null
+      ? historyEnd(params.get("end"))
+      : historyEnd(params.get("at"), 60_000)
   );
   const [logs, setLogs] = useState(false);
   const [eventCursor, setEventCursor] = useState<string | null>(null);
@@ -76,19 +75,12 @@ function LocalContainerDetailRoute() {
     enabled: snapshot !== null,
     queryFn: () => unwrap(transport.dockerDetail(engineId, containerId)),
   });
-  const live =
-    snapshot?.engine?.id === engineId
-      ? snapshot.containers.find((row) => row.id === containerId)
-      : undefined;
-  const inspected = detail.isError ? undefined : detail.data;
-  const row = live ?? inspected;
-  const current = Boolean(
-    live && snapshot?.status === "connected" && row?.observed_ms !== null
+  const { live, row, current, connection } = containerObservation(
+    snapshot,
+    engineId,
+    containerId,
+    detail.isError ? undefined : detail.data
   );
-  const connection =
-    snapshot?.engine?.id === engineId
-      ? statusLabel[snapshot.status]
-      : "Retained engine · not selected";
   const now = Math.floor((snapshot?.now_ms ?? Date.now()) / 10_000) * 10_000;
   const to = end ?? now;
   const from = to - DOCKER_RANGES[range];
@@ -132,11 +124,7 @@ function LocalContainerDetailRoute() {
         </Button>
         <PageHeader
           title={row?.name ?? "Container"}
-          subtitle={
-            row
-              ? `${row.image} · ${row.project ?? "Standalone"} · ${lifecycleLabel[row.lifecycle]} / ${healthLabel[row.health]} · last seen ${new Date(row.last_seen_ms).toLocaleString()}`
-              : "Loading retained container metadata…"
-          }
+          subtitle={containerSubtitle(row)}
           actions={
             <div className="flex flex-wrap items-center gap-2">
               {live && <ContainerActionButton row={live} />}
@@ -157,56 +145,11 @@ function LocalContainerDetailRoute() {
           </p>
         )}
         {row && (
-          <>
-            {row.lifecycle === "removed" && (
-              <p role="status" className="text-[12px] text-muted-foreground">
-                Removed container · retained history. Opening this page does not
-                switch or reconnect the live engine.
-              </p>
-            )}
-            <p className="text-[12px] text-muted-foreground">
-              <span role="status">
-                {connection} ·{" "}
-                {current ? "Current observation" : "Retained observation"}
-              </span>
-              {" · "}
-              {new Date(row.observed_ms ?? row.last_seen_ms).toLocaleString()}
-            </p>
-            <div className="figures flex flex-wrap gap-x-6 gap-y-2 text-[13px]">
-              <span>
-                {current ? "Now" : "Last observed"} · CPU{" "}
-                {formatPercent(row.metrics.cpu_pct)}
-              </span>
-              <span>
-                Working set {formatBytes(row.metrics.working_set_bytes)}
-              </span>
-              <span>
-                Charged memory {formatBytes(row.metrics.raw_memory_bytes)} /{" "}
-                {!row.metadata_available
-                  ? "Limit unavailable"
-                  : row.explicit_limit_bytes === null
-                    ? "No explicit limit"
-                    : formatBytes(row.explicit_limit_bytes)}
-              </span>
-            </div>
-            <p className="text-[11px] text-muted-foreground">
-              Charged memory is used to assess an explicit limit; the charts
-              show cache-adjusted working set.
-            </p>
-            {(row.oom_killed || row.observed_restarts > 0) && (
-              <p
-                role="status"
-                className="rounded-control border border-border px-3 py-2 text-[12px]"
-              >
-                {row.oom_killed ? "⚠ OOM recorded by Docker. " : ""}
-                {row.repeated_restarts ? "Repeated restarts · " : ""}
-                {row.observed_restarts} observed restarts in the last{" "}
-                {row.observed_restart_window_ms / 60_000} minutes ·{" "}
-                {row.restart_count ?? "Unknown"} cumulative Docker restarts.
-                Exit code 137 alone does not establish OOM.
-              </p>
-            )}
-          </>
+          <ContainerObservation
+            row={row}
+            current={current}
+            connection={connection}
+          />
         )}
         {history.error && (
           <p role="alert" className="text-[12px] text-muted-foreground">
@@ -259,115 +202,17 @@ function LocalContainerDetailRoute() {
             to={to}
           />
         </div>
-        <section aria-label="Lifecycle events" className="flex flex-col gap-2">
-          <h2 className="text-[14px]">Lifecycle evidence</h2>
-          {events.error && (
-            <p role="alert" className="text-[12px]">
-              Events unavailable: {events.error.message}
-            </p>
-          )}
-          {events.data?.events.map((event) => (
-            <div
-              key={event.id}
-              className="flex flex-wrap gap-3 border-border-subtle border-b py-2 text-[12px]"
-            >
-              <time
-                className="figures text-muted-foreground"
-                dateTime={new Date(event.time_ms).toISOString()}
-              >
-                {new Date(event.time_ms).toLocaleString()}
-              </time>
-              <span>
-                {event.action}
-                {event.exit_code !== null ? ` · exit ${event.exit_code}` : ""}
-              </span>
-              {event.action === "oom" && <span>Explicit Docker OOM event</span>}
-            </div>
-          ))}
-          {events.data?.events.length === 0 && (
-            <p className="text-[12px] text-muted-foreground">
-              No recorded lifecycle events in this range.
-            </p>
-          )}
-          <div className="flex gap-2">
-            {eventCursor && (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => setEventCursor(null)}
-              >
-                Latest events
-              </Button>
-            )}
-            {events.data?.next_id && (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => setEventCursor(events.data?.next_id ?? null)}
-              >
-                Older events
-              </Button>
-            )}
-          </div>
-          {events.data?.coverage.map((gap) => (
-            <p key={gap.start_ms} className="text-[11px] text-muted-foreground">
-              Event coverage: {gap.reason}
-            </p>
-          ))}
-        </section>
+        <ContainerLifecycle
+          events={events}
+          eventCursor={eventCursor}
+          setEventCursor={setEventCursor}
+        />
         {row && (
-          <details className="border-border-subtle border-y py-3 text-[12px]">
-            <summary className="cursor-pointer">Container metadata</summary>
-            <Button
-              size="sm"
-              variant="outline"
-              className="mt-2"
-              disabled={detail.isFetching}
-              onClick={() => void detail.refetch()}
-            >
-              {detail.isFetching ? "Refreshing metadata…" : "Refresh metadata"}
-            </Button>
-            {!row.metadata_available && (
-              <p className="mt-2 text-muted-foreground">
-                Inspection metadata unavailable. Inventory facts are shown
-                below; an unknown limit or quota does not mean unrestricted.
-              </p>
-            )}
-            <dl className="mt-3 grid grid-cols-[max-content_minmax(0,1fr)] gap-x-6 gap-y-2">
-              {[
-                ["ID", row.id],
-                ["Engine", row.engine_id],
-                ["State", lifecycleLabel[row.lifecycle]],
-                ["Created", row.created ?? "Unknown"],
-                [
-                  "CPU quota",
-                  !row.metadata_available
-                    ? "Unavailable"
-                    : row.cpu_quota === null
-                      ? "No explicit quota"
-                      : String(row.cpu_quota),
-                ],
-                ["Restart policy", row.restart_policy ?? "Unknown"],
-                [
-                  "Ports",
-                  !row.metadata_available
-                    ? "Unavailable"
-                    : row.ports.join(" · ") || "None",
-                ],
-                [
-                  "Mounts",
-                  !row.metadata_available
-                    ? "Unavailable"
-                    : row.mounts.join(" · ") || "None",
-                ],
-              ].map(([label, value]) => (
-                <div key={label} className="contents">
-                  <dt className="text-muted-foreground">{label}</dt>
-                  <dd className="break-all">{value}</dd>
-                </div>
-              ))}
-            </dl>
-          </details>
+          <ContainerMetadata
+            row={row}
+            refreshing={detail.isFetching}
+            onRefresh={() => void detail.refetch()}
+          />
         )}
         <Button
           variant="outline"
@@ -388,4 +233,31 @@ function LocalContainerDetailRoute() {
       </div>
     </ContainerActionProvider>
   );
+}
+
+function containerObservation(
+  snapshot: DockerSnapshot | null,
+  engineId: string,
+  containerId: string,
+  inspected: DockerContainer | undefined
+) {
+  const live =
+    snapshot?.engine?.id === engineId
+      ? snapshot.containers.find((row) => row.id === containerId)
+      : undefined;
+  const row = live ?? inspected;
+  const current = Boolean(
+    live && snapshot?.status === "connected" && row?.observed_ms !== null
+  );
+  const connection =
+    snapshot?.engine?.id === engineId
+      ? statusLabel[snapshot.status]
+      : "Retained engine · not selected";
+  return { live, row, current, connection };
+}
+
+function containerSubtitle(row: DockerContainer | undefined) {
+  return row
+    ? `${row.image} · ${row.project ?? "Standalone"} · ${lifecycleLabel[row.lifecycle]} / ${healthLabel[row.health]} · last seen ${new Date(row.last_seen_ms).toLocaleString()}`
+    : "Loading retained container metadata…";
 }

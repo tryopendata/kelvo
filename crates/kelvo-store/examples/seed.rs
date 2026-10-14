@@ -57,6 +57,10 @@ const RETENTION_DAYS: u16 = 30;
 /// Process snapshots keep the top 30 by CPU, like the engine.
 const PROC_TOP: usize = 30;
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "split when substantially changed; architecture refactor section 10"
+)]
 fn main() -> Result<()> {
     let args = Args::parse()?;
     let path = args.dir.join(DB_FILE);
@@ -453,6 +457,10 @@ const CALL_APPS: &[&str] = &["zoom.us", "Slack", "FaceTime"];
 const GAMES: &[&str] = &["Baldur's Gate 3", "Cyberpunk 2077", "Factorio"];
 
 impl Plan {
+    #[expect(
+        clippy::too_many_lines,
+        reason = "split when substantially changed; architecture refactor section 10"
+    )]
     fn new(rng: &mut Rng, start: i64, end: i64, offset: i64) -> Self {
         let local = |t: i64| t + offset;
         let first_day = local(start).div_euclid(DAY);
@@ -910,6 +918,10 @@ impl Sim {
         std::mem::take(&mut self.events)
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "split when substantially changed; architecture refactor section 10"
+    )]
     fn step(&mut self, t: i64, plan: &Plan) -> Tick {
         let local_h = ((t + self.offset).rem_euclid(DAY)) as f32 / HOUR as f32;
         let weekday = ((t + self.offset).div_euclid(DAY) + 4).rem_euclid(7);
@@ -1595,6 +1607,10 @@ enum Spread {
 }
 
 impl Gen {
+    #[expect(
+        clippy::too_many_lines,
+        reason = "split when substantially changed; architecture refactor section 10"
+    )]
     fn of(key: &SeriesKey, source: &Source) -> Gen {
         let label = |k: &str| key.labels.get(k).unwrap_or("").to_string();
         let index = |s: &str| {

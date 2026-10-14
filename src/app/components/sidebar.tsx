@@ -41,7 +41,7 @@ export interface SidebarEntry {
   label: string;
   icon: SidebarIcon;
   /** Live value ("18%", "14.8W"); omitted for disabled modules. */
-  value?: string;
+  value?: string | undefined;
   /** The user switched the module off: listed dimmed, without a value. */
   disabled?: boolean;
 }
@@ -64,7 +64,7 @@ export interface SidebarProps {
   /** App version, "0.4.0". */
   version: string;
   /** Called instead of following the href, so the router can navigate. */
-  onNavigate?: (href: string) => void;
+  onNavigate?: ((href: string) => void) | undefined;
   /** A second footer line under the sampling state (the Performance mode marker). */
   footerNote?: ReactNode;
   hostSwitcher?: ReactNode;
@@ -82,7 +82,7 @@ function SidebarItem({
 }: {
   entry: SidebarEntry;
   current: boolean;
-  onNavigate?: (href: string) => void;
+  onNavigate?: ((href: string) => void) | undefined;
 }) {
   const onClick = (e: MouseEvent<HTMLAnchorElement>) => {
     if (!onNavigate) return;
@@ -179,6 +179,7 @@ export function Sidebar({
     placed.current = true;
   }, [active, layout]);
 
+  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Existing cohesive logic; split when substantially changed (architecture refactor section 10).
   const onKeyDown = (e: KeyboardEvent<HTMLElement>) => {
     const keys = ["ArrowDown", "ArrowUp", "Home", "End"];
     if (!keys.includes(e.key) || !navRef.current) return;
@@ -294,7 +295,7 @@ const SidebarGroup = memo(function SidebarGroup({
   entries: readonly SidebarEntry[];
   first: boolean;
   active: string;
-  onNavigate?: (href: string) => void;
+  onNavigate?: ((href: string) => void) | undefined;
 }) {
   return (
     <ul

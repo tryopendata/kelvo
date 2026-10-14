@@ -20,6 +20,7 @@ const statusLabels = {
   outcome_unknown: "Outcome unknown",
 };
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Controller and presentation split tracked in architecture refactor package H.
 export function DockerCleanupFlow({ flow }: { flow: CleanupFlow }) {
   const [volumeStep, setVolumeStep] = useState(false);
   const [acknowledged, setAcknowledged] = useState(false);

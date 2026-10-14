@@ -102,6 +102,20 @@ _blank_inert_quotes() {
     }'
 }
 
+# Normalize only Git global options before applying the existing deny patterns.
+# Quoted option values (notably checkout paths with spaces) remain one operand.
+# This is an accident guard, not a shell parser or security boundary. Never eval
+# submitted text: broad interpreter/dev-tool access remains intentional.
+_strip_git_global_options() {
+    perl -pe '
+        my $arg = qr/(?:"[^"\\]*(?:\\.[^"\\]*)*"|\x27[^\x27]*\x27|[^\s;&|]+)/;
+        my $value = qr/(?:-C|-c|--git-dir|--work-tree|--namespace|--config-env)\s+$arg/;
+        my $attached = qr/(?:--git-dir|--work-tree|--namespace|--config-env)=$arg|-[Cc]$arg/;
+        my $flag = qr/--no-pager|--paginate|-P|-p|--bare|--no-optional-locks/;
+        1 while s{(\bgit\s+)(?:$value|$attached|$flag)\s+}{$1}g;
+    '
+}
+
 is_destructive() {
     local command="$1"
     [[ -z "$command" ]] && return 1
@@ -211,37 +225,39 @@ is_destructive() {
     fi
 
     # --- Git: blowing away uncommitted work ---
-    if echo "$command" | grep -qE 'git\s+checkout\s+(--\s+)?\.(\s|;|&&|\||$)'; then
+    local git_command
+    git_command=$(printf '%s\n' "$command" | _strip_git_global_options)
+    if echo "$git_command" | grep -qE 'git\s+checkout\s+(--\s+)?\.(\s|;|&&|\||$)'; then
         printf '%s\t%s' "git checkout . discards ALL unstaged changes." "If you need to revert specific files, use: git checkout -- <file>"
         return 0
     fi
-    if echo "$command" | grep -qE 'git\s+restore\s+\.(\s|;|&&|\||$)'; then
+    if echo "$git_command" | grep -qE 'git\s+restore\s+\.(\s|;|&&|\||$)'; then
         printf '%s\t%s' "git restore . discards ALL unstaged changes." "If you need to revert specific files, use: git restore <file>"
         return 0
     fi
-    if echo "$command" | grep -qE 'git\s+clean\s+-[a-zA-Z]*f'; then
+    if echo "$git_command" | grep -qE 'git\s+clean\s+-[a-zA-Z]*f'; then
         printf '%s\t%s' "git clean -f deletes untracked files permanently." "Ask the user before removing untracked files."
         return 0
     fi
-    if echo "$command" | grep -qE 'git\s+reset\s+--hard'; then
+    if echo "$git_command" | grep -qE 'git\s+reset\s+--hard'; then
         printf '%s\t%s' "git reset --hard discards ALL uncommitted changes (staged and unstaged)." "Use git reset (soft) or git stash if you need to preserve work."
         return 0
     fi
-    if echo "$command" | grep -qE 'git\s+stash\s+(drop|clear)'; then
+    if echo "$git_command" | grep -qE 'git\s+stash\s+(drop|clear)'; then
         printf '%s\t%s' "git stash drop/clear permanently destroys stashed work." "Other agents may have work in the stash. Ask the user first."
         return 0
     fi
-    if echo "$command" | grep -qE 'git\s+stash\s*&&'; then
+    if echo "$git_command" | grep -qE 'git\s+stash\s*&&'; then
         printf '%s\t%s' "git stash chained with another command can destroy parallel agent work." "Other agents may be working on files. Ask the user before stashing."
         return 0
     fi
-    if echo "$command" | grep -qE 'git\s+stash\s+pop\s*&&\s*git\s+stash\s+drop'; then
+    if echo "$git_command" | grep -qE 'git\s+stash\s+pop\s*&&\s*git\s+stash\s+drop'; then
         printf '%s\t%s' "git stash pop && drop is a destructive pattern." "Ask the user first - other agents may have stashed work."
         return 0
     fi
 
     # --- Git: force push (allow --force-with-lease as the safe alternative) ---
-    if echo "$command" | grep -qE 'git\s+push\s+(-[a-zA-Z]*f|--force)(\s|$)'; then
+    if echo "$git_command" | grep -qE 'git\s+push\s+(-[a-zA-Z]*f|--force)(\s|$)'; then
         printf '%s\t%s' "Force push rewrites remote history." "Ask the user before force pushing. Use --force-with-lease if you must."
         return 0
     fi

@@ -1,3 +1,4 @@
+#![cfg_attr(test, allow(clippy::too_many_lines))]
 //! The sampler: the loop behind the [`Ticker`] and [`PowerSignals`] traits, the S10/M1
 //! rollup accumulators, the bus with its per-host [`LiveHub`] (one-hour ring buffer,
 //! latest frame), the [`Source`] abstraction, and the event [`detect`]ors and alert
@@ -57,6 +58,8 @@ mod clock;
 pub mod detect;
 mod engine;
 mod hints;
+mod history_queries;
+mod history_store;
 mod housekeeping;
 pub mod identity;
 mod inbox;
@@ -120,3 +123,7 @@ pub use usage::{USAGE_BUCKET_MS, UsageApp, UsageByApp, UsageKey, UsageProc, Usag
 
 #[cfg(unix)]
 pub mod docker;
+
+pub use history_store::{HistoryStore, HistoryStoreError, HistoryUnavailableReason};
+
+pub use history_store::DB_FILE as HISTORY_DB_FILE;
