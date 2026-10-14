@@ -3568,7 +3568,24 @@ mod tests {
         assert_resumed_engine_closes_gap("shutdown");
     }
     #[test]
+    fn resumed_engine_closes_paused_gap_before_commit() {
+        assert_resumed_engine_closes_gap("paused");
+    }
+    #[test]
+    fn resumed_engine_closes_collector_interruptions_before_commit() {
+        for reason in ["disabled", "disconnected", "idle_suspended"] {
+            assert_resumed_engine_closes_gap(reason);
+        }
+    }
+    #[test]
     fn quit_and_reopen_keeps_cpu_and_memory_visible_before_and_after_commit() {
+        assert_restart_keeps_cpu_and_memory_visible("shutdown");
+    }
+    #[test]
+    fn restart_while_paused_keeps_cpu_and_memory_visible_before_and_after_commit() {
+        assert_restart_keeps_cpu_and_memory_visible("paused");
+    }
+    fn assert_restart_keeps_cpu_and_memory_visible(reason: &str) {
         let (dir, store, unused) = setup();
         drop(unused);
         let handle = super::super::DockerHandle::new(
@@ -3582,8 +3599,16 @@ mod tests {
         let mut sample = fixture(wall_ms() - 1000);
         sample.generation = handle.snapshot().generation;
         handle.publish(sample);
-        handle.shutdown();
-        let shutdown = handle.snapshot().coverage.last().unwrap().start_ms;
+        if reason == "shutdown" {
+            handle.shutdown();
+        } else {
+            handle.set_power(true, 1000);
+            let generation = handle.control.borrow().generation;
+            assert!(handle.transition(generation, api::DockerStatus::Paused, None, reason));
+            // Persist the pause, then drop the process without a graceful shutdown.
+            handle.recorder.shutdown_flush().unwrap();
+        }
+        let interrupted = handle.snapshot().coverage.last().unwrap().start_ms;
         drop(handle);
         store.close().unwrap();
 
@@ -3594,13 +3619,13 @@ mod tests {
         restarted.attach(store.writer(), store.path().to_path_buf());
         // Deterministic source timestamps model downtime and a new process. No
         // sampler, recorder, query, or SQLite implementation is mocked.
-        let resume = (shutdown + 20_000).div_euclid(10_000) * 10_000;
-        let before = restarted.history(&query(shutdown, resume, 10)).unwrap();
+        let resume = (interrupted + 20_000).div_euclid(10_000) * 10_000;
+        let before = restarted.history(&query(interrupted, resume, 10)).unwrap();
         assert!(
             before
                 .coverage
                 .iter()
-                .any(|g| g.reason == "shutdown" && g.end_ms.is_none())
+                .any(|g| g.reason == reason && g.end_ms.is_none())
         );
         restarted.record(&fixture(resume + 1000));
         restarted.record(&fixture(resume + 2000));
@@ -3616,7 +3641,7 @@ mod tests {
                 let page = restarted
                     .comparison(&api::DockerComparisonRequest {
                         engine_id: "daemon".into(),
-                        from_ms: shutdown,
+                        from_ms: interrupted,
                         to_ms: resume + 10_000,
                         metric,
                         project: None,
@@ -3631,13 +3656,13 @@ mod tests {
                 let gaps: Vec<_> = page
                     .coverage
                     .iter()
-                    .filter(|g| g.reason == "shutdown")
+                    .filter(|g| g.reason == reason)
                     .collect();
                 assert_eq!(gaps.len(), 1);
                 assert!(
                     gaps[0]
                         .end_ms
-                        .is_some_and(|end| end > shutdown && end <= resume + 1000),
+                        .is_some_and(|end| end > interrupted && end <= resume + 1000),
                     "real downtime stays bounded after restart, committed={committed}: {gaps:?}"
                 );
             }
@@ -3645,7 +3670,7 @@ mod tests {
                 .history(&query(resume + 1001, resume + 10_000, 10))
                 .unwrap();
             assert!(!page.points.is_empty());
-            assert!(page.coverage.iter().all(|g| g.reason != "shutdown"));
+            assert!(page.coverage.iter().all(|g| g.reason != reason));
         }
     }
     #[test]

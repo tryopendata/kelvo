@@ -9,13 +9,18 @@ use std::collections::BTreeMap;
 pub(crate) mod read;
 pub use read::DockerReadSnapshot;
 
-/// These interruptions outlive the published connection/process. A later
-/// observation from the same daemon closes them; other coverage is not inferred.
+/// Collector lifecycle interruptions can outlive their published generation or
+/// process (including a restart while paused). An observation from the same
+/// daemon proves collection resumed. Event loss and persistence failures are
+/// deliberately excluded: new measurements cannot recover missing history.
 pub fn resumes_on_observation(reason: &str) -> bool {
-    matches!(reason, "engine_switch" | "shutdown")
+    matches!(
+        reason,
+        "engine_switch" | "shutdown" | "paused" | "disabled" | "disconnected" | "idle_suspended"
+    )
 }
 
-/// A resumed observation closes an old engine switch or shutdown, including rows left open
+/// A resumed observation closes a collector interruption, including rows left open
 /// by an earlier app instance. Population segments retain exact interval starts
 /// through rollups, so this does not invent a boundary from a bucket timestamp.
 pub(crate) fn resumed_after(

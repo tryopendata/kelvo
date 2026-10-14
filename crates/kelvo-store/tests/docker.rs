@@ -858,6 +858,18 @@ fn open_shutdown_recovers_from_observed_population_without_migration() {
 }
 
 #[test]
+fn open_paused_recovers_from_observed_population_without_migration() {
+    assert_open_interruption_recovers("paused");
+}
+
+#[test]
+fn open_collector_interruptions_recover_from_observed_population_without_migration() {
+    for reason in ["disabled", "disconnected", "idle_suspended"] {
+        assert_open_interruption_recovers(reason);
+    }
+}
+
+#[test]
 fn v7_removes_only_legacy_engine_wide_save_loss_records() {
     let dir = temp_dir("docker-v7");
     let path = dir.path().join("h.sqlite");
