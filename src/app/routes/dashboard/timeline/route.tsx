@@ -1,10 +1,10 @@
 import { formatMarketingMemory } from "@core/format";
 import type { ModuleCap } from "@core/generated/bindings";
 import { historyUnavailable } from "@core/history-state";
-import { ChevronLeftIcon, ChevronRightIcon, DownloadIcon } from "lucide-react";
+import { DownloadIcon } from "lucide-react";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { HistoryNotices } from "~/components/history-notices";
-import { SegmentedControl } from "~/components/segmented-control";
+import { HistoryRangeControl } from "~/components/history-range-control";
 import { Button } from "~/components/ui/button";
 import { useEvents } from "~/hooks/use-events";
 import { useHistoryHealth } from "~/hooks/use-history-health";
@@ -98,41 +98,15 @@ export default function TimelineRoute() {
             <span className="figures">{subtitle.times}</span>
           </span>
         </div>
-        <SegmentedControl
+        <HistoryRangeControl
           options={SPANS}
           value={view.span}
           onChange={(span) => setView((v) => ({ ...v, span }))}
-          size="md"
-          ariaLabel="Range"
+          live={live}
+          onPrevious={() => step(-1)}
+          onNext={() => step(1)}
+          onLive={() => setView((v) => liveView(v.span))}
         />
-        <div className="flex items-center gap-1">
-          <Button
-            variant="outline"
-            size="icon"
-            aria-label="Previous range"
-            onClick={() => step(-1)}
-          >
-            <ChevronLeftIcon />
-          </Button>
-          {!live && (
-            <Button
-              variant="outline"
-              size="icon"
-              aria-label="Next range"
-              onClick={() => step(1)}
-            >
-              <ChevronRightIcon />
-            </Button>
-          )}
-        </div>
-        <Button
-          variant="outline"
-          size="sm"
-          aria-pressed={live}
-          onClick={() => setView((v) => liveView(v.span))}
-        >
-          Live
-        </Button>
         <Button
           variant="outline"
           size="sm"

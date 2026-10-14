@@ -6,6 +6,8 @@ import type {
 } from "@core/generated/bindings";
 import { memo, useMemo } from "react";
 import { SectionCard } from "~/components/section-card";
+import { ChartFrame, ChartGrid, chartY } from "~/widgets/chart-frame";
+import { historyTicks } from "~/widgets/lib/chart-labels";
 
 /** Draw true timestamp positions; uncovered buckets break the path. */
 export const ContainerHistory = memo(function ContainerHistory({
@@ -27,12 +29,17 @@ export const ContainerHistory = memo(function ContainerHistory({
   compact?: boolean;
   aggregate?: boolean;
 }) {
+  const height = compact ? 80 : 128;
   const memory = metric.includes("bytes");
   const format = memory
-    ? formatBytes
+    ? (value: number) =>
+        formatBytes(value, { decimals: value > 0 && value < 1 ? 1 : undefined })
     : metric === "cpu_pct"
-      ? formatPercent
-      : formatRate;
+      ? (value: number) => formatPercent(value, { decimals: 1 })
+      : (value: number) =>
+          formatRate(value, {
+            decimals: value > 0 && value < 1 ? 1 : undefined,
+          });
   const chart = useMemo(() => {
     const points = page?.points ?? [];
     const ceiling = Math.max(
@@ -61,14 +68,14 @@ export const ContainerHistory = memo(function ContainerHistory({
         continue;
       }
       if (previousEnd !== null && p.time_ms > previousEnd) contiguous = false;
-      path += `${contiguous ? "L" : "M"}${x.toFixed(2)},${(120 - (value / ceiling) * 115).toFixed(2)} `;
+      path += `${contiguous ? "L" : "M"}${x.toFixed(2)},${chartY(value, ceiling, height).toFixed(2)} `;
       contiguous = true;
       previousEnd = p.time_ms + p.duration_ms;
       const allowance = aggregate
         ? p.engine_capacity_bytes
         : p.explicit_limit_bytes;
       if (memory && allowance !== null) {
-        const y = (120 - (allowance / ceiling) * 115).toFixed(2);
+        const y = chartY(allowance, ceiling, height).toFixed(2);
         limit += limitContiguous
           ? `H${x.toFixed(2)} V${y} `
           : `M${x.toFixed(2)},${y} `;
@@ -76,79 +83,73 @@ export const ContainerHistory = memo(function ContainerHistory({
       } else limitContiguous = false;
     }
     return { path, limit, ceiling };
-  }, [page, metric, memory, from, to, aggregate]);
+  }, [page, metric, memory, from, to, aggregate, height]);
   return (
-    <SectionCard
-      accent={memory ? "mem" : "cpu"}
-      title={title}
-      aside={
-        <span className="figures text-[11px] text-muted-foreground">
-          {format(chart.ceiling)}
-        </span>
-      }
-    >
+    <SectionCard accent={memory ? "mem" : "cpu"} title={title}>
       {page?.points.length ? (
         <>
-          <svg
-            role="img"
-            aria-label={`${title}, gaps are unmeasured intervals`}
-            viewBox="0 0 1000 124"
-            className={
-              compact
-                ? "h-20 w-full overflow-visible"
-                : "h-32 w-full overflow-visible"
-            }
-            preserveAspectRatio="none"
+          <ChartFrame
+            height={height}
+            ceiling={chart.ceiling}
+            gutter={48}
+            yTicks={[chart.ceiling, chart.ceiling / 2].map((value) => ({
+              value,
+              label: format(value),
+            }))}
+            xTicks={historyTicks(from, to, false, 3)}
           >
-            <line
-              x1="0"
-              x2="1000"
-              y1="120"
-              y2="120"
-              stroke="var(--color-axis)"
-              vectorEffect="non-scaling-stroke"
-            />
-            <path
-              d={chart.path}
-              fill="none"
-              stroke={
-                memory
-                  ? "var(--color-mem-ink, var(--color-mem))"
-                  : "var(--color-cpu-ink, var(--color-cpu))"
-              }
-              strokeWidth="1.5"
-              vectorEffect="non-scaling-stroke"
-            />
-            {chart.limit && (
+            <svg
+              role="img"
+              aria-label={`${title}, gaps are unmeasured intervals`}
+              viewBox={`0 0 1000 ${height}`}
+              height={height}
+              className="block w-full overflow-hidden"
+              preserveAspectRatio="none"
+            >
+              <ChartGrid
+                values={[chart.ceiling, chart.ceiling / 2]}
+                ceiling={chart.ceiling}
+                height={height}
+              />
               <path
-                d={chart.limit}
+                data-line
+                d={chart.path}
                 fill="none"
-                stroke="var(--color-muted-foreground)"
-                strokeDasharray="4 4"
+                stroke={
+                  memory
+                    ? "var(--color-mem-ink, var(--color-mem))"
+                    : "var(--color-cpu-ink, var(--color-cpu))"
+                }
+                strokeWidth="1.5"
                 vectorEffect="non-scaling-stroke"
               />
-            )}
-            {events.map((event) => (
-              <line
-                key={event.id}
-                x1={((event.time_ms - from) / (to - from)) * 1000}
-                x2={((event.time_ms - from) / (to - from)) * 1000}
-                y1="108"
-                y2="120"
-                stroke="var(--color-muted-foreground)"
-                vectorEffect="non-scaling-stroke"
-              >
-                <title>
-                  {event.action} ·{" "}
-                  {new Date(event.time_ms).toLocaleTimeString()}
-                </title>
-              </line>
-            ))}
-          </svg>
-          <div className="figures flex justify-between text-[10px] text-muted-foreground">
-            <span>{new Date(from).toLocaleString()}</span>
-            <span>{new Date(to).toLocaleTimeString()}</span>
-          </div>
+              {chart.limit && (
+                <path
+                  d={chart.limit}
+                  fill="none"
+                  stroke="var(--color-muted-foreground)"
+                  strokeDasharray="4 4"
+                  vectorEffect="non-scaling-stroke"
+                />
+              )}
+              {events.map((event) => (
+                <line
+                  key={event.id}
+                  x1={((event.time_ms - from) / (to - from)) * 1000}
+                  x2={((event.time_ms - from) / (to - from)) * 1000}
+                  y1={height - 12}
+                  y2={height - 1}
+                  stroke="var(--color-muted-foreground)"
+                  vectorEffect="non-scaling-stroke"
+                >
+                  <title>
+                    {event.action} ·{" "}
+                    {new Date(event.time_ms).toLocaleTimeString()}
+                  </title>
+                </line>
+              ))}
+            </svg>
+          </ChartFrame>
           {memory && (
             <p className="text-[11px] text-muted-foreground">
               Working set · dashed line:{" "}

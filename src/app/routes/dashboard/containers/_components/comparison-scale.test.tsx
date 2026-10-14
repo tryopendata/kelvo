@@ -31,9 +31,11 @@ function point(time: number, cpu: number): DockerHistoryPoint {
 function Chart({
   points,
   metric = "cpu",
+  live = false,
 }: {
   points: DockerHistoryPoint[];
   metric?: "cpu" | "memory";
+  live?: boolean;
 }) {
   return (
     <ComparisonChart
@@ -41,7 +43,7 @@ function Chart({
       metric={metric}
       from={10_000}
       to={60_000}
-      live={false}
+      live={live}
       range="15m"
       focused={null}
       pinnedFocus={null}
@@ -192,3 +194,17 @@ it("keeps fractional CPU tooltip values consistent with the fitted axis", () => 
   result.unmount();
   result.transport.dispose();
 });
+
+it.each(["cpu", "memory"] as const)(
+  "uses the module-page relative time axis for live %s comparisons",
+  (metric) => {
+    const result = renderWithProviders(
+      <Chart points={[point(10_000, 1)]} metric={metric} live />
+    );
+    for (const label of ["−50s", "−38s", "−25s", "−13s", "now"]) {
+      expect(screen.getByText(label)).toBeVisible();
+    }
+    result.unmount();
+    result.transport.dispose();
+  }
+);

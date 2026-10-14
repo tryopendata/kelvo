@@ -207,6 +207,19 @@ These apply to every live and history chart, in every surface.
 | Crosshair | One vertical line synced across all lanes, with a dot on each series and a single tooltip listing every lane's value plus the top processes at that moment |
 | Annotations | Pills at the top of the plot area. They must not overlap: when two collide, later ones move to a second row or merge into a "+N" pill. The original Timeline mock showed the overlap this rule prevents (the "14:02 Fans ramped up" pill covers the "06:55 Wake" and "10:12 Docker" markers) |
 
+`ChartFrame` and `ChartGrid` own the plot gutter, aligned y ticks, baseline, and
+`WindowTicks` row for live area charts and container comparison/detail history.
+The dominant CPU and Containers plots share a 220 px height. Container axes use a
+48 px gutter for byte labels (live area charts retain 32 px); labels stay on one
+line. Live comparisons use the same five relative time ticks as module pages;
+paused retained views use clock times, with dates for multi-day ranges.
+`HistoryRangeControl` supplies Timeline and Containers with the same segmented
+range picker and previous/next/Live navigation. Container comparisons retain
+categorical, unfilled 1 px lines for overlapping identities, fitted scales, and
+keyboard/pinned detail links. Module area charts keep their existing accent fills
+and fixed-domain semantics. These are data-specific differences, not separate
+chart chrome.
+
 ## Accessibility
 
 - Every chart is `role="img"` with an `aria-label` that states what it shows and the current value, for example ("CPU, last 60 seconds", "Upload above the line, download below, last 48 seconds"). The label is updated at most every 10 s so screen readers are not flooded.

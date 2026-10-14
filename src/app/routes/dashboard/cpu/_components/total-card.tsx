@@ -11,6 +11,7 @@ import { SelectionSummary } from "~/components/selection-summary";
 import { useGapBands } from "~/hooks/use-gap-bands";
 import { useHeld } from "~/hooks/use-ring";
 import { useWindowSeries } from "~/hooks/use-window-series";
+import { DASHBOARD_CHART_HEIGHT } from "~/widgets/chart-frame";
 import {
   PERCENT_GRID,
   PERCENT_Y_TICKS,
@@ -22,7 +23,7 @@ import { StreamArea } from "~/widgets/stream-area";
 const LOADAVG = ["1", "5", "15"].map((w) => `cpu.loadavg{window=${w}}`);
 const HELD = ["cpu.total", "cpu.user", "cpu.system", ...LOADAVG];
 const CHART = ["cpu.total", "cpu.system"];
-const HEIGHT = 220;
+const HEIGHT = DASHBOARD_CHART_HEIGHT;
 /** Over the window or the selection (D-099): `cpu.total` averaged and its peak. */
 const TOTALS: readonly RangeTotal[] = [
   {

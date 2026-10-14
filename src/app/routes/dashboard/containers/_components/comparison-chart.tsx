@@ -24,8 +24,15 @@ import { Button } from "~/components/ui/button";
 import { useElementSize } from "~/hooks/use-element-size";
 import { useUnits } from "~/hooks/use-units";
 import { useBrushStoreOptional } from "~/stores/brush-store";
+import {
+  ChartFrame,
+  ChartGrid,
+  chartY,
+  DASHBOARD_CHART_HEIGHT,
+} from "~/widgets/chart-frame";
 import { GapBand } from "~/widgets/gap-band";
 import { Legend } from "~/widgets/legend";
+import { historyTicks } from "~/widgets/lib/chart-labels";
 import {
   containerReturnState,
   isContainerDetailClick,
@@ -38,6 +45,7 @@ export interface ComparisonSeries {
   points: readonly DockerHistoryPoint[];
   slot: number;
 }
+const HEIGHT = DASHBOARD_CHART_HEIGHT;
 const percent = new Intl.NumberFormat("en-US", {
   maximumSignificantDigits: 3,
 });
@@ -130,7 +138,15 @@ export function ComparisonChart({
   const active = pinnedFocus ?? focused;
   const plotSeries = series.map((s) => ({
     ...s,
-    geometry: buildSeriesRuns(s.points, metric, from, to, 1000, 236, ceiling),
+    geometry: buildSeriesRuns(
+      s.points,
+      metric,
+      from,
+      to,
+      1000,
+      HEIGHT - 2,
+      ceiling
+    ),
   }));
   const displayName = (container: DockerContainer) =>
     `${container.name}${series.filter((s) => s.container.name === container.name).length > 1 ? ` · ${container.id.slice(0, 6)}` : ""}`;
@@ -188,13 +204,12 @@ export function ComparisonChart({
     });
   return (
     <SectionCard
-      className="gap-1 py-3"
       accent={metric === "cpu" ? "cpu" : "mem"}
       title={`${metric === "cpu" ? "CPU" : "Memory"} by container`}
       aside={controls}
     >
       <div ref={root} className="min-w-0">
-        <div className="mb-1 text-[11px] text-muted-foreground">
+        <div className="mb-1.5 text-[11px] text-muted-foreground">
           {metric === "cpu" ? "% of one core" : "Working set"}
           {duration > 10_000 ? ` · peak per ${durationLabel}` : ""}
         </div>
@@ -241,285 +256,264 @@ export function ComparisonChart({
             </table>
           </div>
         ) : (
-          <div className="relative h-60 pl-12">
-            <div
-              aria-hidden
-              className="figures absolute inset-y-0 left-0 flex w-11 flex-col justify-between pr-2 text-right text-[10px] text-muted-foreground"
-            >
-              <span>{format(ceiling)}</span>
-              <span>{format(ceiling / 2)}</span>
-              <span>0</span>
+          <ChartFrame
+            height={HEIGHT}
+            ceiling={ceiling}
+            gutter={48}
+            plotRef={plotRef}
+            yTicks={[ceiling, ceiling / 2, 0].map((value) => ({
+              value,
+              label: value === 0 ? "0" : format(value),
+            }))}
+            xTicks={historyTicks(from, to, live)}
+          >
+            <div className="pointer-events-none absolute inset-0">
+              {metricGaps
+                .filter((gap) => gap.container_id === null)
+                .map((gap) => (
+                  <GapBand
+                    key={`${gap.reason}:${gap.start_ms}`}
+                    fromMs={gap.start_ms}
+                    toMs={gap.end_ms ?? to}
+                    rangeFromMs={from}
+                    rangeToMs={to}
+                    label={gap.reason}
+                    labelPosition="none"
+                  />
+                ))}
             </div>
-            <div ref={plotRef} className="relative h-full">
-              <div className="pointer-events-none absolute inset-0">
-                {metricGaps
-                  .filter((gap) => gap.container_id === null)
-                  .map((gap) => (
-                    <GapBand
-                      key={`${gap.reason}:${gap.start_ms}`}
-                      fromMs={gap.start_ms}
-                      toMs={gap.end_ms ?? to}
-                      rangeFromMs={from}
-                      rangeToMs={to}
-                      label={gap.reason}
-                      labelPosition="none"
+            {/* biome-ignore lint/a11y/noNoninteractiveElementInteractions: R-25 requires keyboard navigation on the labelled chart image. */}
+            <svg
+              role="img"
+              // biome-ignore lint/a11y/noNoninteractiveTabindex: R-25 chart is explicitly keyboard focusable.
+              tabIndex={0}
+              aria-label={`${metric === "cpu" ? "CPU" : "Memory"} by container, ${range}, ${series.map((s) => displayName(s.container)).join(", ") || "no containers"}`}
+              viewBox={`0 0 1000 ${HEIGHT}`}
+              preserveAspectRatio="none"
+              height={HEIGHT}
+              className="block w-full overflow-visible rounded-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              onPointerMove={(event) => {
+                if (pinned || !times.length) return;
+                const rect = event.currentTarget.getBoundingClientRect();
+                const time =
+                  from +
+                  ((event.clientX - rect.left) / rect.width) * (to - from);
+                setCursor(
+                  times.reduce((a, b) =>
+                    Math.abs(a - time) < Math.abs(b - time) ? a : b
+                  )
+                );
+              }}
+              onPointerLeave={() => {
+                if (!pinned) setCursor(null);
+                onFocus(null);
+              }}
+              onClick={() => {
+                if (cursor !== null) setPinned((value) => !value);
+              }}
+              onKeyDown={(event) => {
+                if (["ArrowLeft", "ArrowRight"].includes(event.key)) {
+                  event.preventDefault();
+                  const index =
+                    cursor === null ? times.length - 1 : times.indexOf(cursor);
+                  setCursor(
+                    times[
+                      Math.max(
+                        0,
+                        Math.min(
+                          times.length - 1,
+                          index + (event.key === "ArrowLeft" ? -1 : 1)
+                        )
+                      )
+                    ] ?? null
+                  );
+                  setPinned(true);
+                }
+                if (["ArrowUp", "ArrowDown"].includes(event.key)) {
+                  event.preventDefault();
+                  const index = series.findIndex(
+                    (s) => s.container.id === active
+                  );
+                  onFocus(
+                    series[
+                      (index +
+                        (event.key === "ArrowUp" ? -1 : 1) +
+                        series.length) %
+                        series.length
+                    ]?.container.id ?? null
+                  );
+                }
+                if (event.key === "Enter") {
+                  const row =
+                    rows.find((s) => s.container.id === active) ?? rows[0];
+                  if (row)
+                    void navigate(link(row.container, row.point), {
+                      state: containerReturnState(location),
+                    });
+                }
+              }}
+            >
+              <ChartGrid
+                values={[ceiling / 2, ceiling]}
+                ceiling={ceiling}
+                height={HEIGHT}
+              />
+              {plotSeries.map((s) => (
+                <g
+                  key={s.container.id}
+                  opacity={active && active !== s.container.id ? 0.3 : 1}
+                  onPointerEnter={() => onFocus(s.container.id)}
+                >
+                  {s.geometry.runs.map((run) => (
+                    <path
+                      key={run[0]?.time}
+                      d={run
+                        .map(
+                          (p, index) => `${index ? "L" : "M"}${p.x},${p.y + 1}`
+                        )
+                        .join(" ")}
+                      fill="none"
+                      stroke={seriesColor(s.slot)}
+                      strokeWidth={active === s.container.id ? 2 : 1}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      vectorEffect="non-scaling-stroke"
                     />
                   ))}
-              </div>
-              {/* biome-ignore lint/a11y/noNoninteractiveElementInteractions: R-25 requires keyboard navigation on the labelled chart image. */}
-              <svg
-                role="img"
-                // biome-ignore lint/a11y/noNoninteractiveTabindex: R-25 chart is explicitly keyboard focusable.
-                tabIndex={0}
-                aria-label={`${metric === "cpu" ? "CPU" : "Memory"} by container, ${range}, ${series.map((s) => displayName(s.container)).join(", ") || "no containers"}`}
-                viewBox="0 0 1000 240"
-                preserveAspectRatio="none"
-                className="h-60 w-full overflow-visible rounded-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                onPointerMove={(event) => {
-                  if (pinned || !times.length) return;
-                  const rect = event.currentTarget.getBoundingClientRect();
-                  const time =
-                    from +
-                    ((event.clientX - rect.left) / rect.width) * (to - from);
+                  {s.geometry.dots.map((dot) => (
+                    <ellipse
+                      key={dot.time}
+                      cx={dot.x}
+                      cy={dot.y + 1}
+                      rx={(3 * 1000) / plotWidth}
+                      ry={3}
+                      fill={seriesColor(s.slot)}
+                      vectorEffect="non-scaling-stroke"
+                    />
+                  ))}
+                </g>
+              ))}
+              {cursor !== null && (
+                <line
+                  x1={((cursor - from) / (to - from)) * 1000}
+                  x2={((cursor - from) / (to - from)) * 1000}
+                  y1={0}
+                  y2={HEIGHT}
+                  stroke="var(--color-muted-foreground)"
+                  vectorEffect="non-scaling-stroke"
+                />
+              )}
+            </svg>
+            {brushStore && (
+              <BrushOverlay
+                firstMs={from}
+                spanMs={to - from}
+                height={HEIGHT}
+                inset={0}
+                keyboard={false}
+                onClickTime={(time) => {
+                  if (!times.length) return;
+                  // Clicks (including touch) need not follow a rendered hover.
                   setCursor(
                     times.reduce((a, b) =>
                       Math.abs(a - time) < Math.abs(b - time) ? a : b
                     )
                   );
+                  setPinned((value) => !value);
                 }}
-                onPointerLeave={() => {
-                  if (!pinned) setCursor(null);
-                  onFocus(null);
-                }}
-                onClick={() => {
-                  if (cursor !== null) setPinned((value) => !value);
-                }}
-                onKeyDown={(event) => {
-                  if (["ArrowLeft", "ArrowRight"].includes(event.key)) {
-                    event.preventDefault();
-                    const index =
-                      cursor === null
-                        ? times.length - 1
-                        : times.indexOf(cursor);
-                    setCursor(
-                      times[
-                        Math.max(
-                          0,
-                          Math.min(
-                            times.length - 1,
-                            index + (event.key === "ArrowLeft" ? -1 : 1)
-                          )
-                        )
-                      ] ?? null
-                    );
-                    setPinned(true);
+                onHoverTime={(time, fractionY) => {
+                  if (pinned) return;
+                  if (time === null || !times.length) {
+                    setCursor(null);
+                    onFocus(null);
+                    return;
                   }
-                  if (["ArrowUp", "ArrowDown"].includes(event.key)) {
-                    event.preventDefault();
-                    const index = series.findIndex(
-                      (s) => s.container.id === active
-                    );
-                    onFocus(
-                      series[
-                        (index +
-                          (event.key === "ArrowUp" ? -1 : 1) +
-                          series.length) %
-                          series.length
-                      ]?.container.id ?? null
-                    );
-                  }
-                  if (event.key === "Enter") {
-                    const row =
-                      rows.find((s) => s.container.id === active) ?? rows[0];
-                    if (row)
-                      void navigate(link(row.container, row.point), {
-                        state: containerReturnState(location),
-                      });
-                  }
+                  const nearest = times.reduce((a, b) =>
+                    Math.abs(a - time) < Math.abs(b - time) ? a : b
+                  );
+                  setCursor(nearest);
+                  const line = series
+                    .map((s) => {
+                      const point = s.points.find((p) => p.time_ms === nearest);
+                      const value = point ? pointValue(point, metric) : null;
+                      return {
+                        id: s.container.id,
+                        distance:
+                          value === null
+                            ? Infinity
+                            : Math.abs(
+                                chartY(value, ceiling, HEIGHT) -
+                                  fractionY * HEIGHT
+                              ),
+                      };
+                    })
+                    .sort((a, b) => a.distance - b.distance)[0];
+                  onFocus(line && line.distance < 8 ? line.id : null);
                 }}
+              />
+            )}
+            {!times.length && (
+              <p className="pointer-events-none absolute inset-0 flex items-center justify-center text-[12px] text-muted-foreground">
+                {loading
+                  ? "Loading recorded measurements…"
+                  : "No recorded measurements in this range."}
+              </p>
+            )}
+            {cursor !== null && (
+              <ChartTooltipShell
+                className={`top-2 ${pinned ? "pointer-events-auto" : ""} ${cursor > (from + to) / 2 ? "left-2" : "right-2"} max-w-full text-[11px]`}
               >
-                {[0, 118, 236].map((y) => (
-                  <line
-                    key={y}
-                    x1={0}
-                    x2={1000}
-                    y1={y}
-                    y2={y}
-                    stroke="var(--color-grid)"
-                    vectorEffect="non-scaling-stroke"
-                  />
-                ))}
-                {plotSeries.map((s) => (
-                  <g
-                    key={s.container.id}
-                    opacity={active && active !== s.container.id ? 0.3 : 1}
-                    onPointerEnter={() => onFocus(s.container.id)}
+                <div>
+                  {clock(cursor)}
+                  {duration > 10_000
+                    ? `–${clock(cursor + (rows.find((r) => r.point)?.point?.duration_ms ?? duration))}`
+                    : ""}
+                </div>
+                {rows.map((row) => (
+                  <div
+                    key={row.container.id}
+                    className="flex items-center gap-2"
                   >
-                    {s.geometry.runs.map((run) => (
-                      <path
-                        key={run[0]?.time}
-                        d={run
-                          .map(
-                            (p, index) => `${index ? "L" : "M"}${p.x},${p.y}`
-                          )
-                          .join(" ")}
-                        fill="none"
-                        stroke={seriesColor(s.slot)}
-                        strokeWidth={active === s.container.id ? 2 : 1}
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        vectorEffect="non-scaling-stroke"
-                      />
-                    ))}
-                    {s.geometry.dots.map((dot) => (
-                      <ellipse
-                        key={dot.time}
-                        cx={dot.x}
-                        cy={dot.y}
-                        rx={(3 * 1000) / plotWidth}
-                        ry={3}
-                        fill={seriesColor(s.slot)}
-                        vectorEffect="non-scaling-stroke"
-                      />
-                    ))}
-                  </g>
-                ))}
-                {cursor !== null && (
-                  <line
-                    x1={((cursor - from) / (to - from)) * 1000}
-                    x2={((cursor - from) / (to - from)) * 1000}
-                    y1={0}
-                    y2={240}
-                    stroke="var(--color-muted-foreground)"
-                    vectorEffect="non-scaling-stroke"
-                  />
-                )}
-              </svg>
-              {brushStore && (
-                <BrushOverlay
-                  firstMs={from}
-                  spanMs={to - from}
-                  height={240}
-                  inset={0}
-                  keyboard={false}
-                  onClickTime={(time) => {
-                    if (!times.length) return;
-                    // Clicks (including touch) need not follow a rendered hover.
-                    setCursor(
-                      times.reduce((a, b) =>
-                        Math.abs(a - time) < Math.abs(b - time) ? a : b
-                      )
-                    );
-                    setPinned((value) => !value);
-                  }}
-                  onHoverTime={(time, fractionY) => {
-                    if (pinned) return;
-                    if (time === null || !times.length) {
-                      setCursor(null);
-                      onFocus(null);
-                      return;
-                    }
-                    const nearest = times.reduce((a, b) =>
-                      Math.abs(a - time) < Math.abs(b - time) ? a : b
-                    );
-                    setCursor(nearest);
-                    const line = series
-                      .map((s) => {
-                        const point = s.points.find(
-                          (p) => p.time_ms === nearest
-                        );
-                        const value = point ? pointValue(point, metric) : null;
-                        return {
-                          id: s.container.id,
-                          distance:
-                            value === null
-                              ? Infinity
-                              : Math.abs(
-                                  (1 - value / ceiling) * 236 - fractionY * 240
-                                ),
-                        };
-                      })
-                      .sort((a, b) => a.distance - b.distance)[0];
-                    onFocus(line && line.distance < 8 ? line.id : null);
-                  }}
-                />
-              )}
-              {!times.length && (
-                <p className="pointer-events-none absolute inset-0 flex items-center justify-center text-[12px] text-muted-foreground">
-                  {loading
-                    ? "Loading recorded measurements…"
-                    : "No recorded measurements in this range."}
-                </p>
-              )}
-              {cursor !== null && (
-                <ChartTooltipShell
-                  className={`top-2 ${pinned ? "pointer-events-auto" : ""} ${cursor > (from + to) / 2 ? "left-2" : "right-2"} max-w-full text-[11px]`}
-                >
-                  <div>
-                    {clock(cursor)}
-                    {duration > 10_000
-                      ? `–${clock(cursor + (rows.find((r) => r.point)?.point?.duration_ms ?? duration))}`
-                      : ""}
-                  </div>
-                  {rows.map((row) => (
-                    <div
-                      key={row.container.id}
-                      className="flex items-center gap-2"
-                    >
-                      <SeriesSwatch color={seriesColor(row.slot)} />
-                      {pinned ? (
-                        <Link
-                          className="flex-1 underline"
-                          to={link(row.container, row.point)}
-                          onClick={(event) => {
-                            if (!isContainerDetailClick(event)) return;
-                            event.preventDefault();
-                            void navigate(link(row.container, row.point), {
-                              state: containerReturnState(location),
-                            });
-                          }}
-                        >
-                          {displayName(row.container)}
-                        </Link>
-                      ) : (
-                        <span className="flex-1">
-                          {displayName(row.container)}
-                        </span>
-                      )}
-                      <span className="figures">
-                        {row.value === null
-                          ? "no data"
-                          : row.point && row.point.duration_ms > 10_000
-                            ? `${format(metric === "cpu" ? row.point.minimum.cpu_pct : row.point.minimum.working_set_bytes)} / ${format(metric === "cpu" ? row.point.metrics.cpu_pct : row.point.metrics.working_set_bytes)} / ${format(row.value)}`
-                            : format(row.value)}
-                        {row.point &&
-                        row.value !== null &&
-                        !pointCovered(row.point, metric)
-                          ? " partial"
-                          : ""}
+                    <SeriesSwatch color={seriesColor(row.slot)} />
+                    {pinned ? (
+                      <Link
+                        className="flex-1 underline"
+                        to={link(row.container, row.point)}
+                        onClick={(event) => {
+                          if (!isContainerDetailClick(event)) return;
+                          event.preventDefault();
+                          void navigate(link(row.container, row.point), {
+                            state: containerReturnState(location),
+                          });
+                        }}
+                      >
+                        {displayName(row.container)}
+                      </Link>
+                    ) : (
+                      <span className="flex-1">
+                        {displayName(row.container)}
                       </span>
-                    </div>
-                  ))}
-                  {duration > 10_000 && (
-                    <span className="text-muted-foreground">
-                      min / avg / max
+                    )}
+                    <span className="figures">
+                      {row.value === null
+                        ? "no data"
+                        : row.point && row.point.duration_ms > 10_000
+                          ? `${format(metric === "cpu" ? row.point.minimum.cpu_pct : row.point.minimum.working_set_bytes)} / ${format(metric === "cpu" ? row.point.metrics.cpu_pct : row.point.metrics.working_set_bytes)} / ${format(row.value)}`
+                          : format(row.value)}
+                      {row.point &&
+                      row.value !== null &&
+                      !pointCovered(row.point, metric)
+                        ? " partial"
+                        : ""}
                     </span>
-                  )}
-                </ChartTooltipShell>
-              )}
-            </div>
-          </div>
-        )}
-        {!asTable && (
-          <div className="figures mt-1 flex justify-between pl-12 text-[10px] text-muted-foreground">
-            {[0, 1, 2, 3].map((tick) => (
-              <span key={tick}>
-                {tick === 3 && live
-                  ? "now"
-                  : clock(from + ((to - from) * tick) / 3)}
-              </span>
-            ))}
-          </div>
+                  </div>
+                ))}
+                {duration > 10_000 && (
+                  <span className="text-muted-foreground">min / avg / max</span>
+                )}
+              </ChartTooltipShell>
+            )}
+          </ChartFrame>
         )}
       </div>
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
@@ -546,14 +540,15 @@ export function ComparisonChart({
         >
           {more > 0 ? `+${more} more` : "Choose…"}
         </Button>
+        <button
+          type="button"
+          className="ml-auto w-fit rounded-control text-[11px] text-muted-foreground underline underline-offset-2 focus-visible:ring-2 focus-visible:ring-ring"
+          onClick={() => setAsTable((value) => !value)}
+        >
+          {asTable ? "Show as chart" : "Show as table"}
+        </button>
       </div>
-      <button
-        type="button"
-        className="w-fit rounded-control text-[11px] text-muted-foreground underline underline-offset-2 focus-visible:ring-2 focus-visible:ring-ring"
-        onClick={() => setAsTable((value) => !value)}
-      >
-        {asTable ? "Show as chart" : "Show as table"}
-      </button>
+
       {notice}
     </SectionCard>
   );

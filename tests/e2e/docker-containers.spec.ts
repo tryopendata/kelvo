@@ -934,8 +934,10 @@ for (const via of ["table", "tooltip", "keyboard"] as const) {
       page.getByRole("combobox", { name: "Project scope" })
     ).toContainText("Standalone");
     await expect(
-      page.getByRole("combobox", { name: "Container history range" })
-    ).toContainText("1h");
+      page
+        .getByRole("radiogroup", { name: "Container history range" })
+        .getByRole("radio", { name: "1h", exact: true })
+    ).toHaveAttribute("aria-checked", "true");
     await expect(chart).toHaveAttribute("aria-label", /service-4, service-9$/);
     await expect
       .poll(() => page.locator("main").evaluate((element) => element.scrollTop))

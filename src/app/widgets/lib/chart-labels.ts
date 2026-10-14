@@ -53,3 +53,23 @@ export function ceilingAxis(
     ],
   };
 }
+
+/** Live views use the module-page relative axis; paused history names actual times. */
+export function historyTicks(
+  from: number,
+  to: number,
+  live: boolean,
+  count = 5
+): string[] {
+  if (live) return windowTicks(to - from, count);
+  const format = new Intl.DateTimeFormat(undefined, {
+    ...(to - from >= 86_400_000
+      ? ({ month: "short", day: "numeric" } as const)
+      : {}),
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  return Array.from({ length: count }, (_, tick) =>
+    format.format(from + ((to - from) * tick) / Math.max(1, count - 1))
+  );
+}
