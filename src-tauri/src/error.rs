@@ -9,6 +9,8 @@ use serde::Serialize;
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error, Serialize, specta::Type)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum CommandError {
+    #[error("update: {message}")]
+    Update { message: String },
     /// SSH login to the other Mac failed (key, agent or account).
     #[error("{message}")]
     RemoteAuth { message: String },

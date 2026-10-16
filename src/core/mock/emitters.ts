@@ -5,11 +5,13 @@ import type {
   HostsChanged,
   NavigateRequested,
   SettingsChanged,
+  UpdateStatus,
   WindowAppearanceChanged,
 } from "@core/generated/bindings";
 import { createEmitter } from "./emitter";
 export function createMockEmitters() {
   return {
+    updates: createEmitter<UpdateStatus>(),
     settings: createEmitter<SettingsChanged>(),
     caps: createEmitter<CapabilitiesChanged>(),
     appearance: createEmitter<WindowAppearanceChanged>(),

@@ -6,10 +6,13 @@ import type {
   LiveMsg,
   ProcessView,
   SeriesKey,
+  UpdateStatus,
 } from "@core/generated/bindings";
 import type { Transport } from "../transport";
 import type { ScenarioFlags, ScenarioName } from "./fixtures";
 export interface MockTransportOptions {
+  updateStatus?: UpdateStatus;
+  updateFails?: boolean;
   /** A bounded setup delay for cancellation tests. */
   remoteSetupDelayMs?: number;
   scenarios?: readonly ScenarioName[];

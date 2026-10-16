@@ -4,7 +4,7 @@ A menu bar system monitor for Apple Silicon Macs that keeps history.
 
 Kelvo shows CPU, GPU, memory, power and sensors, network, disk and battery once a second, and stores 30 days of it on disk. When the fans spun up at 3pm, you can scroll back and see which process did it.
 
-Kelvo is pre-release. There's no signed download yet, so the installer builds it from source on your Mac.
+Kelvo is free and open source. Download the app below; no build tools are needed.
 
 ![The Kelvo dashboard switching between modules](https://raw.githubusercontent.com/tryopendata/kelvo/assets/media/dashboard.webp)
 
@@ -12,19 +12,35 @@ Kelvo is pre-release. There's no signed download yet, so the installer builds it
 
 You need an Apple Silicon Mac (M1 or newer) on macOS 26 or newer. Intel Macs aren't supported because the power and sensor readings come from interfaces only Apple Silicon has.
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/tryopendata/kelvo/main/scripts/install.sh | bash
-```
+1. [Download Kelvo for Apple Silicon](https://github.com/tryopendata/kelvo/releases/latest/download/Kelvo_aarch64.dmg).
+2. Open the DMG and drag **Kelvo** into **Applications**.
+3. Eject the DMG, then open **Kelvo** from Applications.
+4. If macOS blocks the first launch, go to **System Settings → Privacy & Security → Open Anyway**, then confirm **Open**.
 
-The script installs whichever build tools are missing (Xcode Command Line Tools, Rust, Bun), downloads the source to `~/.kelvo/src`, builds the app, copies it to `~/Applications`, and opens it. The first run takes about five minutes, most of it compiling. Kelvo then appears in the menu bar and asks you to pick a menu bar style.
+Kelvo is currently **ad-hoc signed, without Apple notarization**, so the first-launch
+approval is expected. You do not need an Apple Developer account. Managed Macs may
+restrict this approval; see [Apple’s instructions](https://support.apple.com/en-us/102445).
 
-Because the app is built on your Mac, Gatekeeper opens it without a warning.
+Kelvo appears in the menu bar and asks you to choose a menu bar style.
 
-To update, run the same command again. It pulls the latest source, rebuilds, quits the running Kelvo, replaces the app, and starts it again. Your history and settings are kept.
+### Updates
+
+Open **Settings → General → Check now**. When a new release is available, choose
+**Install and restart**. Kelvo verifies the download’s updater signature before
+installing it, restarts, and keeps your history and settings.
+
+With **Check for updates automatically** enabled, Kelvo checks GitHub shortly after
+launch and every 24 hours while running. It never installs an update without your
+click. Turning this off stops background checks; **Check now** still works.
+Checks contact GitHub; Kelvo sends no metrics, history or machine identifier.
+
+If an update fails, use **Check now** to retry or download the latest DMG and replace
+the app after quitting Kelvo. Run Kelvo from Applications, not from the mounted DMG.
+Source-built older versions need this first DMG installation to gain the updater.
 
 ### Build it yourself
 
-If you'd rather not pipe a script to bash, install the [Xcode Command Line Tools](https://developer.apple.com/xcode/resources/) (`xcode-select --install`), [Rust](https://rustup.rs) and [Bun](https://bun.sh), then:
+For contributors and users who prefer source builds, install the [Xcode Command Line Tools](https://developer.apple.com/xcode/resources/) (`xcode-select --install`), [Rust](https://rustup.rs) and [Bun](https://bun.sh), then:
 
 ```bash
 git clone https://github.com/tryopendata/kelvo.git
@@ -162,9 +178,11 @@ your Mac. If you enable remote monitoring, authorized SSH clients can read its
 metrics and history; a controller keeps a separate local history mirror for each
 remote Mac. This sharing uses SSH directly, with no Kelvo backend.
 
-### Will there be a DMG or Homebrew install?
+### Is there a Homebrew or Mac App Store version?
 
-Yes, once testing wraps up: a signed DMG on GitHub Releases, a Homebrew cask, and in-app updates.
+Use the [DMG download](https://github.com/tryopendata/kelvo/releases/latest) and in-app
+updates for now. Homebrew and Mac App Store distribution are not part of this release.
+Kelvo remains free; Apple notarization may be added later.
 
 ## Development
 

@@ -234,11 +234,11 @@ export const commands = {
 	processSignal: (host: HostId, pid: number, startTimeUs: Micros, kind: SignalKind) => typedError<null, ProcessSignalError>(__TAURI_INVOKE("process_signal", { host, pid, startTimeUs, kind })),
 	/**  What this build can do (D-065). Fixed for the process; the UI reads it once. */
 	getEdition: () => __TAURI_INVOKE<Edition>("get_edition"),
-	/**
-	 *  The updater arrives in phase 6. Until then this reports the setting, and never makes
-	 *  a network request.
-	 */
-	checkForUpdates: () => __TAURI_INVOKE<UpdateStatus>("check_for_updates"),
+	/**  Explicit user checks work even when automatic checks are disabled. */
+	checkForUpdates: () => typedError<UpdateStatus, CommandError>(__TAURI_INVOKE("check_for_updates")),
+	getUpdateStatus: () => __TAURI_INVOKE<UpdateStatus>("get_update_status"),
+	/**  The caller approves the displayed version, never a URL, signature or file path. */
+	installUpdate: (version: string) => typedError<null, CommandError>(__TAURI_INVOKE("install_update", { version })),
 	/**
 	 *  What the calling window's root reflects: Performance mode, Reduce Transparency, theme.
 	 *  `window-appearance-changed` carries later changes.
@@ -259,6 +259,7 @@ export const events = {
 	hostsChanged: makeEvent<HostsChanged>("hosts-changed"),
 	navigateRequested: makeEvent<NavigateRequested>("navigate-requested"),
 	settingsChanged: makeEvent<SettingsChanged>("settings-changed"),
+	updateStatusChanged: makeEvent<UpdateStatusChanged>("update-status-changed"),
 	windowAppearanceChanged: makeEvent<WindowAppearanceChanged>("window-appearance-changed"),
 };
 
@@ -455,7 +456,7 @@ export type ClusterInfo = {
 	dvfs_mhz: number[],
 };
 
-export type CommandError =
+export type CommandError = { kind: "update"; message: string } |
 /**  SSH login to the other Mac failed (key, agent or account). */
 { kind: "remote_auth"; message: string } |
 /**  The other Mac's host key isn't trusted yet, or needs checking in Terminal. */
@@ -2325,15 +2326,11 @@ export type UnsupportedReason =
  */
 "unknown";
 
-/**
- *  `check_for_updates`. The updater lands in phase 6; until then the command reports that
- *  no update source is configured, and never makes a network request.
- */
-export type UpdateStatus =
-/**  "Check for updates automatically" is off; nothing was requested. */
-{ kind: "disabled" } |
-/**  This build has no update source yet. */
-{ kind: "not_configured" };
+export type UpdateStatus = { kind: "idle" } | { kind: "not_configured" } | { kind: "checking" } | { kind: "up_to_date" } | { kind: "available"; version: string; notes: string } | { kind: "downloading"; version: string; percent: number | null } | { kind: "installing"; version: string } | { kind: "ready"; version: string } | { kind: "failed"; message: string };
+
+export type UpdateStatusChanged = {
+	status: UpdateStatus,
+};
 
 /**
  *  `query_usage_by_app`: which apps used CPU, GPU, memory, disk and energy over a range,

@@ -13,6 +13,7 @@ import type { Transport } from "./transport";
  *   ?ticks=0                               no auto-tick (stable screenshots)
  *   ?interval=30000                        starting sample interval, ms
  *   ?chart_window=30m                      starting chart window (5m|15m|30m|1h)
+ *   ?update=available                      preview an available app update
  */
 export async function createAppTransport(search: string): Promise<Transport> {
   if (
@@ -38,6 +39,16 @@ export async function createAppTransport(search: string): Promise<Transport> {
   const intervalMs = Number(params.get("interval"));
   return createMockTransport({
     windowLabel,
+    ...(params.get("update") === "available"
+      ? {
+          updateStatus: {
+            kind: "available" as const,
+            version: "0.2.0",
+            notes:
+              "Improved monitoring and reliability.\nYour history and settings are preserved.",
+          },
+        }
+      : {}),
     // The dashboard backfills an hour of ring (app.tsx); give the mock one.
     ...(windowLabel === "dashboard" ? { historyRows: 3600 } : {}),
     scenarios,

@@ -1,11 +1,5 @@
-import type {
-  Appearance,
-  Settings,
-  UpdateStatus,
-} from "@core/generated/bindings";
-import { useState } from "react";
+import type { Appearance, Settings } from "@core/generated/bindings";
 import { SettingsPanel, SettingsRow } from "~/components/settings-row";
-import { Button } from "~/components/ui/button";
 import {
   Select,
   SelectContent,
@@ -15,8 +9,7 @@ import {
 } from "~/components/ui/select";
 import { Switch } from "~/components/ui/switch";
 import { useWriteSettings } from "~/hooks/use-write-settings";
-import { useTransport } from "~/lib/transport-context";
-import { version } from "../../../../../../package.json";
+import { UpdateRow } from "./update-row";
 
 const APPEARANCES: { value: Appearance; label: string }[] = [
   { value: "system", label: "Match system" },
@@ -24,27 +17,9 @@ const APPEARANCES: { value: Appearance; label: string }[] = [
   { value: "light", label: "Light" },
 ];
 
-const UPDATE_TEXT: Record<UpdateStatus["kind"], string> = {
-  not_configured: "This build has no update source yet",
-  disabled: "Automatic checks are off, so nothing was requested",
-};
-
 /** "General", plus the update switch and version row (4.15). */
 export function GeneralPanel({ general }: { general: Settings["general"] }) {
-  const transport = useTransport();
   const write = useWriteSettings();
-  const [status, setStatus] = useState<string | null>(null);
-  const [checking, setChecking] = useState(false);
-
-  const checkNow = async () => {
-    setChecking(true);
-    const result = await transport.checkForUpdates().catch((err: unknown) => {
-      console.error("[settings] check_for_updates failed", err);
-      return null;
-    });
-    setChecking(false);
-    setStatus(result ? UPDATE_TEXT[result.kind] : "Couldn't check for updates");
-  };
 
   return (
     <SettingsPanel title="General">
@@ -102,17 +77,7 @@ export function GeneralPanel({ general }: { general: Settings["general"] }) {
           onCheckedChange={(on) => write({ general: { check_updates: on } })}
         />
       </SettingsRow>
-      <SettingsRow label="Version" sub={status ?? undefined}>
-        <span className="figures text-[12px] text-fg-subtle">{version}</span>
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={checking}
-          onClick={checkNow}
-        >
-          Check now
-        </Button>
-      </SettingsRow>
+      <UpdateRow />
     </SettingsPanel>
   );
 }

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Release build of Kelvo.app, ad-hoc signed, installed to ~/Applications and opened on
-# the dev machine. Ad-hoc ("-") needs no Apple Developer identity; the app runs here but
-# Gatekeeper rejects it on any other Mac.
+# the dev machine. Ad-hoc ("-") needs no Apple Developer identity; downloaded copies require
+# the user to approve the first launch in Privacy & Security.
 #
 # Usage: bun run build:prod   (or: bun run build:local)
 set -euo pipefail

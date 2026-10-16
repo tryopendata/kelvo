@@ -74,7 +74,13 @@ export function createTauriTransport(label: string): Transport {
     processSignal: (host, pid, startTimeUs, kind) =>
       commands.processSignal(host, pid, startTimeUs, kind),
     getEdition: () => commands.getEdition(),
+    getUpdateStatus: () => commands.getUpdateStatus(),
     checkForUpdates: () => commands.checkForUpdates(),
+    installUpdate: (version) => commands.installUpdate(version),
+    onUpdateStatusChanged: (cb) =>
+      syncUnlisten(
+        events.updateStatusChanged.listen((e) => cb(e.payload.status))
+      ),
     getWindowAppearance: () => commands.getWindowAppearance(),
     async openUrl(url) {
       const { openUrl } = await import("@tauri-apps/plugin-opener");

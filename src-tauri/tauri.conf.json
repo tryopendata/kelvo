@@ -32,7 +32,8 @@
     "targets": "all",
     "category": "Utilities",
     "macOS": {
-      "minimumSystemVersion": "26.0"
+      "minimumSystemVersion": "26.0",
+      "signingIdentity": "-"
     },
     "icon": [
       "icons/32x32.png",
@@ -40,5 +41,14 @@
       "icons/128x128@2x.png",
       "icons/icon.icns"
     ]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDU2ODFDMzU4QTlDMTQ4MTUKUldRVlNNR3BXTU9CVmo0NXR4dkh4MGZxdW1QT3ROSVRrWk4rRkh0OGxPamh3VXB1eEU5dXd5UVgK",
+      "endpoints": [
+        "https://github.com/tryopendata/kelvo/releases/latest/download/latest.json"
+      ],
+      "requireSignedVersion": true
+    }
   }
 }

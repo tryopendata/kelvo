@@ -6,7 +6,7 @@ Agents update this file whenever a phase starts or finishes. Each update adds a 
 
 ## Start here (handoff, 2026-10-14, architecture refactor and QA)
 
-State: `main` holds v1.0, v1.1 and v1.2. The app runs from source with `bun run tauri dev`. Verification evidence is dated in the log; older green runs do not establish the current refactor as complete. There is no release path yet, by design (D-078): no DMG, updater, tap or tags until the user calls the dev build ready.
+State: `main` holds v1.0, v1.1 and v1.2. The app runs from source with `bun run tauri dev`. Verification evidence is dated in the log; older green runs do not establish the current refactor as complete. The user accepted day-to-day stability on 2026-10-16 and authorized the free GitHub release path: an ad-hoc-signed DMG and signature-verified in-app updates. Release implementation is in place, with packaged-release validation in progress; Apple Developer membership, notarization, Homebrew and the Mac App Store remain deferred.
 
 The local Docker feature and first Mac-to-Mac remote milestone are also merged.
 Remote setup guidance and error recovery are pushed through `ded22a7`, following
@@ -80,6 +80,15 @@ Known follow-ups (small, not scheduled):
 Status values: Not started, In progress, Blocked (say on what), Done (with the verification that proved it).
 
 ## Log
+
+### 2026-10-16 (Free GitHub downloads and in-app updates)
+
+- Added tag-triggered Apple Silicon DMG releases, ad-hoc Apple code signing, separately signed updater archives, a version-bound manifest and checksums. The updater private key is in GitHub Actions secrets with an owner-only local backup; no paid Apple account is needed.
+- Rust owns update checks, a single approved version, download progress and verified installation. Automatic checks honor the existing preference; manual checks work independently. Installing requires a click and uses the app's normal restart lifecycle.
+- Settings reuses the existing Version row. Dark/light settings and gallery screenshots were compared with neighboring rows: the intentional additions are status, expandable release notes and the install action; no new card, badge or heading style.
+- README now starts with download, drag-to-Applications and first-launch approval instructions; source builds remain an optional contributor path. Release operations are in `.github/releasing.md`.
+- Verified so far: frontend typecheck/lint and 1,136 tests; real updater signature/version rejection tests; three release-manifest tests; focused settings/gallery/update browser scenarios. Final native, packaging and publication evidence follows below.
+- Remaining manual acceptance: fresh-account/second-Mac Gatekeeper launch and a real user-session update/restart retaining history. An isolated bundle replacement test does not establish those behaviors.
 
 ### 2026-10-16 (Tray card simplification)
 

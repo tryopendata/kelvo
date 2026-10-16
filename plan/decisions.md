@@ -3466,3 +3466,35 @@ are reviewable guardrails, not a new approval queue. History lifecycle/query own
 in engine and mirror synchronization in remote use existing edges and leave IPC/wire
 contracts intact. Their generation/epoch invariants are documented beside the services
 and exercised with real SQLite tests.
+
+
+## D-113: Free GitHub distribution and explicit in-app updates
+
+Status: Accepted. Date: 2026-10-16. User accepted day-to-day stability and requested
+public downloads and click-to-update while keeping Kelvo free.
+
+Ship an Apple Silicon, macOS 26+ DMG through GitHub Releases. Use ad-hoc Apple code
+signing for now and document the first-launch Privacy & Security approval. Paid
+Developer ID signing/notarization and the Mac App Store are separate future choices;
+Homebrew is not required for this release.
+
+The Tauri updater uses a separate, free signing key. Commit only its public key;
+keep the private key in GitHub Actions secrets and an owner-only local backup.
+Require signatures covering both archive contents and the announced version.
+Use immutable versioned archive URLs and publish `latest.json` only with a complete
+stable release. Tag builds produce drafts for verification before publication.
+
+Rust owns update state, the selected release and cross-window operation exclusion.
+Automatic checks respect the persisted preference and completed onboarding, run
+30 seconds after launch and every 24 hours, and never download/install on their own.
+An explicit Check now works regardless of that preference. Install and restart
+approves the displayed version, verifies the archive, installs it, then uses the
+normal exit lifecycle to flush history and stop remote services. The existing
+settings rows show progress, release notes and actionable errors. Debug and App
+Store builds do not self-update. No metric data, machine identifier or telemetry
+is sent in update checks.
+
+The release verifier exercises the actual signed archive against an isolated
+bundle and rejects tampered bytes before replacement. Fresh-account/second-Mac
+Gatekeeper behavior and native restart acceptance are separate manual evidence;
+a passing browser test or signature check does not establish them.

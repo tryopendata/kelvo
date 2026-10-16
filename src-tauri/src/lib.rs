@@ -27,6 +27,7 @@ pub mod remote_network;
 pub mod settings;
 pub mod state;
 pub mod tray;
+mod updates;
 mod usage;
 mod windows;
 
@@ -113,11 +114,14 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             commands::sensor_dump,
             commands::process_signal,
             commands::get_edition,
-            commands::check_for_updates,
+            updates::check_for_updates,
+            updates::get_update_status,
+            updates::install_update,
             commands::get_window_appearance,
             commands::report_popover_paint,
         ])
         .events(collect_events![
+            updates::UpdateStatusChanged,
             ipc::SettingsChanged,
             ipc::CapabilitiesChanged,
             ipc::WindowAppearanceChanged,
@@ -202,6 +206,7 @@ pub fn run() {
             }
         }))
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         // The CSV export's save dialog, opened from Rust only: no window is granted the
         // plugin's permissions.
         .plugin(tauri_plugin_dialog::init())
@@ -230,6 +235,7 @@ pub fn run() {
             );
             builder.mount_events(app);
             AppState::start(app.handle())?;
+            updates::start(app.handle());
             app.manage(windows::DashboardLifecycle::default());
             tray::create(app.handle())?;
             #[cfg(target_os = "macos")]

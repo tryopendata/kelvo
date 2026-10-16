@@ -773,17 +773,6 @@ pub struct SensorReading {
     pub value: Option<f32>,
 }
 
-/// `check_for_updates`. The updater lands in phase 6; until then the command reports that
-/// no update source is configured, and never makes a network request.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, specta::Type)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum UpdateStatus {
-    /// "Check for updates automatically" is off; nothing was requested.
-    Disabled,
-    /// This build has no update source yet.
-    NotConfigured,
-}
-
 // --- events ---------------------------------------------------------------------------------
 
 /// Emitted after every settings change, with the full new settings.

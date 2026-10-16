@@ -1003,15 +1003,15 @@ Acceptance criteria
 
 ### v1.x release: distribution, updater and install
 
-Starts only after QA and polish. Result: the current v1.x on GitHub Releases and in the personal tap, installable by someone who has never built from source.
+QA accepted by the user on 2026-10-16. Current scope: GitHub Releases with an ad-hoc-signed DMG and in-app updates, installable without build tools. The personal tap and paid Apple distribution are deferred. See `.github/releasing.md` for the release procedure.
 
 - [ ] Bundle config: app icon set, DMG background and layout, ad-hoc signing (`signingIdentity: "-"`), arm64 only
-- [ ] Generate a minisign key pair for the updater; private key and password in GitHub Actions secrets, public key in `tauri.conf.json`
-- [ ] `tauri-plugin-updater` against a `latest.json` on GitHub Releases; respects `general.check_updates`; "Check now" in Settings
-- [ ] Release workflow on a `v*` tag: build, sign update artifacts, upload DMG, `.app.tar.gz`, signature and `latest.json` to a draft release
+- [x] Generate a minisign key pair for the updater; private key and password in GitHub Actions secrets, public key in `tauri.conf.json`
+- [x] `tauri-plugin-updater` against a `latest.json` on GitHub Releases; respects `general.check_updates`; "Check now" in Settings
+- [x] Release workflow on a `v*` tag: build, sign update artifacts, upload DMG, `.app.tar.gz`, signature and `latest.json` to a draft release
 - [ ] Verify whether an updater-installed build carries the quarantine attribute and launches without a Gatekeeper prompt (the blueprint's assumption); record the result in decisions.md
-- [ ] Personal Homebrew tap repo with a `kelvo` cask pointing at the release DMG; document `brew install --cask` and the first-launch step
-- [ ] README install section: DMG and tap, and the first-launch step for an unsigned app on current macOS (System Settings, Privacy & Security, Open Anyway, since Control-click Open does not bypass Gatekeeper on supported versions)
+- [ ] Deferred: personal Homebrew tap repo with a `kelvo` cask pointing at the release DMG; document `brew install --cask` and the first-launch step
+- [x] README install section: DMG (tap deferred), and the first-launch step for an unsigned app on current macOS (System Settings, Privacy & Security, Open Anyway, since Control-click Open does not bypass Gatekeeper on supported versions)
 - [ ] `scripts/bench-vs-stats.sh` complete: matching modules, 10-minute runs, coalition CPU, energy via `powermetrics`, footprint; output as a Markdown table
 - [ ] Run the full budget table from section 7 and architecture.md on the development Mac; results in PROGRESS.md with chip and macOS version
 - [ ] Scripted manual checklist in `plan/checklists/v1.0-packaged.md`: install from DMG, onboarding, tray styles, popover show and hide, channel stop on hide (log), lid-close gap, unknown-chip scenario via a debug flag, update from the previous alpha, launch at login after reboot

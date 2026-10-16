@@ -147,7 +147,14 @@ export function createMockTransport(
     queries,
     commands
   );
-  const shell = new MockShell(ring, power, settings, commands, emitters);
+  const shell = new MockShell(
+    ring,
+    power,
+    settings,
+    commands,
+    emitters,
+    options
+  );
   settings.onChanged = (before, after) => {
     store.recordNetworkSetting(before, after);
     power.updatePower();

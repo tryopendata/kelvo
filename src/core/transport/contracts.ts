@@ -318,7 +318,10 @@ export interface Transport {
   ): Promise<ProcessSignalResult>;
   /** What this build can do (D-065); fixed for the app run. */
   getEdition(): Promise<Edition>;
-  checkForUpdates(): Promise<UpdateStatus>;
+  getUpdateStatus(): Promise<UpdateStatus>;
+  checkForUpdates(): Promise<CommandResult<UpdateStatus>>;
+  installUpdate(version: string): Promise<CommandResult<null>>;
+  onUpdateStatusChanged(cb: (status: UpdateStatus) => void): Unsubscribe;
   getWindowAppearance(): Promise<WindowAppearance>;
   /** Open an http(s) URL in the default browser (sensor dump GitHub issue). */
   openUrl(url: string): Promise<void>;

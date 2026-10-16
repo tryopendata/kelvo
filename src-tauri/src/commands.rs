@@ -16,7 +16,7 @@ use crate::ipc::{
     BatteryHour, ByteCount, ExportOutcome, ExportRequest, HeatmapDay, HeatmapRequest,
     HistoryGrowth, HistoryHealth, HistoryPage, HistoryRequest, LiveMsg, Millis, NetworkAddresses,
     NetworkByApp, ProcessView, ProcessesAt, SensorDump, SensorReading, SeriesStats,
-    SettingsSnapshot, SubscriptionInfo, UpdateStatus, UsageByApp, UsageKey, WindowAppearance,
+    SettingsSnapshot, SubscriptionInfo, UsageByApp, UsageKey, WindowAppearance,
 };
 use crate::live::{DEFAULT_BACKFILL_MS, LiveFeed, LiveRequest, LiveSink};
 use crate::process_signal::{Micros, ProcessSignalError, SignalKind, SystemProcessOs};
@@ -668,18 +668,6 @@ pub fn process_signal(
 #[specta::specta]
 pub fn get_edition() -> crate::edition::Edition {
     crate::edition::Edition::current()
-}
-
-/// The updater arrives in phase 6. Until then this reports the setting, and never makes
-/// a network request.
-#[tauri::command]
-#[specta::specta]
-pub fn check_for_updates(state: State<'_, AppState>) -> UpdateStatus {
-    if state.settings.settings().general.check_updates {
-        UpdateStatus::NotConfigured
-    } else {
-        UpdateStatus::Disabled
-    }
 }
 
 /// What the calling window's root reflects: Performance mode, Reduce Transparency, theme.
