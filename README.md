@@ -37,6 +37,8 @@ Checks contact GitHub; Kelvo sends no metrics, history or machine identifier.
 If an update fails, use **Check now** to retry or download the latest DMG and replace
 the app after quitting Kelvo. Run Kelvo from Applications, not from the mounted DMG.
 Source-built older versions need this first DMG installation to gain the updater.
+Quit the old copy and replace it in its existing Applications folder (the source
+installer used `~/Applications`) so you do not keep two copies.
 
 ### Build it yourself
 
