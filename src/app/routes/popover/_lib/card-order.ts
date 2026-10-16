@@ -2,7 +2,6 @@ import type { ModuleState, UiModule } from "@core/module-state";
 
 export type PopoverCard =
   | "cpu"
-  | "cores"
   | "memory"
   | "gpu"
   | "power"
@@ -12,7 +11,6 @@ export type PopoverCard =
 /** Plan 4.3 module order. Disk has no popover card in v1. */
 const ORDER: readonly [PopoverCard, UiModule][] = [
   ["cpu", "cpu"],
-  ["cores", "cpu"],
   ["memory", "memory"],
   ["gpu", "gpu"],
   ["power", "power"],
@@ -35,6 +33,12 @@ export function popoverSlots(
   const out: PopoverSlot[] = [];
   const seen = new Set<UiModule>();
   for (const [card, module] of ORDER) {
+    if (
+      module === "battery" &&
+      states.power === "on" &&
+      states.battery === "on"
+    )
+      continue;
     const state = states[module];
     if (state === "on") out.push({ kind: "card", card });
     else if (

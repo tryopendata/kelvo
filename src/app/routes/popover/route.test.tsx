@@ -36,15 +36,15 @@ describe("popover cards", () => {
     await screen.findByText("Open dashboard");
     act(() => transport.tick());
     await user.click(screen.getByRole("link", { name: "CPU" }));
-    await user.click(screen.getByRole("link", { name: "Cores" }));
+    expect(screen.queryByRole("link", { name: "Cores" })).toBeNull();
+    expect(
+      screen.getByRole("link", { name: "Power & battery" })
+    ).toHaveTextContent("Battery");
+    expect(screen.queryByRole("link", { name: "Battery" })).toBeNull();
     await user.click(screen.getByRole("link", { name: "Memory" }));
     const opened = transport.calls
       .filter((c) => c.command === "open_dashboard")
       .map((c) => c.args[0]);
-    expect(opened).toEqual([
-      "/dashboard/cpu",
-      "/dashboard/cpu",
-      "/dashboard/memory",
-    ]);
+    expect(opened).toEqual(["/dashboard/cpu", "/dashboard/memory"]);
   });
 });

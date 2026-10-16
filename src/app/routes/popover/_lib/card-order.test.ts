@@ -18,15 +18,7 @@ const cards = (states: Record<UiModule, ModuleState>) =>
 
 describe("popoverSlots", () => {
   it("lists the plan 4.3 order, with no Disk card", () => {
-    expect(cards(all())).toEqual([
-      "cpu",
-      "cores",
-      "memory",
-      "gpu",
-      "power",
-      "network",
-      "battery",
-    ]);
+    expect(cards(all())).toEqual(["cpu", "memory", "gpu", "power", "network"]);
   });
 
   it("drops switched-off, absent and unknown-chip modules", () => {

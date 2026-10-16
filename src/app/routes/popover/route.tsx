@@ -14,7 +14,6 @@ import { useHost } from "~/stores/host-store";
 import { useSampling } from "~/stores/live-selectors";
 import {
   LiveBatteryCard,
-  LiveCoresCard,
   LiveCpuCard,
   LiveGpuCard,
   LiveMemoryCard,
@@ -27,7 +26,6 @@ import { samplingPill } from "./_lib/sampling-pill";
 
 const CARDS: Record<PopoverCard, () => React.JSX.Element> = {
   cpu: LiveCpuCard,
-  cores: LiveCoresCard,
   memory: LiveMemoryCard,
   gpu: LiveGpuCard,
   power: LivePowerCard,

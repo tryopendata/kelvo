@@ -81,6 +81,20 @@ Status values: Not started, In progress, Blocked (say on what), Done (with the v
 
 ## Log
 
+### 2026-10-16 (Tray card simplification)
+
+Removed the popover Cores card and combined enabled Power and Battery readings in
+one Power & battery card. System watts, rail breakdown, battery percentage, charge
+bar, remaining time, health and cycles stay visible. Battery retains its standalone
+card when Power is disabled or unavailable; module visibility rules are preserved.
+Verified 1,136 frontend tests, TypeScript, lint, and 20 Chromium/WebKit browser
+checks. The updated route/order assertions fail against the original UI and pass
+with the change. Compared light/dark popover screenshots with neighboring cards
+and the dev gallery. Intentional differences: fewer tray cards, battery details
+inside the Power card, and the retained lime battery bar beside amber power rails
+to distinguish the two metrics. No shared widget styles changed. No disposable
+worktree was created; the primary checkout and its caches remain in use.
+
 ### 2026-10-14 (Local frontend build diagnostics)
 
 Raised Vite's chunk warning threshold to 1,500 kB to retain a bundle-growth signal

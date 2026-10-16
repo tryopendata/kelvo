@@ -21,6 +21,7 @@ import { windowLabel, windowWords } from "@core/live-window";
 import { CopyValue } from "~/components/copy-value";
 import { useAddresses } from "~/hooks/use-addresses";
 import { useHostRecord } from "~/hooks/use-host-record";
+import { useModuleStates } from "~/hooks/use-module-states";
 import { useNiceCeiling } from "~/hooks/use-nice-ceiling";
 import { useReadFailure } from "~/hooks/use-read-failure";
 import { useScaledWindow } from "~/hooks/use-scaled-window";
@@ -29,7 +30,6 @@ import { useHost } from "~/stores/host-store";
 import {
   useBattery,
   useCpu,
-  useCpuCores,
   useGpu,
   useMemory,
   usePower,
@@ -38,7 +38,6 @@ import {
   useSeriesWindow,
 } from "~/stores/live-selectors";
 import { useSettings } from "~/stores/settings-store";
-import { CoreTiles } from "~/widgets/core-tiles";
 import { InlineBar } from "~/widgets/inline-bar";
 import { MeterTrack } from "~/widgets/meter-track";
 import { MirrorBars } from "~/widgets/mirror-bars";
@@ -100,31 +99,6 @@ export function LiveCpuCard() {
           layout="row"
         />
       </div>
-    </ModuleCard>
-  );
-}
-
-export function LiveCoresCard() {
-  const open = useOpen();
-  const cores = useCpuCores();
-  const cpu = useCpu();
-  const host = useHostRecord();
-  const clusters = (host?.info.cpu_topology ?? []).map((c) => ({
-    id: c.name,
-    name: c.kind === "efficiency" ? "E-cluster" : "P-cluster",
-    freq: formatGhz(c.kind === "efficiency" ? cpu.eFreqHz : cpu.pFreqHz),
-    cores: c.cores.map((id) => ({ id, load: cores[id] ?? null })),
-  }));
-  return (
-    <ModuleCard
-      accent="cpu"
-      title="Cores"
-      href="/dashboard/cpu"
-      onOpen={open}
-      subtitle="% load"
-      subtitleStyle="label"
-    >
-      <CoreTiles clusters={clusters} />
     </ModuleCard>
   );
 }
@@ -244,6 +218,7 @@ export function LiveGpuCard() {
 export function LivePowerCard() {
   const open = useOpen();
   const p = usePower();
+  const showBattery = useModuleStates().battery === "on";
   const notice = useReadFailure("power.system");
   const cpuNote = cpuPowerNote(p.cpuSource);
   // The rest of the system is what the named rails leave.
@@ -252,7 +227,7 @@ export function LivePowerCard() {
   return (
     <ModuleCard
       accent="power"
-      title="Power"
+      title={showBattery ? "Power & battery" : "Power"}
       href="/dashboard/power"
       onOpen={open}
       value={formatWatts(p.system)}
@@ -281,6 +256,7 @@ export function LivePowerCard() {
           { label: "DRAM", value: formatWatts(p.dram), step: 3 },
         ]}
       />
+      {showBattery && <BatteryDetails />}
       {cpuNote && (
         <p className="m-0 font-normal text-[11px] text-muted-foreground">
           {cpuNote}
@@ -369,9 +345,23 @@ export function LiveNetworkCard() {
   );
 }
 
-/** Battery card: charge bar, time remaining, health and cycles. */
+/** Standalone battery when power monitoring is disabled or unavailable. */
 export function LiveBatteryCard() {
   const open = useOpen();
+  return (
+    <ModuleCard
+      accent="battery"
+      title="Battery"
+      href="/dashboard/battery"
+      onOpen={open}
+    >
+      <BatteryDetails />
+    </ModuleCard>
+  );
+}
+
+/** Battery readings shared by the combined and standalone cards. */
+function BatteryDetails() {
   const b = useBattery();
   const source = usePowerSource();
   const notice = useReadFailure("battery.charge");
@@ -382,15 +372,16 @@ export function LiveBatteryCard() {
         : MISSING
       : formatHoursMinutes(b.timeRemainingMin * 60_000);
   return (
-    <ModuleCard
-      accent="battery"
-      title="Battery"
-      href="/dashboard/battery"
-      onOpen={open}
-      value={formatPercent(b.charge)}
-      notice={notice}
-    >
-      {/* The charge is the headline figure; the bar repeats it visually. */}
+    <>
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="text-[11px] text-muted-foreground">Battery</span>
+        <span className="figures-display text-[15px]">
+          {formatPercent(b.charge)}
+        </span>
+      </div>
+      {notice && (
+        <p className="m-0 text-[11px] text-muted-foreground">{notice}</p>
+      )}
       <MeterTrack
         fraction={ratio(b.charge, 100)}
         fill="var(--color-battery)"
@@ -406,6 +397,6 @@ export function LiveBatteryCard() {
           },
         ]}
       />
-    </ModuleCard>
+    </>
   );
 }
