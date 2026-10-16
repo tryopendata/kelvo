@@ -478,6 +478,8 @@ mod tests {
         ));
     }
 
+    // Executes the macOS deployment script locally, including /usr/bin/ditto.
+    #[cfg(target_os = "macos")]
     #[test]
     fn restoring_after_database_migration_restores_both_binary_and_data() {
         let dir = tempfile::tempdir().unwrap();

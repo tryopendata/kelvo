@@ -6,7 +6,7 @@ Agents update this file whenever a phase starts or finishes. Each update adds a 
 
 ## Start here (handoff, 2026-10-14, architecture refactor and QA)
 
-State: `main` holds v1.0, v1.1 and v1.2. The app runs from source with `bun run tauri dev`. Verification evidence is dated in the log; older green runs do not establish the current refactor as complete. The user accepted day-to-day stability on 2026-10-16 and authorized the free GitHub release path: an ad-hoc-signed DMG and signature-verified in-app updates. Release implementation is in place, with packaged-release validation in progress; Apple Developer membership, notarization, Homebrew and the Mac App Store remain deferred.
+State: `main` holds v1.0, v1.1 and v1.2. The app runs from source with `bun run tauri dev`. Verification evidence is dated in the log; older green runs do not establish the current refactor as complete. The user accepted day-to-day stability on 2026-10-16 and authorized the free GitHub release path: an ad-hoc-signed DMG and signature-verified in-app updates. Release implementation and local package validation are complete; the tagged GitHub build is in progress; Apple Developer membership, notarization, Homebrew and the Mac App Store remain deferred.
 
 The local Docker feature and first Mac-to-Mac remote milestone are also merged.
 Remote setup guidance and error recovery are pushed through `ded22a7`, following
@@ -87,7 +87,9 @@ Status values: Not started, In progress, Blocked (say on what), Done (with the v
 - Rust owns update checks, a single approved version, download progress and verified installation. Automatic checks honor the existing preference; manual checks work independently. Installing requires a click and uses the app's normal restart lifecycle.
 - Settings reuses the existing Version row. Dark/light settings and gallery screenshots were compared with neighboring rows: the intentional additions are status, expandable release notes and the install action; no new card, badge or heading style.
 - README now starts with download, drag-to-Applications and first-launch approval instructions; source builds remain an optional contributor path. Release operations are in `.github/releasing.md`.
-- Verified so far: frontend typecheck/lint and 1,136 tests; real updater signature/version rejection tests; three release-manifest tests; focused settings/gallery/update browser scenarios. Final native, packaging and publication evidence follows below.
+- Verified: the pre-push `make check bindings-check e2e-perf` gate passed on commit `e990166` (including the accepted popover changes); frontend typecheck/lint and 1,136 tests; real updater signature/version rejection tests; three release-manifest tests. All 414 functional browser scenarios passed across the initial run and scoped retries. Earlier runs hit file-reload/timeouts and load-sensitive process/performance failures; the final required gate passed without changing budgets.
+- Local release: ad-hoc signatures and system-only runtime dependencies verified for the app and helper. The real signed updater archive installed into a temporary bundle, rejected tampering before replacement and retained a valid code signature. No quarantine attribute was present after this isolated installation (D-113). GitHub tag `v0.1.0` builds the frozen source independently.
+- Hosted CI exposed an existing remote-deployment test invoking `/usr/bin/ditto` on Linux. Restricted that local script-execution test to macOS; its focused macOS run passes. Production code is unchanged.
 - Remaining manual acceptance: fresh-account/second-Mac Gatekeeper launch and a real user-session update/restart retaining history. An isolated bundle replacement test does not establish those behaviors.
 
 ### 2026-10-16 (Tray card simplification)

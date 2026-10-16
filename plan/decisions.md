@@ -3498,3 +3498,10 @@ The release verifier exercises the actual signed archive against an isolated
 bundle and rejects tampered bytes before replacement. Fresh-account/second-Mac
 Gatekeeper behavior and native restart acceptance are separate manual evidence;
 a passing browser test or signature check does not establish them.
+
+Verification, 2026-10-16: the local 0.1.0 signed archive passed the real updater's
+verification and replacement into a temporary Kelvo.app. Tampered bytes were
+rejected before changing the old bundle; the installed app and remote helper
+passed deep/strict code-signature verification. `com.apple.quarantine` was absent
+on that replacement. This establishes the archive/install behavior in the test,
+not Gatekeeper acceptance on another Mac or restart in a live user session.
