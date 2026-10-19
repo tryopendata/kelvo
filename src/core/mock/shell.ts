@@ -27,7 +27,10 @@ export class MockShell {
   };
   readonly getEdition: MockTransport["getEdition"] = async () => {
     this.commands.record("get_edition");
-    return { process_signal: !this.ring.flags.appstore };
+    return {
+      process_signal: !this.ring.flags.appstore,
+      disk_space: !this.ring.flags.appstore,
+    };
   };
   readonly getUpdateStatus: MockTransport["getUpdateStatus"] = async () =>
     this.updateStatus;

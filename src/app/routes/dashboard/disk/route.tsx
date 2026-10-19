@@ -1,10 +1,11 @@
 import { formatRate } from "@core/format";
 import { labelValues, sk } from "@core/series-key";
-import { useEffect, useMemo } from "react";
+import { type ReactNode, useEffect, useMemo } from "react";
 import { Link, useSearchParams } from "react-router";
 import { brushScopeProps, useDismissOutside } from "~/components/brush-overlay";
 import { PageHeader } from "~/components/page-header";
 import { SectionCard } from "~/components/section-card";
+import { SegmentedControl } from "~/components/segmented-control";
 import { SelectionSummary } from "~/components/selection-summary";
 import {
   Select,
@@ -16,6 +17,7 @@ import {
 import { VolumeTable } from "~/components/volume-table";
 import { WindowControl } from "~/components/window-control";
 import { useChartWindow } from "~/hooks/use-chart-window";
+import { useEdition } from "~/hooks/use-edition";
 import { useElementSize } from "~/hooks/use-element-size";
 import { useHostRecord } from "~/hooks/use-host-record";
 import { useIsLocalHost } from "~/hooks/use-is-local-host";
@@ -31,21 +33,68 @@ import { StatStrip } from "~/widgets/stat-strip";
 import { DiskIoCharts } from "./_components/disk-io-charts";
 import { DiskProcesses } from "./_components/disk-processes";
 import { DiskRangeTotals } from "./_components/disk-range-totals";
+import { SpaceView } from "./_components/space-view";
 import { useDiskDevices, useDiskIo } from "./_hooks/use-disk-io";
+import { useSpaceVolumes } from "./_hooks/use-disk-space";
 import { volumeRows } from "./_lib/disk";
 import { diskRange } from "./_lib/disk-range";
 
 export default function DiskRoute() {
-  const [params] = useSearchParams();
+  const [params, setParams] = useSearchParams();
+  const edition = useEdition();
+  const space = params.get("view") === "space";
+  const set = (patch: Record<string, string | null>) =>
+    setParams(
+      (old) => {
+        const next = new URLSearchParams(old);
+        for (const [k, v] of Object.entries(patch))
+          if (v === null) next.delete(k);
+          else next.set(k, v);
+        return next;
+      },
+      { replace: true }
+    );
+  // Activity keeps its own params while in Space, so switching back restores it.
+  const switcher = edition?.disk_space ? (
+    <SegmentedControl
+      options={[
+        { value: "activity", label: "Activity" },
+        { value: "space", label: "Space" },
+      ]}
+      value={space ? "space" : "activity"}
+      onChange={(value) => set({ view: value === "space" ? value : null })}
+      ariaLabel="Disk view"
+    />
+  ) : null;
+  if (space && edition?.disk_space)
+    return (
+      <SpaceView
+        vol={params.get("vol")}
+        onVol={(vol) => set({ vol })}
+        switcher={switcher}
+      />
+    );
   return (
     <BrushProvider initial={diskRange(params)}>
-      <DiskPage />
+      <DiskActivity
+        switcher={switcher}
+        onAnalyze={
+          edition?.disk_space ? (vol) => set({ view: "space", vol }) : undefined
+        }
+      />
     </BrushProvider>
   );
 }
 
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Existing cohesive logic; split when substantially changed (architecture refactor section 10).
-function DiskPage() {
+function DiskActivity({
+  switcher,
+  onAnalyze,
+}: {
+  switcher: ReactNode;
+  /** Opens Space for a volume; absent when this build has no Space view. */
+  onAnalyze: ((vol: string) => void) | undefined;
+}) {
   const windowMs = useChartWindow()?.windowMs ?? null;
   const [params, setParams] = useSearchParams();
   const hostRecord = useHostRecord();
@@ -128,7 +177,12 @@ function DiskPage() {
               ? `${device} · Disconnected or unavailable`
               : "All devices"
         }
-        actions={<WindowControl />}
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <WindowControl />
+            {switcher}
+          </div>
+        }
       />
       <div {...brushScopeProps} ref={chartRef} className="min-w-0">
         <SectionCard
@@ -249,7 +303,15 @@ function DiskPage() {
           tabIndex={0}
           className="min-w-0 max-w-full overflow-x-auto rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
-          <VolumeTable rows={volumeRows(vols, held, mounts)} units="GB" />
+          <VolumeTable
+            rows={volumeRows(vols, held, mounts)}
+            units="GB"
+            action={
+              local && onAnalyze
+                ? (row) => <AnalyzeLink vol={row.id} onAnalyze={onAnalyze} />
+                : undefined
+            }
+          />
         </section>
       </SectionCard>
     </div>
@@ -270,6 +332,27 @@ function CurrentRates({ device }: { device: string | null }) {
     />
   );
 }
+/** Analyze, for the volumes a space report can scan. */
+function AnalyzeLink({
+  vol,
+  onAnalyze,
+}: {
+  vol: string;
+  onAnalyze: (vol: string) => void;
+}) {
+  const volumes = useSpaceVolumes(true);
+  if (!volumes.data?.some((v) => v.mount === vol)) return null;
+  return (
+    <button
+      type="button"
+      onClick={() => onAnalyze(vol)}
+      className="rounded-sm text-[12px] text-fg-subtle underline underline-offset-2 outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      Analyze space
+    </button>
+  );
+}
+
 function MemoryContext() {
   const memory = useMemory();
   if ((memory.pressureLevel ?? 0) === 0 && (memory.swapUsed ?? 0) === 0)

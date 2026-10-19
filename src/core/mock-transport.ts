@@ -22,7 +22,10 @@
  * hidden-resume (after ten ticks the window misses half an hour, then
  * resumes; the perf gate), no-process-network (`process_network` false:
  * no per-process network rates; `appstore` implies it), no-process-gpu
- * (`process_gpu` false: no per-process GPU time; `appstore` implies it).
+ * (`process_gpu` false: no per-process GPU time; `appstore` implies it),
+ * disk-space-eject (the external volume disconnects 40% into its scan),
+ * disk-space-boot-only (only the boot volume can be scanned). `appstore`
+ * also turns off disk space reports.
  *
  * `query_network_by_app` splits the ring's own `net.rx` / `net.tx` rows into
  * apps (mock/net-apps.ts), so a spike on the Network chart is attributable:
@@ -57,6 +60,7 @@
  */
 
 import type { MockTransport, MockTransportOptions } from "./mock/contracts";
+import { createMockDiskSpace } from "./mock/disk-space";
 import { createMockDocker } from "./mock/docker";
 import { createMockEmitters } from "./mock/emitters";
 import { scenarioFlags } from "./mock/fixtures";
@@ -106,10 +110,9 @@ export function createMockTransport(
     emitters,
     createMockTransport
   );
-  const docker = createMockDocker(
-    options.scenarios ?? [],
-    options.now ?? Date.now,
-    (next) => settings.setDocker(next)
+  const [scenarios, now] = [options.scenarios ?? [], options.now ?? Date.now];
+  const docker = createMockDocker(scenarios, now, (next) =>
+    settings.setDocker(next)
   );
   const channels = new MockChannels(ring, power);
   const processes = new MockProcesses(
@@ -181,6 +184,7 @@ export function createMockTransport(
     ...store.methods,
     ...ring.methods,
     ...docker.methods,
+    ...createMockDiskSpace(scenarios, now),
     onNavigateRequested: emitters.navigate.on,
     onSettingsChanged: emitters.settings.on,
     onHistoryHealthChanged: emitters.health.on,

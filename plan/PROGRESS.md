@@ -68,6 +68,7 @@ Known follow-ups (small, not scheduled):
 | Local Docker container monitoring | [Docker plan](docker-container-monitoring.md) | Implemented; merged | Reviews and automated verification passed; user authorized merge/cleanup/push with real-world acceptance deferred as follow-ups |
 | Containers monitoring UX revision | [UX RFC](docker-monitoring-ux-rfc.md) | Done (full gates, native recording and review; 2026-10-13) | October 13 product feedback: per-container CPU/Memory lines, two confirmed history bugs, bounded lists, monitoring settings and row Start/Stop |
 | Docker storage insights and cleanup | [Storage plan](docker-storage-cleanup.md) | Done | D-107; CE review approved, 863 Rust / 987 frontend tests and 294 browser checks passed; disposable OrbStack acceptance passed, Desktop/Colima follow-up remains |
+| Disk space report | [Space plan](disk-space-report.md) | Done (automated); real-hardware checks open | D-114; Space view in Disk with a progressive, drillable treemap. Privacy prompts on a fresh account, the dataless policy on File Provider folders, clone fixtures and tick lateness during a scan are unverified |
 | v1.x QA and polish (manual, from source) | [v1](v1-local-monitor.md) | Next | The user runs the dev build day to day; sessions fix batches of filed issues |
 | v1.x Release: distribution, updater, install | [v1](v1-local-monitor.md) | Not started | After QA; the old v1.0 phase 6 distribution items (D-078) |
 | v2.0 Widget manifest and popover composer | [v2](v2-customization-widgets.md) | Not started | |
@@ -80,6 +81,18 @@ Known follow-ups (small, not scheduled):
 Status values: Not started, In progress, Blocked (say on what), Done (with the verification that proved it).
 
 ## Log
+
+### 2026-10-19 (Disk space report)
+
+- Phase 0 on the dev Mac (warm cache): the `getattrlistbulk` walk read 1.7 M files in 3.3 s on 4 workers against 18.6 s for `du -x -k -d 1`, with per-folder totals within 0.1% of `du -skx`; `ATTR_VOL_SPACEUSED` sizes each APFS volume, summing to the container within 0.2 GB. Results and deviations are in the plan's implementation record.
+- Rust: `kelvo-schema::disk_space` DTOs, a work-stealing walker in `kelvo-collect::disk_space` with the macOS lister in `macos/space.rs`, single-flight `SpaceService` in `kelvo-engine`, and nine Tauri commands (start, status, cancel, report, subtree, largest files, reveal, path, volumes). The dashboard hiding cancels a scan; destroying it drops the report. App Store builds report `disk_space: false`.
+- Frontend: Disk gains an Activity | Space switcher (`?view=space`) and an Analyze space link on scannable volumes. Space shows the volume list with protected-location includes, a progressive treemap (finished entries keep their place against used space, the unmeasured remainder last), a linked folder table with Finder's keyboard keys, breadcrumb drill-down, largest files, Show in Finder and Copy path, and the remote-host and App Store states. The mock transport runs an 8 s scan with eject and boot-only scenarios.
+- Tests: Rust walker, tree, accounting and engine lifecycle tests; Vitest for the treemap math (stability revert-verified), the mock scan, screen selection (report-loading flash revert-verified) and 13 route integration tests including stale-map, copy feedback, scanning-volume and render-count regressions, each revert-verified; Playwright for the treemap flow, axe in both themes, and a 760 px width.
+- Visual: dark and light screenshots compared with Disk Activity and Containers › Storage & cleanup. The treemap is the one new chart; it uses the Disk ramp, the hatch for Other and unmeasured space, and the existing `SectionCard`, `StatStrip`, `VolumeTable` and segmented control. Tiles too small for a label carry none, by design.
+- The Activity | Space switcher sits in the page header after the time window; a row below the header pushed Disk I/O's fifth attribution row past the 900 px fold `disk-io.spec.ts` guards.
+- Verified: `make check` (one run hit `open_collector_interruptions_recover_from_observed_population_without_migration` in kelvo-store's Docker test, untouched by this change; it passed on the previous full run and on a rerun of that test binary), Vitest 1,168 tests, `bun run test:e2e` 432 passed and 10 skipped.
+- Not run here: `make rust-linux-check` (no `x86_64-linux-gnu-gcc` on this machine); `cargo check -p kelvo-schema -p kelvo-collect --all-targets --target x86_64-unknown-linux-gnu` passes, and the engine's non-macOS path was reviewed by eye.
+- Open: privacy prompts on a fresh account and after an update, the dataless policy on iCloud Drive and a third-party File Provider, `cp -c` clone fixtures, retained bytes per node, and sampler tick lateness during a scan.
 
 ### 2026-10-16 (Free GitHub downloads and in-app updates)
 

@@ -1,5 +1,6 @@
 import { ratio } from "@core/chart-math";
 import { type ByteUnits, formatBytes } from "@core/format";
+import type { ReactNode } from "react";
 import {
   Table,
   TableBody,
@@ -25,13 +26,15 @@ export interface VolumeTableProps {
   /** Boot container first. */
   rows: readonly VolumeRow[];
   units: ByteUnits;
+  /** A trailing control per row (Analyze, Scan). */
+  action?: ((row: VolumeRow) => ReactNode) | undefined;
 }
 
 /**
  * Disk volumes (v1-local-monitor.md 4.12): used, free, size and a
  * usage bar in the Disk accent.
  */
-export function VolumeTable({ rows, units }: VolumeTableProps) {
+export function VolumeTable({ rows, units, action }: VolumeTableProps) {
   return (
     <Table>
       <TableHeader>
@@ -43,6 +46,11 @@ export function VolumeTable({ rows, units }: VolumeTableProps) {
           <TableHead className="w-40">
             <span className="sr-only">Usage</span>
           </TableHead>
+          {action && (
+            <TableHead className="w-0">
+              <span className="sr-only">Actions</span>
+            </TableHead>
+          )}
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -70,6 +78,11 @@ export function VolumeTable({ rows, units }: VolumeTableProps) {
               <TableCell>
                 <MeterTrack fraction={frac} fill="var(--color-disk)" />
               </TableCell>
+              {action && (
+                <TableCell className="whitespace-nowrap text-right">
+                  {action(r)}
+                </TableCell>
+              )}
             </TableRow>
           );
         })}

@@ -305,13 +305,13 @@ pub struct VolumeInfo {
 }
 
 /// `disk3s1s1` -> `disk3`. `None` when the name is not a `diskN...` device.
-fn whole_disk(dev: &str) -> Option<String> {
+pub(super) fn whole_disk(dev: &str) -> Option<String> {
     let rest = dev.strip_prefix("disk")?;
     let digits = rest.bytes().take_while(u8::is_ascii_digit).count();
     (digits > 0).then(|| format!("disk{}", rest.get(..digits).unwrap_or_default()))
 }
 
-fn c_str(buf: &[libc::c_char]) -> std::borrow::Cow<'_, str> {
+pub(super) fn c_str(buf: &[libc::c_char]) -> std::borrow::Cow<'_, str> {
     // SAFETY: c_char is one byte and every bit pattern is a valid u8. The
     // borrowed byte slice has the same lifetime and bounds as the input.
     let bytes = unsafe { std::slice::from_raw_parts(buf.as_ptr().cast::<u8>(), buf.len()) };
@@ -336,7 +336,7 @@ impl Drop for MountBuffer {
         unsafe { libc::free(self.0.cast()) };
     }
 }
-fn with_mounts<T>(read: impl FnOnce(&[libc::statfs]) -> T) -> T {
+pub(super) fn with_mounts<T>(read: impl FnOnce(&[libc::statfs]) -> T) -> T {
     let mut mounts = MountBuffer(std::ptr::null_mut());
     // SAFETY: mounts.0 is an out-pointer owned by the guard above.
     let n = unsafe { getmntinfo_r_np(&mut mounts.0, libc::MNT_NOWAIT) };
@@ -352,7 +352,7 @@ fn with_mounts<T>(read: impl FnOnce(&[libc::statfs]) -> T) -> T {
 fn mounted() -> Vec<(VolumeInfo, u64, u64)> {
     with_mounts(volumes_of)
 }
-fn browsable(fs: &libc::statfs) -> bool {
+pub(super) fn browsable(fs: &libc::statfs) -> bool {
     fs.f_flags & libc::MNT_LOCAL as u32 != 0 && fs.f_flags & libc::MNT_DONTBROWSE as u32 == 0
 }
 

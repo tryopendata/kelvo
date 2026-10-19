@@ -23,6 +23,40 @@ export const commands = {
 	dockerStorageExecute: (token: string, confirmVolumes: boolean) => typedError<DockerStorageOperation, CommandError>(__TAURI_INVOKE("docker_storage_execute", { token, confirmVolumes })),
 	dockerStorageOperation: (operationId: string) => typedError<DockerStorageOperation, CommandError>(__TAURI_INVOKE("docker_storage_operation", { operationId })),
 	dockerContainerAction: (engineId: string, containerId: string, action: DockerContainerAction) => typedError<DockerStorageOperation, CommandError>(__TAURI_INVOKE("docker_container_action", { engineId, containerId, action })),
+	diskSpaceVolumes: () => typedError<SpaceVolume[], CommandError>(__TAURI_INVOKE("disk_space_volumes")),
+	diskSpaceStart: (volume: string, include: string[]) => typedError<SpaceScanStatus, CommandError>(__TAURI_INVOKE("disk_space_start", { volume, include })),
+	diskSpaceStatus: () => __TAURI_INVOKE<SpaceScanStatus>("disk_space_status"),
+	diskSpaceCancel: () => __TAURI_INVOKE<void>("disk_space_cancel"),
+	diskSpaceReport: () => __TAURI_INVOKE<{
+	id: number,
+	volume: SpaceVolume,
+	finished_ms: number | null,
+	duration_ms: number | null,
+	items: number | null,
+	used_bytes: number | null,
+	/**  Measured in files on the scanned volume. */
+	files_bytes: number | null,
+	/**  Other volumes in the container. */
+	volumes_bytes: number | null,
+	/**
+	 *  Used space not attributed to files or volumes; `None` when files exceed it
+	 *  (APFS clones counted for each copy).
+	 */
+	other_bytes: number | null,
+	unreadable: number,
+	/**  The first unreadable folders, relative to the volume root. */
+	unreadable_paths: string[],
+	/**  Labels of protected locations that were skipped. */
+	skipped: string[],
+	/**  The tree hit its retention cap: deep breakdowns are folded, totals are complete. */
+	truncated: boolean,
+} | null>("disk_space_report"),
+	diskSpaceSubtree: (report: number, node: number | null) => typedError<SpaceSubtree, CommandError>(__TAURI_INVOKE("disk_space_subtree", { report, node })),
+	diskSpaceLargestFiles: (report: number) => typedError<SpaceFile[], CommandError>(__TAURI_INVOKE("disk_space_largest_files", { report })),
+	/**  Shows an entry of a report in Finder. Paths come from the report, never the webview. */
+	diskSpaceReveal: (report: number, target: SpaceTarget) => typedError<null, CommandError>(__TAURI_INVOKE("disk_space_reveal", { report, target })),
+	/**  The path of an entry of a report, as Finder shows it, for Copy path. */
+	diskSpacePath: (report: number, target: SpaceTarget) => typedError<string, CommandError>(__TAURI_INVOKE("disk_space_path", { report, target })),
 	/**  Every host, the local one first. */
 	listHosts: () => __TAURI_INVOKE<HostRecord[]>("list_hosts"),
 	listRemoteHosts: () => __TAURI_INVOKE<RemoteHostRecord[]>("list_remote_hosts"),
@@ -499,6 +533,8 @@ export type CommandError = { kind: "update"; message: string } |
 { kind: "store_too_new"; found: number; supported: number } |
 /**  Any other history query or write failure. */
 { kind: "store"; message: string } |
+/**  A disk space scan could not start, or its report is gone. */
+{ kind: "disk_space"; message: string } |
 /**  A bug or a crashed worker inside Kelvo (a command's task panicked). Not retryable. */
 { kind: "internal"; message: string } |
 /**  The settings patch produced settings that fail validation. Nothing changed. */
@@ -948,6 +984,11 @@ export type Edition = {
 	 *  `process_signal` answers `unavailable`; the UI should hide the actions.
 	 */
 	process_signal: boolean,
+	/**
+	 *  The Disk page's Space view. False in the App Store edition, whose sandbox cannot
+	 *  read other apps' folders; the UI should hide the view.
+	 */
+	disk_space: boolean,
 };
 
 export type Event = {
@@ -2228,6 +2269,133 @@ export type SignalRefusal =
 "kernel_task" | "launchd" | "window_server" | "login_window" |
 /**  Kelvo itself or one of its helpers. */
 "kelvo";
+
+export type SpaceCrumb = {
+	id: number,
+	name: string,
+};
+
+export type SpaceFile = {
+	/**  Index for `reveal`. */
+	index: number,
+	name: string,
+	/**  Parent folder relative to the volume root, with "/" separators. */
+	parent: string,
+	bytes: number | null,
+};
+
+export type SpaceKind = "folder" | "file" |
+/**  Children too small to show, merged into one entry. */
+"smaller" |
+/**  Another volume in the same APFS container (System, VM, Preboot...). */
+"volume" |
+/**
+ *  Used space no measured file or volume accounts for: snapshots, APFS metadata,
+ *  unreadable and skipped folders, unmounted volumes. Not measured, so drawn as a gap.
+ */
+"other";
+
+/**  One entry in a folder's breakdown. */
+export type SpaceNode = {
+	/**  Stable within one report. Synthetic entries (smaller, volumes, other) have none. */
+	id: number | null,
+	name: string,
+	kind: SpaceKind,
+	/**  Allocated bytes. For an unfinished folder, what was measured so far. */
+	bytes: number | null,
+	/**  Files below this entry (merged entries: how many were merged). */
+	items: number | null,
+	/**  The folder's subtree is completely measured. */
+	done: boolean,
+	/**  It can be opened: a finished or in-progress folder with a breakdown. */
+	openable: boolean,
+};
+
+export type SpacePhase = "idle" | "scanning" | "done" | "cancelled" | "failed";
+
+/**  A privacy-protected location (TCC) that a default scan does not enter. */
+export type SpaceProtected = {
+	/**  Path relative to the scan root; passed back in `include`. */
+	key: string,
+	/**  Display name ("Downloads", "App containers"). */
+	label: string,
+};
+
+/**  A finished report's summary. */
+export type SpaceReport = {
+	id: number,
+	volume: SpaceVolume,
+	finished_ms: number | null,
+	duration_ms: number | null,
+	items: number | null,
+	used_bytes: number | null,
+	/**  Measured in files on the scanned volume. */
+	files_bytes: number | null,
+	/**  Other volumes in the container. */
+	volumes_bytes: number | null,
+	/**
+	 *  Used space not attributed to files or volumes; `None` when files exceed it
+	 *  (APFS clones counted for each copy).
+	 */
+	other_bytes: number | null,
+	unreadable: number,
+	/**  The first unreadable folders, relative to the volume root. */
+	unreadable_paths: string[],
+	/**  Labels of protected locations that were skipped. */
+	skipped: string[],
+	/**  The tree hit its retention cap: deep breakdowns are folded, totals are complete. */
+	truncated: boolean,
+};
+
+/**  Progress of the current (or last) scan. Polled while a scan runs. */
+export type SpaceScanStatus = {
+	phase: SpacePhase,
+	/**  Report id of the scan this describes; queries use it. */
+	report_id: number | null,
+	volume: string | null,
+	elapsed_ms: number | null,
+	/**  Files counted so far. */
+	items: number | null,
+	/**  Bytes measured in files so far. */
+	measured_bytes: number | null,
+	/**  The volume's used bytes, the denominator for progress ("about 62%"). */
+	used_bytes: number | null,
+	/**  The folder being read, relative to the volume root. Absent when not scanning. */
+	current: string | null,
+	error: string | null,
+};
+
+/**  A folder and its largest entries, sorted largest first, with merges applied. */
+export type SpaceSubtree = {
+	folder: SpaceNode,
+	/**  From the volume root to this folder, inclusive. */
+	path: SpaceCrumb[],
+	children: SpaceNode[],
+	/**
+	 *  While the folder is unfinished: its total not yet attributed to a finished entry.
+	 *  At the volume root this is measured against the volume's used bytes.
+	 */
+	unmeasured_bytes: number | null,
+	/**  The total the breakdown is drawn against (folder bytes, or used bytes at the root). */
+	total_bytes: number | null,
+};
+
+/**  What `disk_space_reveal` shows in Finder. */
+export type SpaceTarget = { kind: "node"; id: number } | { kind: "largest_file"; index: number };
+
+/**  A volume the user can scan, as Finder shows it. */
+export type SpaceVolume = {
+	/**  The browsable mount point ("/" for the boot volume). Used as the volume's id. */
+	mount: string,
+	/**  Finder's name ("Macintosh HD"). */
+	name: string,
+	is_boot: boolean,
+	/**  Used space Finder reports for the volume (its APFS container for APFS volumes). */
+	used_bytes: number | null,
+	total_bytes: number | null,
+	/**  Locations macOS protects with privacy prompts. Skipped unless included by key. */
+	protected: SpaceProtected[],
+};
 
 /**  A process as the store keeps it: fewer fields than [`LiveProcess`]. */
 export type StoredProcess = {

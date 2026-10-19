@@ -29,6 +29,7 @@ export function useMarkProcessSignalUnavailable(): () => void {
   return useCallback(
     () =>
       queryClient.setQueryData<Edition>(appKeys.edition, (e) => ({
+        disk_space: false,
         ...e,
         process_signal: false,
       })),

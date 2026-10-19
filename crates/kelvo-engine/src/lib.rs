@@ -122,6 +122,8 @@ pub use ticker::{FakeClock, FakeTicker, ThreadTicker, Ticker, leeway_for};
 pub use usage::{USAGE_BUCKET_MS, UsageApp, UsageByApp, UsageKey, UsageProc, UsageTotal};
 
 #[cfg(unix)]
+pub mod disk_space;
+#[cfg(unix)]
 pub mod docker;
 
 pub use history_store::{HistoryStore, HistoryStoreError, HistoryUnavailableReason};

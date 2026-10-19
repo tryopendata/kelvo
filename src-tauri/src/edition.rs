@@ -12,12 +12,16 @@ pub struct Edition {
     /// Quit and Force Quit on the Processes page. False in the App Store edition, where
     /// `process_signal` answers `unavailable`; the UI should hide the actions.
     pub process_signal: bool,
+    /// The Disk page's Space view. False in the App Store edition, whose sandbox cannot
+    /// read other apps' folders; the UI should hide the view.
+    pub disk_space: bool,
 }
 
 impl Edition {
     pub fn current() -> Self {
         Self {
             process_signal: crate::process_signal::signals_available(),
+            disk_space: crate::disk_space::available(),
         }
     }
 }
@@ -30,10 +34,11 @@ mod tests {
     fn serializes_with_the_field_names_the_ui_reads() {
         assert_eq!(
             serde_json::to_value(Edition {
-                process_signal: true
+                process_signal: true,
+                disk_space: true,
             })
             .unwrap(),
-            serde_json::json!({ "process_signal": true })
+            serde_json::json!({ "process_signal": true, "disk_space": true })
         );
     }
 }

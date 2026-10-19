@@ -68,6 +68,12 @@ import type {
   SettingsChanged,
   SettingsPatch,
   SettingsSnapshot,
+  SpaceFile,
+  SpaceReport,
+  SpaceScanStatus,
+  SpaceSubtree,
+  SpaceTarget,
+  SpaceVolume,
   SubscriptionInfo,
   UpdateStatus,
   UsageByApp,
@@ -318,6 +324,37 @@ export interface Transport {
   ): Promise<ProcessSignalResult>;
   /** What this build can do (D-065); fixed for the app run. */
   getEdition(): Promise<Edition>;
+
+  /** Volumes this Mac can scan for a space report (local only). */
+  diskSpaceVolumes(): Promise<CommandResult<SpaceVolume[]>>;
+  /**
+   * Starts scanning a volume; `include` lists protected locations (by key)
+   * the user chose to enter. Fails while another scan runs.
+   */
+  diskSpaceStart(
+    volume: string,
+    include: string[]
+  ): Promise<CommandResult<SpaceScanStatus>>;
+  /** Progress of the running scan, or how the last one ended. */
+  diskSpaceStatus(): Promise<SpaceScanStatus>;
+  diskSpaceCancel(): Promise<void>;
+  /** The finished report, kept while the dashboard window exists. */
+  diskSpaceReport(): Promise<SpaceReport | null>;
+  /** A folder's breakdown (`node: null` is the volume root), during or after a scan. */
+  diskSpaceSubtree(
+    report: number,
+    node: number | null
+  ): Promise<CommandResult<SpaceSubtree>>;
+  diskSpaceLargestFiles(report: number): Promise<CommandResult<SpaceFile[]>>;
+  diskSpaceReveal(
+    report: number,
+    target: SpaceTarget
+  ): Promise<CommandResult<null>>;
+  /** An entry's path as Finder shows it ("/Users/…" on the boot volume). */
+  diskSpacePath(
+    report: number,
+    target: SpaceTarget
+  ): Promise<CommandResult<string>>;
   getUpdateStatus(): Promise<UpdateStatus>;
   checkForUpdates(): Promise<CommandResult<UpdateStatus>>;
   installUpdate(version: string): Promise<CommandResult<null>>;

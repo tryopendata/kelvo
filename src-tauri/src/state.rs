@@ -59,6 +59,8 @@ use crate::settings::{
 pub struct AppState {
     pub docker: kelvo_engine::docker::DockerHandle,
     pub docker_streams: crate::docker::DockerStreams,
+    /// On-demand disk space scans; the report lives while the dashboard does.
+    pub disk_space: Arc<kelvo_engine::disk_space::SpaceService>,
     /// The local host's id.
     pub local: HostId,
     pub hosts: HostRegistry,
@@ -147,6 +149,7 @@ impl AppState {
         let state = AppState {
             docker: docker.clone(),
             docker_streams: crate::docker::DockerStreams::default(),
+            disk_space: Arc::default(),
             local,
             hosts: HostRegistry::new(),
             live: LiveRegistry::new(),

@@ -45,6 +45,7 @@ mod catalog;
 mod codes;
 mod compat;
 pub mod disk_io;
+pub mod disk_space;
 pub mod docker;
 pub mod docker_storage;
 mod event;

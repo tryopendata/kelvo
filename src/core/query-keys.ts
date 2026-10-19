@@ -327,3 +327,19 @@ export const dockerKeys = {
       beforeId,
     ] as const,
 };
+
+/**
+ * Disk space reports (plan/disk-space-report.md): local only, kept by Rust
+ * while the dashboard exists. Subtrees are keyed by report and folder, so a
+ * new scan never shows the previous report's breakdown.
+ */
+export const diskSpaceKeys = {
+  all: ["disk-space"] as const,
+  volumes: ["disk-space", "volumes"] as const,
+  status: ["disk-space", "status"] as const,
+  report: ["disk-space", "report"] as const,
+  /** `live` while the scan runs: the finished tree is fetched again once. */
+  subtree: (report: number, node: number | null, live: boolean) =>
+    ["disk-space", "subtree", report, node, live] as const,
+  largest: (report: number) => ["disk-space", "largest", report] as const,
+};

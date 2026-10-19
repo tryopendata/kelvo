@@ -791,5 +791,7 @@ mod tests {
 }
 
 #[cfg(unix)]
+pub mod disk_space;
+#[cfg(unix)]
 pub mod docker;
 pub mod docker_storage;

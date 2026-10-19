@@ -71,6 +71,9 @@ pub enum CommandError {
     /// Any other history query or write failure.
     #[error("history store: {message}")]
     Store { message: String },
+    /// A disk space scan could not start, or its report is gone.
+    #[error("{message}")]
+    DiskSpace { message: String },
     /// A bug or a crashed worker inside Kelvo (a command's task panicked). Not retryable.
     #[error("internal error: {message}")]
     Internal { message: String },

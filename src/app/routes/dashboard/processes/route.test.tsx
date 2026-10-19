@@ -297,7 +297,10 @@ describe("Processes page, App Store edition (D-065)", () => {
       scenarios: ["appstore"],
       autoTick: false,
     });
-    transport.getEdition = async () => ({ process_signal: true });
+    transport.getEdition = async () => ({
+      process_signal: true,
+      disk_space: true,
+    });
     const { user } = renderWithProviders(
       <>
         <ProcessesRoute />

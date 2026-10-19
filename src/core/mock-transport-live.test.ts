@@ -375,13 +375,19 @@ describe("mock history reset and edition", () => {
 
   it("reports the App Store edition and refuses to signal there", async () => {
     const t = createMockTransport({ scenarios: ["appstore"] });
-    expect(await t.getEdition()).toEqual({ process_signal: false });
+    expect(await t.getEdition()).toEqual({
+      process_signal: false,
+      disk_space: false,
+    });
     expect(await t.processSignal(MOCK_HOST_ID, 1, 1, "quit")).toEqual({
       status: "error",
       error: { kind: "unavailable" },
     });
     const full = createMockTransport();
-    expect(await full.getEdition()).toEqual({ process_signal: true });
+    expect(await full.getEdition()).toEqual({
+      process_signal: true,
+      disk_space: true,
+    });
   });
 
   it("emits hosts-changed with the host list", () => {

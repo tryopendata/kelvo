@@ -8,6 +8,7 @@ mod addresses;
 mod bench;
 mod calibration;
 mod commands;
+mod disk_space;
 mod docker;
 pub mod edition;
 mod error;
@@ -74,6 +75,11 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             docker::docker_storage_scan, docker::docker_storage_prepare,
             docker::docker_storage_execute, docker::docker_storage_operation,
             docker::docker_container_action,
+            disk_space::disk_space_volumes, disk_space::disk_space_start,
+            disk_space::disk_space_status, disk_space::disk_space_cancel,
+            disk_space::disk_space_report, disk_space::disk_space_subtree,
+            disk_space::disk_space_largest_files, disk_space::disk_space_reveal,
+            disk_space::disk_space_path,
             commands::list_hosts,
             remote::list_remote_hosts,
             remote::remote_ssh_config_status,
@@ -272,6 +278,9 @@ pub fn run() {
                 if let Some(state) = window.try_state::<AppState>() {
                     state.live.window_closed(window.label());
                     state.docker_streams.window_closed(&state, window.label());
+                    if window.label() == windows::DASHBOARD {
+                        state.disk_space.clear();
+                    }
                 }
             }
             _ => {}

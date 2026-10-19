@@ -141,6 +141,10 @@ pub fn hide_dashboard(window: &Window) {
         tracing::warn!("hiding the dashboard: {e}");
     }
     set_visible(&app, DASHBOARD, false);
+    // A scan never runs in the backgrounded app; the report stays until the window goes.
+    if let Some(state) = app.try_state::<AppState>() {
+        state.disk_space.cancel();
+    }
     let generation = bump(&app);
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(DESTROY_AFTER).await;

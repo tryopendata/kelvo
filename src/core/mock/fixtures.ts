@@ -22,6 +22,8 @@ export type ScenarioName =
   | "disk-io-no-ops"
   | "disk-io-unavailable"
   | "disk-io-gap"
+  | "disk-space-eject"
+  | "disk-space-boot-only"
   | "ssh-auth"
   | "ssh-no-config"
   | "ssh-untrusted"
@@ -71,6 +73,8 @@ export const SCENARIOS: readonly ScenarioName[] = [
   "disk-io-no-ops",
   "disk-io-unavailable",
   "disk-io-gap",
+  "disk-space-eject",
+  "disk-space-boot-only",
 
   "ssh-auth",
   "ssh-untrusted",

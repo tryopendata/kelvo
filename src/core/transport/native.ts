@@ -1,6 +1,7 @@
 import { commands, events, type LiveMsg } from "@core/generated/bindings";
 import { Channel } from "@tauri-apps/api/core";
 import type { Transport, Unsubscribe } from "./contracts";
+import { nativeDiskSpace } from "./native-disk-space";
 import { nativeDocker } from "./native-docker";
 import { nativeHistory } from "./native-history";
 import { nativeRemote } from "./native-remote";
@@ -34,6 +35,7 @@ export function createTauriTransport(label: string): Transport {
     kind: "tauri",
     windowLabel: () => label,
     ...nativeDocker(),
+    ...nativeDiskSpace(),
     listHosts: () => commands.listHosts(),
     ...nativeRemote(),
     getHost: (host) => commands.getHost(host),

@@ -3505,3 +3505,32 @@ rejected before changing the old bundle; the installed app and remote helper
 passed deep/strict code-signature verification. `com.apple.quarantine` was absent
 on that replacement. This establishes the archive/install behavior in the test,
 not Gatekeeper acceptance on another Mac or restart in a live user session.
+
+
+## D-114: On-demand disk space report in Disk
+
+Status: Accepted. Date: 2026-10-19. The user asked for a largest-consumers report in Disk
+with a drillable treemap and fast first results; plan in `disk-space-report.md`.
+
+Space is a second view of Disk behind an Activity | Space switcher. A scan is started by
+the user, runs one at a time, is read-only and is kept in memory only: the scan cancels
+when the dashboard hides and the report is dropped when the dashboard is destroyed. It is
+local only; a remote host shows a This Mac action. App Store builds omit the view.
+
+Rust walks the volume in process with `getattrlistbulk` on a work-stealing queue (4
+workers on the boot volume, 2 elsewhere, utility QoS, dataless materialization off), with
+`du`'s rules: no symlinks followed, one device, hard links once, allocated size. Measured
+1.7 M files in 3.3 s against 18.6 s for `du`, within 0.1% of its totals. Rust owns
+the accounting: sibling APFS volumes sized by `ATTR_VOL_SPACEUSED`, Other as used minus
+files and siblings (omitted, never negative, when clones push files above used), the
+smaller-items merge (under 0.5% of the folder, past the top 120, or under used/1e6), and
+the Finder path of each item. Protected home locations are skipped unless included.
+
+The client lays out with `d3-hierarchy` squarify on absolutely positioned elements. While
+scanning, finished entries keep their finish order against a fixed total, so earlier tiles
+do not move as later ones finish. These DTOs are session-only and off the wire, so they
+are not a one-way door.
+
+Unverified at acceptance: privacy prompts on a fresh account and after an update, the
+dataless policy against File Provider folders, clone fixtures and sampler tick lateness
+during a scan.
