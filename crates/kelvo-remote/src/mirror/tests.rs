@@ -400,3 +400,29 @@ fn capping_leaves_a_malformed_row_for_validation_to_reject() {
             .is_err()
     );
 }
+
+/// The live ring refills from what reached the mirror: durable pages and the recent
+/// snapshot the agent has not committed yet, so the hour has no hole at its end.
+#[test]
+fn ring_history_merges_durable_rows_with_the_recent_snapshot() {
+    let dir = tempfile::tempdir().unwrap();
+    let m = mirror(dir.path(), 2);
+    let epoch = Uuid::new_v4();
+    m.cursor(Tier::S10, epoch, SyncKinds::ALL).unwrap();
+    m.ingest(page(epoch), SyncKinds::ALL).unwrap();
+    let mut tail = row();
+    tail.bucket_ts = TS + 10_000;
+    tail.stats = vec![4., 6., 5.];
+    m.recent(epoch, Tier::S10, TS + 20_000, vec![layout()], vec![tail])
+        .unwrap();
+
+    let history = m.ring_history(TS + 25_000).expect("the mirror is readable");
+    assert_eq!(history.bucket_ms, 10_000);
+    let cpu = history
+        .series
+        .iter()
+        .find(|s| s.key == keys()[0])
+        .expect("cpu.total is in the ring's history");
+    let points: Vec<(i64, f32)> = cpu.points.iter().map(|p| (p.t, p.avg)).collect();
+    assert_eq!(points, vec![(TS, 2.), (TS + 10_000, 5.)]);
+}

@@ -557,9 +557,10 @@ impl Stream {
         })
     }
 
-    /// The host's clock stepped: what follows is on another timeline.
+    /// What follows is on another timeline: the host's clock stepped, or a remote
+    /// source refilled its ring from history.
     fn restart_timeline(&mut self) {
-        tracing::info!(host = %self.feed.host(), "live channel restarts after a clock step");
+        tracing::info!(host = %self.feed.host(), "live channel restarts on a new timeline");
         self.last_ts = None;
         self.timeline = None;
         self.sent_until = i64::MIN;
@@ -575,9 +576,14 @@ impl Stream {
             return Ok(());
         }
         if self.timeline.is_some_and(|t| t != f.timeline) {
-            // The source's clock stepped (D-064); without this the stream would skip
-            // every frame until the clock caught up with what it had sent.
-            self.restart_timeline();
+            // The source's clock stepped (D-064), or a remote source refilled its ring
+            // from history: send the ring's rows on the new timeline. Without this the
+            // stream would skip every frame until the clock caught up with what it had
+            // sent. The frame still goes out for its readouts; the window drops it as a
+            // duplicate row.
+            self.catch_up()?;
+            self.sent_until = i64::MIN;
+            self.last_frame_ts = None;
         } else if f.ts_ms <= self.sent_until {
             // Already sent as a backfill row (published between the subscribe and the
             // ring read).

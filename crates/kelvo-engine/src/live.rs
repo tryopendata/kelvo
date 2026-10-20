@@ -29,8 +29,8 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::collections::BTreeMap;
 
 use kelvo_schema::lock::LockExt;
-use kelvo_schema::{CATALOG, HostId, SeriesKey};
-use kelvo_store::{BucketRow, HistoryResult, NetBucket};
+use kelvo_schema::{CATALOG, HostId, Labels, SeriesKey, SeriesSelector, Tier};
+use kelvo_store::{BucketRow, HistoryQuery, HistoryResult, NetBucket, TierChoice};
 
 use crate::accum::{Rollups, recent_rows};
 use crate::bus::{Bus, BusMsg, EngineStatus, FrameLayout, LiveFrame, Subscriber};
@@ -146,56 +146,43 @@ impl LiveHub {
     /// Does nothing once the ring has rows: a frame is always newer and better than a
     /// stored average. Returns the rows added.
     pub fn warm(&self, history: &HistoryResult) -> usize {
-        let Ok(interval) = u32::try_from(history.bucket_ms) else {
+        let Some(warm) = WarmRows::from(history) else {
             return 0;
         };
-        if history.series.is_empty() || interval == 0 {
-            return 0;
-        }
-        let n = history.series.len();
-        let mut rows: BTreeMap<i64, Vec<f32>> = BTreeMap::new();
-        for (i, s) in history.series.iter().enumerate() {
-            for p in &s.points {
-                if let Some(v) = rows
-                    .entry(p.t + history.bucket_ms)
-                    .or_insert_with(|| vec![f32::NAN; n])
-                    .get_mut(i)
-                {
-                    *v = p.avg;
-                }
-            }
-        }
-        let layout = Arc::new(FrameLayout {
-            layout_no: WARM_LAYOUT_NO,
-            series: history.series.iter().map(|s| s.key.clone()).collect(),
-        });
-        let holds: Arc<[u32]> = history
-            .series
-            .iter()
-            .map(|s| {
-                let period = CATALOG
-                    .iter()
-                    .find(|d| d.id == s.key.metric)
-                    .map_or(0, |d| u32::from(d.period_s) * 1_000);
-                hold_ms(period.max(interval))
-            })
-            .collect();
         let mut r = self.lock();
         if !r.ring.is_empty() {
             return 0;
         }
-        let added = rows.len();
-        for (ts_ms, values) in rows {
+        let added = warm.rows.len();
+        for (ts_ms, values) in warm.rows {
             r.ring.push(
                 ts_ms,
-                interval,
+                warm.interval,
                 0,
-                Arc::clone(&layout),
+                Arc::clone(&warm.layout),
                 values.into(),
-                Arc::clone(&holds),
+                Arc::clone(&warm.holds),
             );
         }
         added
+    }
+
+    /// Like [`Self::warm`], for a ring that already has rows: stored buckets replace the
+    /// rows that measured nothing (a remote host's summary frames, sent while no window
+    /// watched it) and measured rows stay ([`Ring::refill`]). Every row moves to
+    /// `timeline`, which the source's next frames carry, so open windows drop what they
+    /// hold and take the ring again. Returns the stored rows added.
+    pub fn refill(&self, history: &HistoryResult, timeline: u32) -> usize {
+        let Some(warm) = WarmRows::from(history) else {
+            return 0;
+        };
+        self.lock().ring.refill(
+            warm.rows.into_iter().map(|(ts, v)| (ts, v.into())),
+            warm.interval,
+            timeline,
+            &warm.layout,
+            &warm.holds,
+        )
     }
 
     /// Raw ring rows at or after `since_ms`, as evenly spaced segments in time order.
@@ -207,10 +194,13 @@ impl LiveHub {
     /// stored warm-up rows on timeline 0 are already available to opening windows.
     pub fn backfill_anchor(&self) -> Option<(i64, u32)> {
         let r = self.lock();
+        // The ring's timeline, not the frame's: a refill moves the ring to a new one
+        // before the next frame arrives.
+        let timeline = r.ring.last_timeline().unwrap_or(0);
         r.frame
             .as_ref()
-            .map(|f| (f.ts_ms, f.timeline))
-            .or_else(|| r.ring.last_ts().map(|ts| (ts, 0)))
+            .map(|f| (f.ts_ms, timeline))
+            .or_else(|| r.ring.last_ts().map(|ts| (ts, timeline)))
     }
 
     /// The most recent frame. Its `ts_ms` is "now" on the source's clock, which is what a
@@ -346,6 +336,80 @@ impl LiveHub {
     }
 }
 
+/// The history that warms or refills `host`'s ring ending at `now`: the ring's hour of
+/// 10 s buckets of every persisted series.
+pub fn ring_history_query(host: HostId, now: i64) -> HistoryQuery {
+    HistoryQuery {
+        host,
+        selectors: CATALOG
+            .iter()
+            .filter(|d| d.persisted)
+            .map(|d| SeriesSelector {
+                metric: d.id.clone(),
+                labels: Labels::default(),
+            })
+            .collect(),
+        from_ms: now - crate::RING_SPAN_MS,
+        to_ms: now,
+        tier: TierChoice::Fixed(Tier::S10),
+        // One more than the hour holds: `now` is off the 10 s grid, so the range touches
+        // a partial bucket at each end, and one slot short merges pairs into 20 s points.
+        max_points: u32::try_from(crate::RING_SPAN_MS / 10_000 + 1).unwrap_or(u32::MAX),
+    }
+}
+
+/// Stored 10 s buckets as ring rows ([`LiveHub::warm`]): one row per bucket end, with
+/// the warm layout and each series' hold.
+struct WarmRows {
+    interval: u32,
+    layout: Arc<FrameLayout>,
+    holds: Arc<[u32]>,
+    rows: BTreeMap<i64, Vec<f32>>,
+}
+
+impl WarmRows {
+    fn from(history: &HistoryResult) -> Option<Self> {
+        let interval = u32::try_from(history.bucket_ms).ok()?;
+        if history.series.is_empty() || interval == 0 {
+            return None;
+        }
+        let n = history.series.len();
+        let mut rows: BTreeMap<i64, Vec<f32>> = BTreeMap::new();
+        for (i, s) in history.series.iter().enumerate() {
+            for p in &s.points {
+                if let Some(v) = rows
+                    .entry(p.t + history.bucket_ms)
+                    .or_insert_with(|| vec![f32::NAN; n])
+                    .get_mut(i)
+                {
+                    *v = p.avg;
+                }
+            }
+        }
+        let layout = Arc::new(FrameLayout {
+            layout_no: WARM_LAYOUT_NO,
+            series: history.series.iter().map(|s| s.key.clone()).collect(),
+        });
+        let holds = history
+            .series
+            .iter()
+            .map(|s| {
+                let period = CATALOG
+                    .iter()
+                    .find(|d| d.id == s.key.metric)
+                    .map_or(0, |d| u32::from(d.period_s) * 1_000);
+                hold_ms(period.max(interval))
+            })
+            .collect();
+        Some(Self {
+            interval,
+            layout,
+            holds,
+            rows,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use kelvo_schema::{MetricId, SeriesKey};
@@ -421,6 +485,103 @@ mod tests {
         assert_eq!(hub.backfill(i64::MIN).len(), 3);
         // A ring with rows is never warmed again.
         assert_eq!(hub.warm(&history), 0);
+    }
+
+    /// A remote host's ring while no window watched it: summary frames, which measure
+    /// nothing. Stored buckets replace them; measured rows stay.
+    #[test]
+    fn refill_replaces_rows_that_measured_nothing_and_keeps_measured_ones() {
+        let hub = LiveHub::default();
+        let l = layout(0);
+        let summary = |ts_ms| {
+            BusMsg::Frame(Arc::new(LiveFrame {
+                ts_ms,
+                interval_ms: 5_000,
+                layout: Arc::clone(&l),
+                timeline: 0,
+                values: vec![f32::NAN].into(),
+                held: vec![1.0].into(),
+                holds: vec![12_500].into(),
+            }))
+        };
+        for ts in (5_000..=40_000).step_by(5_000) {
+            hub.publish(summary(ts));
+        }
+        // A window opens: 1 s frames from 41 s.
+        for ts in [41_000, 42_000] {
+            hub.publish(frame(ts, &l));
+        }
+        // Buckets ending at 10 s to 50 s; the last two overlap the measured rows.
+        let history = s10(vec![stored(
+            &[
+                (0, 10.0),
+                (10_000, 20.0),
+                (20_000, 30.0),
+                (30_000, 40.0),
+                (40_000, 50.0),
+            ],
+            "cpu.total",
+        )]);
+        assert_eq!(hub.refill(&history, 7), 4);
+        assert_eq!(
+            hub.backfill_anchor(),
+            Some((42_000, 7)),
+            "a window catching up before the next frame sees the new timeline"
+        );
+
+        let segs = hub.backfill(i64::MIN);
+        assert!(segs.iter().all(|s| s.timeline == 7), "one new timeline");
+        let rows: Vec<(i64, f32)> = segs
+            .iter()
+            .flat_map(|s| {
+                s.rows.iter().enumerate().map(|(i, r)| {
+                    let ts = s.start_ms + i64::try_from(i).unwrap() * i64::from(s.interval_ms);
+                    (ts, r[0])
+                })
+            })
+            .collect();
+        assert_eq!(
+            rows,
+            vec![
+                (10_000, 10.0),
+                (20_000, 20.0),
+                (30_000, 30.0),
+                (40_000, 40.0),
+                (41_000, 1.0),
+                (42_000, 1.0),
+            ],
+            "no summary rows, and no bucket over a measured row"
+        );
+
+        // Nothing left to fill: the ring stays as it is, on its timeline.
+        assert_eq!(hub.refill(&history, 8), 0);
+        assert!(hub.backfill(i64::MIN).iter().all(|s| s.timeline == 7));
+    }
+
+    /// The recent snapshot carries the bucket still open at the source; its partial
+    /// average ends after the newest row and stays out of the ring.
+    #[test]
+    fn refill_leaves_out_a_bucket_ending_after_the_newest_row() {
+        let hub = LiveHub::default();
+        let l = layout(0);
+        hub.publish(BusMsg::Frame(Arc::new(LiveFrame {
+            ts_ms: 25_000,
+            interval_ms: 5_000,
+            layout: Arc::clone(&l),
+            timeline: 0,
+            values: vec![f32::NAN].into(),
+            held: vec![1.0].into(),
+            holds: vec![12_500].into(),
+        })));
+        let history = s10(vec![stored(
+            &[(0, 10.0), (10_000, 20.0), (20_000, 3.0)],
+            "cpu.total",
+        )]);
+        assert_eq!(hub.refill(&history, 1), 2);
+        let segs = hub.backfill(i64::MIN);
+        let last = segs.last().unwrap();
+        let last_ts = last.start_ms + i64::try_from(last.rows.len() - 1).unwrap() * 10_000;
+        assert_eq!(last_ts, 20_000, "no row at 30 s from the open bucket");
     }
 
     #[test]

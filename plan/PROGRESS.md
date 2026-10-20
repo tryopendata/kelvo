@@ -83,6 +83,11 @@ Status values: Not started, In progress, Blocked (say on what), Done (with the v
 
 ## Log
 
+### 2026-10-20 (Remote live charts show the history collected while disconnected)
+
+- A remote host's 5 min to 1 h charts started at the moment a window opened, although the agent kept collecting and the mirror had synced the hour. The charts draw from the host's live ring, and while no window watches a remote host the ring holds summary frames, which measure nothing. Now the first recent snapshot of live detail refills the ring from the mirror (durable rows plus that snapshot, `Mirror::ring_history`), keeping measured rows and replacing only the summary spans (`LiveHub::refill`, `Ring::refill`); live detail starting also syncs first, so the snapshot meets the durable rows. The refilled ring is on a new timeline, and a window stream that sees a frame on a new timeline resends the ring's rows on it (also the D-064 clock-step path), which the window takes in place of what it held. No wire change; the refilled hour is at 10 s resolution, like the local warm-up at launch (D-097).
+- Verified: regression tests for the ring merge, the real mirror query (SQLite), the session trigger and an open window's stream, each revert-checked, plus the frontend reducer replacing held rows on the new timeline.
+
 ### 2026-10-20 (Headless Linux agent, D-116)
 
 - Host facts, the data-dir bootstrap and the metrics server moved into crates (`kelvo_engine::host_record`, `identity::open_local`, `kelvo_remote::HostServer`, `stdio_bridge`), with no behaviour change for the Mac. Engine seams: per-collector `series_revision`, enforced cardinality caps and `Settings::agent_default`.

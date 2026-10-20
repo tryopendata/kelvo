@@ -242,6 +242,58 @@ describe("seriesWindow", () => {
     expect(w.values).toEqual([null, 1, 2, null, null, null, 6, null]);
   });
 
+  it("replaces held rows with a remote host's refilled history on a new timeline", () => {
+    // A remote host no window watched: rows that measured nothing.
+    const summary = apply([
+      status(),
+      layout,
+      {
+        kind: "backfill",
+        holds_ms: [],
+        layout_no: 1,
+        timeline: 0,
+        start_ms: 5000,
+        interval_ms: 5000,
+        rows: [
+          [null, null, null],
+          [null, null, null],
+        ],
+      },
+    ]);
+    // The ring refilled from the mirror: stored buckets, then the live frame that
+    // also arrives as a frame and is dropped as a duplicate row.
+    const s = apply(
+      [
+        {
+          kind: "backfill",
+          holds_ms: [],
+          layout_no: 1,
+          timeline: 1,
+          start_ms: 4000,
+          interval_ms: 1000,
+          rows: [
+            [20, 0, 0],
+            [25, 0, 0],
+            [30, 0, 0],
+          ],
+        },
+        {
+          kind: "frame",
+          ts_ms: 6000,
+          layout_no: 1,
+          timeline: 1,
+          values: [30, 0, 0],
+          held: [30, 0, 0],
+        },
+      ],
+      summary
+    );
+    const w = seriesWindow(s, "cpu.total", 3000);
+    expect(w.tEndMs).toBe(6000);
+    expect(w.values).toEqual([20, 25, 30]);
+    expect(s.held["cpu.total"]).toBe(30);
+  });
+
   it("reads 2 s frames at a 1 s interval as one run (Performance mode)", () => {
     const frame = (ts: number): LiveMsg => ({
       kind: "frame",

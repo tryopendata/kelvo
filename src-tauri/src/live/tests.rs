@@ -283,6 +283,74 @@ fn with_head(rest: &[&str]) -> Vec<String> {
     HEAD.iter().chain(rest).map(|s| s.to_string()).collect()
 }
 
+/// A remote host that no window watched: its ring holds summary frames, which measure
+/// nothing, and a dashboard opened on it starts with no history. Once the source refills
+/// the ring from its mirror, the next frame (on the new timeline) brings the open
+/// window the stored hour, not just the frames since it opened.
+#[tokio::test(start_paused = true)]
+async fn an_open_window_receives_the_history_a_refilled_ring_brings() {
+    let feed = FakeFeed::new();
+    let l = layout(1, 1);
+    for ts in [5_000, 10_000, 15_000, 20_000] {
+        feed.frame(&l, ts, vec![f32::NAN].into(), vec![3.0].into());
+    }
+    let (s, rx, _) = sink();
+    let reg = registry(&["dashboard"]);
+    reg.subscribe("dashboard", feed.clone(), s, req(3_600_000));
+    drain(&rx).await;
+
+    let history = kelvo_store::HistoryResult {
+        tier: kelvo_schema::Tier::S10,
+        bucket_ms: 10_000,
+        series: vec![kelvo_store::SeriesPoints {
+            key: SeriesKey::bare(MetricId::from_static("cpu.total")),
+            points: [(0, 20.0), (10_000, 25.0)]
+                .into_iter()
+                .map(|(t, avg)| kelvo_store::Point {
+                    t,
+                    min: avg,
+                    max: avg,
+                    avg,
+                })
+                .collect(),
+        }],
+        gaps: Vec::new(),
+    };
+    feed.step();
+    assert_eq!(feed.hub.refill(&history, 1), 2);
+    feed.tick(&l, 21_000, 7.0);
+
+    let rows: Vec<(i64, u32, Vec<Option<f32>>)> = drain_raw(&rx)
+        .await
+        .into_iter()
+        .filter_map(|m| match m {
+            LiveMsg::Backfill {
+                start_ms,
+                interval_ms,
+                timeline,
+                rows,
+                ..
+            } => Some(
+                rows.into_iter()
+                    .enumerate()
+                    .map(|(i, r)| (start_ms + i as i64 * i64::from(interval_ms), timeline, r))
+                    .collect::<Vec<_>>(),
+            ),
+            _ => None,
+        })
+        .flatten()
+        .collect();
+    assert_eq!(
+        rows,
+        vec![
+            (10_000, 1, vec![Some(20.0)]),
+            (20_000, 1, vec![Some(25.0)]),
+            (21_000, 1, vec![Some(7.0)]),
+        ],
+        "the stored buckets, then the live frame, on the new timeline"
+    );
+}
+
 /// The dashboard can subscribe after SQLite warm-up but before the first live tick.
 #[tokio::test(start_paused = true)]
 async fn startup_backfills_warm_history_before_the_first_frame() {
@@ -902,6 +970,9 @@ async fn a_clock_step_back_restarts_the_stream_instead_of_freezing_it() {
             "frame 1 @600000",
             "processes x0",
             "frame 1 @601000",
+            // The ring's rows on the new timeline (both ticks were in it by the time the
+            // stream ran), then the frames, which the window drops as duplicate rows.
+            "backfill 1 @2000 x2 t1",
             "frame 1 @2000 t1",
             "processes x0",
             "frame 1 @3000 t1",

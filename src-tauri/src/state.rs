@@ -33,10 +33,8 @@ use kelvo_engine::{BusMsg, EngineParts, HousekeepingHandle, LocalSource, identit
 use kelvo_schema::lock::LockExt;
 use kelvo_schema::settings::Appearance;
 use kelvo_schema::{
-    HostId, HostRecord, Labels, Module, ModuleCap, PerformanceReason, SeriesSelector, Settings,
-    Tier, UnsupportedReason,
+    HostId, HostRecord, Module, ModuleCap, PerformanceReason, Settings, UnsupportedReason,
 };
-use kelvo_store::{HistoryQuery, TierChoice};
 use tauri::{AppHandle, Manager, Theme};
 use tauri_specta::Event;
 
@@ -444,23 +442,7 @@ fn warm_live_ring(history: &History, entry: &HostEntry, host: HostId, now: i64) 
     if !history.is_available() {
         return;
     }
-    let query = HistoryQuery {
-        host,
-        selectors: kelvo_schema::CATALOG
-            .iter()
-            .filter(|d| d.persisted)
-            .map(|d| SeriesSelector {
-                metric: d.id.clone(),
-                labels: Labels::default(),
-            })
-            .collect(),
-        from_ms: now - kelvo_engine::RING_SPAN_MS,
-        to_ms: now,
-        tier: TierChoice::Fixed(Tier::S10),
-        // One more than the hour holds: `now` is off the 10 s grid, so the range touches
-        // a partial bucket at each end, and one slot short merges pairs into 20 s points.
-        max_points: u32::try_from(kelvo_engine::RING_SPAN_MS / 10_000 + 1).unwrap_or(u32::MAX),
-    };
+    let query = kelvo_engine::ring_history_query(host, now);
     match history.read(|r| r.history(&query)) {
         Ok(result) => {
             let rows = entry.warm_ring(&result);
@@ -604,7 +586,7 @@ mod tests {
     use kelvo_engine::detect::Detectors;
     use kelvo_schema::{
         AlertCause, AlertRule, AlertSettings, DetectorThresholds, Event, EventDetail, SeriesKey,
-        ThermalState,
+        ThermalState, Tier,
     };
 
     /// The launch read that seeds alert cooldowns, against a real store: an alert from

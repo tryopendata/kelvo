@@ -1,11 +1,11 @@
 use crate::{
-    EndpointConfig, HostClock, MirrorError, RemoteError, Result, Route, SshSession, codec, server,
+    EndpointConfig, HostClock, MirrorSink, RemoteError, Result, Route, SshSession, codec, server,
 };
 use kelvo_engine::{
     BusMsg, EngineStatus, FrameLayout, LiveFrame, ProcessBatch, Source, SourceControl, SourceError,
     SourceHandle, SourceSink,
 };
-use kelvo_proto::{Message, RemoteInterest, SyncPage, SyncRequest, WireBucket, WireLayout};
+use kelvo_proto::{Message, RemoteInterest, SyncRequest};
 use kelvo_schema::{
     Capabilities, Cursor, HostId, HostRecord, Settings, SyncKinds, Tier, lock::LockExt,
 };
@@ -38,48 +38,6 @@ pub struct ConnectionStatus {
     pub identity_changed: Option<HostId>,
 }
 pub type StatusCallback = Arc<dyn Fn(ConnectionStatus) + Send + Sync>;
-/// Each sink owns its isolated mirror and reset generation. Methods must reject
-/// writes after that mirror was detached/reset. Failed sync never stops live metrics.
-pub trait MirrorSink: Send + Sync + 'static {
-    fn cursor(
-        &self,
-        tier: Tier,
-        epoch: uuid::Uuid,
-        kinds: SyncKinds,
-    ) -> std::result::Result<Option<Cursor>, MirrorError>;
-    fn ingest(&self, page: SyncPage, kinds: SyncKinds) -> std::result::Result<(), MirrorError>;
-    fn recent(
-        &self,
-        _epoch: uuid::Uuid,
-        _tier: Tier,
-        _complete_to_ms: i64,
-        _layouts: Vec<WireLayout>,
-        _rows: Vec<WireBucket>,
-    ) -> std::result::Result<(), MirrorError> {
-        Ok(())
-    }
-    fn truncated(
-        &self,
-        _tier: Tier,
-        _epoch: uuid::Uuid,
-        _earliest_ms: i64,
-    ) -> std::result::Result<(), MirrorError> {
-        Ok(())
-    }
-    fn enforce_budget(&self, _now_ms: i64) -> std::result::Result<(), MirrorError> {
-        Ok(())
-    }
-    fn prune(&self, _now_ms: i64) -> std::result::Result<(), MirrorError> {
-        Ok(())
-    }
-    fn history_floor(&self, tier: Tier, now_ms: i64) -> i64 {
-        now_ms.saturating_sub(match tier {
-            Tier::S10 => 86_400_000,
-            Tier::M1 => 604_800_000,
-            _ => 2_592_000_000,
-        })
-    }
-}
 #[derive(Clone, Default)]
 struct ControlState {
     interest: RemoteInterest,
@@ -334,6 +292,7 @@ async fn session_loop(
     let (mut messages, task) = codec::reader_task(session.reader);
     let _reader = codec::AbortOnDrop(task);
     let initial = control.borrow_and_update().clone();
+    let detail = initial.interest.detail;
     codec::write(&mut session.writer, &Message::Interest(initial.interest)).await?;
     codec::write(
         &mut session.writer,
@@ -373,6 +332,8 @@ async fn session_loop(
         promotion_task: None,
         recent_pending: false,
         recent_timed_out: None,
+        ring_filled: false,
+        detail,
         clock_ready: false,
         epoch,
         kinds,
@@ -434,6 +395,11 @@ struct Session<'a> {
     promotion_task: Option<codec::AbortOnDrop>,
     recent_pending: bool,
     recent_timed_out: Option<Instant>,
+    /// The live ring was refilled from the mirror since live detail began: while no
+    /// window watches, the ring holds summary frames, which measure nothing.
+    ring_filled: bool,
+    /// Live detail as last sent, to tell when it starts.
+    detail: bool,
     clock_ready: bool,
     epoch: uuid::Uuid,
     kinds: SyncKinds,
@@ -533,8 +499,43 @@ impl Session<'_> {
                 })));
             }
         }
+        let detail_starts = next.interest.detail && !self.detail;
+        self.detail = next.interest.detail;
+        if !next.interest.detail {
+            self.ring_filled = false;
+        } else if detail_starts && self.in_flight.is_none() && self.next_tier >= self.tiers.len() {
+            // Sync now, so the recent snapshot that follows meets the durable rows and
+            // the ring refills without a hole.
+            self.next_tier = 0;
+            self.history_failed = false;
+        }
         codec::write(&mut self.writer, &Message::Interest(next.interest)).await?;
         Ok(SessionAction::Continue)
+    }
+
+    /// Replaces the summary frames in the live ring with the mirror's history, once per
+    /// stretch of live detail, on a new timeline so open windows take the ring again. A
+    /// failed read is tried again with the next recent snapshot.
+    async fn refill_ring(&mut self, mirror: Arc<dyn MirrorSink>) -> Result<()> {
+        let now = self
+            .source
+            .clock
+            .now_ms()
+            .unwrap_or_else(kelvo_engine::wall_ms);
+        let history = tokio::task::spawn_blocking(move || mirror.ring_history(now))
+            .await
+            .map_err(|e| RemoteError::Transport(e.to_string()))?;
+        let Some(history) = history else {
+            return Ok(());
+        };
+        self.ring_filled = true;
+        let timeline = self.source.next_timeline.fetch_add(1, Ordering::Relaxed);
+        let added = self.sink.live.refill(&history, timeline);
+        if added > 0 {
+            self.timeline = timeline;
+            tracing::info!(host = %self.source.record.id, added, "live ring refilled from the mirror");
+        }
+        Ok(())
     }
     fn promoted(&mut self, promoted: Option<Result<SshSession>>) -> Result<SessionAction> {
         self.promotion_task = None;
@@ -829,11 +830,14 @@ impl Session<'_> {
                         "source history was reset; reconnecting".into(),
                     ));
                 }
-                if let Some(mirror) = self.source.mirror.clone()
-                    && let Err(error) =
-                        mirror.recent(remote_epoch, tier, complete_to_ms, layouts, rows)
-                {
-                    self.status.history_error = Some(error.to_string());
+                if let Some(mirror) = self.source.mirror.clone() {
+                    match mirror.recent(remote_epoch, tier, complete_to_ms, layouts, rows) {
+                        Err(error) => self.status.history_error = Some(error.to_string()),
+                        Ok(()) if !self.ring_filled && self.control.borrow().interest.detail => {
+                            self.refill_ring(mirror).await?;
+                        }
+                        Ok(()) => {}
+                    }
                 }
             }
             Message::Error { message, .. } => {
@@ -983,6 +987,8 @@ fn adapt_page_bytes(current: u32, elapsed: Duration) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::MirrorError;
+    use kelvo_proto::{SyncPage, WireLayout};
     fn fixture_source(mirror: Option<Arc<dyn MirrorSink>>) -> Arc<RemoteSource> {
         use crate::ServerProvider;
         let hello = crate::server::tests::provider().hello();
@@ -1032,6 +1038,8 @@ mod tests {
             promotion_task: None,
             recent_pending: false,
             recent_timed_out: None,
+            ring_filled: false,
+            detail: false,
             clock_ready: true,
             epoch: uuid::Uuid::from_u128(2),
             kinds: SyncKinds::default(),
@@ -1183,6 +1191,112 @@ mod tests {
             assert!(matches!(error, RemoteError::Transport(_)));
             assert!(error.retryable());
         }
+    }
+    /// While no window watched the host the ring held summary frames only; the first
+    /// recent snapshot of live detail refills it from the mirror, once, on a new timeline.
+    #[tokio::test(start_paused = true)]
+    async fn live_detail_refills_the_ring_from_the_mirror_once() {
+        use kelvo_schema::{MetricId, SeriesKey};
+        struct HistoryMirror(AtomicU32);
+        impl MirrorSink for HistoryMirror {
+            fn cursor(
+                &self,
+                _: Tier,
+                _: uuid::Uuid,
+                _: SyncKinds,
+            ) -> std::result::Result<Option<Cursor>, MirrorError> {
+                Ok(None)
+            }
+            fn ingest(&self, _: SyncPage, _: SyncKinds) -> std::result::Result<(), MirrorError> {
+                Ok(())
+            }
+            fn ring_history(&self, _: i64) -> Option<kelvo_store::HistoryResult> {
+                self.0.fetch_add(1, Ordering::SeqCst);
+                Some(kelvo_store::HistoryResult {
+                    tier: Tier::S10,
+                    bucket_ms: 10_000,
+                    series: vec![kelvo_store::SeriesPoints {
+                        key: SeriesKey::bare(MetricId::from_static("cpu.total")),
+                        points: vec![kelvo_store::Point {
+                            t: 0,
+                            min: 5.0,
+                            max: 5.0,
+                            avg: 5.0,
+                        }],
+                    }],
+                    gaps: Vec::new(),
+                })
+            }
+        }
+        let mirror = Arc::new(HistoryMirror(AtomicU32::new(0)));
+        let source = fixture_source(Some(mirror.clone()));
+        source.control.send_modify(|s| s.interest.detail = true);
+        let sink = SourceSink {
+            live: Default::default(),
+            store: None,
+        };
+        let summary = Arc::new(FrameLayout {
+            layout_no: 0,
+            series: vec![SeriesKey::bare(MetricId::from_static("cpu.total"))].into(),
+        });
+        sink.live.publish(BusMsg::Frame(Arc::new(LiveFrame {
+            ts_ms: 10_000,
+            interval_ms: 5_000,
+            layout: summary,
+            timeline: 1,
+            values: vec![f32::NAN].into(),
+            held: vec![3.0].into(),
+            holds: vec![12_500].into(),
+        })));
+        let mut control = source.control.subscribe();
+        let mut status = ConnectionStatus::default();
+        let mut writer: std::pin::Pin<Box<dyn tokio::io::AsyncWrite + Send>> =
+            Box::pin(tokio::io::sink());
+        let mut session = fixture_session(&source, &sink, &mut control, &mut status, &mut writer);
+        session.timeline = source.next_timeline.fetch_add(1, Ordering::Relaxed);
+        let first = session.timeline;
+        let recent = Message::RecentRows {
+            epoch: session.epoch,
+            tier: Tier::S10,
+            complete_to_ms: 0,
+            layouts: vec![],
+            rows: vec![],
+        };
+        for _ in 0..2 {
+            session.recent_pending = true;
+            session.incoming(Some(Ok(recent.clone()))).await.unwrap();
+        }
+        assert_eq!(mirror.0.load(Ordering::SeqCst), 1, "refilled once");
+        assert_ne!(
+            session.timeline, first,
+            "the session's frames move to the new timeline"
+        );
+        let segs = sink.live.backfill(i64::MIN);
+        assert_eq!(segs.len(), 1, "the summary row is gone");
+        assert_eq!(segs[0].timeline, session.timeline);
+        assert_eq!(&segs[0].rows[0][..], &[5.0]);
+
+        // Other interest changes while detail stays on neither refill nor force a sync.
+        session.detail = true;
+        session.next_tier = session.tiers.len();
+        source
+            .control
+            .send_modify(|s| s.interest.gpu_processes = true);
+        session.control_changed().await.unwrap();
+        assert_eq!(session.next_tier, session.tiers.len(), "no sync forced");
+        session.recent_pending = true;
+        session.incoming(Some(Ok(recent.clone()))).await.unwrap();
+        assert_eq!(mirror.0.load(Ordering::SeqCst), 1, "still refilled once");
+
+        // Closing the window and opening it again syncs, then refills once more.
+        source.control.send_modify(|s| s.interest.detail = false);
+        session.control_changed().await.unwrap();
+        source.control.send_modify(|s| s.interest.detail = true);
+        session.control_changed().await.unwrap();
+        assert_eq!(session.next_tier, 0, "detail starting forces a sync");
+        session.recent_pending = true;
+        session.incoming(Some(Ok(recent))).await.unwrap();
+        assert_eq!(mirror.0.load(Ordering::SeqCst), 2, "refilled again");
     }
     #[tokio::test]
     async fn summary_layout_reuses_arc_and_announces_changed_label_keys_before_frame() {

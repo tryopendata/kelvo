@@ -166,6 +166,108 @@ async fn lifecycle(alias: String, bytes: Vec<u8>, sha: String) {
     assert!(avc.contains("<no matches>"), "SELinux denials: {avc}");
 }
 
+/// A controller that connects while no window is open, then opens one, draws the hour
+/// the agent recorded before it connected: the live ring refills from the synced
+/// mirror. Read-only against an agent already installed (no install, no uninstall):
+///
+/// ```sh
+/// KELVO_QA_ALIAS=linux-tailscale \
+///   cargo test -p kelvo-remote --test linux_agent_qa live_ring -- --ignored --nocapture
+/// ```
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "connects to an agent installed on a real host; see the test docs"]
+async fn live_ring_refills_from_history_on_a_real_host() {
+    use kelvo_engine::{LiveHub, Source as _, SourceSink};
+    use std::sync::Arc;
+
+    let alias = std::env::var("KELVO_QA_ALIAS").unwrap_or_else(|_| "linux-tailscale".into());
+    let probe = agent_install::probe_linux(&alias).await.unwrap();
+    assert!(probe.existing().is_some(), "install the agent first");
+    let config = EndpointConfig {
+        lan: Some(alias.clone()),
+        tailscale: None,
+        command: probe.target().unwrap().remote_command(),
+    };
+    let local = HostId(uuid::Uuid::new_v4());
+    let session = kelvo_remote::connect(&config, local, None).await.unwrap();
+    let record = kelvo_schema::HostRecord::from_identity(session.hello.host.clone(), false);
+    session.close().await;
+
+    let dir = tempfile::tempdir().unwrap();
+    let history = Arc::new(kelvo_engine::HistoryStore::open(dir.path()));
+    assert!(history.register_host(&record).is_some());
+    let mirror = Arc::new(kelvo_remote::Mirror::new(history, record.id, BUDGET_MB));
+    let source =
+        kelvo_remote::RemoteSource::new(record, local, config, Arc::new(|_| {}), Some(mirror));
+    let hub = LiveHub::default();
+    let mut handle = source
+        .start(SourceSink {
+            live: hub.clone(),
+            store: None,
+        })
+        .unwrap();
+    // Rows with a measured value, oldest first, and the timelines they are on.
+    let measured = || {
+        let segs = hub.backfill(i64::MIN);
+        let rows: Vec<i64> = segs
+            .iter()
+            .flat_map(|s| {
+                s.rows
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, r)| r.iter().any(|v| v.is_finite()))
+                    .map(|(i, _)| s.start_ms + i as i64 * i64::from(s.interval_ms))
+            })
+            .collect();
+        let timelines: std::collections::BTreeSet<u32> = segs.iter().map(|s| s.timeline).collect();
+        (rows, timelines)
+    };
+
+    // No window: summary frames only, while the mirror catches up.
+    tokio::time::sleep(Duration::from_secs(30)).await;
+    let (before, _) = measured();
+    println!(
+        "before a window: {} ring rows, {} measured",
+        hub.backfill(i64::MIN)
+            .iter()
+            .map(|s| s.rows.len())
+            .sum::<usize>(),
+        before.len()
+    );
+    assert!(before.is_empty(), "summary frames measure nothing");
+
+    let opened = kelvo_engine::wall_ms();
+    handle.control().set_detail_interest(true);
+    let deadline = std::time::Instant::now() + Duration::from_secs(90);
+    let (rows, timelines) = loop {
+        let (rows, timelines) = measured();
+        if rows.first().is_some_and(|t| *t < opened - 10 * 60_000)
+            || std::time::Instant::now() > deadline
+        {
+            break (rows, timelines);
+        }
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    };
+    handle.stop();
+    let oldest = rows.first().copied().unwrap_or(opened);
+    let stored = rows.iter().filter(|t| **t < opened).count();
+    println!(
+        "after opening: {} measured rows, {stored} before the window opened, oldest {} s before it, timelines {timelines:?}",
+        rows.len(),
+        (opened - oldest) / 1000,
+    );
+    assert!(
+        oldest < opened - 10 * 60_000,
+        "the ring holds the history from before the window opened"
+    );
+    assert_eq!(timelines.len(), 1, "one timeline after the refill");
+    // No hole between the stored hour and the live frames: consecutive measured rows
+    // are at most one 10 s bucket apart.
+    let widest = rows.windows(2).map(|w| w[1] - w[0]).max().unwrap_or(0);
+    println!("widest step between measured rows: {widest} ms");
+    assert!(widest <= 20_000, "a hole of {widest} ms");
+}
+
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "installs the agent on a real host; see the module docs"]
 async fn linux_agent_lifecycle_on_a_real_host() {

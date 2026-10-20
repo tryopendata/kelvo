@@ -179,6 +179,14 @@ impl MirrorSink for Mirror {
         writer.flush().map_err(MirrorError::from)
     }
 
+    fn ring_history(&self, now_ms: i64) -> Option<kelvo_store::HistoryResult> {
+        let query = kelvo_engine::ring_history_query(self.host, now_ms);
+        self.history
+            .history_through_now(&query, || self.recent_rows(query.from_ms, query.to_ms))
+            .inspect_err(|e| tracing::warn!(host = ?self.host, "reading the mirror for the live ring: {e:?}"))
+            .ok()
+    }
+
     fn enforce_budget(&self, now_ms: i64) -> Result<(), MirrorError> {
         if self.history.size_on_disk().map_err(MirrorError::from)?
             > u64::from(self.budget) * 1_000_000

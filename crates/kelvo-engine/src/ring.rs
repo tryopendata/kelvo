@@ -2,7 +2,8 @@
 //! opens (architecture.md, Engine and Data flow). [`crate::LiveHub`] owns one per host
 //! and fills it from whatever source publishes for that host. Before the first frame of a
 //! run it may hold the stored 10 s buckets of the hour before ([`crate::LiveHub::warm`],
-//! D-097).
+//! D-097). A remote host's ring holds summary frames while no window watches it; when one
+//! does, stored buckets replace them ([`crate::LiveHub::refill`]).
 
 use std::collections::VecDeque;
 use std::sync::Arc;
@@ -71,6 +72,11 @@ impl Ring {
         self.rows.back().map(|r| r.ts_ms)
     }
 
+    /// Timeline of the newest row.
+    pub fn last_timeline(&self) -> Option<u32> {
+        self.rows.back().map(|r| r.timeline)
+    }
+
     /// Appends a row. A row not after the newest one means the source's wall clock
     /// stepped back (D-064): the ring must stay in time order, so the rows at or after
     /// its time go. The older ones stay: a one-second step costs a second of history,
@@ -103,6 +109,70 @@ impl Ring {
         {
             self.rows.pop_front();
         }
+    }
+
+    /// Replaces the rows that measured nothing (every value `NaN`, such as a remote
+    /// host's summary frames) with stored buckets: each `(ts_ms, values)` in `stored`
+    /// covers the `interval_ms` before its time, and goes in only where no measured row
+    /// falls in that span and not after the newest row. Measured rows stay. Every row is then on `timeline`, so a
+    /// window holding the old rows replaces them. Returns the stored rows added; with
+    /// none to add the ring is left as it was.
+    pub fn refill(
+        &mut self,
+        stored: impl IntoIterator<Item = (i64, Arc<[f32]>)>,
+        interval_ms: u32,
+        timeline: u32,
+        layout: &Arc<FrameLayout>,
+        holds: &Arc<[u32]>,
+    ) -> usize {
+        let measured: Vec<i64> = self
+            .rows
+            .iter()
+            .filter(|r| r.values.iter().any(|v| v.is_finite()))
+            .map(|r| r.ts_ms)
+            .collect();
+        let span = i64::from(interval_ms);
+        // A stored row ending after the newest row is a bucket still open at the source:
+        // a partial average, and a time the next frames would land before.
+        let newest = self.last_ts().unwrap_or(i64::MAX);
+        let fill: Vec<Row> = stored
+            .into_iter()
+            .filter(|(ts, _)| *ts <= newest)
+            .filter(|(ts, _)| {
+                let first = measured.partition_point(|m| *m <= ts - span);
+                measured.get(first).is_none_or(|m| m > ts)
+            })
+            .map(|(ts_ms, values)| Row {
+                ts_ms,
+                interval_ms,
+                timeline,
+                layout: Arc::clone(layout),
+                values,
+                holds: Arc::clone(holds),
+            })
+            .collect();
+        let added = fill.len();
+        if added == 0 {
+            return 0;
+        }
+        let mut rows: Vec<Row> = self
+            .rows
+            .drain(..)
+            .filter(|r| r.values.iter().any(|v| v.is_finite()))
+            .chain(fill)
+            .collect();
+        rows.sort_by_key(|r| r.ts_ms);
+        for r in &mut rows {
+            r.timeline = timeline;
+        }
+        let cutoff = rows.last().map_or(i64::MIN, |r| r.ts_ms - RING_SPAN_MS);
+        let skip = rows.len().saturating_sub(RING_MAX_ROWS);
+        self.rows = rows
+            .into_iter()
+            .skip(skip)
+            .filter(|r| r.ts_ms >= cutoff)
+            .collect();
+        added
     }
 
     /// Rows with `ts_ms >= since_ms`, as evenly spaced segments in time order. Each
