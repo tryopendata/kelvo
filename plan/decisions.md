@@ -3552,11 +3552,18 @@ workspace version, so it ships and updates with the app. Update copies `history.
 aside, replaces the binary, restarts and waits for `status`; on failure it restores the
 binary and database, the same shape as the Mac rollback.
 
-Identity: the D-071 `host-id` file, bound by SHA-256 of the v1 prefix, the id and
-`/etc/machine-id`. A missing, empty, `uninitialized`, malformed or transient machine-id
-(`/run/machine-id` mounted over it) means no binding and the file is trusted. The system
-agent also mixes in DMI `product_uuid` or the device-tree serial when readable, which
-catches hypervisor clones that keep the machine-id. Recovery: `reset-identity` mints a
+Identity: the D-071 `host-id` file, with one tagged line per binding component.
+`machine=v1:<hex>` is SHA-256 of the v1 prefix, the id and `/etc/machine-id`. The system
+agent adds `hw=v1:<hex>` from DMI `product_uuid` or the device-tree serial when readable
+(SHA-256 of a hardware prefix, the id and that value), which catches hypervisor clones
+that keep the machine-id. Each component is compared only when both the file and this
+run have it: a mismatch on any of them is a clone, and one missing on either side (a
+kernel or firmware change that makes DMI readable or not) is ignored, kept in the file
+and added when it appears. A missing, empty, `uninitialized`, malformed or transient
+machine-id (`/run/machine-id` mounted over it) means no binding and the file is trusted.
+Files from before the split (one `machine=` token, never released) still load: the token
+matches when it equals the machine-id hash or the old combined hash of the machine-id
+and firmware id. The macOS binding is unchanged. Recovery: `reset-identity` mints a
 new id (`identity::reset`), the controller offers "Re-pair as a new host" on a mismatch
 and keeps the old mirror offline, and a host has one agent layout (the probe refuses a
 second).
@@ -3568,11 +3575,18 @@ deltas (percent, mean, 5 s); `power.sensor{name}` (watts only, 5 s); `cgroup.cpu
 of one core), `cgroup.mem`, `cgroup.mem_max`, `cgroup.io_read`, `cgroup.io_write`,
 `cgroup.mem_psi` (`some`), all `{kind,name}`, 5 s, capped at 32 with the rest folded into
 `{kind=other,name=_other}`, plus an unlabelled `cgroup.other_count`. `cpu.total` is all
-non-idle, non-iowait time, the macOS meaning. hwmon names are the kernel label
-alone ("NAND Flash Temperature", "Total System Power"), as macOS names read; `<chip>/<label>`
-when the label is generic (`Composite`, `Sensor N`, amdgpu's `edge`) or another chip on the
-host carries it, `<chip>/tempN` without a label. A chip that repeats is qualified by parent
-device, never by enumeration order.
+non-idle, non-iowait time, the macOS meaning. hwmon names depend on the chip's class,
+never on which other chips are present, so a second drive or a late driver renames
+nothing. Singleton platform chips (the Apple SMC `macsmc_hwmon`, `coretemp`, `k10temp`,
+`zenpower`, `acpitz`, device-tree `*_thermal`) keep the kernel label alone ("NAND Flash
+Temperature", "Total System Power"), as macOS names read, and `<chip>/<label>` when the
+label is generic (`Composite`, `Sensor N`, amdgpu's `edge`). Every other chip can repeat
+or hotplug (NVMe, `drivetemp`, GPUs, `jc42`, `spd5118`, anything unknown) and is always
+`<chip>@<parent device>/<label>` (`nvme@nvme0/Composite`), the parent being the device
+link's basename, never the `hwmonN` index. Without a label, `<chip>/tempN`; fans are
+always `<chip>/<N-1>`, qualified the same way. A reading implausible at probe never moves
+a name to another channel. Names over the 24-byte label cap keep `bound_label_value`'s
+stable hash suffix.
 `thermal.hottest` comes only from CPU/SoC-class sensors and is absent without them.
 
 Wire additions, all defaulted and D-040-safe, with old/new skew fixtures in kelvo-proto:

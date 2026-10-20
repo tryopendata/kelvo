@@ -25,10 +25,13 @@
 //! new one.
 //!
 //! On Linux the binding is made from `/etc/machine-id` instead ([`linux_binding`],
-//! D-115), and a system agent also mixes in the firmware's DMI UUID or device-tree
-//! serial, which catches a hypervisor clone that kept the machine-id. A host without a
-//! usable machine-id has no binding, like a Mac whose hardware UUID cannot be read.
-//! [`reset`] mints a new id on purpose (`kelvo-agent reset-identity`).
+//! D-115), and a system agent adds a separate `hw=` line from the firmware's DMI UUID or
+//! device-tree serial, which catches a hypervisor clone that kept the machine-id. Each
+//! tagged line is compared only when both the file and this run have it, so firmware
+//! that becomes readable or unreadable (a kernel or permission change) never looks like
+//! a clone; a line missing from the file is added. A host without a usable machine-id
+//! has no binding, like a Mac whose hardware UUID cannot be read. [`reset`] mints a new
+//! id on purpose (`kelvo-agent reset-identity`).
 //!
 //! The file format, the binding input and its hash are a one-way door: changing any of
 //! them makes every existing install look cloned.
@@ -43,7 +46,11 @@ use uuid::Uuid;
 use crate::HistoryStore;
 
 pub const HOST_ID_FILE: &str = "host-id";
-const MACHINE_PREFIX: &str = "machine=";
+/// The component a bare binding token (a Mac's) is stored under.
+const MACHINE_TAG: &str = "machine";
+/// A binding component that is never written: a token an older file's `machine=` line
+/// may hold for this machine ([`linux_binding`]).
+const LEGACY_TAG: &str = "legacy";
 
 /// Where the id came from, for the startup log.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -66,10 +73,73 @@ pub struct LocalId {
     pub persisted: bool,
 }
 
-/// What the file says: the id and the machine token, each `None` when absent.
+/// What the file says: the id (`None` when absent) and its `tag=value` binding lines.
 struct IdFile {
     id: Option<HostId>,
-    machine: Option<String>,
+    binding: Vec<(String, String)>,
+}
+
+/// A binding as a binding function returns it, parsed. The text is either one bare
+/// token (the Mac's hardware-UUID hash, stored as `machine=`) or whitespace-separated
+/// `tag=value` components ([`linux_binding`]). `legacy=` components are not written:
+/// they are the tokens an earlier file's single `machine=` line may hold for this host.
+#[derive(Debug, Default, PartialEq, Eq)]
+struct Binding {
+    components: Vec<(String, String)>,
+    legacy: Vec<String>,
+}
+
+impl Binding {
+    fn parse(text: &str) -> Self {
+        let text = text.trim();
+        if !text.contains('=') {
+            return Self {
+                components: vec![(MACHINE_TAG.to_owned(), text.to_owned())],
+                legacy: Vec::new(),
+            };
+        }
+        let mut binding = Self::default();
+        for (tag, value) in text.split_whitespace().filter_map(|c| c.split_once('=')) {
+            if tag == LEGACY_TAG {
+                binding.legacy.push(value.to_owned());
+            } else {
+                binding.components.push((tag.to_owned(), value.to_owned()));
+            }
+        }
+        binding
+    }
+
+    fn get(&self, tag: &str) -> Option<&str> {
+        self.components
+            .iter()
+            .find(|(t, _)| t == tag)
+            .map(|(_, v)| v.as_str())
+    }
+
+    /// Whether the file's lines could have been written on this machine: every tag both
+    /// sides have agrees. A legacy `machine=` token matches when it is one of this
+    /// machine's legacy tokens. A tag only one side has says nothing.
+    fn matches(&self, file: &[(String, String)]) -> bool {
+        file.iter().all(|(tag, theirs)| match self.get(tag) {
+            None => true,
+            Some(ours) => {
+                ours == theirs || (tag == MACHINE_TAG && self.legacy.iter().any(|l| l == theirs))
+            }
+        })
+    }
+
+    /// The lines to write: this run's components, then any the file holds that this run
+    /// could not read (a firmware id that is unreadable today), so they still guard
+    /// against a clone later.
+    fn merged(&self, file: &[(String, String)]) -> Vec<(String, String)> {
+        let mut lines = self.components.clone();
+        for (tag, value) in file {
+            if self.get(tag).is_none() {
+                lines.push((tag.clone(), value.clone()));
+            }
+        }
+        lines
+    }
 }
 
 fn read_file(path: &Path) -> IdFile {
@@ -88,10 +158,13 @@ fn read_file(path: &Path) -> IdFile {
             .map_err(|e| tracing::warn!("{} is unreadable ({e}); replacing it", path.display()))
             .ok()
     });
-    let machine = lines
-        .find_map(|l| l.strip_prefix(MACHINE_PREFIX))
-        .map(str::to_owned);
-    IdFile { id, machine }
+    let mut binding: Vec<(String, String)> = Vec::new();
+    for (tag, value) in lines.filter_map(|l| l.split_once('=')) {
+        if tag != LEGACY_TAG && !binding.iter().any(|(t, _)| t == tag) {
+            binding.push((tag.to_owned(), value.to_owned()));
+        }
+    }
+    IdFile { id, binding }
 }
 
 /// Reads the host id from `dir/host-id`, or recovers or creates it as described in the
@@ -110,11 +183,11 @@ pub fn load_or_create(
         .map(|id| (id, IdSource::File))
         .or_else(|| stored_local.map(|h| (h.id, IdSource::Store)));
     let (id, source) = match candidate {
-        Some((id, source)) => match (&file.machine, binding(id)) {
-            (Some(theirs), Some(ours)) if *theirs != ours => {
+        Some((id, source)) => match binding(id).map(|b| Binding::parse(&b)) {
+            Some(ours) if !ours.matches(&file.binding) => {
                 tracing::warn!(
                     old = %id,
-                    "the host id was made on another Mac (a cloned or migrated data directory); this Mac gets its own"
+                    "the host id was made on another machine (a cloned or migrated data directory); this one gets its own"
                 );
                 (HostId(Uuid::new_v4()), IdSource::Cloned)
             }
@@ -122,8 +195,14 @@ pub fn load_or_create(
         },
         None => (HostId(Uuid::new_v4()), IdSource::Created),
     };
-    let machine = binding(id);
-    let up_to_date = source == IdSource::File && (machine.is_none() || machine == file.machine);
+    // A new id keeps nothing of the old file's binding.
+    let kept: &[(String, String)] = if source == IdSource::Cloned {
+        &[]
+    } else {
+        &file.binding
+    };
+    let lines = binding(id).map_or_else(|| kept.to_vec(), |b| Binding::parse(&b).merged(kept));
+    let up_to_date = source == IdSource::File && lines == file.binding;
     if up_to_date {
         // Owner-only (D-074); a file from before that is tightened here.
         if let Err(e) = kelvo_store::restrict(&path) {
@@ -135,7 +214,7 @@ pub fn load_or_create(
             persisted: true,
         };
     }
-    let persisted = match write_atomically(dir, &path, &file_text(id, machine)) {
+    let persisted = match write_atomically(dir, &path, &file_text(id, &lines)) {
         Ok(()) => true,
         Err(e) => {
             tracing::error!(host = %id, "cannot save the host id, using it for this run only: {e}");
@@ -149,11 +228,11 @@ pub fn load_or_create(
     }
 }
 
-/// The `host-id` file's text: the id, then its `machine=` token when there is one.
-fn file_text(id: HostId, machine: Option<String>) -> String {
+/// The `host-id` file's text: the id, then one `tag=value` line per binding component.
+fn file_text(id: HostId, lines: &[(String, String)]) -> String {
     let mut text = format!("{id}\n");
-    if let Some(m) = machine {
-        text.push_str(&format!("{MACHINE_PREFIX}{m}\n"));
+    for (tag, value) in lines {
+        text.push_str(&format!("{tag}={value}\n"));
     }
     text
 }
@@ -165,7 +244,8 @@ fn file_text(id: HostId, machine: Option<String>) -> String {
 pub fn reset(dir: &Path, binding: impl Fn(HostId) -> Option<String>) -> std::io::Result<HostId> {
     let id = HostId(Uuid::new_v4());
     let path = dir.join(HOST_ID_FILE);
-    write_atomically(dir, &path, &file_text(id, binding(id))).map_err(std::io::Error::other)?;
+    let lines = binding(id).map_or_else(Vec::new, |b| Binding::parse(&b).components);
+    write_atomically(dir, &path, &file_text(id, &lines)).map_err(std::io::Error::other)?;
     Ok(id)
 }
 
@@ -227,23 +307,41 @@ pub enum BindingScope {
 }
 
 const BINDING_PREFIX: &[u8] = b"kelvo host-id binding v1\0";
+const HARDWARE_PREFIX: &[u8] = b"kelvo host-id hardware v1\0";
+
+/// SHA-256 of `parts` in order, in hex.
+fn sha256_hex(parts: &[&[u8]]) -> String {
+    let mut hash = Sha256::new();
+    for part in parts {
+        hash.update(part);
+    }
+    hash.finalize().iter().map(|b| format!("{b:02x}")).collect()
+}
 
 /// The Linux binding for `id` from the identifiers under `root` (`/` on a real host;
-/// [`machine::machine_ids`] reads and validates them): SHA-256 of the v1 prefix, the id's
-/// 16 bytes and the machine-id, then a NUL and the firmware id when `scope` includes one
-/// that is readable, in hex. `None` without a usable machine-id. Portable code, so it is
-/// tested everywhere; only a Linux build uses it for its own binding.
+/// [`machine::machine_ids`] reads and validates them), as separate components the
+/// `host-id` file stores on their own lines:
+///
+/// - `machine=v1:<hex>`: SHA-256 of the v1 prefix, the id's 16 bytes and the machine-id.
+/// - `hw=v1:<hex>`, when `scope` includes a firmware id and it is readable: SHA-256 of
+///   the hardware prefix, the id's 16 bytes and the firmware id.
+/// - `legacy=<hex>`, compared but never written: the single tokens this branch's first
+///   format wrote, the machine-id hash above and, with a firmware id, the hash of the
+///   machine-id, a NUL and the firmware id. Never released, but QA hosts have them.
+///
+/// `None` without a usable machine-id. Portable code, so it is tested everywhere; only a
+/// Linux build uses it for its own binding.
 pub fn linux_binding(id: HostId, root: &Path, scope: BindingScope) -> Option<String> {
     let ids = machine::machine_ids(root, scope == BindingScope::WithHardware)?;
-    let mut hash = Sha256::new();
-    hash.update(BINDING_PREFIX);
-    hash.update(id.0.as_bytes());
-    hash.update(ids.machine_id.as_bytes());
+    let (id, machine_id) = (id.0.as_bytes().as_slice(), ids.machine_id.as_bytes());
+    let machine = sha256_hex(&[BINDING_PREFIX, id, machine_id]);
+    let mut text = format!("{MACHINE_TAG}=v1:{machine} {LEGACY_TAG}={machine}");
     if let Some(hw) = &ids.hardware {
-        hash.update(b"\0");
-        hash.update(hw.as_bytes());
+        let hardware = sha256_hex(&[HARDWARE_PREFIX, id, hw.as_bytes()]);
+        let combined = sha256_hex(&[BINDING_PREFIX, id, machine_id, b"\0", hw.as_bytes()]);
+        text.push_str(&format!(" hw=v1:{hardware} {LEGACY_TAG}={combined}"));
     }
-    Some(hash.finalize().iter().map(|b| format!("{b:02x}")).collect())
+    Some(text)
 }
 
 #[cfg(target_os = "macos")]
@@ -519,21 +617,44 @@ mod tests {
 
     const MACHINE_ID: &str = "4c1d3f0e9a8b47c6b5d2e1f0a9b8c7d6";
 
-    /// The Linux binding is a one-way door too. Expected values are SHA-256 of the
-    /// prefix, the id's 16 bytes and the machine-id (then a NUL and the DMI UUID),
-    /// computed independently (Python `hashlib`).
+    /// The Linux binding is a one-way door too. Expected values, computed independently
+    /// (Python `hashlib`): the machine component is SHA-256 of the binding prefix, the
+    /// id's 16 bytes and the machine-id; the hardware one of the hardware prefix, the id
+    /// and the DMI UUID; the legacy combined token of the binding prefix, the id, the
+    /// machine-id, a NUL and the DMI UUID.
     #[test]
     fn the_linux_binding_hash_is_stable() {
         let id = HostId(Uuid::parse_str("6f1c2a3b-4d5e-4f60-8a7b-9c0d1e2f3a4b").unwrap());
-        let dmi = "6E0A1B2C-3D4E-5F60-7182-93A4B5C6D7E8";
         let root = linux_root(&[
             ("etc/machine-id", &format!("{MACHINE_ID}\n")),
-            ("sys/class/dmi/id/product_uuid", dmi),
+            ("sys/class/dmi/id/product_uuid", DMI),
         ]);
         let user = linux_binding(id, root.path(), BindingScope::MachineId);
-        assert_eq!(user.as_deref(), Some(LINUX_USER_TOKEN));
+        assert_eq!(
+            user.as_deref(),
+            Some(format!("machine=v1:{MACHINE_TOKEN} legacy={MACHINE_TOKEN}").as_str())
+        );
         let system = linux_binding(id, root.path(), BindingScope::WithHardware);
-        assert_eq!(system.as_deref(), Some(LINUX_SYSTEM_TOKEN));
+        assert_eq!(
+            system.as_deref(),
+            Some(
+                format!(
+                    "machine=v1:{MACHINE_TOKEN} legacy={MACHINE_TOKEN} \
+                     hw=v1:{HW_TOKEN} legacy={LEGACY_SYSTEM_TOKEN}"
+                )
+                .as_str()
+            )
+        );
+
+        // The file holds the tagged components, never the legacy tokens.
+        let dir = temp_dir("id-linux-format");
+        let on_root = |id| linux_binding(id, root.path(), BindingScope::WithHardware);
+        std::fs::write(dir.path().join(HOST_ID_FILE), format!("{id}\n")).unwrap();
+        assert_eq!(load_or_create(dir.path(), None, on_root).id, id);
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join(HOST_ID_FILE)).unwrap(),
+            format!("{id}\nmachine=v1:{MACHINE_TOKEN}\nhw=v1:{HW_TOKEN}\n")
+        );
 
         // Without a readable firmware id, the system binding is the machine-id one.
         let bare = linux_root(&[("etc/machine-id", MACHINE_ID)]);
@@ -548,10 +669,121 @@ mod tests {
         );
     }
 
-    const LINUX_USER_TOKEN: &str =
-        "c4f4c4e74777ebb30f9f2adf4dbfe31acb49c69dba3d9619bfe3062b3f3c10cf";
-    const LINUX_SYSTEM_TOKEN: &str =
+    const DMI: &str = "6E0A1B2C-3D4E-5F60-7182-93A4B5C6D7E8";
+    const MACHINE_TOKEN: &str = "c4f4c4e74777ebb30f9f2adf4dbfe31acb49c69dba3d9619bfe3062b3f3c10cf";
+    const HW_TOKEN: &str = "0b6ee7ab3493313d669c1634ff69f90bf0fc34d69daa6beae45ff717d94250be";
+    /// What this branch's first format wrote for a system agent with DMI readable.
+    const LEGACY_SYSTEM_TOKEN: &str =
         "841c40a6d4fb0f0ad4e352d684fcc94f5ba7b683dfa7da3aecc416a510b28bca";
+
+    /// A system agent's binding over a root with `machine_id` and, when given, `dmi`.
+    fn system_binding(
+        machine_id: &str,
+        dmi: Option<&str>,
+    ) -> (tempfile::TempDir, impl Fn(HostId) -> Option<String>) {
+        let mut files = vec![("etc/machine-id", machine_id)];
+        if let Some(dmi) = dmi {
+            files.push(("sys/class/dmi/id/product_uuid", dmi));
+        }
+        let root = linux_root(&files);
+        let path = root.path().to_owned();
+        (root, move |id| {
+            linux_binding(id, &path, BindingScope::WithHardware)
+        })
+    }
+
+    /// D-115: firmware that becomes unreadable or readable (a kernel, firmware or
+    /// permission change) keeps the id, because the `hw=` line is compared only when
+    /// both sides have it. The line stays in the file while unreadable.
+    #[test]
+    fn a_firmware_id_appearing_or_vanishing_keeps_the_linux_id() {
+        let (_with, with_dmi) = system_binding(MACHINE_ID, Some(DMI));
+        let (_without, without_dmi) = system_binding(MACHINE_ID, None);
+
+        let dir = temp_dir("id-linux-dmi-vanishes");
+        let first = load_or_create(dir.path(), None, &with_dmi).id;
+        let later = load_or_create(dir.path(), None, &without_dmi);
+        assert_eq!((later.id, later.source), (first, IdSource::File));
+        let text = std::fs::read_to_string(dir.path().join(HOST_ID_FILE)).unwrap();
+        assert!(text.contains("\nhw=v1:"), "{text}");
+        let back = load_or_create(dir.path(), None, &with_dmi);
+        assert_eq!((back.id, back.source), (first, IdSource::File));
+
+        let dir = temp_dir("id-linux-dmi-appears");
+        let first = load_or_create(dir.path(), None, &without_dmi).id;
+        let later = load_or_create(dir.path(), None, &with_dmi);
+        assert_eq!((later.id, later.source), (first, IdSource::File));
+        let text = std::fs::read_to_string(dir.path().join(HOST_ID_FILE)).unwrap();
+        assert!(text.contains("\nhw=v1:"), "the hw line is added: {text}");
+    }
+
+    /// A component both sides have that differs is a clone: another machine-id, or the
+    /// same machine-id with another DMI UUID (a hypervisor clone).
+    #[test]
+    fn a_differing_linux_component_is_a_clone() {
+        let (_a, a) = system_binding(MACHINE_ID, Some(DMI));
+        let (_b, other_machine) = system_binding("0123456789abcdef0123456789abcdef", Some(DMI));
+        let (_c, other_dmi) =
+            system_binding(MACHINE_ID, Some("99999999-2222-3333-4444-555555555555"));
+        let (_d, other_machine_no_dmi) = system_binding("0123456789abcdef0123456789abcdef", None);
+
+        for (name, b) in [
+            (
+                "machine-id",
+                &other_machine as &dyn Fn(HostId) -> Option<String>,
+            ),
+            ("dmi", &other_dmi),
+            ("machine-id without dmi", &other_machine_no_dmi),
+        ] {
+            let dir = temp_dir("id-linux-clone");
+            let first = load_or_create(dir.path(), None, &a).id;
+            let clone = load_or_create(dir.path(), None, b);
+            assert_eq!(clone.source, IdSource::Cloned, "{name}");
+            assert_ne!(clone.id, first, "{name}");
+            // The new id's file holds only this machine's lines.
+            let again = load_or_create(dir.path(), None, b);
+            assert_eq!(
+                (again.id, again.source),
+                (clone.id, IdSource::File),
+                "{name}"
+            );
+        }
+    }
+
+    /// Files from this branch's first format (one `machine=` token, the machine-id hash
+    /// or, for a system agent with DMI, the combined hash) load with their id and are
+    /// rewritten in the tagged format. One from another machine is still a clone.
+    #[test]
+    fn a_legacy_linux_file_loads() {
+        let id = HostId(Uuid::parse_str("6f1c2a3b-4d5e-4f60-8a7b-9c0d1e2f3a4b").unwrap());
+        let (_a, with_dmi) = system_binding(MACHINE_ID, Some(DMI));
+        let (_b, without_dmi) = system_binding(MACHINE_ID, None);
+        for (token, binding) in [
+            (
+                MACHINE_TOKEN,
+                &with_dmi as &dyn Fn(HostId) -> Option<String>,
+            ),
+            (MACHINE_TOKEN, &without_dmi),
+            (LEGACY_SYSTEM_TOKEN, &with_dmi),
+        ] {
+            let dir = temp_dir("id-linux-legacy");
+            let path = dir.path().join(HOST_ID_FILE);
+            std::fs::write(&path, format!("{id}\nmachine={token}\n")).unwrap();
+            let l = load_or_create(dir.path(), None, binding);
+            assert_eq!((l.id, l.source), (id, IdSource::File), "{token}");
+            let text = std::fs::read_to_string(&path).unwrap();
+            assert!(
+                text.starts_with(&format!("{id}\nmachine=v1:{MACHINE_TOKEN}\n")),
+                "{text}"
+            );
+        }
+
+        let dir = temp_dir("id-linux-legacy-clone");
+        let path = dir.path().join(HOST_ID_FILE);
+        std::fs::write(&path, format!("{id}\nmachine={}\n", "ab".repeat(32))).unwrap();
+        let l = load_or_create(dir.path(), None, &with_dmi);
+        assert_eq!(l.source, IdSource::Cloned);
+    }
 
     /// D-115: a VM cloned with its machine-id gets a new id when the system agent's
     /// binding sees the new DMI UUID. A user agent sees only the machine-id, so the copy
