@@ -39,6 +39,7 @@ impl Fixture {
                 mem_total_bytes: 16 << 30,
                 boot_time_ms: 0,
                 gpu_dvfs_mhz: vec![],
+                kernel: None,
                 boot_mounts: vec![],
             },
         };
@@ -155,12 +156,12 @@ async fn handshake<S: AsyncRead + AsyncWrite + Unpin>(stream: &mut S) -> Hello {
     };
     let negotiated = kelvo_proto::negotiate(
         &Offer::local(kelvo_proto::local_features()),
-        &Offer::from(&hello),
+        &Offer::from(&*hello),
     )
     .unwrap();
     write(stream, &Message::HelloAck(negotiated.ack())).await;
     assert!(matches!(read(stream).await, Message::SourceStatus(_)));
-    hello
+    *hello
 }
 async fn subscribe<S: AsyncRead + AsyncWrite + Unpin>(stream: &mut S, processes: bool) {
     write(

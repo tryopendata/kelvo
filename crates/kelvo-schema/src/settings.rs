@@ -271,7 +271,8 @@ impl ItemMode {
             Module::Cpu => &[Off, Value, Graph, Cores],
             Module::Gpu | Module::Memory | Module::Network => &[Off, Value, Graph],
             Module::Power | Module::Sensors | Module::Disk | Module::Battery => &[Off, Value],
-            Module::Unknown => &[],
+            // No menu-bar item (D-115).
+            Module::Containers | Module::Unknown => &[],
         }
     }
 }
@@ -299,7 +300,7 @@ impl ItemSettings {
             Module::Network => self.network,
             Module::Disk => self.disk,
             Module::Battery => self.battery,
-            Module::Unknown => ItemMode::Off,
+            Module::Containers | Module::Unknown => ItemMode::Off,
         }
     }
 
@@ -312,7 +313,7 @@ impl ItemSettings {
             Module::Network => Some(&mut self.network),
             Module::Disk => Some(&mut self.disk),
             Module::Battery => Some(&mut self.battery),
-            Module::Sensors | Module::Unknown => None,
+            Module::Sensors | Module::Containers | Module::Unknown => None,
         }
     }
 }
@@ -664,7 +665,10 @@ impl Settings {
         if self.modules.contains_key(&Module::Sensors) {
             return Err(SettingsError::SensorsEntry);
         }
-        if self.modules.contains_key(&Module::Unknown) {
+        // Containers is a data-only module with no settings entry (D-115).
+        if self.modules.contains_key(&Module::Unknown)
+            || self.modules.contains_key(&Module::Containers)
+        {
             return Err(SettingsError::UnknownModule);
         }
         for m in SETTINGS_MODULES {
@@ -918,6 +922,15 @@ mod tests {
         s.modules
             .insert(Module::Unknown, ModuleSettings { enabled: true });
         assert_eq!(s.validate(), Err(SettingsError::UnknownModule));
+
+        // Containers is data-only (D-115): no settings entry, item or menu-bar value.
+        let mut s = ok.clone();
+        s.modules
+            .insert(Module::Containers, ModuleSettings { enabled: true });
+        assert_eq!(s.validate(), Err(SettingsError::UnknownModule));
+        assert!(!ok.menu_bar_shows(Module::Containers));
+        assert!(ItemMode::allowed_for(Module::Containers).is_empty());
+        assert!(!SETTINGS_MODULES.contains(&Module::Containers));
 
         // Cores is CPU only; graphs exist for CPU, GPU, Memory, Network.
         for (module, mode) in [

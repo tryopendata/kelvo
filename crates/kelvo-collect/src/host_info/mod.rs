@@ -4,6 +4,8 @@
 //! headless agent build the same record. The engine re-exports [`host_record`] because
 //! the app shell may not depend on `kelvo-collect` (`.claude/rules/rust.md`).
 
+pub mod machine;
+
 #[cfg(not(target_os = "macos"))]
 mod linux;
 #[cfg(target_os = "macos")]

@@ -251,6 +251,12 @@ impl Collector for Processes {
         }
     }
 
+    fn fill_capabilities(&self, caps: &mut kelvo_schema::Capabilities) {
+        // libproc's rusage carries energy and idle wakeups for every readable row.
+        caps.process_energy = true;
+        caps.process_wakeups = true;
+    }
+
     fn sample(&mut self, tick: &Tick, out: &mut SampleBuf) -> Result<(), CollectError> {
         if !libproc::list_pids(&mut self.pids) {
             return Err(CollectError::Os {

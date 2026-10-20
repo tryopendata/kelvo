@@ -55,6 +55,7 @@ pub fn host_record() -> HostRecord {
             mem_total_bytes: 36 << 30,
             boot_time_ms: T0 - 86_400_000,
             gpu_dvfs_mhz: Vec::new(),
+            kernel: None,
             boot_mounts: Vec::new(),
         },
     }
@@ -78,6 +79,9 @@ pub struct FakeState {
     /// Reported as the primary interface on the next sample only, as the network
     /// collector does on probe and its link-rate cadence.
     pub primary_iface: Option<kelvo_collect::PrimaryIface>,
+    /// Reported through `fill_capabilities` while Supported (D-115).
+    pub disk_devices: Vec<kelvo_schema::DiskDevice>,
+    pub process_columns: bool,
 }
 
 /// The test's handle on a [`FakeCollector`].
@@ -154,6 +158,14 @@ impl Collector for FakeCollector {
         s.probe
             .clone()
             .unwrap_or_else(|| Probe::Supported(s.keys.clone()))
+    }
+    fn fill_capabilities(&self, caps: &mut kelvo_schema::Capabilities) {
+        let s = self.h.0.lock().unwrap();
+        caps.disk_devices.extend(s.disk_devices.iter().cloned());
+        if s.process_columns {
+            caps.process_energy = true;
+            caps.process_wakeups = true;
+        }
     }
     fn sample(&mut self, tick: &Tick, out: &mut SampleBuf) -> Result<(), CollectError> {
         let mut s = self.h.0.lock().unwrap();

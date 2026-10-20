@@ -92,7 +92,7 @@ pub async fn serve_connection<S: AsyncRead + AsyncWrite + Unpin + Send + 'static
 ) -> Result<()> {
     let (mut reader, mut writer) = tokio::io::split(stream);
     let hello = provider.hello();
-    codec::write(&mut writer, &Message::Hello(hello.clone())).await?;
+    codec::write(&mut writer, &Message::Hello(Box::new(hello.clone()))).await?;
     let ack = tokio::time::timeout(Duration::from_secs(5), codec::read(&mut reader))
         .await
         .map_err(|_| RemoteError::Transport("handshake deadline".into()))??;
@@ -485,6 +485,7 @@ pub(crate) mod tests {
                         mem_total_bytes: 1,
                         boot_time_ms: 0,
                         gpu_dvfs_mhz: vec![],
+                        kernel: None,
                         boot_mounts: vec![],
                     },
                 },
@@ -528,7 +529,7 @@ pub(crate) mod tests {
         };
         let negotiated = kelvo_proto::negotiate(
             &kelvo_proto::Offer::local(kelvo_proto::local_features()),
-            &kelvo_proto::Offer::from(&hello),
+            &kelvo_proto::Offer::from(&*hello),
         )
         .unwrap();
         codec::write(client, &Message::HelloAck(negotiated.ack()))

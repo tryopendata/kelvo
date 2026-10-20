@@ -504,8 +504,10 @@ impl Snapshot {
                         _ => {}
                     }
                 }
-                // The catalog never files a metric under Unknown.
-                Module::Unknown => {}
+                // The catalog never files a metric under Unknown. Containers series
+                // (`cgroup.*`, D-115) have no typed view: the Containers page reads them
+                // as series.
+                Module::Containers | Module::Unknown => {}
             }
         }
         if let Some(disk) = &mut s.disk {

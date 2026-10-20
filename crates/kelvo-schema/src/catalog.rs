@@ -17,7 +17,7 @@ use crate::series::{MetricId, SeriesKey};
 )]
 #[serde(rename_all = "snake_case")]
 pub enum Unit {
-    /// 0 to 100. Per-process CPU is percent of one core and can exceed 100.
+    /// 0 to 100. Per-process and per-cgroup CPU is percent of one core and can exceed 100.
     Percent,
     Hz,
     Watts,
@@ -58,78 +58,8 @@ pub enum MetricKind {
     Counter,
 }
 
-/// A UI and settings module. Every metric belongs to exactly one.
-///
-/// Serialized in snake_case (`"cpu"`), the same text the store writes to `gaps.module`.
-/// The UI shows `Power` and `Sensors` as one "Power & Sensors" module; see
-/// [`crate::settings`] for how settings treat the pair.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, specta::Type)]
-#[serde(rename_all = "snake_case")]
-pub enum Module {
-    Cpu,
-    Gpu,
-    Memory,
-    Power,
-    Sensors,
-    Network,
-    Disk,
-    Battery,
-    /// A module this build does not know, sent by a newer peer or written by a newer
-    /// build (D-040). Never produced locally and not in [`Module::ALL`]. Consumers skip
-    /// it: capabilities and settings drop it on decode, the store skips its gaps.
-    Unknown,
-}
-
-impl Module {
-    pub const ALL: [Module; 8] = [
-        Module::Cpu,
-        Module::Gpu,
-        Module::Memory,
-        Module::Power,
-        Module::Sensors,
-        Module::Network,
-        Module::Disk,
-        Module::Battery,
-    ];
-
-    /// The snake_case text form, as stored in `gaps.module`.
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Module::Cpu => "cpu",
-            Module::Gpu => "gpu",
-            Module::Memory => "memory",
-            Module::Power => "power",
-            Module::Sensors => "sensors",
-            Module::Network => "network",
-            Module::Disk => "disk",
-            Module::Battery => "battery",
-            Module::Unknown => "unknown",
-        }
-    }
-
-    /// Inverse of [`Module::as_str`] for the known modules. `None` for anything else,
-    /// including `"unknown"`.
-    pub fn parse(s: &str) -> Option<Module> {
-        Module::ALL.into_iter().find(|m| m.as_str() == s)
-    }
-}
-
-crate::compat::text_enum_deserialize!(Module);
-
-/// `deserialize_with` for a map keyed by [`Module`]: entries for modules this build does
-/// not know are dropped, so a newer peer's extra module neither fails the decode nor
-/// shows up as an `"unknown"` key (D-040).
-pub(crate) fn deserialize_known_modules<'de, D, V>(
-    deserializer: D,
-) -> Result<std::collections::BTreeMap<Module, V>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-    V: Deserialize<'de>,
-{
-    let mut map = std::collections::BTreeMap::<Module, V>::deserialize(deserializer)?;
-    map.remove(&Module::Unknown);
-    Ok(map)
-}
+pub use crate::module::Module;
+pub(crate) use crate::module::deserialize_known_modules;
 
 /// One catalog entry.
 #[derive(Clone, Debug, PartialEq)]
@@ -190,6 +120,12 @@ impl MetricDef {
         self.period_s = secs;
         self
     }
+
+    /// The same definition with at most `n` series per host.
+    const fn cap(mut self, n: u16) -> Self {
+        self.max_cardinality = Some(n);
+        self
+    }
 }
 
 use MetricKind::{Gauge, Mean, Rate};
@@ -198,13 +134,24 @@ use Unit as U;
 
 const P: bool = true; // persisted
 const R: bool = false; // ring buffer only
+/// The labels of every `cgroup.*` series: `kind` is service, docker, podman, user or
+/// other; `name` the unit or container name (D-115).
+const CG: &[&str] = &["kind", "name"];
 
 /// The v1 metric catalog (v1-local-monitor.md 6.1).
 pub static CATALOG: &[MetricDef] = &[
-    // CPU
+    // CPU. `cpu.total` is all non-idle time: on Linux every `/proc/stat` field except
+    // idle and iowait, the macOS meaning (D-115).
     def("cpu.total", M::Cpu, U::Percent, Mean, &[], P),
     def("cpu.user", M::Cpu, U::Percent, Mean, &[], P),
     def("cpu.system", M::Cpu, U::Percent, Mean, &[], P),
+    // Linux only (D-115): idle time waiting on I/O, and time a hypervisor took.
+    def("cpu.iowait", M::Cpu, U::Percent, Mean, &[], P),
+    def("cpu.steal", M::Cpu, U::Percent, Mean, &[], P),
+    // Pressure stall information, Linux only (D-115): the share of the span some
+    // (`stall=some`) or all (`stall=full`) tasks were stalled, from deltas of the PSI
+    // `total` counter, never its averages. The memory and disk pairs follow.
+    def("cpu.psi", M::Cpu, U::Percent, Mean, &["stall"], P).every(5),
     def("cpu.load", M::Cpu, U::Percent, Mean, &["core"], P),
     def("cpu.loadavg", M::Cpu, U::Count, Gauge, &["window"], P).every(5),
     def("cpu.cluster.freq", M::Cpu, U::Hz, Mean, &["cluster"], P),
@@ -244,6 +191,7 @@ pub static CATALOG: &[MetricDef] = &[
     def("mem.swap_used", M::Memory, U::Bytes, Gauge, &[], P),
     def("mem.swap_in", M::Memory, U::PagesPerSec, Rate, &[], P),
     def("mem.swap_out", M::Memory, U::PagesPerSec, Rate, &[], P),
+    def("mem.psi", M::Memory, U::Percent, Mean, &["stall"], P).every(5),
     // Power
     def("power.cpu", M::Power, U::Watts, Mean, &[], P),
     def("power.gpu", M::Power, U::Watts, Mean, &[], P),
@@ -257,6 +205,9 @@ pub static CATALOG: &[MetricDef] = &[
     // only, scaled by a seed (an earlier session's scale or the chip default) until a
     // window closes (D-065). The UI labels the value with it; treat unknown values as 1.
     def("power.cpu_source", M::Power, U::Enum, Gauge, &[], R),
+    // A board power sensor by name, watts only (hwmon `power*_input`; current and
+    // voltage inputs are not power). Names follow `thermal.sensor` (D-115).
+    def("power.sensor", M::Power, U::Watts, Gauge, &["name"], P).every(5),
     // Sensors. Temperatures are read every 5 ticks (D-055): the HID and SMC reads are
     // the engine's largest kernel cost, and die temperatures move over seconds.
     def(
@@ -270,7 +221,11 @@ pub static CATALOG: &[MetricDef] = &[
     .every(5),
     def("thermal.cpu", M::Sensors, U::Celsius, Gauge, &[], P).every(5),
     def("thermal.gpu", M::Sensors, U::Celsius, Gauge, &[], P).every(5),
+    // From CPU/SoC-class sensors only; absent where there are none (D-115).
     def("thermal.hottest", M::Sensors, U::Celsius, Gauge, &[], P).every(5),
+    // On Linux `name` is `<chip>/<label or tempN>` from hwmon; a chip name that repeats
+    // is qualified by its parent device (`nvme0`, an i2c address), never by
+    // enumeration order, so a name survives a reboot (D-115).
     def(
         "thermal.sensor",
         M::Sensors,
@@ -405,6 +360,7 @@ pub static CATALOG: &[MetricDef] = &[
         &[],
         P,
     ),
+    def("disk.psi", M::Disk, U::Percent, Mean, &["stall"], P).every(5),
     def("disk.used", M::Disk, U::Bytes, Gauge, &["vol"], P).every(60),
     def("disk.free", M::Disk, U::Bytes, Gauge, &["vol"], P).every(60),
     def("disk.total", M::Disk, U::Bytes, Gauge, &["vol"], P).every(60),
@@ -436,6 +392,36 @@ pub static CATALOG: &[MetricDef] = &[
     // Signed: negative while discharging.
     def("battery.power", M::Battery, U::Watts, Gauge, &[], P).every(10),
     def("battery.temp", M::Battery, U::Celsius, Gauge, &[], P).every(10),
+    // Containers: cgroup v2 groups on a Linux host (D-115). The top 32 by CPU plus
+    // memory keep their own series; the rest fold into `{kind=other,name=_other}`, and
+    // `cgroup.other_count` says how many groups that is. CPU is percent of one core,
+    // like a process row; `mem_psi` is the `some` share of `memory.pressure`.
+    def("cgroup.cpu", M::Containers, U::Percent, Mean, CG, P)
+        .every(5)
+        .cap(32),
+    def("cgroup.mem", M::Containers, U::Bytes, Gauge, CG, P)
+        .every(5)
+        .cap(32),
+    def("cgroup.mem_max", M::Containers, U::Bytes, Gauge, CG, P)
+        .every(5)
+        .cap(32),
+    def("cgroup.io_read", M::Containers, U::BytesPerSec, Rate, CG, P)
+        .every(5)
+        .cap(32),
+    def(
+        "cgroup.io_write",
+        M::Containers,
+        U::BytesPerSec,
+        Rate,
+        CG,
+        P,
+    )
+    .every(5)
+    .cap(32),
+    def("cgroup.mem_psi", M::Containers, U::Percent, Mean, CG, P)
+        .every(5)
+        .cap(32),
+    def("cgroup.other_count", M::Containers, U::Count, Gauge, &[], P).every(5),
     // Kelvo's own CPU across the app and its WebKit helpers, CPU time over the span since
     // the previous sample (D-092). Filed under Cpu because the module list has no "app"
     // entry; nothing gates it on the CPU module switch.
@@ -555,6 +541,9 @@ mod tests {
             "cpu.total",
             "cpu.user",
             "cpu.system",
+            "cpu.iowait",
+            "cpu.steal",
+            "cpu.psi",
             "cpu.load",
             "cpu.loadavg",
             "cpu.cluster.freq",
@@ -577,6 +566,7 @@ mod tests {
             "mem.swap_used",
             "mem.swap_in",
             "mem.swap_out",
+            "mem.psi",
             "power.cpu",
             "power.gpu",
             "power.ane",
@@ -584,6 +574,7 @@ mod tests {
             "power.package",
             "power.system",
             "power.cpu_source",
+            "power.sensor",
             "thermal.zone",
             "thermal.cpu",
             "thermal.gpu",
@@ -614,6 +605,7 @@ mod tests {
             "disk.write_timed_ops_total",
             "disk.read_time_total",
             "disk.write_time_total",
+            "disk.psi",
             "disk.used",
             "disk.free",
             "disk.total",
@@ -627,6 +619,13 @@ mod tests {
             "battery.design_wh",
             "battery.power",
             "battery.temp",
+            "cgroup.cpu",
+            "cgroup.mem",
+            "cgroup.mem_max",
+            "cgroup.io_read",
+            "cgroup.io_write",
+            "cgroup.mem_psi",
+            "cgroup.other_count",
             "self.cpu",
         ];
         let have: BTreeSet<_> = CATALOG.iter().map(|d| d.id.as_str()).collect();
@@ -657,6 +656,18 @@ mod tests {
         assert_eq!(ring_only, want);
     }
 
+    /// D-115: only the container groups are capped, all at 32, and they are all filed
+    /// under Containers.
+    #[test]
+    fn cgroup_metrics_are_capped_containers() {
+        for d in CATALOG {
+            let cgroup = d.id.as_str().starts_with("cgroup.");
+            assert_eq!(cgroup, d.module == Module::Containers, "{}", d.id);
+            let want = (cgroup && !d.label_keys.is_empty()).then_some(32);
+            assert_eq!(d.max_cardinality, want, "{}", d.id);
+        }
+    }
+
     #[test]
     fn validate_rejects_unknown_and_mislabelled() {
         let c = Catalog::builtin();
@@ -677,28 +688,5 @@ mod tests {
         ));
         let extra_label = SeriesKey::parse("cpu.total{core=1}").unwrap();
         assert!(c.validate(&extra_label).is_err());
-    }
-
-    #[test]
-    fn unseen_module_decodes_as_unknown() {
-        let mut buf = Vec::new();
-        ciborium::into_writer(&"npu", &mut buf).unwrap();
-        assert_eq!(
-            ciborium::from_reader::<Module, _>(buf.as_slice()).unwrap(),
-            Module::Unknown
-        );
-        assert_eq!(Module::parse("unknown"), None);
-        assert!(!Module::ALL.contains(&Module::Unknown));
-    }
-
-    #[test]
-    fn module_text_round_trip() {
-        for m in Module::ALL {
-            assert_eq!(Module::parse(m.as_str()), Some(m));
-            assert_eq!(
-                serde_json::to_string(&m).unwrap(),
-                format!("\"{}\"", m.as_str())
-            );
-        }
     }
 }

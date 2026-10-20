@@ -1390,6 +1390,40 @@ fn process_gpu_capability_follows_the_collectors_probe() {
     assert!(after.revision > before.revision);
 }
 
+/// D-115: process columns and the disk inventory come from Supported collectors and
+/// leave with them; a host without such a collector reports neither.
+#[test]
+fn capability_facts_follow_the_collectors_probe() {
+    let (disk, dh) = fake(
+        "disk_io",
+        Cadence::EveryTick,
+        &[Module::Disk],
+        &["disk.read{dev=disk3}"],
+    );
+    let (procs, ph) = fake("processes", Cadence::EveryTick, &[], &[]);
+    let device = kelvo_schema::DiskDevice {
+        dev: "disk3".into(),
+        name: "APPLE SSD".into(),
+        internal: Some(true),
+        default: true,
+    };
+    dh.0.lock().unwrap().disk_devices = vec![device.clone()];
+    ph.0.lock().unwrap().process_columns = true;
+    let mut h = Harness::new("cap-facts", vec![disk, procs], &settings_all_on());
+    let before = h.ctl.capabilities();
+    assert_eq!(before.disk_devices, vec![device]);
+    assert!(before.process_energy && before.process_wakeups);
+
+    dh.set_probe(Some(kelvo_collect::Probe::NotPresent));
+    h.ctl.reprobe(&[Module::Disk]);
+    h.ticks(1);
+    let after = h.ctl.capabilities();
+    assert!(after.disk_devices.is_empty());
+    assert!(after.revision > before.revision);
+    // The processes fake files no module, so a Disk reprobe left it Supported.
+    assert!(after.process_energy);
+}
+
 #[test]
 fn capabilities_follow_probes() {
     let (cpu, _) = fake("cpu", Cadence::EveryTick, &[Module::Cpu], &["cpu.total"]);

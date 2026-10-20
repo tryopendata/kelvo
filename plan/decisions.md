@@ -111,6 +111,7 @@ See [README](README.md) for the roadmap and [architecture.md](architecture.md) f
 | D-104 | Remote Macs reuse the app and isolate mirrored history | Accepted |
 | D-111 | Stable hosted macOS PR checks and automatic portable-library coverage | Accepted |
 | D-112 | Native size/complexity limits and executable dependency boundaries | Accepted |
+| D-115 | Linux agent: a headless collector, its identity binding and the wire additions it needs | Accepted |
 
 ---
 
@@ -3534,3 +3535,58 @@ are not a one-way door.
 Unverified at acceptance: privacy prompts on a fresh account and after an update, the
 dataless policy against File Provider folders, clone fixtures and sampler tick lateness
 during a scan.
+
+
+## D-115: Linux agent
+
+Status: Accepted. Date: 2026-10-20. Amends D-104 ("no second collector"), which named
+cross-platform agents as its revisit point. Plan: the headless Linux agent milestones.
+
+A headless `kelvo-agent` runs the shared engine and store on Linux and serves them over
+the D-104 session. Root SSH installs a systemd system unit; any other user gets a user
+unit, and setup checks linger and shows the `loginctl enable-linger` command. It runs as
+root for now: SSH arrives as root on the target hosts, `same_uid` socket auth stays
+simple, and only root reads other users' `/proc/<pid>/io` and the Docker socket. A
+dedicated user with ambient capabilities is the later hardening. Its version is the
+workspace version, so it ships and updates with the app. Update copies `history.sqlite`
+aside, replaces the binary, restarts and waits for `status`; on failure it restores the
+binary and database, the same shape as the Mac rollback.
+
+Identity: the D-071 `host-id` file, bound by SHA-256 of the v1 prefix, the id and
+`/etc/machine-id`. A missing, empty, `uninitialized`, malformed or transient machine-id
+(`/run/machine-id` mounted over it) means no binding and the file is trusted. The system
+agent also mixes in DMI `product_uuid` or the device-tree serial when readable, which
+catches hypervisor clones that keep the machine-id. Recovery: `reset-identity` mints a
+new id (`identity::reset`), the controller offers "Re-pair as a new host" on a mismatch
+and keeps the old mirror offline, and a host has one agent layout (the probe refuses a
+second).
+
+Metrics (catalog): reused `cpu.loadavg{window}`, `cpu.load{core}`, `thermal.sensor`,
+`fan.rpm`/`fan.max`, `disk.*_timed_ops`/`*_time`. New: `cpu.iowait`, `cpu.steal`
+(percent, mean); `cpu.psi`, `mem.psi`, `disk.psi` `{stall=some|full}` from PSI `total`
+deltas (percent, mean, 5 s); `power.sensor{name}` (watts only, 5 s); `cgroup.cpu` (percent
+of one core), `cgroup.mem`, `cgroup.mem_max`, `cgroup.io_read`, `cgroup.io_write`,
+`cgroup.mem_psi` (`some`), all `{kind,name}`, 5 s, capped at 32 with the rest folded into
+`{kind=other,name=_other}`, plus an unlabelled `cgroup.other_count`. `cpu.total` is all
+non-idle, non-iowait time, the macOS meaning. hwmon names are `<chip>/<label|tempN>`,
+qualified by parent device when a chip repeats, never by enumeration order.
+`thermal.hottest` comes only from CPU/SoC-class sensors and is absent without them.
+
+Wire additions, all defaulted and D-040-safe, with old/new skew fixtures in kelvo-proto:
+`HostInfo.kernel`; `CoreKind::Uniform` (so `Unknown` stays never-produced);
+`UnsupportedReason::PermissionDenied`; `Module::Containers`, a capabilities and data module
+only, outside `SETTINGS_MODULES`, the menu bar and settings UI;
+`Capabilities.process_energy`/`process_wakeups`, defaulting to true so older Macs keep
+their columns;
+`Capabilities.disk_devices` (`dev`, `name`, `internal`, `default`), filled by the probing
+collector on every host. `Message::Hello` is boxed in Rust; the encoding is unchanged.
+
+`ProcessSample.app` on Linux is set only for `.service` units and container scopes, kind
+qualified (`docker:postgres`, `nginx.service`) so it never merges with a same-named host
+process. Live process tables and top lists only; detectors and stored rows are unchanged.
+
+Two container models coexist: the local Docker page keeps its own clock and history
+(D-103); a Linux host's Containers page reads `cgroup.*` series. Converging them is a
+later decision.
+
+Revisit for a non-root agent, a non-systemd init, or a third platform.

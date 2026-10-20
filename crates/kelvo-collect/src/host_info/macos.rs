@@ -89,6 +89,7 @@ pub fn host_record(id: HostId) -> HostRecord {
             boot_time_ms,
             gpu_dvfs_mhz: gpu_dvfs_mhz(),
             boot_mounts: boot_mounts(),
+            kernel: sysctl_string(c"kern.osrelease"),
         },
     }
 }

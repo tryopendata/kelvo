@@ -101,6 +101,10 @@ pub struct HostInfo {
     /// from a peer or record written before D-092.
     #[serde(default)]
     pub boot_mounts: Vec<String>,
+    /// The kernel release (`uname -r`: "6.17.0-400.asahi.fc41.aarch64", or Darwin's
+    /// "25.0.0"). `None` when unknown, and from a peer or record written before D-115.
+    #[serde(default)]
+    pub kernel: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, specta::Type)]
@@ -154,19 +158,28 @@ impl ClusterInfo {
 pub enum CoreKind {
     Performance,
     Efficiency,
+    /// Every core is the same kind: a host without heterogeneous cores (most Linux
+    /// servers, D-115). The CPU page shows no P/E split. `Unknown` is never produced
+    /// locally, so a homogeneous host reports this rather than leaving the kind blank.
+    Uniform,
     /// A core type this build does not know, from a newer peer (D-040).
     Unknown,
 }
 
 impl CoreKind {
     /// Every known core kind (not `Unknown`).
-    pub const ALL: [CoreKind; 2] = [CoreKind::Performance, CoreKind::Efficiency];
+    pub const ALL: [CoreKind; 3] = [
+        CoreKind::Performance,
+        CoreKind::Efficiency,
+        CoreKind::Uniform,
+    ];
 
     /// The snake_case text form, as serialized.
     pub const fn as_str(self) -> &'static str {
         match self {
             CoreKind::Performance => "performance",
             CoreKind::Efficiency => "efficiency",
+            CoreKind::Uniform => "uniform",
             CoreKind::Unknown => "unknown",
         }
     }
@@ -198,6 +211,7 @@ mod tests {
                 mem_total_bytes: 24 << 30,
                 boot_time_ms: 1_790_000_000_000,
                 gpu_dvfs_mhz: vec![338, 618, 1380],
+                kernel: None,
                 boot_mounts: vec!["/".into(), "/System/Volumes/Data".into()],
             },
         }

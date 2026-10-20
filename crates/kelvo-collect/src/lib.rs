@@ -561,6 +561,9 @@ pub trait Collector: Send + 'static {
     /// until the interest returns; the next sample starts over from a baseline. Default:
     /// nothing to free.
     fn release(&mut self) {}
+    /// While probed Supported, sets the capability facts this collector owns beyond its
+    /// series: `process_energy`/`process_wakeups`, `disk_devices` (D-115). Default: none.
+    fn fill_capabilities(&self, _caps: &mut kelvo_schema::Capabilities) {}
 }
 
 /// The entitlements this build may hold. An `appstore` build (sandboxed) allows only

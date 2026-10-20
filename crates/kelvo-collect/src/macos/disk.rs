@@ -51,6 +51,8 @@ struct Device {
 /// Independent byte/operation rates and paired completed-request timing rates.
 pub struct DiskIo {
     devices: Vec<Device>,
+    /// The probe's device list for `Capabilities::disk_devices` (D-115).
+    inventory: Vec<kelvo_schema::DiskDevice>,
     prev_ns: u64,
     totals: [SeriesKey; 8],
     k_stats: Key,
@@ -68,6 +70,7 @@ impl DiskIo {
     pub fn new() -> Self {
         Self {
             devices: Vec::new(),
+            inventory: Vec::new(),
             prev_ns: 0,
             totals: kelvo_schema::disk_io::TOTAL_METRICS
                 .map(|id| SeriesKey::bare(MetricId::from_static(id))),
@@ -140,7 +143,21 @@ fn fixed_internal(
     internal == Some(true) && removable == Some(false) && ejectable == Some(false)
 }
 
-/// On-demand metadata only; the sampler retains no device names beyond its labels.
+/// The capabilities form of [`io_devices`]: the same devices, the default one flagged.
+fn inventory(io: kelvo_schema::disk_io::DiskIoDevices) -> Vec<kelvo_schema::DiskDevice> {
+    io.devices
+        .into_iter()
+        .map(|d| kelvo_schema::DiskDevice {
+            default: io.default_device.as_deref() == Some(d.dev.as_str()),
+            dev: d.dev,
+            name: d.name,
+            internal: d.internal,
+        })
+        .collect()
+}
+
+/// On-demand metadata for the Disk page and, at probe, `Capabilities::disk_devices`; the
+/// sampler retains no device names beyond its labels and that list.
 pub fn io_devices() -> kelvo_schema::disk_io::DiskIoDevices {
     use kelvo_schema::disk_io::{DiskIoDevice, DiskIoDevices};
     let bsd = Key::new("BSD Name");
@@ -245,11 +262,17 @@ impl Collector for DiskIo {
             self.devices.push(dev);
         }
         if self.devices.is_empty() {
+            self.inventory.clear();
             Probe::NotPresent
         } else {
+            self.inventory = inventory(io_devices());
             series.extend(self.totals.iter().cloned());
             Probe::Supported(series)
         }
+    }
+
+    fn fill_capabilities(&self, caps: &mut kelvo_schema::Capabilities) {
+        caps.disk_devices.clone_from(&self.inventory);
     }
 
     fn sample(&mut self, tick: &Tick, out: &mut SampleBuf) -> Result<(), CollectError> {

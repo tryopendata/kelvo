@@ -14,7 +14,8 @@ use uuid::Uuid;
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "t", content = "c")]
 pub enum Message {
-    Hello(Hello),
+    // Boxed: sent once per connection, and the largest message by far.
+    Hello(Box<Hello>),
     HelloAck(HelloAck),
     Ping {
         nonce: u64,

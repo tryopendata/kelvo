@@ -308,6 +308,12 @@ export function capabilities(
     },
     process_network: !flags.noProcessNetwork,
     process_gpu: !flags.noProcessGpu,
+    // A Mac's libproc rows carry both (D-115).
+    process_energy: true,
+    process_wakeups: true,
+    disk_devices: [
+      { dev: "disk3", name: "Apple SSD", internal: true, default: true },
+    ],
   };
 }
 

@@ -31,6 +31,39 @@ pub struct Capabilities {
     /// read them (D-085). When false the UI hides the GPU columns. Defaults to false.
     #[serde(default)]
     pub process_gpu: bool,
+    /// Process rows carry energy impact (`energy`, `energy_j`). A Mac's libproc reports
+    /// it; a Linux host does not (D-115). When false the UI hides the energy columns.
+    /// Defaults to true when a sender does not know it, so an older remote Mac keeps
+    /// its columns.
+    #[serde(default = "default_true")]
+    pub process_energy: bool,
+    /// Process rows carry idle wakeups (`idle_wakeups_per_s`), with the same rule and
+    /// default as [`Capabilities::process_energy`].
+    #[serde(default = "default_true")]
+    pub process_wakeups: bool,
+    /// The block devices the `disk.*{dev}` series are labelled with, for the Disk page's
+    /// device list on any host (D-115). Empty when unknown, and from a sender before
+    /// D-115.
+    #[serde(default)]
+    pub disk_devices: Vec<DiskDevice>,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+/// One block device a host's `disk.*` series cover.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+pub struct DiskDevice {
+    /// The `dev` label value ("disk3", "nvme0n1").
+    pub dev: String,
+    /// Display name ("APPLE SSD AP1024Z", a model string).
+    pub name: String,
+    /// Built in (true) or attached (false); `None` when the OS does not say.
+    pub internal: Option<bool>,
+    /// The device the Disk page selects first: the fixed internal disk, else the first.
+    /// At most one device has it.
+    pub default: bool,
 }
 
 impl Capabilities {
@@ -122,6 +155,9 @@ pub enum UnsupportedReason {
     MissingEntitlement,
     /// The API is there but reports no such hardware.
     NoHardware,
+    /// The hardware is there but this process may not read it: RAPL energy files are
+    /// root-only on Linux, and the agent may run unprivileged (D-115).
+    PermissionDenied,
     /// A reason this build does not know (D-040). The UI shows a generic
     /// "not available".
     Unknown,
@@ -129,10 +165,11 @@ pub enum UnsupportedReason {
 
 impl UnsupportedReason {
     /// Every known reason (not `Unknown`).
-    pub const ALL: [UnsupportedReason; 3] = [
+    pub const ALL: [UnsupportedReason; 4] = [
         UnsupportedReason::UnknownChip,
         UnsupportedReason::MissingEntitlement,
         UnsupportedReason::NoHardware,
+        UnsupportedReason::PermissionDenied,
     ];
 
     /// The snake_case text form, as serialized.
@@ -141,6 +178,7 @@ impl UnsupportedReason {
             UnsupportedReason::UnknownChip => "unknown_chip",
             UnsupportedReason::MissingEntitlement => "missing_entitlement",
             UnsupportedReason::NoHardware => "no_hardware",
+            UnsupportedReason::PermissionDenied => "permission_denied",
             UnsupportedReason::Unknown => "unknown",
         }
     }
@@ -186,6 +224,14 @@ mod tests {
             revision: 3,
             process_network: false,
             process_gpu: false,
+            process_energy: true,
+            process_wakeups: false,
+            disk_devices: vec![DiskDevice {
+                dev: "disk3".into(),
+                name: "APPLE SSD".into(),
+                internal: Some(true),
+                default: true,
+            }],
         }
     }
 
@@ -193,7 +239,7 @@ mod tests {
     fn json_shape() {
         assert_eq!(
             serde_json::to_string(&sample()).unwrap(),
-            r#"{"modules":{"cpu":{"available":{"series":16}},"sensors":{"unsupported":"unknown_chip"},"battery":"not_present"},"revision":3,"process_network":false,"process_gpu":false}"#
+            r#"{"modules":{"cpu":{"available":{"series":16}},"sensors":{"unsupported":"unknown_chip"},"battery":"not_present"},"revision":3,"process_network":false,"process_gpu":false,"process_energy":true,"process_wakeups":false,"disk_devices":[{"dev":"disk3","name":"APPLE SSD","internal":true,"default":true}]}"#
         );
     }
 
@@ -206,6 +252,16 @@ mod tests {
             ciborium::from_reader::<Capabilities, _>(buf.as_slice()).unwrap(),
             c
         );
+    }
+
+    /// D-115: a sender that predates the process column flags (an older Mac) keeps its
+    /// energy and wakeup columns, and one that predates `disk_devices` lists none.
+    #[test]
+    fn missing_process_columns_default_to_present() {
+        let old = r#"{"modules":{},"revision":1,"process_network":true,"process_gpu":true}"#;
+        let c: Capabilities = serde_json::from_str(old).unwrap();
+        assert!(c.process_energy && c.process_wakeups);
+        assert!(c.disk_devices.is_empty());
     }
 
     #[test]

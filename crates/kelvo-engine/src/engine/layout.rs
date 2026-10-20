@@ -261,16 +261,33 @@ impl Engine {
             s.collector.cadence() == Cadence::OnDemand(Interest::GpuProcesses)
                 && matches!(s.probe, Some(Probe::Supported(_)))
         });
+        // Process columns and the disk inventory (D-115), from Supported collectors only.
+        let mut facts = Capabilities {
+            process_energy: false,
+            process_wakeups: false,
+            ..Capabilities::default()
+        };
+        for slot in &self.slots {
+            if matches!(slot.probe, Some(Probe::Supported(_))) {
+                slot.collector.fill_capabilities(&mut facts);
+            }
+        }
         let mut caps = self.shared.caps.lock_ok();
         if caps.modules != modules
             || caps.process_network != process_network
             || caps.process_gpu != process_gpu
+            || caps.process_energy != facts.process_energy
+            || caps.process_wakeups != facts.process_wakeups
+            || caps.disk_devices != facts.disk_devices
         {
             let next = Arc::new(Capabilities {
                 modules,
                 revision: caps.revision + 1,
                 process_network,
                 process_gpu,
+                process_energy: facts.process_energy,
+                process_wakeups: facts.process_wakeups,
+                disk_devices: facts.disk_devices,
             });
             *caps = Arc::clone(&next);
             drop(caps);

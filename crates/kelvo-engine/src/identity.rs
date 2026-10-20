@@ -24,12 +24,20 @@
 //! The next run recovers it from the store if history was written under it, or makes a
 //! new one.
 //!
+//! On Linux the binding is made from `/etc/machine-id` instead ([`linux_binding`],
+//! D-115), and a system agent also mixes in the firmware's DMI UUID or device-tree
+//! serial, which catches a hypervisor clone that kept the machine-id. A host without a
+//! usable machine-id has no binding, like a Mac whose hardware UUID cannot be read.
+//! [`reset`] mints a new id on purpose (`kelvo-agent reset-identity`).
+//!
 //! The file format, the binding input and its hash are a one-way door: changing any of
 //! them makes every existing install look cloned.
 
 use std::path::Path;
 
+use kelvo_collect::host_info::machine;
 use kelvo_schema::{HostId, HostRecord};
+use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 use crate::HistoryStore;
@@ -127,11 +135,7 @@ pub fn load_or_create(
             persisted: true,
         };
     }
-    let mut text = format!("{id}\n");
-    if let Some(m) = machine {
-        text.push_str(&format!("{MACHINE_PREFIX}{m}\n"));
-    }
-    let persisted = match write_atomically(dir, &path, &text) {
+    let persisted = match write_atomically(dir, &path, &file_text(id, machine)) {
         Ok(()) => true,
         Err(e) => {
             tracing::error!(host = %id, "cannot save the host id, using it for this run only: {e}");
@@ -143,6 +147,26 @@ pub fn load_or_create(
         source,
         persisted,
     }
+}
+
+/// The `host-id` file's text: the id, then its `machine=` token when there is one.
+fn file_text(id: HostId, machine: Option<String>) -> String {
+    let mut text = format!("{id}\n");
+    if let Some(m) = machine {
+        text.push_str(&format!("{MACHINE_PREFIX}{m}\n"));
+    }
+    text
+}
+
+/// Gives the data directory `dir` a new host id with its `binding`, replacing whatever
+/// `host-id` held (`kelvo-agent reset-identity`, D-115). The next [`open_local`] reads
+/// it from the file; registering it demotes the store's old local host to a non-local
+/// one (D-064), so the history recorded under the old id stays, as with a clone.
+pub fn reset(dir: &Path, binding: impl Fn(HostId) -> Option<String>) -> std::io::Result<HostId> {
+    let id = HostId(Uuid::new_v4());
+    let path = dir.join(HOST_ID_FILE);
+    write_atomically(dir, &path, &file_text(id, binding(id))).map_err(std::io::Error::other)?;
+    Ok(id)
 }
 
 /// The data directory's part of startup, for the app and the headless agent alike:
@@ -182,13 +206,44 @@ fn write_atomically(dir: &Path, path: &Path, text: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// A token tying `id` to this Mac: SHA-256 of a fixed prefix, the id and the hardware
-/// UUID (`kelvo_collect::macos::platform_uuid`), in hex. Salting with the id means the
-/// file never holds the hardware UUID or anything that matches across installs. `None`
-/// when the hardware UUID is unreadable, and always off macOS, where the file is trusted
-/// as it is.
+/// A token tying `id` to this machine: SHA-256 of a fixed prefix, the id and the
+/// hardware UUID (`kelvo_collect::macos::platform_uuid`), in hex. Salting with the id
+/// means the file never holds the hardware UUID or anything that matches across
+/// installs. `None` when the hardware UUID is unreadable. On Linux it is
+/// [`linux_binding`] of `/` without firmware ids; other systems have none, and their
+/// file is trusted as it is.
 pub fn machine_binding(id: HostId) -> Option<String> {
     binding::machine_binding(id)
+}
+
+/// Which machine identifiers a Linux binding covers.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BindingScope {
+    /// `/etc/machine-id` only: what any user can read (the user agent, the default).
+    MachineId,
+    /// The machine-id plus the DMI `product_uuid` or device-tree serial when readable,
+    /// usually only as root (the system agent's `--system`).
+    WithHardware,
+}
+
+const BINDING_PREFIX: &[u8] = b"kelvo host-id binding v1\0";
+
+/// The Linux binding for `id` from the identifiers under `root` (`/` on a real host;
+/// [`machine::machine_ids`] reads and validates them): SHA-256 of the v1 prefix, the id's
+/// 16 bytes and the machine-id, then a NUL and the firmware id when `scope` includes one
+/// that is readable, in hex. `None` without a usable machine-id. Portable code, so it is
+/// tested everywhere; only a Linux build uses it for its own binding.
+pub fn linux_binding(id: HostId, root: &Path, scope: BindingScope) -> Option<String> {
+    let ids = machine::machine_ids(root, scope == BindingScope::WithHardware)?;
+    let mut hash = Sha256::new();
+    hash.update(BINDING_PREFIX);
+    hash.update(id.0.as_bytes());
+    hash.update(ids.machine_id.as_bytes());
+    if let Some(hw) = &ids.hardware {
+        hash.update(b"\0");
+        hash.update(hw.as_bytes());
+    }
+    Some(hash.finalize().iter().map(|b| format!("{b:02x}")).collect())
 }
 
 #[cfg(target_os = "macos")]
@@ -208,7 +263,7 @@ mod binding {
 
     /// The binding for `id` on a Mac whose hardware UUID is `platform`.
     pub(super) fn token(id: HostId, platform: &str) -> Option<String> {
-        let mut input = b"kelvo host-id binding v1\0".to_vec();
+        let mut input = super::BINDING_PREFIX.to_vec();
         input.extend_from_slice(id.0.as_bytes());
         input.extend_from_slice(platform.as_bytes());
         let len = u32::try_from(input.len()).ok()?;
@@ -219,7 +274,20 @@ mod binding {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
+mod binding {
+    use kelvo_schema::HostId;
+
+    pub(super) fn machine_binding(id: HostId) -> Option<String> {
+        super::linux_binding(
+            id,
+            std::path::Path::new("/"),
+            super::BindingScope::MachineId,
+        )
+    }
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
 mod binding {
     use kelvo_schema::HostId;
 
@@ -256,6 +324,7 @@ mod tests {
                 mem_total_bytes: 0,
                 boot_time_ms: 0,
                 gpu_dvfs_mhz: Vec::new(),
+                kernel: None,
                 boot_mounts: Vec::new(),
             },
         }
@@ -419,6 +488,104 @@ mod tests {
             binding::token(id, "00000000-0000-0000-0000-000000000001").as_deref(),
             Some("316cbedc91ce4a52c6fd77bab18dad5c9193f176546ab22950b512bc44839ffa")
         );
+    }
+
+    /// D-115: `reset` mints a new id that the next start reads from the file, even
+    /// though the store still names the old one as its local host.
+    #[test]
+    fn reset_mints_an_id_the_next_start_keeps() {
+        let tmp = temp_dir("id-reset");
+        let dir = tmp.path();
+        let old = load_or_create(dir, None, mac_a).id;
+        let new = reset(dir, mac_a).unwrap();
+        assert_ne!(new, old);
+        let text = std::fs::read_to_string(dir.join(HOST_ID_FILE)).unwrap();
+        assert_eq!(text, format!("{new}\nmachine=a-{new}\n"));
+        assert_eq!(load(dir, Some(&record(old, true))), (new, IdSource::File));
+        // An unwritable directory is an error, not a silent in-memory id.
+        std::fs::write(dir.join("file"), "").unwrap();
+        assert!(reset(&dir.join("file").join("data"), mac_a).is_err());
+    }
+
+    fn linux_root(files: &[(&str, &str)]) -> tempfile::TempDir {
+        let tmp = temp_dir("linux-root");
+        for (path, text) in files {
+            let path = tmp.path().join(path);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, text).unwrap();
+        }
+        tmp
+    }
+
+    const MACHINE_ID: &str = "4c1d3f0e9a8b47c6b5d2e1f0a9b8c7d6";
+
+    /// The Linux binding is a one-way door too. Expected values are SHA-256 of the
+    /// prefix, the id's 16 bytes and the machine-id (then a NUL and the DMI UUID),
+    /// computed independently (Python `hashlib`).
+    #[test]
+    fn the_linux_binding_hash_is_stable() {
+        let id = HostId(Uuid::parse_str("6f1c2a3b-4d5e-4f60-8a7b-9c0d1e2f3a4b").unwrap());
+        let dmi = "6E0A1B2C-3D4E-5F60-7182-93A4B5C6D7E8";
+        let root = linux_root(&[
+            ("etc/machine-id", &format!("{MACHINE_ID}\n")),
+            ("sys/class/dmi/id/product_uuid", dmi),
+        ]);
+        let user = linux_binding(id, root.path(), BindingScope::MachineId);
+        assert_eq!(user.as_deref(), Some(LINUX_USER_TOKEN));
+        let system = linux_binding(id, root.path(), BindingScope::WithHardware);
+        assert_eq!(system.as_deref(), Some(LINUX_SYSTEM_TOKEN));
+
+        // Without a readable firmware id, the system binding is the machine-id one.
+        let bare = linux_root(&[("etc/machine-id", MACHINE_ID)]);
+        assert_eq!(
+            linux_binding(id, bare.path(), BindingScope::WithHardware),
+            user
+        );
+        // Another id on the same machine gets another token.
+        assert_ne!(
+            linux_binding(HostId(Uuid::new_v4()), bare.path(), BindingScope::MachineId),
+            user
+        );
+    }
+
+    const LINUX_USER_TOKEN: &str =
+        "c4f4c4e74777ebb30f9f2adf4dbfe31acb49c69dba3d9619bfe3062b3f3c10cf";
+    const LINUX_SYSTEM_TOKEN: &str =
+        "841c40a6d4fb0f0ad4e352d684fcc94f5ba7b683dfa7da3aecc416a510b28bca";
+
+    /// D-115: a VM cloned with its machine-id gets a new id when the system agent's
+    /// binding sees the new DMI UUID. A user agent sees only the machine-id, so the copy
+    /// keeps its id; without a usable machine-id there is no binding and the file wins.
+    #[test]
+    fn a_linux_vm_clone_is_caught_only_with_hardware_ids() {
+        let dmi = "sys/class/dmi/id/product_uuid";
+        let a = linux_root(&[
+            ("etc/machine-id", MACHINE_ID),
+            (dmi, "11111111-2222-3333-4444-555555555555"),
+        ]);
+        let b = linux_root(&[
+            ("etc/machine-id", MACHINE_ID),
+            (dmi, "99999999-2222-3333-4444-555555555555"),
+        ]);
+        let on = |root: &tempfile::TempDir, scope| {
+            let root = root.path().to_owned();
+            move |id| linux_binding(id, &root, scope)
+        };
+
+        let system = temp_dir("id-linux-system");
+        let first = load_or_create(system.path(), None, on(&a, BindingScope::WithHardware)).id;
+        let clone = load_or_create(system.path(), None, on(&b, BindingScope::WithHardware));
+        assert_eq!(clone.source, IdSource::Cloned);
+        assert_ne!(clone.id, first);
+
+        let user = temp_dir("id-linux-user");
+        let first = load_or_create(user.path(), None, on(&a, BindingScope::MachineId)).id;
+        let copy = load_or_create(user.path(), None, on(&b, BindingScope::MachineId));
+        assert_eq!((copy.id, copy.source), (first, IdSource::File));
+
+        let none = linux_root(&[("etc/machine-id", "uninitialized\n")]);
+        let trusted = load_or_create(user.path(), None, on(&none, BindingScope::WithHardware));
+        assert_eq!((trusted.id, trusted.source), (first, IdSource::File));
     }
 
     /// On a real Mac the hardware UUID reads, so the binding exists and is stable.

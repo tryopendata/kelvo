@@ -85,6 +85,7 @@ pub(super) fn words_name(module: Module) -> &'static str {
         Module::Network => "network",
         Module::Disk => "disk",
         Module::Battery => "battery",
+        Module::Containers => "containers",
         Module::Unknown => "unknown",
     }
 }

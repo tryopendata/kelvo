@@ -318,13 +318,13 @@ export const MAX_NET_SPAN_MS = 7776000000 as const;
 
 export const METRIC_CODES = {"mem.pressure_level":{"critical":2,"normal":0,"warn":1},"power.cpu_source":{"calibrated":2,"seeded":3,"uncalibrated":1},"thermal.state":{"critical":3,"fair":1,"nominal":0,"serious":2}} as const;
 
-export const METRIC_KINDS = {"battery.capacity_wh":"gauge","battery.charge":"gauge","battery.charging":"gauge","battery.cycles":"gauge","battery.design_wh":"gauge","battery.external":"gauge","battery.health":"gauge","battery.power":"gauge","battery.temp":"gauge","battery.time_remaining":"gauge","cpu.cluster.active":"mean","cpu.cluster.freq":"mean","cpu.cluster.power":"mean","cpu.cluster.residency":"mean","cpu.load":"mean","cpu.loadavg":"gauge","cpu.system":"mean","cpu.total":"mean","cpu.user":"mean","disk.free":"gauge","disk.read":"rate","disk.read_ops":"rate","disk.read_ops_total":"rate","disk.read_time":"rate","disk.read_time_total":"rate","disk.read_timed_ops":"rate","disk.read_timed_ops_total":"rate","disk.read_total":"rate","disk.total":"gauge","disk.used":"gauge","disk.write":"rate","disk.write_ops":"rate","disk.write_ops_total":"rate","disk.write_time":"rate","disk.write_time_total":"rate","disk.write_timed_ops":"rate","disk.write_timed_ops_total":"rate","disk.write_total":"rate","fan.max":"gauge","fan.mode":"gauge","fan.rpm":"gauge","gpu.freq":"mean","gpu.render":"gauge","gpu.residency":"mean","gpu.tiler":"gauge","gpu.util":"gauge","mem.app":"gauge","mem.cached":"gauge","mem.compressed":"gauge","mem.free":"gauge","mem.pressure":"gauge","mem.pressure_level":"gauge","mem.swap_in":"rate","mem.swap_out":"rate","mem.swap_used":"gauge","mem.used":"gauge","mem.wired":"gauge","net.link_rate":"gauge","net.rx":"rate","net.rx_total":"rate","net.tx":"rate","net.tx_total":"rate","power.ane":"mean","power.cpu":"mean","power.cpu_source":"gauge","power.dram":"mean","power.gpu":"mean","power.package":"mean","power.system":"gauge","self.cpu":"mean","thermal.cpu":"gauge","thermal.gpu":"gauge","thermal.hottest":"gauge","thermal.sensor":"gauge","thermal.state":"gauge","thermal.zone":"gauge"} as const;
+export const METRIC_KINDS = {"battery.capacity_wh":"gauge","battery.charge":"gauge","battery.charging":"gauge","battery.cycles":"gauge","battery.design_wh":"gauge","battery.external":"gauge","battery.health":"gauge","battery.power":"gauge","battery.temp":"gauge","battery.time_remaining":"gauge","cgroup.cpu":"mean","cgroup.io_read":"rate","cgroup.io_write":"rate","cgroup.mem":"gauge","cgroup.mem_max":"gauge","cgroup.mem_psi":"mean","cgroup.other_count":"gauge","cpu.cluster.active":"mean","cpu.cluster.freq":"mean","cpu.cluster.power":"mean","cpu.cluster.residency":"mean","cpu.iowait":"mean","cpu.load":"mean","cpu.loadavg":"gauge","cpu.psi":"mean","cpu.steal":"mean","cpu.system":"mean","cpu.total":"mean","cpu.user":"mean","disk.free":"gauge","disk.psi":"mean","disk.read":"rate","disk.read_ops":"rate","disk.read_ops_total":"rate","disk.read_time":"rate","disk.read_time_total":"rate","disk.read_timed_ops":"rate","disk.read_timed_ops_total":"rate","disk.read_total":"rate","disk.total":"gauge","disk.used":"gauge","disk.write":"rate","disk.write_ops":"rate","disk.write_ops_total":"rate","disk.write_time":"rate","disk.write_time_total":"rate","disk.write_timed_ops":"rate","disk.write_timed_ops_total":"rate","disk.write_total":"rate","fan.max":"gauge","fan.mode":"gauge","fan.rpm":"gauge","gpu.freq":"mean","gpu.render":"gauge","gpu.residency":"mean","gpu.tiler":"gauge","gpu.util":"gauge","mem.app":"gauge","mem.cached":"gauge","mem.compressed":"gauge","mem.free":"gauge","mem.pressure":"gauge","mem.pressure_level":"gauge","mem.psi":"mean","mem.swap_in":"rate","mem.swap_out":"rate","mem.swap_used":"gauge","mem.used":"gauge","mem.wired":"gauge","net.link_rate":"gauge","net.rx":"rate","net.rx_total":"rate","net.tx":"rate","net.tx_total":"rate","power.ane":"mean","power.cpu":"mean","power.cpu_source":"gauge","power.dram":"mean","power.gpu":"mean","power.package":"mean","power.sensor":"gauge","power.system":"gauge","self.cpu":"mean","thermal.cpu":"gauge","thermal.gpu":"gauge","thermal.hottest":"gauge","thermal.sensor":"gauge","thermal.state":"gauge","thermal.zone":"gauge"} as const;
 
-export const METRIC_MODULES = {"battery.capacity_wh":"battery","battery.charge":"battery","battery.charging":"battery","battery.cycles":"battery","battery.design_wh":"battery","battery.external":"battery","battery.health":"battery","battery.power":"battery","battery.temp":"battery","battery.time_remaining":"battery","cpu.cluster.active":"cpu","cpu.cluster.freq":"cpu","cpu.cluster.power":"cpu","cpu.cluster.residency":"cpu","cpu.load":"cpu","cpu.loadavg":"cpu","cpu.system":"cpu","cpu.total":"cpu","cpu.user":"cpu","disk.free":"disk","disk.read":"disk","disk.read_ops":"disk","disk.read_ops_total":"disk","disk.read_time":"disk","disk.read_time_total":"disk","disk.read_timed_ops":"disk","disk.read_timed_ops_total":"disk","disk.read_total":"disk","disk.total":"disk","disk.used":"disk","disk.write":"disk","disk.write_ops":"disk","disk.write_ops_total":"disk","disk.write_time":"disk","disk.write_time_total":"disk","disk.write_timed_ops":"disk","disk.write_timed_ops_total":"disk","disk.write_total":"disk","fan.max":"sensors","fan.mode":"sensors","fan.rpm":"sensors","gpu.freq":"gpu","gpu.render":"gpu","gpu.residency":"gpu","gpu.tiler":"gpu","gpu.util":"gpu","mem.app":"memory","mem.cached":"memory","mem.compressed":"memory","mem.free":"memory","mem.pressure":"memory","mem.pressure_level":"memory","mem.swap_in":"memory","mem.swap_out":"memory","mem.swap_used":"memory","mem.used":"memory","mem.wired":"memory","net.link_rate":"network","net.rx":"network","net.rx_total":"network","net.tx":"network","net.tx_total":"network","power.ane":"power","power.cpu":"power","power.cpu_source":"power","power.dram":"power","power.gpu":"power","power.package":"power","power.system":"power","self.cpu":"cpu","thermal.cpu":"sensors","thermal.gpu":"sensors","thermal.hottest":"sensors","thermal.sensor":"sensors","thermal.state":"sensors","thermal.zone":"sensors"} as const;
+export const METRIC_MODULES = {"battery.capacity_wh":"battery","battery.charge":"battery","battery.charging":"battery","battery.cycles":"battery","battery.design_wh":"battery","battery.external":"battery","battery.health":"battery","battery.power":"battery","battery.temp":"battery","battery.time_remaining":"battery","cgroup.cpu":"containers","cgroup.io_read":"containers","cgroup.io_write":"containers","cgroup.mem":"containers","cgroup.mem_max":"containers","cgroup.mem_psi":"containers","cgroup.other_count":"containers","cpu.cluster.active":"cpu","cpu.cluster.freq":"cpu","cpu.cluster.power":"cpu","cpu.cluster.residency":"cpu","cpu.iowait":"cpu","cpu.load":"cpu","cpu.loadavg":"cpu","cpu.psi":"cpu","cpu.steal":"cpu","cpu.system":"cpu","cpu.total":"cpu","cpu.user":"cpu","disk.free":"disk","disk.psi":"disk","disk.read":"disk","disk.read_ops":"disk","disk.read_ops_total":"disk","disk.read_time":"disk","disk.read_time_total":"disk","disk.read_timed_ops":"disk","disk.read_timed_ops_total":"disk","disk.read_total":"disk","disk.total":"disk","disk.used":"disk","disk.write":"disk","disk.write_ops":"disk","disk.write_ops_total":"disk","disk.write_time":"disk","disk.write_time_total":"disk","disk.write_timed_ops":"disk","disk.write_timed_ops_total":"disk","disk.write_total":"disk","fan.max":"sensors","fan.mode":"sensors","fan.rpm":"sensors","gpu.freq":"gpu","gpu.render":"gpu","gpu.residency":"gpu","gpu.tiler":"gpu","gpu.util":"gpu","mem.app":"memory","mem.cached":"memory","mem.compressed":"memory","mem.free":"memory","mem.pressure":"memory","mem.pressure_level":"memory","mem.psi":"memory","mem.swap_in":"memory","mem.swap_out":"memory","mem.swap_used":"memory","mem.used":"memory","mem.wired":"memory","net.link_rate":"network","net.rx":"network","net.rx_total":"network","net.tx":"network","net.tx_total":"network","power.ane":"power","power.cpu":"power","power.cpu_source":"power","power.dram":"power","power.gpu":"power","power.package":"power","power.sensor":"power","power.system":"power","self.cpu":"cpu","thermal.cpu":"sensors","thermal.gpu":"sensors","thermal.hottest":"sensors","thermal.sensor":"sensors","thermal.state":"sensors","thermal.zone":"sensors"} as const;
 
-export const METRIC_PERIODS_MS = {"battery.capacity_wh":60000,"battery.charge":10000,"battery.charging":10000,"battery.cycles":60000,"battery.design_wh":60000,"battery.external":10000,"battery.health":60000,"battery.power":10000,"battery.temp":10000,"battery.time_remaining":10000,"cpu.cluster.active":1000,"cpu.cluster.freq":1000,"cpu.cluster.power":1000,"cpu.cluster.residency":1000,"cpu.load":1000,"cpu.loadavg":5000,"cpu.system":1000,"cpu.total":1000,"cpu.user":1000,"disk.free":60000,"disk.read":1000,"disk.read_ops":1000,"disk.read_ops_total":1000,"disk.read_time":1000,"disk.read_time_total":1000,"disk.read_timed_ops":1000,"disk.read_timed_ops_total":1000,"disk.read_total":1000,"disk.total":60000,"disk.used":60000,"disk.write":1000,"disk.write_ops":1000,"disk.write_ops_total":1000,"disk.write_time":1000,"disk.write_time_total":1000,"disk.write_timed_ops":1000,"disk.write_timed_ops_total":1000,"disk.write_total":1000,"fan.max":60000,"fan.mode":60000,"fan.rpm":2000,"gpu.freq":1000,"gpu.render":1000,"gpu.residency":1000,"gpu.tiler":1000,"gpu.util":1000,"mem.app":1000,"mem.cached":1000,"mem.compressed":1000,"mem.free":1000,"mem.pressure":1000,"mem.pressure_level":1000,"mem.swap_in":1000,"mem.swap_out":1000,"mem.swap_used":1000,"mem.used":1000,"mem.wired":1000,"net.link_rate":60000,"net.rx":1000,"net.rx_total":1000,"net.tx":1000,"net.tx_total":1000,"power.ane":1000,"power.cpu":1000,"power.cpu_source":1000,"power.dram":1000,"power.gpu":1000,"power.package":1000,"power.system":1000,"self.cpu":10000,"thermal.cpu":5000,"thermal.gpu":5000,"thermal.hottest":5000,"thermal.sensor":5000,"thermal.state":2000,"thermal.zone":5000} as const;
+export const METRIC_PERIODS_MS = {"battery.capacity_wh":60000,"battery.charge":10000,"battery.charging":10000,"battery.cycles":60000,"battery.design_wh":60000,"battery.external":10000,"battery.health":60000,"battery.power":10000,"battery.temp":10000,"battery.time_remaining":10000,"cgroup.cpu":5000,"cgroup.io_read":5000,"cgroup.io_write":5000,"cgroup.mem":5000,"cgroup.mem_max":5000,"cgroup.mem_psi":5000,"cgroup.other_count":5000,"cpu.cluster.active":1000,"cpu.cluster.freq":1000,"cpu.cluster.power":1000,"cpu.cluster.residency":1000,"cpu.iowait":1000,"cpu.load":1000,"cpu.loadavg":5000,"cpu.psi":5000,"cpu.steal":1000,"cpu.system":1000,"cpu.total":1000,"cpu.user":1000,"disk.free":60000,"disk.psi":5000,"disk.read":1000,"disk.read_ops":1000,"disk.read_ops_total":1000,"disk.read_time":1000,"disk.read_time_total":1000,"disk.read_timed_ops":1000,"disk.read_timed_ops_total":1000,"disk.read_total":1000,"disk.total":60000,"disk.used":60000,"disk.write":1000,"disk.write_ops":1000,"disk.write_ops_total":1000,"disk.write_time":1000,"disk.write_time_total":1000,"disk.write_timed_ops":1000,"disk.write_timed_ops_total":1000,"disk.write_total":1000,"fan.max":60000,"fan.mode":60000,"fan.rpm":2000,"gpu.freq":1000,"gpu.render":1000,"gpu.residency":1000,"gpu.tiler":1000,"gpu.util":1000,"mem.app":1000,"mem.cached":1000,"mem.compressed":1000,"mem.free":1000,"mem.pressure":1000,"mem.pressure_level":1000,"mem.psi":5000,"mem.swap_in":1000,"mem.swap_out":1000,"mem.swap_used":1000,"mem.used":1000,"mem.wired":1000,"net.link_rate":60000,"net.rx":1000,"net.rx_total":1000,"net.tx":1000,"net.tx_total":1000,"power.ane":1000,"power.cpu":1000,"power.cpu_source":1000,"power.dram":1000,"power.gpu":1000,"power.package":1000,"power.sensor":5000,"power.system":1000,"self.cpu":10000,"thermal.cpu":5000,"thermal.gpu":5000,"thermal.hottest":5000,"thermal.sensor":5000,"thermal.state":2000,"thermal.zone":5000} as const;
 
-export const METRIC_UNITS = {"battery.capacity_wh":"watt_hours","battery.charge":"percent","battery.charging":"bool","battery.cycles":"count","battery.design_wh":"watt_hours","battery.external":"bool","battery.health":"percent","battery.power":"watts","battery.temp":"celsius","battery.time_remaining":"minutes","cpu.cluster.active":"percent","cpu.cluster.freq":"hz","cpu.cluster.power":"watts","cpu.cluster.residency":"percent","cpu.load":"percent","cpu.loadavg":"count","cpu.system":"percent","cpu.total":"percent","cpu.user":"percent","disk.free":"bytes","disk.read":"bytes_per_sec","disk.read_ops":"operations_per_sec","disk.read_ops_total":"operations_per_sec","disk.read_time":"milliseconds_per_sec","disk.read_time_total":"milliseconds_per_sec","disk.read_timed_ops":"operations_per_sec","disk.read_timed_ops_total":"operations_per_sec","disk.read_total":"bytes_per_sec","disk.total":"bytes","disk.used":"bytes","disk.write":"bytes_per_sec","disk.write_ops":"operations_per_sec","disk.write_ops_total":"operations_per_sec","disk.write_time":"milliseconds_per_sec","disk.write_time_total":"milliseconds_per_sec","disk.write_timed_ops":"operations_per_sec","disk.write_timed_ops_total":"operations_per_sec","disk.write_total":"bytes_per_sec","fan.max":"rpm","fan.mode":"enum","fan.rpm":"rpm","gpu.freq":"hz","gpu.render":"percent","gpu.residency":"percent","gpu.tiler":"percent","gpu.util":"percent","mem.app":"bytes","mem.cached":"bytes","mem.compressed":"bytes","mem.free":"bytes","mem.pressure":"percent","mem.pressure_level":"enum","mem.swap_in":"pages_per_sec","mem.swap_out":"pages_per_sec","mem.swap_used":"bytes","mem.used":"bytes","mem.wired":"bytes","net.link_rate":"bits_per_sec","net.rx":"bytes_per_sec","net.rx_total":"bytes_per_sec","net.tx":"bytes_per_sec","net.tx_total":"bytes_per_sec","power.ane":"watts","power.cpu":"watts","power.cpu_source":"enum","power.dram":"watts","power.gpu":"watts","power.package":"watts","power.system":"watts","self.cpu":"percent","thermal.cpu":"celsius","thermal.gpu":"celsius","thermal.hottest":"celsius","thermal.sensor":"celsius","thermal.state":"enum","thermal.zone":"celsius"} as const;
+export const METRIC_UNITS = {"battery.capacity_wh":"watt_hours","battery.charge":"percent","battery.charging":"bool","battery.cycles":"count","battery.design_wh":"watt_hours","battery.external":"bool","battery.health":"percent","battery.power":"watts","battery.temp":"celsius","battery.time_remaining":"minutes","cgroup.cpu":"percent","cgroup.io_read":"bytes_per_sec","cgroup.io_write":"bytes_per_sec","cgroup.mem":"bytes","cgroup.mem_max":"bytes","cgroup.mem_psi":"percent","cgroup.other_count":"count","cpu.cluster.active":"percent","cpu.cluster.freq":"hz","cpu.cluster.power":"watts","cpu.cluster.residency":"percent","cpu.iowait":"percent","cpu.load":"percent","cpu.loadavg":"count","cpu.psi":"percent","cpu.steal":"percent","cpu.system":"percent","cpu.total":"percent","cpu.user":"percent","disk.free":"bytes","disk.psi":"percent","disk.read":"bytes_per_sec","disk.read_ops":"operations_per_sec","disk.read_ops_total":"operations_per_sec","disk.read_time":"milliseconds_per_sec","disk.read_time_total":"milliseconds_per_sec","disk.read_timed_ops":"operations_per_sec","disk.read_timed_ops_total":"operations_per_sec","disk.read_total":"bytes_per_sec","disk.total":"bytes","disk.used":"bytes","disk.write":"bytes_per_sec","disk.write_ops":"operations_per_sec","disk.write_ops_total":"operations_per_sec","disk.write_time":"milliseconds_per_sec","disk.write_time_total":"milliseconds_per_sec","disk.write_timed_ops":"operations_per_sec","disk.write_timed_ops_total":"operations_per_sec","disk.write_total":"bytes_per_sec","fan.max":"rpm","fan.mode":"enum","fan.rpm":"rpm","gpu.freq":"hz","gpu.render":"percent","gpu.residency":"percent","gpu.tiler":"percent","gpu.util":"percent","mem.app":"bytes","mem.cached":"bytes","mem.compressed":"bytes","mem.free":"bytes","mem.pressure":"percent","mem.pressure_level":"enum","mem.psi":"percent","mem.swap_in":"pages_per_sec","mem.swap_out":"pages_per_sec","mem.swap_used":"bytes","mem.used":"bytes","mem.wired":"bytes","net.link_rate":"bits_per_sec","net.rx":"bytes_per_sec","net.rx_total":"bytes_per_sec","net.tx":"bytes_per_sec","net.tx_total":"bytes_per_sec","power.ane":"watts","power.cpu":"watts","power.cpu_source":"enum","power.dram":"watts","power.gpu":"watts","power.package":"watts","power.sensor":"watts","power.system":"watts","self.cpu":"percent","thermal.cpu":"celsius","thermal.gpu":"celsius","thermal.hottest":"celsius","thermal.sensor":"celsius","thermal.state":"enum","thermal.zone":"celsius"} as const;
 
 export const NET_BUCKET_MS = 10000 as const;
 
@@ -464,6 +464,24 @@ export type Capabilities = {
 	 *  read them (D-085). When false the UI hides the GPU columns. Defaults to false.
 	 */
 	process_gpu?: boolean,
+	/**
+	 *  Process rows carry energy impact (`energy`, `energy_j`). A Mac's libproc reports
+	 *  it; a Linux host does not (D-115). When false the UI hides the energy columns.
+	 *  Defaults to true when a sender does not know it, so an older remote Mac keeps
+	 *  its columns.
+	 */
+	process_energy?: boolean,
+	/**
+	 *  Process rows carry idle wakeups (`idle_wakeups_per_s`), with the same rule and
+	 *  default as [`Capabilities::process_energy`].
+	 */
+	process_wakeups?: boolean,
+	/**
+	 *  The block devices the `disk.*{dev}` series are labelled with, for the Disk page's
+	 *  device list on any host (D-115). Empty when unknown, and from a sender before
+	 *  D-115.
+	 */
+	disk_devices?: DiskDevice[],
 };
 
 /**  Emitted when a host's capabilities change (a module appears or goes away). */
@@ -559,8 +577,29 @@ export type CommandError = { kind: "update"; message: string } |
 { kind: "public_ip"; message: string };
 
 export type CoreKind = "performance" | "efficiency" |
+/**
+ *  Every core is the same kind: a host without heterogeneous cores (most Linux
+ *  servers, D-115). The CPU page shows no P/E split. `Unknown` is never produced
+ *  locally, so a homogeneous host reports this rather than leaving the kind blank.
+ */
+"uniform" |
 /**  A core type this build does not know, from a newer peer (D-040). */
 "unknown";
+
+/**  One block device a host's `disk.*` series cover. */
+export type DiskDevice = {
+	/**  The `dev` label value ("disk3", "nvme0n1"). */
+	dev: string,
+	/**  Display name ("APPLE SSD AP1024Z", a model string). */
+	name: string,
+	/**  Built in (true) or attached (false); `None` when the OS does not say. */
+	internal: boolean | null,
+	/**
+	 *  The device the Disk page selects first: the fixed internal disk, else the first.
+	 *  At most one device has it.
+	 */
+	default: boolean,
+};
 
 export type DiskIoDevice = {
 	dev: string,
@@ -1374,6 +1413,11 @@ export type HostInfo = {
 	 *  from a peer or record written before D-092.
 	 */
 	boot_mounts?: string[],
+	/**
+	 *  The kernel release (`uname -r`: "6.17.0-400.asahi.fc41.aarch64", or Darwin's
+	 *  "25.0.0"). `None` when unknown, and from a peer or record written before D-115.
+	 */
+	kernel?: string | null,
 };
 
 /**
@@ -1689,6 +1733,14 @@ export type Millis = number;
  *  [`crate::settings`] for how settings treat the pair.
  */
 export type Module = "cpu" | "gpu" | "memory" | "power" | "sensors" | "network" | "disk" | "battery" |
+/**
+ *  cgroup v2 groups on a Linux host: services, containers and user sessions
+ *  (`cgroup.*`, D-115). A data and capabilities module only: it has no settings
+ *  entry, no menu-bar item and no module switch, so it is not in
+ *  [`crate::settings::SETTINGS_MODULES`] and settings code never offers it. A Mac
+ *  never produces it; its local Docker page has its own model (D-103).
+ */
+"containers" |
 /**
  *  A module this build does not know, sent by a newer peer or written by a newer
  *  build (D-040). Never produced locally and not in [`Module::ALL`]. Consumers skip
@@ -2495,6 +2547,11 @@ export type UnsupportedReason =
 "missing_entitlement" |
 /**  The API is there but reports no such hardware. */
 "no_hardware" |
+/**
+ *  The hardware is there but this process may not read it: RAPL energy files are
+ *  root-only on Linux, and the agent may run unprivileged (D-115).
+ */
+"permission_denied" |
 /**
  *  A reason this build does not know (D-040). The UI shows a generic
  *  "not available".

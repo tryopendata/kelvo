@@ -52,12 +52,13 @@ mod event;
 mod history;
 mod host;
 pub mod lock;
+mod module;
 mod series;
 pub mod settings;
 mod snapshot;
 
 pub use alert::{AlertRule, Cmp, Condition, ThermalState};
-pub use caps::{Capabilities, Entitlement, ModuleCap, UnsupportedReason};
+pub use caps::{Capabilities, DiskDevice, Entitlement, ModuleCap, UnsupportedReason};
 pub use catalog::{CATALOG, Catalog, CatalogError, MetricDef, MetricKind, Module, Unit};
 pub use codes::{CpuPowerCalibration, MetricCode, PressureLevel, metric_codes};
 pub use event::{AlertCause, DetectorThresholds, Event, EventDetail, PowerComponent};

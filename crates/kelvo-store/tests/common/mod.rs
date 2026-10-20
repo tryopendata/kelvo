@@ -52,6 +52,7 @@ pub fn host(n: u128) -> HostRecord {
             mem_total_bytes: 24 << 30,
             boot_time_ms: T0 - DAY,
             gpu_dvfs_mhz: Vec::new(),
+            kernel: None,
             boot_mounts: Vec::new(),
         },
     }

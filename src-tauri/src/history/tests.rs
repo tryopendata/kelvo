@@ -25,6 +25,7 @@ fn local_record() -> HostRecord {
             mem_total_bytes: 0,
             boot_time_ms: 0,
             gpu_dvfs_mhz: Vec::new(),
+            kernel: None,
             boot_mounts: Vec::new(),
         },
     }

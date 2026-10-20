@@ -20,8 +20,14 @@ import {
 
 export { RETENTION_DAYS, SIZE_LIMITS_MB } from "@core/generated/bindings";
 
-/** Modules with a settings entry: every module except `sensors` (it rides with Power). */
-export type SettingsModule = Exclude<ModuleId, "sensors" | "unknown">;
+/**
+ * Modules with a settings entry: every module except `sensors` (it rides with
+ * Power) and `containers` (data only, D-115).
+ */
+export type SettingsModule = Exclude<
+  ModuleId,
+  "sensors" | "containers" | "unknown"
+>;
 
 /** `kelvo_schema::settings::SETTINGS_MODULES`, in settings row order. */
 export const SETTINGS_MODULES: readonly SettingsModule[] =

@@ -116,7 +116,7 @@ async fn packaged_app_streams_real_metrics_and_revokes_access_when_disabled() {
     assert!(hello.host.info.mem_total_bytes > 0);
     let negotiated = kelvo_proto::negotiate(
         &Offer::local(kelvo_proto::local_features()),
-        &Offer::from(&hello),
+        &Offer::from(&*hello),
     )
     .unwrap();
     send(&mut stream, Message::HelloAck(negotiated.ack())).await;

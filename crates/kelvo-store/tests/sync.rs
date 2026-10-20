@@ -157,7 +157,7 @@ fn hello(agent: &Store, record: &HostRecord) -> Hello {
 }
 
 fn hello_with(agent: &Store, record: &HostRecord, features: BTreeSet<String>) -> Hello {
-    let msg = wire(Message::Hello(Hello {
+    let msg = wire(Message::Hello(Box::new(Hello {
         proto_version: kelvo_proto::PROTO_VERSION,
         min_compatible: kelvo_proto::MIN_COMPATIBLE,
         app_version: "1.0.0".into(),
@@ -165,11 +165,11 @@ fn hello_with(agent: &Store, record: &HostRecord, features: BTreeSet<String>) ->
         db_instance_uuid: agent.epoch(),
         capabilities: Capabilities::default(),
         features,
-    }));
+    })));
     let Message::Hello(h) = msg else {
         panic!("not a hello");
     };
-    h
+    *h
 }
 
 /// What one sync run did, for assertions.

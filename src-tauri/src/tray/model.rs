@@ -447,7 +447,8 @@ impl ItemKey {
                 Module::Network => "kelvo-network",
                 Module::Disk => "kelvo-disk",
                 Module::Battery => "kelvo-battery",
-                Module::Unknown => "kelvo-unknown",
+                // Containers has no menu-bar item (D-115); this id is never shown.
+                Module::Containers | Module::Unknown => "kelvo-unknown",
             },
         }
     }

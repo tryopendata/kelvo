@@ -26,7 +26,7 @@ use kelvo_proto::{
     WireProcess, decode_message, encode_frame, encode_message, read_frame, write_frame,
 };
 use kelvo_schema::{
-    Capabilities, Catalog, ClusterInfo, CoreKind, Cursor, FrameView, GapReason, HostId,
+    Capabilities, Catalog, ClusterInfo, CoreKind, Cursor, DiskDevice, FrameView, GapReason, HostId,
     HostIdentity, HostInfo, Module, ModuleCap, OsKind, SeriesKey, Snapshot, Tier,
     UnsupportedReason,
 };
@@ -49,6 +49,10 @@ fn caps() -> Capabilities {
         revision: 2,
         process_network: false,
         process_gpu: false,
+        // Absent from the sender: a pre-D-115 peer keeps its columns.
+        process_energy: true,
+        process_wakeups: true,
+        disk_devices: Vec::new(),
     }
 }
 
@@ -63,15 +67,16 @@ fn layout() -> WireLayout {
     }
 }
 
-/// The `HostInfo` fields D-092 added. v1.0's `hello` has neither, which decodes as empty.
+/// The `HostInfo` fields D-092 and D-115 added. v1.0's `hello` has none, which decodes as empty.
 #[derive(Default)]
 struct HostFacts {
     gpu_dvfs_mhz: Vec<u32>,
+    kernel: Option<String>,
     boot_mounts: Vec<String>,
 }
 
 fn hello(facts: HostFacts) -> Message {
-    Message::Hello(Hello {
+    Message::Hello(Box::new(Hello {
         proto_version: 1,
         min_compatible: 1,
         app_version: "1.0.0".into(),
@@ -93,6 +98,7 @@ fn hello(facts: HostFacts) -> Message {
                 mem_total_bytes: 24 << 30,
                 boot_time_ms: 1_790_000_000_000,
                 gpu_dvfs_mhz: facts.gpu_dvfs_mhz,
+                kernel: facts.kernel,
                 boot_mounts: facts.boot_mounts,
             },
         },
@@ -104,7 +110,7 @@ fn hello(facts: HostFacts) -> Message {
             "rows.gaps".to_string(),
             "zstd-pages".to_string(),
         ]),
-    })
+    }))
 }
 
 /// One sample of every message variant, named for its fixture file.
@@ -117,6 +123,7 @@ fn samples() -> Vec<(&'static str, Message)> {
             hello(HostFacts {
                 gpu_dvfs_mhz: vec![338, 618, 1312, 1242, 1380],
                 boot_mounts: vec!["/".into(), "/System/Volumes/Data".into()],
+                kernel: None,
             }),
         ),
         (
@@ -856,8 +863,171 @@ fn bucket_stats_by_index() {
     assert_eq!(row.stat(3), None);
 }
 
+/// A Linux agent's `Hello` with every D-115 wire addition: a kernel, uniform cores, the
+/// Containers module, a permission-denied module, no energy or wakeup columns and a disk
+/// inventory.
+fn hello_linux() -> Message {
+    let mut modules = BTreeMap::new();
+    modules.insert(Module::Cpu, ModuleCap::Available { series: 12 });
+    modules.insert(
+        Module::Power,
+        ModuleCap::Unsupported(UnsupportedReason::PermissionDenied),
+    );
+    modules.insert(Module::Containers, ModuleCap::Available { series: 40 });
+    Message::Hello(Box::new(Hello {
+        proto_version: 1,
+        min_compatible: 1,
+        app_version: "1.1.0".into(),
+        host: HostIdentity {
+            id: HostId(Uuid::from_u128(0x11_4E7)),
+            display_name: "asahi".into(),
+            info: HostInfo {
+                os: OsKind::Linux,
+                os_version: "Fedora Linux Asahi Remix 41 (Server Edition)".into(),
+                model: Some("Apple Mac mini (M1, 2020)".into()),
+                chip: Some("Apple M1".into()),
+                chip_known: false,
+                cpu_topology: vec![ClusterInfo {
+                    name: "C0".into(),
+                    kind: CoreKind::Uniform,
+                    cores: vec!["0".into(), "1".into()],
+                    dvfs_mhz: vec![600, 2064],
+                }],
+                mem_total_bytes: 16 << 30,
+                boot_time_ms: 1_790_000_000_000,
+                gpu_dvfs_mhz: Vec::new(),
+                kernel: Some("6.17.0-400.asahi.fc41.aarch64+16k".into()),
+                boot_mounts: Vec::new(),
+            },
+        },
+        db_instance_uuid: Uuid::from_u128(0xE3),
+        capabilities: Capabilities {
+            modules,
+            revision: 1,
+            process_network: false,
+            process_gpu: false,
+            process_energy: false,
+            process_wakeups: false,
+            disk_devices: vec![DiskDevice {
+                dev: "nvme0n1".into(),
+                name: "APPLE SSD AP0512Q".into(),
+                internal: Some(true),
+                default: true,
+            }],
+        },
+        features: BTreeSet::from(["rows.buckets".to_string(), "rows.gaps".to_string()]),
+    }))
+}
+
+/// D-115, the forward direction: a pre-D-115 peer's `hello` (the v1 fixture) decodes with
+/// no kernel, the energy and wakeup columns present and no disk inventory.
+#[test]
+fn d115_fields_default_for_an_older_peer() {
+    let body = std::fs::read(fixtures_dir().join("hello.cbor")).unwrap();
+    let Message::Hello(h) = decode_message(&body).unwrap() else {
+        panic!("hello fixture")
+    };
+    assert_eq!(h.host.info.kernel, None);
+    assert!(h.capabilities.process_energy && h.capabilities.process_wakeups);
+    assert!(h.capabilities.disk_devices.is_empty());
+    let body = std::fs::read(fixtures_dir().join("capabilities_changed.cbor")).unwrap();
+    let Message::CapabilitiesChanged(c) = decode_message(&body).unwrap() else {
+        panic!("capabilities fixture")
+    };
+    assert!(c.process_energy && c.process_wakeups);
+}
+
+/// D-115, the old direction: a Linux agent's `hello` decodes on a build from before
+/// D-115, pinned here as that build's shapes and text-enum lists (D-040). The new
+/// fields are ignored, `uniform` and `permission_denied` read as `Unknown`, the
+/// Containers entry is dropped like any unknown module, and everything else is intact.
+#[test]
+fn d115_values_decode_on_a_pre_d115_build() {
+    const PRE_MODULES: [&str; 8] = [
+        "cpu", "gpu", "memory", "power", "sensors", "network", "disk", "battery",
+    ];
+    const PRE_CORE_KINDS: [&str; 2] = ["performance", "efficiency"];
+    const PRE_REASONS: [&str; 3] = ["unknown_chip", "missing_entitlement", "no_hardware"];
+    /// The text-enum fallback a pre-D-115 build applies (`compat::text_enum_deserialize`).
+    fn pre<'a>(known: &[&str], text: &'a str) -> &'a str {
+        if known.contains(&text) {
+            text
+        } else {
+            "unknown"
+        }
+    }
+    #[derive(serde::Deserialize)]
+    struct PreCluster {
+        name: String,
+        kind: String,
+        cores: Vec<String>,
+    }
+    #[derive(serde::Deserialize)]
+    struct PreInfo {
+        os: String,
+        os_version: String,
+        cpu_topology: Vec<PreCluster>,
+        mem_total_bytes: u64,
+    }
+    #[derive(serde::Deserialize)]
+    struct PreIdentity {
+        display_name: String,
+        info: PreInfo,
+    }
+    #[derive(serde::Deserialize)]
+    struct PreCaps {
+        modules: BTreeMap<String, Value>,
+        revision: u64,
+        #[serde(default)]
+        process_network: bool,
+    }
+    #[derive(serde::Deserialize)]
+    struct PreHello {
+        host: PreIdentity,
+        capabilities: PreCaps,
+    }
+    #[derive(serde::Deserialize)]
+    struct Envelope {
+        t: String,
+        c: PreHello,
+    }
+    let body = std::fs::read(fixtures_dir().join("hello_linux.cbor")).unwrap();
+    let old: Envelope = ciborium::from_reader(body.as_slice()).unwrap();
+    assert_eq!(old.t, "Hello");
+    let info = &old.c.host.info;
+    assert_eq!(old.c.host.display_name, "asahi");
+    assert_eq!(
+        (info.os.as_str(), info.mem_total_bytes),
+        ("linux", 16 << 30)
+    );
+    assert!(info.os_version.starts_with("Fedora"));
+    let cluster = &info.cpu_topology[0];
+    assert_eq!((cluster.name.as_str(), cluster.cores.len()), ("C0", 2));
+    assert_eq!(pre(&PRE_CORE_KINDS, &cluster.kind), "unknown");
+
+    let caps = &old.c.capabilities;
+    assert_eq!((caps.revision, caps.process_network), (1, false));
+    let known: Vec<&str> = caps
+        .modules
+        .keys()
+        .map(|m| pre(&PRE_MODULES, m))
+        .filter(|m| *m != "unknown")
+        .collect();
+    assert_eq!(known, ["cpu", "power"], "containers is dropped");
+    let Some(Value::Map(power)) = caps.modules.get("power") else {
+        panic!("power capability")
+    };
+    let [(Value::Text(state), Value::Text(reason))] = power.as_slice() else {
+        panic!("unsupported with a reason")
+    };
+    assert_eq!(state, "unsupported");
+    assert_eq!(pre(&PRE_REASONS, reason), "unknown");
+}
+
 fn remote_samples() -> Vec<(&'static str, Message)> {
     vec![
+        // A Linux agent's handshake (D-115).
+        ("hello_linux", hello_linux()),
         (
             "live_remote",
             Message::Live(LiveFrame {

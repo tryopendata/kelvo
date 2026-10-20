@@ -159,7 +159,7 @@ async fn dial(
     // ConnectTimeout bounds TCP/auth startup; this additionally bounds helper and handshake.
     let handshake = tokio::time::timeout(Duration::from_secs(10), codec::read(&mut reader)).await;
     let hello = match handshake {
-        Ok(Ok(Message::Hello(h))) => h,
+        Ok(Ok(Message::Hello(h))) => *h,
         other => {
             let _ = child.kill().await;
             let _ = child.wait().await;
