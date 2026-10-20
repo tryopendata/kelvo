@@ -162,6 +162,13 @@ export const commands = {
 	 */
 	queryUsageByApp: (host: HostId, fromMs: Millis, toMs: Millis, by: UsageKey, limit: number) => typedError<UsageByApp, CommandError>(__TAURI_INVOKE("query_usage_by_app", { host, fromMs, toMs, by, limit })),
 	/**
+	 *  The apps `query_usage_by_app` ranks first over `[from_ms, to_ms)` by `by`, the
+	 *  largest `limit`, each as one value per 10 s bucket (D-099). `remote_host` for a host
+	 *  other than this Mac; `invalid_argument` when `to_ms` is before `from_ms` or the range
+	 *  is longer than the hour the samples are kept.
+	 */
+	queryUsageSeries: (host: HostId, fromMs: Millis, toMs: Millis, by: UsageKey, limit: number) => typedError<UsageSeries, CommandError>(__TAURI_INVOKE("query_usage_series", { host, fromMs, toMs, by, limit })),
+	/**
 	 *  Unlabelled metrics over `[from_ms, to_ms)`, widened to whole buckets and cut at now,
 	 *  from their rollups through now: each one's span-weighted average, largest sample and
 	 *  integral over the measured time (gaps that apply to its module left out). With
@@ -348,6 +355,8 @@ export const SIZE_LIMITS_MB = [150,300,500,1000] as const;
 
 export const USAGE_BUCKET_MS = 10000 as const;
 
+export const USAGE_KEEP_MS = 3610000 as const;
+
 /* Types */
 /**  Why an alert fired. */
 export type AlertCause = { type: "process_cpu"; process: string; cpu_pct: number | null } | { type: "thermal_state"; state: ThermalState };
@@ -409,6 +418,19 @@ export type AppUsage = {
 	quit_pid: number | null,
 	/**  Ordered like the apps. */
 	processes: ProcessUsage[],
+};
+
+/**  One app's line in a `query_usage_series` answer. */
+export type AppUsageSeries = {
+	name: string,
+	/**  The key's rate over the range's covered time, in the values' unit. */
+	avg: number | null,
+	/**
+	 *  One per 10 s bucket from `from_ms`: `null` where no process sample covered the
+	 *  bucket (not measured, not zero use; for GPU, where GPU was not measured), 0 where
+	 *  one did and the app used none of the key.
+	 */
+	values: (number | null)[],
 };
 
 export type Appearance = "system" | "light" | "dark";
@@ -2572,6 +2594,27 @@ export type UsageOther = {
 	 *  there (the two are sampled differently).
 	 */
 	clamped: UsageKey[],
+};
+
+/**
+ *  `query_usage_series`: the apps `query_usage_by_app` ranks first, bucket by bucket,
+ *  from the same last hour of process samples kept in memory. Values are rates over
+ *  each bucket's covered time: `energy` watts, `cpu` percent of one core, `gpu` percent
+ *  of the GPU, `disk` bytes read plus written per second, `memory` average footprint in
+ *  bytes. Your processes only: energy is macOS's CPU estimate, so the apps add up to
+ *  less than the system's draw.
+ */
+export type UsageSeries = {
+	/**  The first bucket's start: the request widened to whole 10 s buckets. */
+	from_ms: number,
+	bucket_ms: number,
+	/**  As in `UsageByApp`: buckets before it read `null`. */
+	since_ms: number | null,
+	complete_to_ms: number | null,
+	/**  The newest process sample: no time after it is counted yet. */
+	latest_ms: number | null,
+	/**  The largest `limit` by the requested key, largest first. */
+	apps: AppUsageSeries[],
 };
 
 /**  Every process's use over the range, before any floor: what shares are of. */

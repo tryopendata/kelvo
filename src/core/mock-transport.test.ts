@@ -265,6 +265,7 @@ describe("host command preamble", () => {
       queryProcessesAt: () => t.queryProcessesAt(host, to),
       queryNetworkByApp: () => t.queryNetworkByApp(host, from, to),
       queryUsageByApp: () => t.queryUsageByApp(host, from, to, "cpu", 5),
+      queryUsageSeries: () => t.queryUsageSeries(host, from, to, "energy", 5),
       querySeriesStats: () => t.querySeriesStats(host, ["cpu.total"], from, to),
       getNetworkAddresses: () => t.getNetworkAddresses(host),
       queryEvents: () => t.queryEvents(host, from, to),
@@ -332,6 +333,7 @@ describe("host command preamble", () => {
       queryHistory: "invalid_argument: empty selectors or negative span",
       queryNetworkByApp: "invalid_argument: the range ends before it starts",
       queryUsageByApp: "invalid_argument: the range ends before it starts",
+      queryUsageSeries: "invalid_argument: the range ends before it starts",
       querySeriesStats: "invalid_argument: the range ends before it starts",
       exportCsv: "invalid_argument: empty selectors or empty range",
       queryEvents: "ok",
@@ -340,6 +342,7 @@ describe("host command preamble", () => {
     expect(await outcomes(t, MOCK_HOST_ID, 0, NOW)).toMatchObject({
       queryNetworkByApp: tooLong,
       querySeriesStats: tooLong,
+      queryUsageSeries: tooLong,
       queryUsageByApp: "ok",
     });
   });

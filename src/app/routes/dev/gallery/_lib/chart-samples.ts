@@ -5,6 +5,7 @@ import {
 } from "@core/mock/docker";
 import type { BatteryHistoryBarsProps } from "~/widgets/battery-history-bars";
 import type { CoreHeatmapProps } from "~/widgets/core-heatmap";
+import type { HeatMatrixRow } from "~/widgets/heat-matrix";
 import {
   PERCENT_GRID,
   PERCENT_Y_TICKS,
@@ -188,6 +189,40 @@ export const CORE_HEATMAP: CoreHeatmapProps = {
   windowMs: 600_000,
   ariaLabel: "Per-core load, last 10 minutes",
 };
+
+// Power & Sensors: SoC thermal zones, 60 columns of 10 s in °C. Zone 03
+// warms through a build in the middle of the window; the first four columns
+// are before app start.
+const zoneR = rng(91);
+const ZONE_NOW = [52, 49, 61, 47, 55, 50, 58, 46, 53, 48];
+const ZONE_SENSORS = [
+  "PMU tdie1",
+  "PMU tdie2",
+  "PMU tdie3",
+  "PMU tdie4",
+  "PMU tdie5",
+  "PMU tdie6",
+  "PMU2 tdie1",
+  "PMU2 tdie2",
+  "PMU2 tdie3",
+  "PMU2 tdie4",
+];
+export const THERMAL_ZONES: HeatMatrixRow[] = ZONE_NOW.map((cur, k) => {
+  const buckets: (number | null)[] = [];
+  for (let i = 0; i < 60; i++) {
+    const t = 59 - i;
+    let x = cur + (zoneR() - 0.5) * 6 + (t > 20 && t < 40 ? 22 - k : 0);
+    if (i === 59) x = cur;
+    buckets.push(i < 4 ? null : Math.round(x * 10) / 10);
+  }
+  return {
+    id: ZONE_SENSORS[k] as string,
+    label: `Zone ${String(k + 1).padStart(2, "0")}`,
+    title: ZONE_SENSORS[k] as string,
+    now: cur,
+    buckets,
+  };
+});
 
 // Power by component, 120 samples over 10 minutes.
 const N = 120;

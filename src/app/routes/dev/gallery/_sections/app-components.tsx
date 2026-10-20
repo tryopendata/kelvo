@@ -33,7 +33,6 @@ import { Button } from "~/components/ui/button";
 import { Switch } from "~/components/ui/switch";
 import { UnsupportedNotice } from "~/components/unsupported-notice";
 import { VolumeTable } from "~/components/volume-table";
-import { type ZoneRow, ZoneTable } from "~/components/zone-table";
 import { ChartChooser } from "~/routes/dashboard/containers/_components/chart-chooser";
 import { ComparisonChart } from "~/routes/dashboard/containers/_components/comparison-chart";
 import { HistoryNotice } from "~/routes/dashboard/containers/_components/history-notice";
@@ -169,28 +168,6 @@ const SPECS = [
   { label: "Model", value: "Mac16,8 · Nov 2024" },
   { label: "Uptime", value: "3d 4h 12m · last wake 06:55" },
 ];
-
-// Power & Sensors zones.
-const ZONE_VALUES = [61, 59, 58, 56, 55, 53, 52, 50, 49, 48];
-const ZONE_KEYS = [
-  "PMU tdie4",
-  "PMU tdie1",
-  "PMU tdie6",
-  "PMU2 tdie2",
-  "PMU tdie3",
-  "PMU2 tdie1",
-  "PMU tdie5",
-  "PMU2 tdie4",
-  "PMU tdie2",
-  "PMU2 tdie3",
-];
-const ZONES: ZoneRow[] = ZONE_VALUES.map((v, i) => ({
-  key: ZONE_KEYS[i] as string,
-  name: `Zone ${String(i + 1).padStart(2, "0")}`,
-  now: v,
-  min: v - 9,
-  max: v + 4,
-}));
 
 // CPU page top processes.
 const PROCS: [string, number, number, number, number, number, string][] = [
@@ -542,90 +519,71 @@ export function AppComponentsSection() {
       </GalleryItem>
 
       <div className="grid grid-cols-2 items-start gap-8">
-        <GalleryItem name="ZoneTable" usedIn="Power & Sensors">
-          <div
-            className={`${cardStyles.card} p-4`}
-            style={{ "--a": "var(--color-power)" } as CSSProperties}
-          >
-            <ZoneTable
-              rows={ZONES}
-              units="C"
-              rangeLabel="15m"
-              extras={[
-                { label: "Battery", value: 31 },
-                { label: "SSD (NAND)", value: 39 },
-                { label: "Wi‑Fi module", value: 44 },
+        <GalleryItem name="InterfaceTable" usedIn="Network">
+          <div className={panel}>
+            <InterfaceTable
+              units="MBps"
+              rows={[
+                {
+                  id: "en0",
+                  kind: "Wi‑Fi",
+                  rxBps: 38_400_000,
+                  txBps: 1_200_000,
+                  rxBytes: 182_000_000_000,
+                  txBytes: 9_400_000_000,
+                },
+                {
+                  id: "utun4",
+                  kind: "VPN",
+                  rxBps: 21_000,
+                  txBps: 4_000,
+                  rxBytes: 640_000_000,
+                  txBytes: 120_000_000,
+                },
+                {
+                  id: "en5",
+                  kind: "Ethernet",
+                  rxBps: null,
+                  txBps: null,
+                  rxBytes: 0,
+                  txBytes: 0,
+                  disconnected: true,
+                },
               ]}
             />
           </div>
         </GalleryItem>
-        <div className="flex flex-col gap-8">
-          <GalleryItem name="InterfaceTable" usedIn="Network">
-            <div className={panel}>
-              <InterfaceTable
-                units="MBps"
-                rows={[
-                  {
-                    id: "en0",
-                    kind: "Wi‑Fi",
-                    rxBps: 38_400_000,
-                    txBps: 1_200_000,
-                    rxBytes: 182_000_000_000,
-                    txBytes: 9_400_000_000,
-                  },
-                  {
-                    id: "utun4",
-                    kind: "VPN",
-                    rxBps: 21_000,
-                    txBps: 4_000,
-                    rxBytes: 640_000_000,
-                    txBytes: 120_000_000,
-                  },
-                  {
-                    id: "en5",
-                    kind: "Ethernet",
-                    rxBps: null,
-                    txBps: null,
-                    rxBytes: 0,
-                    txBytes: 0,
-                    disconnected: true,
-                  },
-                ]}
-              />
-            </div>
-          </GalleryItem>
-          <GalleryItem name="VolumeTable" usedIn="Disk">
-            <div className={panel}>
-              <VolumeTable
-                units="GB"
-                rows={[
-                  {
-                    id: "disk3s5",
-                    name: "Data",
-                    usedBytes: 330e9,
-                    freeBytes: 612e9,
-                    totalBytes: 1000e9,
-                  },
-                  {
-                    id: "disk3s1",
-                    name: "Macintosh HD",
-                    usedBytes: 58e9,
-                    freeBytes: 612e9,
-                    totalBytes: 1000e9,
-                  },
-                  {
-                    id: "disk5s1",
-                    name: "Backup",
-                    usedBytes: null,
-                    freeBytes: null,
-                    totalBytes: null,
-                    disconnected: true,
-                  },
-                ]}
-              />
-            </div>
-          </GalleryItem>
-        </div>
+        <GalleryItem name="VolumeTable" usedIn="Disk">
+          <div className={panel}>
+            <VolumeTable
+              units="GB"
+              rows={[
+                {
+                  id: "disk3s5",
+                  name: "Data",
+                  usedBytes: 330e9,
+                  freeBytes: 612e9,
+                  totalBytes: 1000e9,
+                },
+                {
+                  id: "disk3s1",
+                  name: "Macintosh HD",
+                  usedBytes: 58e9,
+                  freeBytes: 612e9,
+                  totalBytes: 1000e9,
+                },
+                {
+                  id: "disk5s1",
+                  name: "Backup",
+                  usedBytes: null,
+                  freeBytes: null,
+                  totalBytes: null,
+                  disconnected: true,
+                },
+              ]}
+            />
+          </div>
+        </GalleryItem>
       </div>
 
       <GalleryItem

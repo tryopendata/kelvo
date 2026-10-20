@@ -119,7 +119,10 @@ pub use source::{
     SourceSink, network_history_enabled,
 };
 pub use ticker::{FakeClock, FakeTicker, ThreadTicker, Ticker, leeway_for};
-pub use usage::{USAGE_BUCKET_MS, UsageApp, UsageByApp, UsageKey, UsageProc, UsageTotal};
+pub use usage::{
+    USAGE_BUCKET_MS, USAGE_KEEP_MS, UsageApp, UsageByApp, UsageKey, UsageProc, UsageSeries,
+    UsageSeriesApp, UsageTotal,
+};
 
 #[cfg(unix)]
 pub mod disk_space;

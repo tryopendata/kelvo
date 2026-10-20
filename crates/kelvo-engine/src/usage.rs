@@ -35,6 +35,10 @@ use kelvo_collect::ProcessSample;
 use kelvo_schema::{Tier, ceil_to, floor_to};
 use serde::{Deserialize, Serialize};
 
+mod series;
+
+pub use series::{UsageSeries, UsageSeriesApp};
+
 /// Width of a usage bucket: the S10 tier's.
 pub const USAGE_BUCKET_MS: i64 = Tier::S10.bucket_ms().expect("S10 has a bucket width");
 
@@ -867,10 +871,16 @@ fn kib(bytes: u64) -> u32 {
 mod tests {
     use super::*;
 
-    const T0: i64 = 1_700_000_000_000;
+    pub(super) const T0: i64 = 1_700_000_000_000;
     const MIB: u64 = 1 << 20;
 
-    fn proc(pid: i32, name: &str, app: Option<&str>, main: bool, joules: f32) -> ProcessSample {
+    pub(super) fn proc(
+        pid: i32,
+        name: &str,
+        app: Option<&str>,
+        main: bool,
+        joules: f32,
+    ) -> ProcessSample {
         ProcessSample {
             pid,
             start_time_us: i64::from(pid) * 1_000,
@@ -896,7 +906,7 @@ mod tests {
     }
 
     /// A process at `cpu` percent of a core sampled every `secs`.
-    fn busy(pid: i32, app: &str, cpu: f32, secs: f32) -> ProcessSample {
+    pub(super) fn busy(pid: i32, app: &str, cpu: f32, secs: f32) -> ProcessSample {
         let mut p = proc(pid, app, Some(app), false, 0.0);
         p.cpu_pct = cpu;
         p.interval_s = secs;
@@ -904,7 +914,7 @@ mod tests {
         p
     }
 
-    fn names(r: &UsageByApp) -> Vec<&str> {
+    pub(super) fn names(r: &UsageByApp) -> Vec<&str> {
         r.apps.iter().map(|a| a.name.as_ref()).collect()
     }
 

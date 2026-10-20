@@ -1,8 +1,10 @@
+import { formatTemperature } from "@core/format";
 import { BatteryHistoryBars } from "~/widgets/battery-history-bars";
 import { Card } from "~/widgets/card";
 import { ChartAnnotation } from "~/widgets/chart-annotation";
 import { CoreHeatmap, HeatScaleLegend } from "~/widgets/core-heatmap";
 import { GapBand } from "~/widgets/gap-band";
+import { HeatMatrix } from "~/widgets/heat-matrix";
 import { MirrorBars } from "~/widgets/mirror-bars";
 import { PowerStack } from "~/widgets/power-stack";
 import { StreamArea } from "~/widgets/stream-area";
@@ -17,6 +19,7 @@ import {
   POPOVER_GPU,
   POWER_STACK,
   SLEEP_WINDOW,
+  THERMAL_ZONES,
 } from "../_lib/chart-samples";
 
 function ChartCard({
@@ -137,6 +140,28 @@ export function WidgetsChartsSection() {
           aside={<HeatScaleLegend />}
         >
           <CoreHeatmap {...CORE_HEATMAP} />
+        </ChartCard>
+      </GalleryItem>
+
+      <GalleryItem name="HeatMatrix · temperature" usedIn="Power & Sensors">
+        <ChartCard
+          id="gc-zones"
+          title="SoC thermal zones, last 10 minutes"
+          accent="power"
+          aside={
+            <HeatScaleLegend accent="temp" minLabel="20 °C" maxLabel="110 °C" />
+          }
+        >
+          <HeatMatrix
+            rows={THERMAL_ZONES}
+            scale={{ min: 20, max: 110 }}
+            formatNow={(c) => formatTemperature(c, { compact: true })}
+            labelWidth={44}
+            bucketMs={10_000}
+            windowMs={600_000}
+            accent="temp"
+            ariaLabel="SoC thermal zones, last 10 minutes"
+          />
         </ChartCard>
       </GalleryItem>
 

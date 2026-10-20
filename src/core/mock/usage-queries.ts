@@ -1,3 +1,5 @@
+import type { HostId, UsageKey } from "@core/generated/bindings";
+import { USAGE_KEEP_MS } from "@core/generated/bindings";
 import type { MockCommands } from "./commands";
 import type { MockTransport } from "./contracts";
 import { TOPOLOGY, withGpuPct } from "./fixtures";
@@ -22,6 +24,7 @@ import type { MockRing } from "./ring";
 import type { MockSettings } from "./settings";
 import type { MockStore } from "./store";
 import { mockUsageByApp } from "./usage";
+import { mockUsageSeries } from "./usage-series";
 export class MockUsageQueries {
   constructor(
     private readonly ring: MockRing,
@@ -79,6 +82,56 @@ export class MockUsageQueries {
       }
     );
   };
+  /** The by-app answer and the span it was counted over, shared by both usage queries. */
+  private usageAnswer(
+    host: HostId,
+    fromMs: number,
+    toMs: number,
+    by: UsageKey,
+    limit: number
+  ) {
+    const latestMs =
+      this.ring.rows[this.ring.rows.length - 1]?.ts ?? this.ring.startMs;
+    // The engine keeps an hour; the mock's ring is its whole run.
+    const sinceMs = Math.max(this.ring.ringStartMs, latestMs - 3_600_000);
+    // GPU per process is measured always, except in Performance mode, where
+    // only a view asking for it measures it (D-099). The mock has no record
+    // of past interest: a view asking now stands for the whole range.
+    const sampling = this.settings.snapshot.settings.sampling;
+    const performance = !!sampling.performance_mode || this.power.lowPowerMode;
+    const gpu =
+      this.ring.caps.process_gpu === true &&
+      (!performance || this.processes.interest?.view.gpu === true);
+    const from = Math.max(fromMs, sinceMs);
+    // Cut at the newest process sample, where the apps' sums stop.
+    const stats =
+      from < toMs
+        ? mockSeriesStats(
+            host,
+            ["cpu.total", "gpu.util", "disk.read_total", "disk.write_total"],
+            from,
+            toMs,
+            Math.min(this.ring.now(), latestMs),
+            this.queries.historyPage
+          )
+        : null;
+    const byApp = mockUsageByApp({
+      processes: gpu
+        ? withGpuPct(this.processes.processRows())
+        : this.processes.processRows(),
+      user: MOCK_USER,
+      fromMs,
+      toMs,
+      sinceMs,
+      latestMs,
+      by,
+      limit,
+      gpu,
+      stats,
+      cores: TOPOLOGY.reduce((n, c) => n + c.cores.length, 0),
+    });
+    return { byApp, sinceMs, latestMs };
+  }
   readonly queryUsageByApp: MockTransport["queryUsageByApp"] = async (
     host,
     fromMs,
@@ -93,56 +146,30 @@ export class MockUsageQueries {
       host,
       args,
       checks,
-      () => {
-        const latestMs =
-          this.ring.rows[this.ring.rows.length - 1]?.ts ?? this.ring.startMs;
-        // The engine keeps an hour; the mock's ring is its whole run.
-        const sinceMs = Math.max(this.ring.ringStartMs, latestMs - 3_600_000);
-        // GPU per process is measured always, except in Performance mode, where
-        // only a view asking for it measures it (D-099). The mock has no record
-        // of past interest: a view asking now stands for the whole range.
-        const sampling = this.settings.snapshot.settings.sampling;
-        const performance =
-          !!sampling.performance_mode || this.power.lowPowerMode;
-        const gpu =
-          this.ring.caps.process_gpu === true &&
-          (!performance || this.processes.interest?.view.gpu === true);
-        const from = Math.max(fromMs, sinceMs);
-        // Cut at the newest process sample, where the apps' sums stop.
-        const stats =
-          from < toMs
-            ? mockSeriesStats(
-                host,
-                [
-                  "cpu.total",
-                  "gpu.util",
-                  "disk.read_total",
-                  "disk.write_total",
-                ],
-                from,
-                toMs,
-                Math.min(this.ring.now(), latestMs),
-                this.queries.historyPage
-              )
-            : null;
-        return ok(
-          mockUsageByApp({
-            processes: gpu
-              ? withGpuPct(this.processes.processRows())
-              : this.processes.processRows(),
-            user: MOCK_USER,
-            fromMs,
-            toMs,
-            sinceMs,
-            latestMs,
+      () => ok(this.usageAnswer(host, fromMs, toMs, by, limit).byApp)
+    );
+  };
+  readonly queryUsageSeries: MockTransport["queryUsageSeries"] = async (
+    host,
+    fromMs,
+    toMs,
+    by,
+    limit
+  ) => {
+    const args = [host, fromMs, toMs, by, limit];
+    const checks = { range: [fromMs, toMs], maxSpanMs: USAGE_KEEP_MS } as const;
+    return this.commands.hostCommand(
+      "query_usage_series",
+      host,
+      args,
+      checks,
+      () =>
+        ok(
+          mockUsageSeries({
+            ...this.usageAnswer(host, fromMs, toMs, by, limit),
             by,
-            limit,
-            gpu,
-            stats,
-            cores: TOPOLOGY.reduce((n, c) => n + c.cores.length, 0),
           })
-        );
-      }
+        )
     );
   };
   readonly getNetworkAddresses: MockTransport["getNetworkAddresses"] = async (
@@ -172,6 +199,7 @@ export class MockUsageQueries {
     return {
       queryNetworkByApp: this.queryNetworkByApp,
       queryUsageByApp: this.queryUsageByApp,
+      queryUsageSeries: this.queryUsageSeries,
       getNetworkAddresses: this.getNetworkAddresses,
       getPublicIp: this.getPublicIp,
     };

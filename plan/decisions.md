@@ -111,6 +111,7 @@ See [README](README.md) for the roadmap and [architecture.md](architecture.md) f
 | D-104 | Remote Macs reuse the app and isolate mirrored history | Accepted |
 | D-111 | Stable hosted macOS PR checks and automatic portable-library coverage | Accepted |
 | D-112 | Native size/complexity limits and executable dependency boundaries | Accepted |
+| D-115 | Per-app usage series over the in-memory usage ring | Accepted |
 
 ---
 
@@ -3534,3 +3535,22 @@ are not a one-way door.
 Unverified at acceptance: privacy prompts on a fresh account and after an update, the
 dataless policy against File Provider folders, clone fixtures and sampler tick lateness
 during a scan.
+
+
+## D-115: Per-app usage series over the in-memory usage ring
+
+Status: Accepted. Date: 2026-10-20. The Power page's draw chart shows which apps pull
+the power, as lines under the system draw; plan in the Power tab rework.
+
+`query_usage_series` answers the apps `query_usage_by_app` ranks first, the largest
+`limit` by a key, as one value per 10 s bucket of the same usage ring (D-093, D-099).
+No new storage: the ring stays in memory only, one hour, and starts empty at launch, so
+buckets before `since_ms` and buckets no process sample covered read `null`, never 0
+and never interpolated. An app the ring measured in a bucket but that used nothing
+reads 0. Values are rates over each bucket's covered time (watts for energy). Local
+host only, like `query_usage_by_app`; a range longer than the hour kept is refused.
+
+The Power page draws the top 5 by energy. App energy is macOS's CPU energy estimate for
+your own processes, so the lines add up to less than `power.system` and the card says
+so. Revisit if remote hosts need app lines (the series would have to cross the wire)
+or a window longer than an hour is wanted (the ring would need to persist).
