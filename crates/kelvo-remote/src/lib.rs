@@ -1,5 +1,6 @@
 #![cfg_attr(test, allow(clippy::too_many_lines))]
 //! Persistent, direct SSH sessions. No network listener, collector, or Tauri dependency.
+pub mod agent_layout;
 mod clock;
 mod codec;
 mod host_server;
@@ -16,6 +17,7 @@ mod stdio;
 mod transport;
 pub mod trust;
 
+pub use agent_layout::{AGENT_NOT_RUNNING, AgentEnv, AgentLayout, AgentPaths};
 pub use clock::HostClock;
 pub use host_server::{HostServer, InterestSet, ServedHost};
 pub use kelvo_proto::RemoteInterest;
@@ -39,6 +41,10 @@ pub enum RemoteError {
     Incompatible(String),
     #[error("remote host identity does not match: {0}")]
     Identity(String),
+    /// The host has `kelvo-agent` but its daemon is not running ([`AGENT_NOT_RUNNING`]).
+    /// Retryable: the service manager restarts it.
+    #[error("Kelvo agent is not running on {0}")]
+    AgentNotRunning(String),
     #[error("invalid remote message: {0}")]
     Protocol(String),
     #[error("{0}")]

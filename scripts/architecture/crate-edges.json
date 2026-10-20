@@ -12,6 +12,16 @@
     "dev": []
   },
   "kelvo-remote-helper": { "normal": ["kelvo-remote"], "dev": [] },
+  "kelvo-agent": {
+    "normal": [
+      "kelvo-schema",
+      "kelvo-proto",
+      "kelvo-store",
+      "kelvo-engine",
+      "kelvo-remote"
+    ],
+    "dev": []
+  },
   "kelvo": {
     "normal": [
       "kelvo-schema",

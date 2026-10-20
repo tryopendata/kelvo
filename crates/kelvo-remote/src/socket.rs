@@ -31,6 +31,15 @@ impl SocketPaths {
             PathBuf::from(home).join("Library/Application Support/com.tryopendata.kelvo"),
         ))
     }
+    /// The headless agent's socket for `layout` in this process's environment. The agent
+    /// has no control socket; `control` sits beside `metrics` and is never bound.
+    pub fn agent(layout: crate::AgentLayout) -> Result<Self> {
+        let metrics = layout.paths(&crate::AgentEnv::from_process())?.socket;
+        Ok(Self {
+            control: metrics.with_file_name("control.sock"),
+            metrics,
+        })
+    }
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "operation", rename_all = "snake_case")]

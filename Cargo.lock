@@ -2277,6 +2277,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "kelvo-agent"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "kelvo-engine",
+ "kelvo-proto",
+ "kelvo-remote",
+ "kelvo-schema",
+ "kelvo-store",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
 name = "kelvo-collect"
 version = "0.1.0"
 dependencies = [

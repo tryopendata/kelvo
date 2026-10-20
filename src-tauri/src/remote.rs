@@ -101,7 +101,9 @@ impl From<kelvo_remote::RemoteError> for CommandError {
             RemoteError::HostKey(_) => Self::HostKeyUnknown { message },
             RemoteError::Incompatible(_) => Self::RemoteIncompatible { message },
             RemoteError::Identity(_) => Self::RemoteIdentity { message },
-            RemoteError::Transport(_)
+            // A typed state of its own arrives with the Linux Add host flow (D-115).
+            RemoteError::AgentNotRunning(_)
+            | RemoteError::Transport(_)
             | RemoteError::Io(_)
             | RemoteError::Codec(_)
             | RemoteError::Protocol(_) => Self::RemoteUnreachable { message },

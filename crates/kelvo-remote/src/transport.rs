@@ -169,22 +169,7 @@ async fn dial(
                 .map(|b| String::from_utf8_lossy(&b).trim().to_string())
                 .unwrap_or_default();
             tracing::debug!(?other, %detail, "remote handshake failed");
-            let error = if detail.contains("Permission denied")
-                || detail.contains("Host key verification failed")
-                || detail.contains("REMOTE HOST IDENTIFICATION")
-            {
-                RemoteError::Authentication(format!("{alias}: {detail}"))
-            } else {
-                RemoteError::Transport(format!(
-                    "{alias}: {}",
-                    if detail.is_empty() {
-                        handshake_failure(&other).to_string()
-                    } else {
-                        detail
-                    }
-                ))
-            };
-            return Err(error);
+            return Err(stderr_error(alias, detail, &other));
         }
     };
     if hello.host.id == local {
@@ -213,6 +198,29 @@ async fn dial(
         child: Some(child),
         _stderr: Some(task),
     })
+}
+
+/// The error for a session that ended before its `Hello`, from the remote's stderr.
+fn stderr_error(
+    alias: &str,
+    detail: String,
+    outcome: &std::result::Result<Result<Message>, tokio::time::error::Elapsed>,
+) -> RemoteError {
+    if detail.contains("Permission denied")
+        || detail.contains("Host key verification failed")
+        || detail.contains("REMOTE HOST IDENTIFICATION")
+    {
+        RemoteError::Authentication(format!("{alias}: {detail}"))
+    } else if detail
+        .lines()
+        .any(|line| line.trim() == crate::AGENT_NOT_RUNNING)
+    {
+        RemoteError::AgentNotRunning(alias.to_string())
+    } else if detail.is_empty() {
+        RemoteError::Transport(format!("{alias}: {}", handshake_failure(outcome)))
+    } else {
+        RemoteError::Transport(format!("{alias}: {detail}"))
+    }
 }
 
 fn handshake_failure(
@@ -322,6 +330,29 @@ mod tests {
             handshake_failure(&Ok(Ok(Message::Unknown))),
             "The other Mac did not send a Kelvo greeting."
         );
+    }
+    #[test]
+    fn agent_marker_on_stderr_is_a_typed_not_running_error() {
+        let eof = Ok(Err(RemoteError::Io(
+            std::io::ErrorKind::UnexpectedEof.into(),
+        )));
+        let error = stderr_error("server", "kelvo-agent: not running".into(), &eof);
+        assert!(matches!(&error, RemoteError::AgentNotRunning(alias) if alias == "server"));
+        assert!(error.retryable());
+        // Among other login noise, still recognised; a mention in other text is not.
+        let noisy = "Warning: Permanently added\nkelvo-agent: not running\n".to_string();
+        assert!(matches!(
+            stderr_error("server", noisy, &eof),
+            RemoteError::AgentNotRunning(_)
+        ));
+        assert!(matches!(
+            stderr_error("server", "sh: kelvo-agent: not found".into(), &eof),
+            RemoteError::Transport(_)
+        ));
+        assert!(matches!(
+            stderr_error("server", String::new(), &eof),
+            RemoteError::Transport(text) if text.contains("closed before")
+        ));
     }
     #[tokio::test]
     async fn prefers_lan_within_grace_and_drops_loser() {
