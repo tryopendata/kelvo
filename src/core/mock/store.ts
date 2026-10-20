@@ -45,7 +45,13 @@ export class MockStore {
       trimmed_limit_bytes: flags.historyTrimmed ? 150_000_000 : null,
       cap_met: true,
     };
-    this.events = mockEvents(startMs);
+    // A Linux agent (D-116) has no ANE, so it never reports an ANE spike.
+    this.events = mockEvents(startMs).filter(
+      (e) =>
+        !flags.linux ||
+        e.detail.kind !== "power_spike" ||
+        e.detail.component !== "ane"
+    );
     if (settings.snapshot.settings.history.network_history === false)
       this.netHistoryOff.push({ from: Number.NEGATIVE_INFINITY, to: null });
   }

@@ -95,6 +95,8 @@ describe("a Linux host (D-116)", () => {
     expect(screen.queryByText("ANE")).toBeNull();
     expect(screen.queryByText(/as macOS estimates it/)).toBeNull();
     expect(screen.queryByText(/^Energy by app/)).toBeNull();
+    // No ANE, so no ANE spike marker on the chart.
+    expect(screen.queryByText(/Photos face analysis/)).toBeNull();
   });
 
   it("offers only the process columns the host measures", async () => {
