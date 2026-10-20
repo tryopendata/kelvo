@@ -2,6 +2,13 @@
 //! [`SysRoot`] so every parser runs against captured fixtures in tests. Modules no
 //! collector covers yet probe as `Unsupported` through [`Unsupported`].
 
+mod blockdev;
+mod counters;
+pub mod diskstats;
+pub mod fs;
+pub mod ifaddrs;
+mod mountinfo;
+pub mod net;
 mod sysroot;
 
 pub mod cpu;
@@ -58,8 +65,6 @@ const UNCOVERED: &[Module] = &[
     Module::Gpu,
     Module::Power,
     Module::Sensors,
-    Module::Network,
-    Module::Disk,
     Module::Battery,
     Module::Containers,
 ];
@@ -71,6 +76,9 @@ pub fn collectors() -> Vec<Box<dyn Collector>> {
         Box::new(cpu::Cpu::new()) as Box<dyn Collector>,
         Box::new(memory::Memory::new()),
     ]);
+    out.push(Box::new(diskstats::DiskStats::new()));
+    out.push(Box::new(fs::Filesystems::new()));
+    out.push(Box::new(net::Network::new()));
     out.push(Box::new(processes::Processes::new()));
     out.push(Box::new(self_cpu::SelfCpu::new()));
     if !UNCOVERED.is_empty() {
