@@ -1,17 +1,24 @@
-//! Linux stub until v4.1: one collector that probes as `Unsupported` for every module. It
-//! exists so the shared crates compile and test on Linux (the ubuntu CI job,
-//! `make rust-linux-check`).
+//! Linux collectors (D-008, D-115): `/proc`, sysfs, hwmon and cgroups v2, read through a
+//! [`SysRoot`] so every parser runs against captured fixtures in tests. Modules no
+//! collector covers yet probe as `Unsupported` through [`Unsupported`].
+
+mod sysroot;
+
+pub use sysroot::{SysRoot, clk_tck, page_size};
 
 use kelvo_schema::{Entitlement, Module, UnsupportedReason};
 
 use crate::{Cadence, CollectError, Collector, CollectorId, Probe, SampleBuf, Tick};
 
-/// Reports `Unsupported { NoHardware }` for every module and never emits values.
-pub struct Unsupported;
+/// Reports `Unsupported { NoHardware }` for the modules no Linux collector covers yet,
+/// and never emits values.
+pub struct Unsupported {
+    modules: &'static [Module],
+}
 
 impl Collector for Unsupported {
     fn id(&self) -> CollectorId {
-        CollectorId("linux_stub")
+        CollectorId("linux_unsupported")
     }
 
     fn cadence(&self) -> Cadence {
@@ -23,7 +30,7 @@ impl Collector for Unsupported {
     }
 
     fn modules(&self) -> &'static [Module] {
-        &Module::ALL
+        self.modules
     }
 
     fn probe(&mut self) -> Probe {
@@ -37,8 +44,16 @@ impl Collector for Unsupported {
     }
 }
 
+/// Modules no Linux collector covers yet. Shrinks as collectors land.
+const UNCOVERED: &[Module] = &Module::ALL;
+
 pub fn collectors() -> Vec<Box<dyn Collector>> {
-    vec![Box::new(Unsupported)]
+    let mut out: Vec<Box<dyn Collector>> = Vec::new();
+    // Each collector group pushes here; keep them in probe order.
+    if !UNCOVERED.is_empty() {
+        out.push(Box::new(Unsupported { modules: UNCOVERED }));
+    }
+    out
 }
 
 #[cfg(test)]
@@ -46,10 +61,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn stub_is_unsupported_for_every_module() {
+    fn uncovered_modules_are_unsupported() {
         for mut c in collectors() {
-            assert!(matches!(c.probe(), Probe::Unsupported { .. }), "{}", c.id());
-            assert_eq!(c.modules().len(), Module::ALL.len());
+            if c.id() == CollectorId("linux_unsupported") {
+                assert!(matches!(c.probe(), Probe::Unsupported { .. }));
+            }
         }
     }
 }

@@ -42,6 +42,10 @@ block2 = "0.6.2"
 # Quit and Force Quit ask a regular app to quit through NSRunningApplication (D-029).
 objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "libc", "NSRunningApplication"] }
 
+[target.'cfg(target_os = "linux")'.dependencies]
+# sysconf (page size, clock ticks) and statvfs for the /proc and /sys collectors.
+libc = "0.2.190"
+
 [lints]
 workspace = true
 

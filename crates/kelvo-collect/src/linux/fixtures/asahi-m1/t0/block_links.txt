@@ -1,0 +1,5 @@
+nvme0n1 /sys/devices/platform/soc/27bcc0000.nvme/nvme/nvme0/nvme0n1
+nvme0n2 /sys/devices/platform/soc/27bcc0000.nvme/nvme/nvme0/nvme0n2
+nvme0n3 /sys/devices/platform/soc/27bcc0000.nvme/nvme/nvme0/nvme0n3
+sda /sys/devices/platform/soc/382280000.usb/xhci-hcd.0.auto/usb5/5-1/5-1:1.0/host0/target0:0:0/0:0:0:0/block/sda
+sdb /sys/devices/platform/soc/502280000.usb/xhci-hcd.1.auto/usb6/6-1/6-1:1.0/host1/target1:0:0/1:0:0:0/block/sdb

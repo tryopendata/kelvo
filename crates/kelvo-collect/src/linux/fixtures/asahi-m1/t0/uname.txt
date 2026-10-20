@@ -1,0 +1,1 @@
+Linux m1-linux 6.17.12-400.asahi.fc41.aarch64+16k #1 SMP PREEMPT_DYNAMIC Sun Dec 14 02:21:19 UTC 2025 aarch64 GNU/Linux

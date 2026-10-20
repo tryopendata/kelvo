@@ -1,0 +1,5 @@
+hwmon0 /sys/devices/platform/soc/27bcc0000.nvme/nvme/nvme0
+hwmon1 /sys/devices/platform/soc/23e400000.smc/macsmc-hwmon
+hwmon2 /sys/devices/platform/soc/235010000.i2c/i2c-0/0-0038/power_supply/tps6598x-source-psy-0-0038
+hwmon3 /sys/devices/platform/soc/235010000.i2c/i2c-0/0-003f/power_supply/tps6598x-source-psy-0-003f
+hwmon4 /sys/devices/platform/soc/235014000.i2c/i2c-1/1-0031
