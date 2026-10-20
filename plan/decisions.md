@@ -3565,8 +3565,9 @@ Files from before the split (one `machine=` token, never released) still load: t
 matches when it equals the machine-id hash or the old combined hash of the machine-id
 and firmware id. The macOS binding is unchanged. Recovery: `reset-identity` mints a
 new id (`identity::reset`), the controller offers "Re-pair as a new host" on a mismatch
-and keeps the old mirror offline, and a host has one agent layout (the probe refuses a
-second).
+and keeps the old mirror offline, and a host has one agent: the probe refuses a second,
+checking the system layout and the login's own user layout, and when root, every other
+login's user layout too (`/root` and `/home/*`).
 
 Metrics (catalog): reused `cpu.loadavg{window}`, `cpu.load{core}`, `thermal.sensor`,
 `fan.rpm`/`fan.max`, `disk.*_timed_ops`/`*_time`. New: `cpu.iowait`, `cpu.steal`
@@ -3603,6 +3604,15 @@ collector on every host. `Message::Hello` is boxed in Rust; the encoding is unch
 `ProcessSample.app` on Linux is set only for `.service` units and container scopes, kind
 qualified (`docker:postgres`, `nginx.service`) so it never merges with a same-named host
 process. Live process tables and top lists only; detectors and stored rows are unchanged.
+
+Footprint: the planned 0.3% of one core and 30 MB for agent, bridge and sshd were
+estimates. Measured on the M1 Fedora Asahi server (2026-10-20, summary mode, one session
+over Tailscale SSH) the three come to 0.32% and 40.6 MB, the agent alone 0.30%, its RSS
+growing while the in-memory hour fills and flat at 22.7 MB after it. Tailscale SSH's
+per-session process is 20.8 MB of the total. Most agent CPU is the 5 s cgroup walk (about
+450 file reads); a slower background cgroup cadence is the lever if it ever matters. The user accepted these as light; the targets are
+now 0.4% and 50 MB combined, a sanity bound rather than a gate. Unbounded growth past the
+in-memory hour would still be a bug.
 
 Two container models coexist: the local Docker page keeps its own clock and history
 (D-103); a Linux host's Containers page reads `cgroup.*` series. Converging them is a

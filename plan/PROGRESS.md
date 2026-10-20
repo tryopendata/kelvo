@@ -77,10 +77,23 @@ Known follow-ups (small, not scheduled):
 | v2.3 Alerts editor, configurable Overview | [v2](v2-customization-widgets.md) | Not started | |
 | v3.x Native distribution | [v3](v3-native-distribution.md) | Not started | Needs a paid Apple Developer membership |
 | v4.x Remote hosts | [v4](v4-remote-hosts.md) | Mac milestone and SSH setup/recovery merged; native acceptance open | Main includes the settings deadlock fix (`1b2e535`) and reviewed SSH guidance (`ded22a7`), with full automated checks and push gates passed. Real two-Mac setup, SSH-agent interoperability and overhead remain unverified. [Execution and verification gates](remote-macs-execution.md); broader v4 remains future scope |
+| v4.x Headless Linux agent | [D-115](decisions.md) | Done (automated + real server); app click-through, reboot and CI open | `kelvo-agent` with /proc, sysfs, hwmon, PSI and cgroup v2 collectors; Add host installs, updates, re-pairs and removes it over SSH; Linux page variants and a Containers page. Real-server lifecycle on the M1 Fedora Asahi host passed; footprint 0.32% CPU, 40.6 MB combined (accepted) |
 
 Status values: Not started, In progress, Blocked (say on what), Done (with the verification that proved it).
 
 ## Log
+
+### 2026-10-20 (Headless Linux agent, D-115)
+
+- Host facts, the data-dir bootstrap and the metrics server moved into crates (`kelvo_engine::host_record`, `identity::open_local`, `kelvo_remote::HostServer`, `stdio_bridge`), with no behaviour change for the Mac. Engine seams: per-collector `series_revision`, enforced cardinality caps and `Settings::agent_default`.
+- New `crates/kelvo-agent`: `run`, `serve --stdio`, `status`, `version`, `configure`, `install-unit`, `uninstall`, `reset-identity`, `sample`. Linux collectors in `kelvo-collect/src/linux/` read through `SysRoot` against fixtures captured from the server: cpu, memory, diskstats, fs, net, processes, cpufreq, PSI, hwmon (temperatures, fans, power), RAPL, battery and cgroup v2 (top 31 groups plus `_other`, Docker names from the socket). GPU is Unsupported.
+- Packaging: `make agent-linux` builds static aarch64 and x86_64 musl binaries (64K-aligned for 16K-page kernels); digests are compiled into the app and re-checked before upload.
+- Add host probes Mac or Linux; for Linux it installs a root system unit (or a user unit with a linger check), and offers Update agent and Re-pair. A newer agent on the server is never downgraded. Removal can uninstall and purge. Docker 29 needed a `Host:` header in the Docker adapter, fixed for the Mac Docker page too.
+- UI: Overview, CPU, Memory, Power & Sensors, Processes and Disk render Linux hosts; a Linux Containers page reads the `cgroup.*` series.
+- Code review (17 findings) fixed: purge only data setup created, safe rollback ordering, identity components compared separately, chip-class sensor names, saturating iowait, counter decreases as resets, real pre-D-115 types in the skew test, and smaller install/removal checks.
+- Verified: `make check` (Rust 1,038 tests, Vitest 1,205), `make bindings-check`, `make rust-linux-test`, `make remote-scripts-test`, `bun run test:e2e`. On linux-tailscale (Fedora Asahi 41, M1, SELinux enforcing): collector readings against `mpstat`, `free`, `/proc` counters, raw sysfs sensors, `docker stats` and `systemctl`; install, live data within 16 s, update keeping the id, reset-identity and re-pair, purge uninstall leaving nothing, no AVC denials. Footprint in summary mode with one session: 0.32% of one core and 40.6 MB for agent, bridge and Tailscale SSH's session process; the agent alone plateaus at 22.7 MB after the in-memory hour. Accepted as light (D-115).
+- Open: the Add host click-through in the built app, reconnect after a server reboot, the new Linux CI job on GitHub, notarizing with the ELF resources, and the GitHub runner sshd install job the plan named. The `perf_gates` macOS process-allocation tests fail under heavy machine load (process churn) and pass alone.
+- The perf gate caught a Power page regression from the Linux variants (the route subscribed to every power value, so it re-rendered each tick: 53 ms/s against base 31); fixed in `73b4436` with a render-count test. The Power gate still fails about half its runs on base and branch alike: one 53 to 57 ms long task every 10 s when the Energy by app refetch lands on a tick. Memoizing the usage rows, or keeping that commit off the tick, is the follow-up.
 
 ### 2026-10-19 (Disk space report: map UX pass)
 
