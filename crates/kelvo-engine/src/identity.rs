@@ -32,6 +32,8 @@ use std::path::Path;
 use kelvo_schema::{HostId, HostRecord};
 use uuid::Uuid;
 
+use crate::HistoryStore;
+
 pub const HOST_ID_FILE: &str = "host-id";
 const MACHINE_PREFIX: &str = "machine=";
 
@@ -141,6 +143,32 @@ pub fn load_or_create(
         source,
         persisted,
     }
+}
+
+/// The data directory's part of startup, for the app and the headless agent alike:
+/// create `dir` owner-only (D-074, it holds usage history), open the history store in it,
+/// and read or create the host id ([`load_or_create`], with the store's local host as the
+/// fallback). Never fails: a directory that cannot be created or written (root-owned
+/// after a `sudo` run, a full disk) leaves history unavailable with the reason and the
+/// host id in memory, so the caller runs live-only.
+pub fn open_local(
+    dir: &Path,
+    binding: impl Fn(HostId) -> Option<String>,
+) -> (HistoryStore, LocalId) {
+    if let Err(e) = kelvo_store::create_private_dir(dir) {
+        tracing::error!(dir = %dir.display(), "cannot create the data directory, running live-only: {e}");
+    }
+    let history = HistoryStore::open(dir);
+    let stored_local = if history.is_available() {
+        history.read(|r| r.local_host()).unwrap_or_else(|e| {
+            tracing::warn!("reading the stored local host: {e}");
+            None
+        })
+    } else {
+        None
+    };
+    let id = load_or_create(dir, stored_local.as_ref(), binding);
+    (history, id)
 }
 
 /// Writes through a temporary file and a rename. The error names the step that failed;
@@ -294,6 +322,25 @@ mod tests {
         let (id, src) = load(dir, None);
         assert_eq!(src, IdSource::Created);
         assert_ne!(id, local);
+    }
+
+    /// `open_local` makes the directory, opens history in it and, with the file lost,
+    /// recovers the id from the store it opened.
+    #[test]
+    fn open_local_recovers_the_id_from_its_store() {
+        let tmp = temp_dir("id-open-local");
+        let dir = tmp.path().join("data");
+        let (history, first) = open_local(&dir, mac_a);
+        assert!(history.is_available());
+        assert_eq!(first.source, IdSource::Created);
+        history.register_host(&record(first.id, true)).unwrap();
+        history.close();
+        drop(history);
+        std::fs::remove_file(dir.join(HOST_ID_FILE)).unwrap();
+
+        let (history, again) = open_local(&dir, mac_a);
+        assert!(history.is_available());
+        assert_eq!((again.id, again.source), (first.id, IdSource::Store));
     }
 
     #[test]

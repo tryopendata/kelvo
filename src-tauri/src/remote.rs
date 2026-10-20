@@ -4,23 +4,17 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use kelvo_engine::LiveHub;
-use kelvo_proto::{
-    Hello, Message, RemoteInterest, SourceStatus, SyncRequest, WireBucket, WireLayout,
-};
 use kelvo_remote::{
-    ControlRequest, ControlResponse, EndpointConfig, Mirror, RemoteSource, ServerProvider,
-    SocketPaths,
+    ControlRequest, ControlResponse, EndpointConfig, HostServer, Mirror, RemoteSource, SocketPaths,
 };
 use kelvo_schema::lock::LockExt;
-use kelvo_schema::{HostId, HostRecord, SyncKinds, Tier};
+use kelvo_schema::{HostId, HostRecord};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, State};
 use uuid::Uuid;
 
 use crate::error::CommandError;
 use crate::history::History;
-use crate::hosts::HostEntry;
 use crate::live::LiveFeed;
 use crate::state::AppState;
 

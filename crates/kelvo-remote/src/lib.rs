@@ -2,6 +2,7 @@
 //! Persistent, direct SSH sessions. No network listener, collector, or Tauri dependency.
 mod clock;
 mod codec;
+mod host_server;
 pub mod install;
 mod mirror;
 mod mirror_error;
@@ -11,16 +12,19 @@ pub use mirror::Mirror;
 mod server;
 mod socket;
 mod source;
+mod stdio;
 mod transport;
 pub mod trust;
 
 pub use clock::HostClock;
+pub use host_server::{HostServer, InterestSet, ServedHost};
 pub use kelvo_proto::RemoteInterest;
 pub use pages::{page_from_wire, page_to_wire};
 pub use server::status_to_wire;
-pub use server::{ServerProvider, serve_connection, serve_metrics};
+pub use server::{ServerProvider, headline_metrics, serve_connection, serve_metrics};
 pub use socket::{ControlRequest, ControlResponse, SocketPaths, control_request, serve_control};
 pub use source::{ConnectionStatus, MirrorSink, RemoteSource, StatusCallback};
+pub use stdio::stdio_bridge;
 pub use transport::{EndpointConfig, Route, SshSession, connect, ssh_command};
 
 #[derive(Debug, thiserror::Error)]

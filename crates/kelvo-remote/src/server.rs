@@ -1,7 +1,7 @@
 use crate::{RemoteError, Result, codec, socket};
 use kelvo_engine::{BusMsg, EngineStatus, LiveHub, ProcessSample};
 use kelvo_proto::{Hello, Message, RemoteInterest, SourceStatus, SyncRequest, WireProcess};
-use kelvo_schema::SyncKinds;
+use kelvo_schema::{OsKind, SyncKinds};
 use std::{
     path::PathBuf,
     sync::{
@@ -124,9 +124,11 @@ pub async fn serve_connection<S: AsyncRead + AsyncWrite + Unpin + Send + 'static
     let last_layout = None;
     let last_process = tokio::time::Instant::now() - Duration::from_secs(3600);
     codec::write(&mut writer, &Message::SourceStatus(provider.status())).await?;
+    let headline = headline_metrics(hello.host.info.os);
     let mut connection = Connection {
         provider,
         hub,
+        headline,
         writer,
         session,
         kinds,
@@ -146,6 +148,7 @@ pub async fn serve_connection<S: AsyncRead + AsyncWrite + Unpin + Send + 'static
 struct Connection<W> {
     provider: Arc<dyn ServerProvider>,
     hub: LiveHub,
+    headline: &'static [&'static str],
     writer: W,
     session: u64,
     kinds: SyncKinds,
@@ -311,26 +314,32 @@ impl<W: AsyncWrite + Unpin> Connection<W> {
                         .iter()
                         .cloned()
                         .zip(frame.held.iter().copied())
-                        .filter(|(key, _)| {
-                            [
-                                "cpu.total",
-                                "mem.used",
-                                "mem.pressure",
-                                "gpu.util",
-                                "thermal.hottest",
-                                "net.rx",
-                                "net.tx",
-                                "disk.read",
-                                "disk.write",
-                            ]
-                            .contains(&key.metric.as_str())
-                        })
+                        .filter(|(key, _)| self.headline.contains(&key.metric.as_str()))
                         .collect(),
                 }),
             )
             .await?;
         }
         Ok(())
+    }
+}
+
+/// The metrics a `HostSummary` carries for a host on `os`, so a controller's host list
+/// stays current while no window shows that host in detail.
+pub fn headline_metrics(os: OsKind) -> &'static [&'static str] {
+    const MAC: &[&str] = &[
+        "cpu.total",
+        "mem.used",
+        "mem.pressure",
+        "gpu.util",
+        "thermal.hottest",
+        "net.rx",
+        "net.tx",
+        "disk.read",
+        "disk.write",
+    ];
+    match os {
+        OsKind::MacOs | OsKind::Linux | OsKind::Unknown => MAC,
     }
 }
 

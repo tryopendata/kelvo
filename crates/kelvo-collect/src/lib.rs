@@ -27,6 +27,7 @@
 
 pub mod calib;
 pub mod calls;
+pub mod host_info;
 mod process;
 pub mod process_control;
 

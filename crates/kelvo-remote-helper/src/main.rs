@@ -1,6 +1,6 @@
 #![cfg_attr(test, allow(clippy::too_many_lines))]
 //! Only bridges authenticated local sockets; it never starts a collector or opens SQLite.
-use kelvo_remote::{ControlRequest, SocketPaths, control_request};
+use kelvo_remote::{ControlRequest, SocketPaths, control_request, stdio_bridge};
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
@@ -18,15 +18,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let paths = SocketPaths::for_current_user()?;
     match args.first().map(String::as_str) {
         Some("serve") if args.get(1).map(String::as_str) == Some("--stdio") => {
-            let stream = tokio::net::UnixStream::connect(&paths.metrics).await?;
-            let (mut read, mut write) = stream.into_split();
-            let mut input = tokio::io::stdin();
-            let mut output = tokio::io::stdout();
-            use tokio::io::{AsyncReadExt, AsyncWriteExt};
-            tokio::select! {
-                result=async {tokio::io::copy(&mut input,&mut write).await?;write.shutdown().await}=>{result?;},
-                result=async {let mut buffer=[0u8;16*1024];loop{let count=read.read(&mut buffer).await?;if count==0 {break;}output.write_all(&buffer[..count]).await?;output.flush().await?;}Ok::<(),std::io::Error>(())}=>{result?;}
-            }
+            stdio_bridge(&paths.metrics).await?;
         }
         Some("status") => {
             println!(

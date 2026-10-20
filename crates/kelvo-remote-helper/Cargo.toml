@@ -8,12 +8,12 @@ publish.workspace = true
 
 [dependencies]
 kelvo-remote = { path = "../kelvo-remote" }
-tokio = { workspace = true, features = ["rt", "macros", "io-std", "io-util", "net"] }
+tokio = { workspace = true, features = ["rt", "macros"] }
 serde_json.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
-tokio = { workspace = true, features = ["process", "time"] }
+tokio = { workspace = true, features = ["process", "time", "net", "io-util"] }
 
 [lints]
 workspace = true

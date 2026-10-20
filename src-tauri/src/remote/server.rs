@@ -1,126 +1,5 @@
 //! Tauri adapters for local metrics/control servers and their lifecycle.
 use super::*;
-struct LocalServer {
-    app: AppHandle,
-    entry: Arc<HostEntry>,
-}
-impl ServerProvider for LocalServer {
-    fn hello(&self) -> Hello {
-        let state = self.app.state::<AppState>();
-        Hello {
-            proto_version: kelvo_proto::PROTO_VERSION,
-            min_compatible: kelvo_proto::MIN_COMPATIBLE,
-            app_version: env!("CARGO_PKG_VERSION").into(),
-            host: self.entry.record().identity(),
-            db_instance_uuid: state.history.read(|r| Ok(r.epoch())).unwrap_or(Uuid::nil()),
-            capabilities: self.entry.capabilities(),
-            features: kelvo_proto::local_features(),
-        }
-    }
-    fn live(&self) -> LiveHub {
-        self.entry.hub().clone()
-    }
-    fn status(&self) -> SourceStatus {
-        let s = self.entry.hub().status();
-        SourceStatus {
-            interval_ms: s.interval_ms,
-            paused: s.paused,
-            asleep: s.asleep,
-            on_battery: s.on_battery,
-            low_power_mode: s.low_power_mode,
-            backed_off: s.backed_off,
-            backgrounded: s.backgrounded,
-            display_idle: s.display_idle,
-            history_held_until: s.history_held_until,
-            performance: s.performance,
-            power_source: s.power_source,
-            primary_iface: s.primary_iface.as_deref().map(str::to_owned),
-            history_available: self.app.state::<AppState>().history.is_available(),
-        }
-    }
-    fn recent(&self, from: i64, to: i64) -> Result<Message, String> {
-        let now = kelvo_engine::wall_ms();
-        let state = self.app.state::<AppState>();
-        let rows = self
-            .entry
-            .recent_rows(state.local, from.max(now - 300_000), to.min(now));
-        let mut layouts: Vec<WireLayout> = Vec::new();
-        let mut wire = Vec::new();
-        for row in rows.into_iter().filter(|r| r.tier == Tier::S10) {
-            let idx = layouts
-                .iter()
-                .position(|l| l.series.as_slice() == row.series.as_ref())
-                .unwrap_or_else(|| {
-                    let i = layouts.len();
-                    layouts.push(WireLayout {
-                        layout_no: i as u32,
-                        series: row.series.to_vec(),
-                    });
-                    i
-                });
-            wire.push(WireBucket {
-                seq: 0,
-                bucket_ts: row.bucket_ts,
-                layout_no: idx as u32,
-                stats: row.stats,
-            });
-        }
-        let message = Message::RecentRows {
-            epoch: self.hello().db_instance_uuid,
-            tier: Tier::S10,
-            complete_to_ms: now.div_euclid(10_000) * 10_000,
-            layouts,
-            rows: wire,
-        };
-        if kelvo_proto::encode_message(&message)
-            .map_err(|e| e.to_string())?
-            .len()
-            > 256 * 1024
-        {
-            return Err(
-                "Recent history exceeds the page limit; durable history remains available".into(),
-            );
-        }
-        Ok(message)
-    }
-
-    fn set_interest(&self, session: u64, interest: RemoteInterest) {
-        self.entry.remote_interest(session, interest);
-    }
-    fn sync(&self, req: &SyncRequest, kinds: SyncKinds) -> Result<Message, String> {
-        let state = self.app.state::<AppState>();
-        let mut max = req.max_rows.clamp(1, 2000);
-        let cap = req.max_bytes.unwrap_or(16 * 1024).clamp(1024, 256 * 1024) as usize;
-        loop {
-            let read = state
-                .history
-                .read(|r| {
-                    r.read_after_since(state.local, req.tier, req.after, max, kinds, req.from_ms)
-                })
-                .map_err(|e| e.to_string())?;
-            let message = kelvo_remote::page_to_wire(read);
-            if kelvo_proto::encode_message(&message)
-                .map_err(|e| e.to_string())?
-                .len()
-                <= cap
-            {
-                return Ok(message);
-            }
-            if max == 1 {
-                if kelvo_proto::encode_message(&message)
-                    .map_err(|e| e.to_string())?
-                    .len()
-                    <= 256 * 1024
-                {
-                    return Ok(message);
-                }
-                return Err("A history row exceeds the maximum page size".into());
-            }
-            max = (max / 2).max(1);
-        }
-    }
-}
-
 pub fn start(app: &AppHandle) -> anyhow::Result<()> {
     let state = app.state::<AppState>();
     if let Ok(bytes) = std::fs::read(saved_path(app)?) {
@@ -247,10 +126,7 @@ pub fn refresh_metrics(app: &AppHandle, enabled: bool) {
         return;
     };
     let Ok(dir) = data_dir(app) else { return };
-    let provider = Arc::new(LocalServer {
-        app: app.clone(),
-        entry,
-    });
+    let provider = Arc::new(HostServer::new(entry, state.history.store()));
     let path = SocketPaths::new(dir).metrics;
     let (tx, mut desired) = tokio::sync::watch::channel(enabled);
     *setting = Some(tx);

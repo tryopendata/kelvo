@@ -12,11 +12,8 @@ pub use hints::IoKitDeviceHints;
 pub use power::MacPowerSignals;
 pub use ticker::GcdTicker;
 
-/// Host facts the collectors read, for the shell's `HostInfo` (D-092).
-pub use kelvo_collect::macos::disk::{boot_mounts, io_devices};
-pub use kelvo_collect::macos::gpu_dvfs_mhz;
-/// The sysctl reads behind the shell's host record (`string`, `int`, `boot_time`).
-pub use kelvo_collect::macos::sysctl;
+/// On-demand disk device metadata, for the shell's Disk page.
+pub use kelvo_collect::macos::disk::io_devices;
 
 /// Moves the calling thread to the utility QoS class (architecture.md, Engine).
 pub fn set_current_thread_utility_qos() {

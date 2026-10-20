@@ -87,7 +87,7 @@ impl AppState {
             .context("resolving the app data directory")?;
         let (history, id) = open_data_dir(&data_dir, identity::machine_binding);
         let local = id.id;
-        let record = platform::local_host_record(local);
+        let record = kelvo_engine::host_record(local);
         tracing::info!(
             host = %local,
             id_source = ?id.source,
@@ -470,35 +470,21 @@ fn warm_live_ring(history: &History, entry: &HostEntry, host: HostId, now: i64) 
     }
 }
 
-/// The data directory's part of startup: create it, open the history store, read or
-/// create the host id. Never fails: a directory that cannot be created or written
-/// (root-owned after a `sudo` run, a full disk) leaves history unavailable with the reason
-/// and the host id in memory, and the app runs live-only.
+/// The data directory's part of startup ([`identity::open_local`]: create it, open the
+/// history store, read or create the host id; never fails), plus the shell's settings
+/// file permissions.
 fn open_data_dir(
     data_dir: &Path,
     binding: impl Fn(HostId) -> Option<String>,
 ) -> (History, identity::LocalId) {
-    // Owner-only (D-074): it holds usage history.
-    if let Err(e) = kelvo_store::create_private_dir(data_dir) {
-        tracing::error!(dir = %data_dir.display(), "cannot create the data directory, running live-only: {e}");
-    }
+    let (history, id) = identity::open_local(data_dir, binding);
     // The plugin writes settings.json; one from before D-074 is tightened here. The store,
     // the host id and the calibration file see to their own.
     let settings = data_dir.join(crate::settings::SETTINGS_FILE);
     if let Err(e) = kelvo_store::restrict(&settings) {
         tracing::warn!("restricting {}: {e}", settings.display());
     }
-    let history = History::open(data_dir);
-    let stored_local = if history.is_available() {
-        history.read(|r| r.local_host()).unwrap_or_else(|e| {
-            tracing::warn!("reading the stored local host: {e}");
-            None
-        })
-    } else {
-        None
-    };
-    let id = identity::load_or_create(data_dir, stored_local.as_ref(), binding);
-    (history, id)
+    (History::from_store(history), id)
 }
 
 /// Accessory (menu bar only) by default; Regular when "Show in Dock" is on.
@@ -635,7 +621,7 @@ mod tests {
         ));
         let (history, id) = open_data_dir(&data_dir, |_| None);
         let writer = history
-            .register_host(&platform::local_host_record(id.id))
+            .register_host(&kelvo_engine::host_record(id.id))
             .unwrap();
         let alert = |ago: i64| Event {
             ts_ms: NOW - ago,
@@ -721,7 +707,7 @@ mod tests {
             uuid::Uuid::new_v4().simple()
         ));
         let (history, id) = open_data_dir(&data_dir, |_| None);
-        let record = platform::local_host_record(id.id);
+        let record = kelvo_engine::host_record(id.id);
         let writer = history.register_host(&record).unwrap();
 
         // The previous run: 90 minutes of buckets, quit 20 minutes before this launch.
@@ -797,7 +783,7 @@ mod tests {
             uuid::Uuid::new_v4().simple()
         ));
         let (history, id) = open_data_dir(&data_dir, |_| None);
-        let record = platform::local_host_record(id.id);
+        let record = kelvo_engine::host_record(id.id);
         history.register_host(&record).unwrap();
         let registry = HostRegistry::new();
         let entry = registry.insert(record.clone(), Arc::new(Unstarted(record)));

@@ -97,6 +97,8 @@ pub use kelvo_collect::ProcessSample;
 pub use kelvo_collect::Tick;
 /// Where learned CPU power scales persist; the app shell implements it (D-065).
 pub use kelvo_collect::calib::{NoScaleStore, ScaleStore};
+/// The local host's record (name, OS, model, chip, topology), read once at start.
+pub use kelvo_collect::host_info::host_record;
 /// Quit and Force Quit's OS side, for the app shell's `process_signal` (D-029, D-065).
 pub use kelvo_collect::process_control;
 /// Collector periods the app shell's sampling plans quote (D-092).

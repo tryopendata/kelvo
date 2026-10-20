@@ -42,7 +42,7 @@ use kelvo_collect::{
     Cadence, CollectError, Collector, CollectorId, Entitlement, Module, Probe, SampleBuf, Tick,
 };
 use kelvo_engine::{Bus, BusMsg, EngineParts, LiveHub, LocalSource, Source, SourceSink};
-use kelvo_schema::{Catalog, HostId, HostInfo, HostRecord, OsKind, Settings, Snapshot};
+use kelvo_schema::{Catalog, HostId, Settings, Snapshot};
 use kelvo_store::{Store, StoreConfig};
 
 #[derive(Default)]
@@ -92,32 +92,6 @@ fn parse_args() -> Result<Args> {
         }
     }
     Ok(a)
-}
-
-fn host_record() -> HostRecord {
-    HostRecord {
-        // The dump tool is not the app: a fixed id keeps its throwaway databases apart
-        // from a real host.
-        id: HostId(uuid::Uuid::from_u128(0x6b65_6c76_6f2d_6475_6d70)),
-        is_local: true,
-        display_name: "dump".into(),
-        info: HostInfo {
-            os: if cfg!(target_os = "macos") {
-                OsKind::MacOs
-            } else {
-                OsKind::Linux
-            },
-            os_version: String::new(),
-            model: None,
-            chip: None,
-            chip_known: false,
-            cpu_topology: Vec::new(),
-            mem_total_bytes: 0,
-            boot_time_ms: 0,
-            gpu_dvfs_mhz: Vec::new(),
-            boot_mounts: Vec::new(),
-        },
-    }
 }
 
 fn fmt(v: Option<f32>, scale: f32, unit: &str) -> String {
@@ -355,7 +329,10 @@ fn main() -> Result<()> {
         }
         None => None,
     };
-    let record = host_record();
+    // The dump tool is not the app: a fixed id keeps its throwaway databases apart from a
+    // real host.
+    let record =
+        kelvo_engine::host_record(HostId(uuid::Uuid::from_u128(0x6b65_6c76_6f2d_6475_6d70)));
     let host = record.id;
     let mut parts = EngineParts::platform(Arc::new(kelvo_engine::NoScaleStore));
     let spent = if args.perf {

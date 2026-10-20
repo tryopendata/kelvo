@@ -10,6 +10,7 @@ use kelvo_engine::{
     Bus, LiveFrame, LiveHub, RecentNet, Source, SourceControl, SourceError, SourceHandle,
     SourceSink,
 };
+use kelvo_remote::InterestSet;
 use kelvo_schema::lock::{LockExt, RwLockExt};
 use kelvo_schema::{Capabilities, HostId, HostRecord, SeriesKey, Settings};
 use kelvo_store::{BucketRow, Writer};
@@ -19,31 +20,8 @@ use crate::live::LiveFeed;
 
 /// One host: its record, the source producing for it, and the hub the source publishes
 /// through.
-#[derive(Default)]
-struct Interests {
-    local: kelvo_proto::RemoteInterest,
-    remote: HashMap<u64, kelvo_proto::RemoteInterest>,
-}
-
-impl Interests {
-    fn merged(&self) -> kelvo_proto::RemoteInterest {
-        let mut interest = self.local.clone();
-        for remote in self.remote.values() {
-            interest.detail |= remote.detail;
-            interest.network_processes |= remote.network_processes;
-            interest.gpu_processes |= remote.gpu_processes;
-            interest.port_processes |= remote.port_processes;
-            if let Some(period) = remote.process_period_ms {
-                interest.process_period_ms =
-                    Some(interest.process_period_ms.map_or(period, |p| p.min(period)));
-            }
-        }
-        interest
-    }
-}
-
 pub struct HostEntry {
-    interests: Mutex<Interests>,
+    interests: Mutex<InterestSet>,
     record: RwLock<HostRecord>,
     source: Arc<dyn Source>,
     handle: Mutex<Option<SourceHandle>>,
@@ -59,7 +37,7 @@ impl HostEntry {
         self.handle().as_ref().map(|h| f(h.control()))
     }
 
-    fn change_interest(&self, update: impl FnOnce(&mut Interests)) {
+    fn change_interest(&self, update: impl FnOnce(&mut InterestSet)) {
         let mut all = self.interests.lock_ok();
         update(&mut all);
         let interest = all.merged();
@@ -71,16 +49,6 @@ impl HostEntry {
             c.set_gpu_process_interest(interest.gpu_processes);
             c.set_port_process_interest(interest.port_processes);
             c.set_detail_interest(interest.detail);
-        });
-    }
-
-    pub(crate) fn remote_interest(&self, session: u64, interest: kelvo_proto::RemoteInterest) {
-        self.change_interest(|all| {
-            if interest == kelvo_proto::RemoteInterest::default() {
-                all.remote.remove(&session);
-            } else {
-                all.remote.insert(session, interest);
-            }
         });
     }
 
@@ -229,6 +197,26 @@ impl LiveFeed for HostEntry {
     }
 }
 
+/// What the metrics server reads when this host is shared (only the local one is). Not
+/// imported, so its `hub` and `capabilities` never clash with [`LiveFeed`]'s.
+impl kelvo_remote::ServedHost for HostEntry {
+    fn record(&self) -> HostRecord {
+        HostEntry::record(self)
+    }
+
+    fn capabilities(&self) -> Capabilities {
+        self.source.capabilities()
+    }
+
+    fn hub(&self) -> &LiveHub {
+        &self.live
+    }
+
+    fn set_remote_interest(&self, session: u64, interest: kelvo_proto::RemoteInterest) {
+        self.change_interest(|all| all.set_remote(session, interest));
+    }
+}
+
 #[derive(Default)]
 pub struct HostRegistry {
     hosts: RwLock<HashMap<HostId, Arc<HostEntry>>>,
@@ -279,43 +267,5 @@ impl HostRegistry {
         for h in self.all() {
             h.stop();
         }
-    }
-}
-
-#[cfg(test)]
-mod interest_tests {
-    use super::*;
-    #[test]
-    fn closing_one_viewer_preserves_other_viewers_and_local_demand() {
-        let mut interests = Interests::default();
-        interests.local.detail = true;
-        interests.local.process_period_ms = Some(5000);
-        interests.remote.insert(
-            1,
-            kelvo_proto::RemoteInterest {
-                detail: true,
-                process_period_ms: Some(1000),
-                gpu_processes: true,
-                ..Default::default()
-            },
-        );
-        interests.remote.insert(
-            2,
-            kelvo_proto::RemoteInterest {
-                network_processes: true,
-                process_period_ms: Some(3000),
-                ..Default::default()
-            },
-        );
-        let merged = interests.merged();
-        assert_eq!(merged.process_period_ms, Some(1000));
-        assert!(merged.gpu_processes && merged.network_processes && merged.detail);
-        interests.remote.remove(&1);
-        let merged = interests.merged();
-        assert_eq!(merged.process_period_ms, Some(3000));
-        assert!(!merged.gpu_processes);
-        assert!(merged.network_processes && merged.detail);
-        interests.remote.clear();
-        assert_eq!(interests.merged(), interests.local);
     }
 }

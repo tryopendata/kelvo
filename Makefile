@@ -1,4 +1,4 @@
-.PHONY: help install dev dev-web build test test-e2e test-fill test-read-perf lint format fix typecheck check rust-fmt rust-check rust-test rust-linux-check rust-portable-check rust-portable-test appstore-check check-deps deny perf bench bench-perf-mode bench-vs-stats bindings bindings-check e2e-perf hooks clean stub-dist
+.PHONY: help install dev dev-web build test test-e2e test-fill test-read-perf lint format fix typecheck check rust-fmt rust-check rust-test rust-linux-check rust-linux-test rust-portable-check rust-portable-test appstore-check check-deps deny perf bench bench-perf-mode bench-vs-stats bindings bindings-check e2e-perf hooks clean stub-dist
 .PHONY: agent-config agent-config-check agent-config-test agent-hooks-test architecture-check architecture-test
 
 # All library crates are portable by default. New workspace crates enter this gate
@@ -36,6 +36,7 @@ help:
 	@echo "  make rust-portable-check  cargo check all portable workspace crates on the current host"
 	@echo "  make rust-portable-test   cargo test all portable workspace crates on the current host"
 	@echo "  make rust-linux-check  cargo check the portable crates for x86_64-unknown-linux-gnu"
+	@echo "  make rust-linux-test   cargo test the portable crates on Linux, in Docker (rust:1.99-bookworm; run ensure-docker first)"
 	@echo "  make appstore-check    cargo check + clippy the sandboxed App Store edition (--features appstore)"
 	@echo "  make check-deps    Fail if the built app links a library macOS does not ship (D-058)"
 	@echo "  make deny          cargo-deny: advisories, licenses, bans, sources (deny.toml); skips if not installed"
@@ -136,6 +137,13 @@ rust-portable-test:
 rust-linux-check:
 	rustup target add x86_64-unknown-linux-gnu
 	cargo check --target x86_64-unknown-linux-gnu $(LINUX_CRATES)
+
+# The ubuntu CI job, locally. scripts/linux-test-entry.sh runs it as your uid, not root
+# (see there why). Cargo's home (registry and the Linux target dir) and rustup's (the
+# rust-toolchain.toml version, installed on first run) live in named volumes, so reruns
+# are incremental and the host's macOS target/ is untouched.
+rust-linux-test:
+	docker run --rm -e HOST_UID="$$(id -u)" -e HOST_GID="$$(id -g)" -e HOME=/tmp -v "$(PWD)":/w -w /w -v kelvo-linux-cargo:/usr/local/cargo -v kelvo-linux-rustup:/usr/local/rustup -e CARGO_TARGET_DIR=/usr/local/cargo/target-linux rust:1.99-bookworm scripts/linux-test-entry.sh cargo test $(LINUX_CRATES)
 
 # Kelvo installs nothing and requires nothing (D-058): every linked library must come
 # with macOS. Checks the debug binary; build it first (bun tauri build --debug).

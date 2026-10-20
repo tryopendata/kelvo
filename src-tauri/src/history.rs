@@ -46,6 +46,12 @@ impl History {
             storage: Arc::new(HistoryStore::unavailable()),
         }
     }
+    /// Wraps a store already opened (`identity::open_local`).
+    pub fn from_store(storage: HistoryStore) -> Self {
+        Self {
+            storage: Arc::new(storage),
+        }
+    }
     pub(super) fn store(&self) -> Arc<HistoryStore> {
         self.storage.clone()
     }

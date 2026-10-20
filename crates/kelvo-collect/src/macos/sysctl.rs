@@ -30,7 +30,7 @@ fn read_pod<T: Copy>(name: &CStr) -> Option<T> {
 }
 
 /// An integer sysctl. Accepts 4- and 8-byte values (the kernel is not consistent).
-/// Public, like [`string`], for the app shell's host facts.
+/// Public, like [`string`], for the host facts (`host_info`).
 pub fn int(name: &CStr) -> Option<i64> {
     let mut buf = [0u8; 8];
     let mut len = buf.len();
@@ -58,8 +58,8 @@ pub fn int(name: &CStr) -> Option<i64> {
     }
 }
 
-/// A string sysctl, without the trailing NUL. Public so the engine can re-export it for
-/// the app shell's host facts.
+/// A string sysctl, without the trailing NUL. Public, like [`int`], for the host facts
+/// (`host_info`).
 pub fn string(name: &CStr) -> Option<String> {
     crate::calls::count(crate::calls::Api::Kernel);
     string_in::<256>(name)
@@ -135,7 +135,7 @@ pub(crate) fn swap_usage() -> Option<libc::xsw_usage> {
     read_pod::<libc::xsw_usage>(c"vm.swapusage")
 }
 
-/// `kern.boottime`, for the app shell's host facts.
+/// `kern.boottime`, for the host facts (`host_info`).
 pub fn boot_time() -> Option<libc::timeval> {
     read_pod::<libc::timeval>(c"kern.boottime")
 }
