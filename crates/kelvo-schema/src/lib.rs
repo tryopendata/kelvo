@@ -11,7 +11,7 @@
 //! | Need | Type |
 //! |---|---|
 //! | Identify a series | [`SeriesKey`] = [`MetricId`] + [`Labels`]; `Display`/[`SeriesKey::parse`] for text, [`Labels::canonical`] for the store's `series.labels` column |
-//! | Know what a metric is | [`Catalog::builtin`], [`Catalog::validate`], [`MetricDef`] (`persisted` decides tier storage) |
+//! | Know what a metric is | [`Catalog::builtin`], [`Catalog::validate`], [`MetricDef`] (`persisted` decides tier storage), [`Catalog::over_cap`] (`max_cardinality`), [`bound_label_value`] |
 //! | Identify a host | [`HostId`] (UUID), [`HostRecord`] (controller side, with `is_local`), [`HostIdentity`] (on the wire), [`HostInfo`] |
 //! | Tiers and sync | [`Tier`] (`bucket_ms`, `bucket_start`/`bucket_end`, `PERSISTED`), [`floor_to`]/[`ceil_to`], [`Cursor`] (`epoch` + `seq`), [`SyncRowKind`]/[`SyncKinds`] (row kinds gated on negotiated features) |
 //! | Gaps | [`Gap`], [`GapReason`] (`as_str`/`parse` give the `gaps.reason` text), nullable [`Gap::module`] set only for `module_disabled`, [`Module::as_str`] for `gaps.module` |
@@ -41,6 +41,7 @@
 
 mod alert;
 mod caps;
+mod cardinality;
 mod catalog;
 mod codes;
 mod compat;
@@ -59,6 +60,7 @@ mod snapshot;
 
 pub use alert::{AlertRule, Cmp, Condition, ThermalState};
 pub use caps::{Capabilities, DiskDevice, Entitlement, ModuleCap, UnsupportedReason};
+pub use cardinality::{LABEL_VALUE_MAX, bound_label_value};
 pub use catalog::{CATALOG, Catalog, CatalogError, MetricDef, MetricKind, Module, Unit};
 pub use codes::{CpuPowerCalibration, MetricCode, PressureLevel, metric_codes};
 pub use event::{AlertCause, DetectorThresholds, Event, EventDetail, PowerComponent};

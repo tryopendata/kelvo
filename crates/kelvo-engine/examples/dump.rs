@@ -202,6 +202,9 @@ impl Collector for Timed {
     fn probe(&mut self) -> Probe {
         self.inner.probe()
     }
+    fn series_revision(&self) -> u64 {
+        self.inner.series_revision()
+    }
     fn sample(&mut self, tick: &Tick, out: &mut SampleBuf) -> Result<(), CollectError> {
         let t0 = thread_cpu_ns();
         let r = self.inner.sample(tick, out);

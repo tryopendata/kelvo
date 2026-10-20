@@ -1,6 +1,6 @@
 use crate::MirrorError;
 use kelvo_proto::*;
-use kelvo_schema::{Gap, SyncKinds};
+use kelvo_schema::{Catalog, Gap, SyncKinds};
 use kelvo_store::*;
 
 pub fn page_to_wire(read: CursorRead) -> Message {
@@ -63,10 +63,15 @@ pub fn page_to_wire(read: CursorRead) -> Message {
         }),
     }
 }
+/// Most rows, gaps and events (together), and most layouts, a sync page may carry.
+const MAX_PAGE_ITEMS: usize = 2000;
+/// Most series one layout may carry.
+const MAX_LAYOUT_SERIES: usize = 8192;
+
 pub fn page_from_wire(p: SyncPage, kinds: SyncKinds) -> Result<CursorPage, MirrorError> {
-    if p.rows.len() + p.gaps.len() + p.events.len() > 2000
-        || p.layouts.len() > 2000
-        || p.layouts.iter().any(|l| l.series.len() > 8192)
+    if p.rows.len() + p.gaps.len() + p.events.len() > MAX_PAGE_ITEMS
+        || p.layouts.len() > MAX_PAGE_ITEMS
+        || p.layouts.iter().any(|l| l.series.len() > MAX_LAYOUT_SERIES)
     {
         return Err(MirrorError::ResourceLimit(
             "invalid remote message: sync page cardinality exceeds bounds",
@@ -131,4 +136,47 @@ pub fn page_from_wire(p: SyncPage, kinds: SyncKinds) -> Result<CursorPage, Mirro
         last_seq: p.last_seq,
         more: p.more,
     })
+}
+
+/// Drops each layout's series beyond their metric's cardinality cap (D-115), and their
+/// `(min, max, avg)` stats from every row in that layout, keeping the first series in
+/// layout order as a local engine would. A remote host on an older build, or one that
+/// does not cap, then cannot grow a mirror past what a local history holds. Input over
+/// the page bounds, and a row whose stats do not match its layout, are left alone for
+/// validation to reject. Returns the number of series dropped.
+pub(crate) fn cap_layouts(
+    catalog: &Catalog,
+    layouts: &mut [WireLayout],
+    rows: &mut [WireBucket],
+) -> usize {
+    if rows.len() > MAX_PAGE_ITEMS
+        || layouts.len() > MAX_PAGE_ITEMS
+        || layouts.iter().any(|l| l.series.len() > MAX_LAYOUT_SERIES)
+    {
+        return 0;
+    }
+    let mut dropped = 0;
+    for layout in layouts {
+        let over = catalog.over_cap(&layout.series);
+        let width = layout.series.len().saturating_mul(3);
+        let mut in_layout = rows.iter().filter(|r| r.layout_no == layout.layout_no);
+        // Trimming the layout under a malformed row could make that row fit it.
+        if over.is_empty() || in_layout.any(|r| r.stats.len() != width) {
+            continue;
+        }
+        dropped += over.len();
+        for row in rows.iter_mut().filter(|r| r.layout_no == layout.layout_no) {
+            let mut i = 0;
+            row.stats.retain(|_| {
+                i += 1;
+                over.binary_search(&((i - 1) / 3)).is_err()
+            });
+        }
+        let mut i = 0;
+        layout.series.retain(|_| {
+            i += 1;
+            over.binary_search(&(i - 1)).is_err()
+        });
+    }
+    dropped
 }

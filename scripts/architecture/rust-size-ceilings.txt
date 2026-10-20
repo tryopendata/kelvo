@@ -2,7 +2,7 @@
 # Split by responsibility; lower or remove the entry when its owner is refactored.
 # Tests and vendored code are excluded by rust_size.py, not by these ceilings.
 crates/kelvo-collect/src/docker.rs 700
-crates/kelvo-collect/src/lib.rs 600
+crates/kelvo-collect/src/lib.rs 550
 crates/kelvo-collect/src/macos/libproc.rs 550
 crates/kelvo-collect/src/macos/network.rs 550
 crates/kelvo-collect/src/macos/nstat/ffi.rs 550

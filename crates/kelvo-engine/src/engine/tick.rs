@@ -231,6 +231,8 @@ impl Engine {
                     "sample failed: {e}"
                 );
             }
+            // Its series set changed: re-probed alone before the next tick's sample.
+            self.reprobe.revised |= slot.revised();
             // A value from this read covers the time since the collector's previous read,
             // even when that read produced nothing for it (a counter reset, a dropped
             // rate): the collector's baseline moved then.

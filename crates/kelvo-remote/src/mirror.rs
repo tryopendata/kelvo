@@ -4,7 +4,8 @@
 //! recent as well, so delayed snapshots cannot overwrite acknowledged durable data.
 use crate::{MirrorError, MirrorSink};
 use kelvo_proto::{SyncPage, WireBucket, WireLayout};
-use kelvo_schema::{HostId, SyncKinds, Tier, lock::LockExt};
+use kelvo_schema::{Catalog, HostId, SyncKinds, Tier, lock::LockExt};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 
@@ -14,6 +15,10 @@ pub struct Mirror {
     budget: u32,
     recent: Mutex<Vec<kelvo_store::BucketRow>>,
     epoch: Mutex<MirrorEpoch>,
+    /// For the cardinality caps on ingest (D-115).
+    catalog: Catalog,
+    /// A page had series over a cap; warned once per mirror.
+    cap_warned: AtomicBool,
 }
 
 #[derive(Default)]
@@ -55,13 +60,14 @@ impl MirrorSink for Mirror {
             .map_err(MirrorError::from)
     }
 
-    fn ingest(&self, page: SyncPage, kinds: SyncKinds) -> Result<(), MirrorError> {
+    fn ingest(&self, mut page: SyncPage, kinds: SyncKinds) -> Result<(), MirrorError> {
         let mut current = self.epoch.lock_ok();
         if current.id != Some(page.epoch) {
             return Err(MirrorError::EpochChanged {
                 operation: "history",
             });
         }
+        self.cap(&mut page.layouts, &mut page.rows);
         let page = crate::page_from_wire(page, kinds)?;
         let written: Vec<_> = page
             .rows
@@ -102,8 +108,8 @@ impl MirrorSink for Mirror {
         epoch: Uuid,
         tier: Tier,
         complete_to_ms: i64,
-        layouts: Vec<WireLayout>,
-        rows: Vec<WireBucket>,
+        mut layouts: Vec<WireLayout>,
+        mut rows: Vec<WireBucket>,
     ) -> Result<(), MirrorError> {
         let mut current = self.epoch.lock_ok();
         if current.id != Some(epoch) {
@@ -124,6 +130,7 @@ impl MirrorSink for Mirror {
         let width = tier
             .bucket_ms()
             .ok_or(MirrorError::InvalidInput("Invalid recent tier"))?;
+        self.cap(&mut layouts, &mut rows);
         let floor = complete_to_ms.saturating_sub(kelvo_engine::RECENT_ROWS_MS);
         let mut out = Vec::new();
         for row in rows {
@@ -210,6 +217,17 @@ impl Mirror {
             budget,
             recent: Mutex::default(),
             epoch: Mutex::default(),
+            catalog: Catalog::builtin(),
+            cap_warned: AtomicBool::new(false),
+        }
+    }
+
+    /// Applies the cardinality caps to a remote page or snapshot before anything is
+    /// stored (D-115).
+    fn cap(&self, layouts: &mut [WireLayout], rows: &mut [WireBucket]) {
+        let dropped = crate::pages::cap_layouts(&self.catalog, layouts, rows);
+        if dropped > 0 && !self.cap_warned.swap(true, Ordering::Relaxed) {
+            tracing::warn!(host = ?self.host, dropped, "remote series over their cap; not mirrored");
         }
     }
     pub fn store(&self) -> Arc<kelvo_engine::HistoryStore> {

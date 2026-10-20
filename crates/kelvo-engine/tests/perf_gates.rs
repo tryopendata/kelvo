@@ -170,6 +170,10 @@ impl Collector for Measured {
             .store(matches!(p, Probe::Supported(_)), Ordering::Relaxed);
         p
     }
+    // Read by the engine after every sample, so it counts toward the engine core.
+    fn series_revision(&self) -> u64 {
+        self.inner.series_revision()
+    }
     fn sample(&mut self, tick: &Tick, out: &mut SampleBuf) -> Result<(), CollectError> {
         let pushed = |out: &SampleBuf| {
             out.values().len()

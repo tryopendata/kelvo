@@ -8,10 +8,10 @@ use kelvo_collect::{Cadence, Interest, Interests, Probe};
 use kelvo_schema::lock::LockExt;
 use kelvo_schema::{Capabilities, MetricKind, Module, ModuleCap, SeriesKey};
 
-use super::Engine;
 use super::cadence::{
     background_interval_ms, backoff_interval_ms, performance_period, performance_slowdown,
 };
+use super::{Engine, Slot};
 use crate::bus::{BusMsg, FrameLayout};
 
 /// Series not gated by a module switch (catalog: "nothing gates it on the CPU module").
@@ -55,11 +55,26 @@ impl Layout {
 pub(super) struct Reprobe {
     pub(super) all: bool,
     pub(super) modules: BTreeSet<Module>,
+    /// A sampled collector's `series_revision` moved: re-probe each such slot alone.
+    pub(super) revised: bool,
 }
 
 impl Reprobe {
     pub(super) fn is_empty(&self) -> bool {
-        !self.all && self.modules.is_empty()
+        !self.all && self.modules.is_empty() && !self.revised
+    }
+}
+
+impl Slot {
+    /// Probes the collector and records the series revision that probe answers.
+    pub(super) fn run_probe(&mut self) {
+        self.probe = Some(self.collector.probe());
+        self.revision = self.collector.series_revision();
+    }
+
+    /// Whether the collector's series changed since its last probe.
+    pub(super) fn revised(&self) -> bool {
+        self.collector.series_revision() != self.revision
     }
 }
 
@@ -70,9 +85,9 @@ impl Engine {
         Some(ungated || !self.settings.disabled.contains(&def.module))
     }
 
-    /// Recomputes the layout from the last probes and the module switches. Publishes a
-    /// new layout (before any frame uses it) when the series set changed.
-    pub(super) fn rebuild_layout(&mut self) {
+    /// The series the layout holds: every probed series in the catalog whose module is
+    /// on, within its metric's cap, sorted.
+    fn layout_series(&mut self) -> Vec<SeriesKey> {
         let mut series: Vec<SeriesKey> = self
             .slots
             .iter()
@@ -86,9 +101,29 @@ impl Engine {
             })
             .cloned()
             .collect();
+        // Cap the metrics whose labels are unbounded (D-115) in probe order: the series a
+        // collector listed first stay.
+        let over = self.catalog.over_cap(&series);
+        if let Some(&first) = over.first() {
+            if let Some(suppressed) = self.cap_warn.check(self.ticker.now().wall_ms) {
+                let first = series.get(first).map(ToString::to_string);
+                tracing::warn!(dropped = over.len(), ?first, suppressed, "series over cap");
+            }
+            let mut i = 0;
+            series.retain(|_| {
+                i += 1;
+                over.binary_search(&(i - 1)).is_err()
+            });
+        }
         series.sort();
         series.dedup();
+        series
+    }
 
+    /// Recomputes the layout from the last probes and the module switches. Publishes a
+    /// new layout (before any frame uses it) when the series set changed.
+    pub(super) fn rebuild_layout(&mut self) {
+        let series = self.layout_series();
         let changed = *self.layout.frame.series != *series || self.layout.frame.layout_no == 0;
         if changed {
             let layout_no = self.layout.frame.layout_no + 1;
@@ -206,10 +241,14 @@ impl Engine {
             let modules = slot.collector.modules();
             let hit = which.all || modules.iter().any(|m| which.modules.contains(m));
             if hit {
-                slot.probe = Some(slot.collector.probe());
+                slot.run_probe();
                 slot.every.reset();
                 // A probe resets the collector's rate state: its next read is a baseline.
                 *at = i64::MIN;
+            } else if which.revised && slot.revised() {
+                // Only this collector's series moved. It keeps its own counters, its
+                // cadence and its last read; the rest of its module is not touched.
+                slot.run_probe();
             }
         }
         self.rebuild_layout();

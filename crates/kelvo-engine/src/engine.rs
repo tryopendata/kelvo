@@ -183,6 +183,8 @@ struct Slot {
     ///
     /// [`Cadence::OnDemand`]: kelvo_collect::Cadence::OnDemand
     demanded: bool,
+    /// The collector's `series_revision` as of its last probe.
+    revision: u64,
     errors: RateLimit,
 }
 
@@ -286,6 +288,8 @@ pub struct Engine {
     proc_gpu_span_ms: Option<i64>,
     ticks: u64,
     store_errors: RateLimit,
+    /// Series dropped by a metric's cardinality cap (D-115).
+    cap_warn: RateLimit,
     detect: Detectors,
     /// This tick's events, reused across ticks.
     events: Vec<Event>,
@@ -321,6 +325,7 @@ impl Engine {
                 active: false,
                 every: Every::new(0),
                 demanded: false,
+                revision: 0,
                 errors: RateLimit::default(),
             })
             .collect();
@@ -371,6 +376,7 @@ impl Engine {
             proc_gpu_span_ms: None,
             ticks: 0,
             store_errors: RateLimit::default(),
+            cap_warn: RateLimit::default(),
             detect,
             events: Vec::new(),
             net: NetAppAcc::default(),
@@ -428,7 +434,7 @@ impl Engine {
         self.net.restart_at(now.wall_ms, now.continuous_ns);
         self.sink.live.net_update(&[], &[], self.net.final_to());
         for slot in &mut self.slots {
-            slot.probe = Some(slot.collector.probe());
+            slot.run_probe();
         }
         self.slot_sampled_at = vec![i64::MIN; self.slots.len()];
         self.rebuild_layout();

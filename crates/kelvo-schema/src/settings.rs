@@ -14,6 +14,8 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
+mod agent;
+
 use crate::alert::AlertRule;
 use crate::catalog::Module;
 

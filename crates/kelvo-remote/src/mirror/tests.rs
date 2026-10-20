@@ -11,13 +11,7 @@ fn mirror(dir: &Path, id: u128) -> Mirror {
     record.is_local = false;
     let history = Arc::new(kelvo_engine::HistoryStore::open(dir));
     assert!(history.register_host(&record).is_some());
-    Mirror {
-        history,
-        host: record.id,
-        budget: 100,
-        recent: Mutex::default(),
-        epoch: Mutex::default(),
-    }
+    Mirror::new(history, record.id, 100)
 }
 fn keys() -> Vec<kelvo_schema::SeriesKey> {
     vec![kelvo_schema::SeriesKey::parse("cpu.total").unwrap()]
@@ -321,5 +315,88 @@ fn durable_write_failure_retains_sqlite_source_and_does_not_acknowledge_coverage
         mirror.recent_rows(TS, TS + 10_000).len(),
         1,
         "failed durable writes cannot displace recent data"
+    );
+}
+
+/// A remote layout with 40 `cgroup.cpu` series (an older or uncapped remote), plus
+/// `cpu.total`, each series' stats being its position.
+fn over_cap_layout() -> (WireLayout, WireBucket) {
+    let mut series = vec![kelvo_schema::SeriesKey::parse("cpu.total").unwrap()];
+    series.extend((0..40).map(|i| {
+        kelvo_schema::SeriesKey::parse(&format!("cgroup.cpu{{kind=docker,name=c{i:02}}}")).unwrap()
+    }));
+    let stats = (0..series.len()).flat_map(|i| [i as f32; 3]).collect();
+    let layout = WireLayout {
+        layout_no: 0,
+        series,
+    };
+    let row = WireBucket { stats, ..row() };
+    (layout, row)
+}
+
+/// The mirror keeps the first 32 series of a capped metric in layout order, with their
+/// own stats, as a local engine would (D-115).
+#[test]
+fn durable_ingest_caps_series_per_metric() {
+    let dir = tempfile::tempdir().unwrap();
+    let m = mirror(dir.path(), 2);
+    let epoch = Uuid::new_v4();
+    m.cursor(Tier::S10, epoch, SyncKinds::ALL).unwrap();
+    let (layout, row) = over_cap_layout();
+    let mut p = page(epoch);
+    p.layouts = vec![layout.clone()];
+    p.rows = vec![row];
+    m.ingest(p, SyncKinds::ALL).unwrap();
+    let read = m
+        .history
+        .read(|r| r.read_after(m.host, Tier::S10, None, 2000, SyncKinds::ALL))
+        .unwrap();
+    let CursorRead::Page(p) = read else {
+        panic!("expected durable page")
+    };
+    let stored = &p.layouts[0].series;
+    assert_eq!(stored.len(), 33);
+    assert_eq!(stored.as_slice(), &layout.series[..33]);
+    // Each kept series still has its own stats: series i carries i.
+    let row = &p.rows[0];
+    for (i, k) in stored.iter().enumerate() {
+        let at = layout.series.iter().position(|s| s == k).unwrap();
+        assert_eq!(row.stats[i * 3..i * 3 + 3], [at as f32; 3], "{k}");
+    }
+}
+
+#[test]
+fn recent_snapshot_caps_series_per_metric() {
+    let dir = tempfile::tempdir().unwrap();
+    let m = mirror(dir.path(), 2);
+    let epoch = Uuid::new_v4();
+    m.cursor(Tier::S10, epoch, SyncKinds::ALL).unwrap();
+    let (layout, row) = over_cap_layout();
+    m.recent(
+        epoch,
+        Tier::S10,
+        TS + 10_000,
+        vec![layout.clone()],
+        vec![row],
+    )
+    .unwrap();
+    let recent = m.recent.lock_ok();
+    assert_eq!(recent[0].series.as_ref(), &layout.series[..33]);
+    assert_eq!(recent[0].stats.len(), 33 * 3);
+    assert_eq!(recent[0].stats[32 * 3], 32.0);
+}
+
+/// A row that does not match its layout is not trimmed into a valid-looking one.
+#[test]
+fn capping_leaves_a_malformed_row_for_validation_to_reject() {
+    let dir = tempfile::tempdir().unwrap();
+    let m = mirror(dir.path(), 2);
+    let epoch = Uuid::new_v4();
+    m.cursor(Tier::S10, epoch, SyncKinds::ALL).unwrap();
+    let (layout, mut row) = over_cap_layout();
+    row.stats.truncate(33 * 3);
+    assert!(
+        m.recent(epoch, Tier::S10, TS + 10_000, vec![layout], vec![row])
+            .is_err()
     );
 }
