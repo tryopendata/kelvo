@@ -85,7 +85,15 @@ pub struct SpaceNode {
     pub done: bool,
     /// It can be opened: a finished or in-progress folder with a breakdown.
     pub openable: bool,
+    /// For a folder listed in a `SpaceSubtree`: its own largest entries, at most
+    /// `SPACE_PREVIEW` with the rest merged, so a treemap can draw two levels. A
+    /// subfolder holding 90% or more of it previews its own entries the same way (up to
+    /// three levels). Empty everywhere else.
+    pub children: Vec<SpaceNode>,
 }
+
+/// Entries in a `SpaceNode::children` preview before the rest merge into smaller items.
+pub const SPACE_PREVIEW: usize = 24;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, specta::Type)]
 pub struct SpaceCrumb {

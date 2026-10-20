@@ -1,4 +1,4 @@
-import { fixed, formatInteger, formatPercent } from "@core/format";
+import { fixed, formatBytes, formatInteger, formatPercent } from "@core/format";
 import type {
   SpaceNode,
   SpaceReport,
@@ -14,11 +14,23 @@ export function shareLabel(share: number): string {
 
 /** "312 items", "48.2 K items", "1.8 M items". */
 export function itemsLabel(n: number | null): string {
+  return `${countLabel(n)} ${(n ?? 0) === 1 ? "item" : "items"}`;
+}
+
+/** A row's size: a running folder shows what it has so far, one not reached yet waits. */
+export function sizeLabel(node: SpaceNode): string {
+  if (node.kind !== "folder" || node.done) return formatBytes(node.bytes);
+  return (node.bytes ?? 0) > 0
+    ? `${formatBytes(node.bytes)} so far`
+    : "Waiting";
+}
+
+/** An item count for a column headed Items: "48,200", "482 K", "1.8 M". */
+export function countLabel(n: number | null): string {
   const v = n ?? 0;
-  const noun = v === 1 ? "item" : "items";
-  if (v >= 1e6) return `${fixed(v / 1e6, 1)} M ${noun}`;
-  if (v >= 1e5) return `${fixed(v / 1e3, 0)} K ${noun}`;
-  return `${formatInteger(v)} ${noun}`;
+  if (v >= 1e6) return `${fixed(v / 1e6, 1)} M`;
+  if (v >= 1e5) return `${fixed(v / 1e3, 0)} K`;
+  return formatInteger(v);
 }
 
 /** "just now", "4 min ago", "2 h ago". */

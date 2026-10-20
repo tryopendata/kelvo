@@ -25,6 +25,23 @@ const sumDone = (tree: SpaceSubtree) =>
   tree.children.filter((c) => c.done).reduce((a, c) => a + (c.bytes ?? 0), 0);
 
 describe("mock disk space", () => {
+  it("previews each folder's entries, through a folder holding nearly all of it", async () => {
+    const { space, advance } = setup();
+    const id = data(await space.diskSpaceStart("/", [])).report_id ?? -1;
+    advance(MOCK_SCAN_MS * 2);
+    const root = data(await space.diskSpaceSubtree(id, null));
+    const users = root.children.find((c) => c.name === "Users");
+    const riley = users?.children[0];
+    expect(riley?.name).toBe("riley");
+    // riley holds all of Users, so its own entries come along.
+    expect(riley?.children.map((c) => c.name)).toContain("Library");
+    const apps = root.children.find((c) => c.name === "Applications");
+    expect(apps?.children.length).toBeLessThanOrEqual(25);
+    expect(apps?.children.some((c) => c.children.length > 0)).toBe(false);
+    for (const c of root.children.filter((c) => c.kind !== "folder"))
+      expect(c.children).toEqual([]);
+  });
+
   it("fills the root in progressively against used bytes", async () => {
     const { space, advance } = setup();
     const started = data(await space.diskSpaceStart("/", []));

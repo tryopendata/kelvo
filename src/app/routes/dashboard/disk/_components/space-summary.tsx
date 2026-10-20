@@ -54,7 +54,11 @@ export function SpaceProgress({
   );
 }
 
-/** The finished report's figures (plan "The finished report", item 1). */
+/**
+ * The finished report's figures (plan "The finished report", item 1). The
+ * swatches are the treemap's key: files are the Disk ramp, other volumes the
+ * track, and Other the gap hatch.
+ */
 export function SpaceSummary({
   report,
   onRescan,
@@ -67,15 +71,25 @@ export function SpaceSummary({
   const now = useNow(30_000);
   const used = bytesParts(report.used_bytes ?? 0);
   const items = [
-    { label: "In files", value: formatBytes(report.files_bytes) },
+    {
+      label: "In files",
+      value: formatBytes(report.files_bytes),
+      swatch: 3 as const,
+    },
     ...((report.volumes_bytes ?? 0) > 0
-      ? [{ label: "Other volumes", value: formatBytes(report.volumes_bytes) }]
+      ? [
+          {
+            label: "Other volumes",
+            value: formatBytes(report.volumes_bytes),
+            swatch: "track" as const,
+          },
+        ]
       : []),
     {
-      label: "Not attributed",
+      label: "Other",
       value:
         report.other_bytes === null ? "—" : formatBytes(report.other_bytes),
-      muted: true,
+      swatch: "hatch" as const,
     },
     {
       label: "Scanned",
@@ -87,7 +101,12 @@ export function SpaceSummary({
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
         <StatStrip
-          hero={{ label: "Used", value: used.value, unit: used.unit }}
+          accent="disk"
+          hero={{
+            label: "Used",
+            value: used.value,
+            unit: `${used.unit} / ${formatBytes(report.volume.total_bytes)}`,
+          }}
           items={items}
         />
         <Button size="sm" variant="outline" disabled={busy} onClick={onRescan}>
@@ -99,42 +118,51 @@ export function SpaceSummary({
   );
 }
 
+/** What Other holds, and the folders behind it. */
 function SpaceNotes({ report }: { report: SpaceReport }) {
-  const notes: string[] = [];
+  const parts = ["snapshots", "APFS metadata"];
   if (report.skipped.length > 0)
-    notes.push(
-      `Skipped, protected by macOS: ${report.skipped.join(", ")}. Their size is part of Not attributed.`
+    parts.push(
+      report.skipped.length === 1
+        ? "1 location protected by macOS"
+        : `${report.skipped.length} locations protected by macOS`
     );
-  if (report.truncated)
-    notes.push(
-      "Very deep folders are summarized; every total is still complete."
+  if (report.unreadable > 0)
+    parts.push(
+      report.unreadable === 1
+        ? "1 folder that could not be read"
+        : `${report.unreadable} folders that could not be read`
     );
-  if (notes.length === 0 && report.unreadable === 0) return null;
+  const last = parts.pop();
   return (
     <div className="flex flex-col gap-1 text-[11px] text-muted-foreground">
-      {notes.map((n) => (
-        <p key={n}>{n}</p>
-      ))}
-      {report.unreadable > 0 && (
+      <p>
+        Other is used space no file accounts for: {parts.join(", ")} and {last}.
+        {report.truncated &&
+          " Very deep folders are summarized; every total is still complete."}
+      </p>
+      {(report.skipped.length > 0 || report.unreadable > 0) && (
         <details className="group">
           <summary className="flex w-fit cursor-default list-none items-center gap-1 rounded-sm outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
             <ChevronRight
               aria-hidden
               className="size-3 transition-transform duration-(--motion-fast) group-open:rotate-90"
             />
-            {report.unreadable === 1
-              ? "1 folder could not be read"
-              : `${report.unreadable} folders could not be read`}
+            Skipped folders
           </summary>
           <ul className="mt-1 flex flex-col gap-0.5 pl-4">
+            {report.skipped.length > 0 && (
+              <li>Protected by macOS: {report.skipped.join(", ")}</li>
+            )}
             {report.unreadable_paths.map((p) => (
               <li key={p} className="truncate">
-                /{p}
+                Could not read /{p}
               </li>
             ))}
             {report.unreadable > report.unreadable_paths.length && (
               <li>
                 and {report.unreadable - report.unreadable_paths.length} more
+                that could not be read
               </li>
             )}
           </ul>

@@ -3,12 +3,16 @@
 //! 0.5% of it), and everything else folds into that folder's "smaller items".
 use std::collections::HashMap;
 
-use kelvo_schema::disk_space::{SpaceKind, SpaceNode};
+use kelvo_schema::disk_space::{SPACE_PREVIEW, SpaceKind, SpaceNode};
 
 /// Entries a folder keeps after it finishes, and that a breakdown shows.
 pub const MAX_CHILDREN: usize = 120;
 /// An entry below this share of its folder (1/200 = 0.5%) is merged.
 pub const MIN_SHARE_DIVISOR: u64 = 200;
+/// A preview follows a subfolder holding at least this share of its folder.
+pub const DOMINANT_SHARE: f64 = 0.9;
+/// Levels a preview follows dominant subfolders (`/Users/<home>` needs two).
+const PREVIEW_CHAIN: u8 = 3;
 /// Live nodes above which files stop being kept; totals stay exact.
 pub const NODE_CAP: usize = 400_000;
 
@@ -60,6 +64,7 @@ impl Node {
             items: self.items as f64,
             done: self.done,
             openable: self.dir && self.bytes > 0,
+            children: Vec::new(),
         }
     }
 }
@@ -261,8 +266,38 @@ impl Tree {
     }
 
     /// A folder's entries largest first, at most `MAX_CHILDREN` of them, the rest (and the
-    /// folder's already-merged entries) as one smaller-items entry.
+    /// folder's already-merged entries) as one smaller-items entry. Each folder entry
+    /// carries a preview of its own breakdown (`SPACE_PREVIEW` entries).
     pub fn breakdown(&self, id: NodeId) -> Vec<SpaceNode> {
+        let mut kids = self.entries(id, MAX_CHILDREN);
+        for kid in &mut kids {
+            if let Some(kid_id) = kid.id
+                && kid.kind == SpaceKind::Folder
+            {
+                kid.children = self.preview(kid_id, kid.bytes, PREVIEW_CHAIN);
+            }
+        }
+        kids
+    }
+
+    /// A folder's preview. When one subfolder holds nearly all of it (`/Users` holding
+    /// one home folder), that subfolder previews its own entries too, up to `depth`
+    /// levels, so the preview shows where the space actually is.
+    fn preview(&self, id: NodeId, bytes: f64, depth: u8) -> Vec<SpaceNode> {
+        let mut kids = self.entries(id, SPACE_PREVIEW);
+        if depth > 1
+            && let Some(first) = kids.first_mut()
+            && let Some(first_id) = first.id
+            && first.kind == SpaceKind::Folder
+            && first.bytes >= bytes * DOMINANT_SHARE
+        {
+            first.children = self.preview(first_id, first.bytes, depth - 1);
+        }
+        kids
+    }
+
+    /// A folder's `limit` largest entries, the rest merged into smaller items.
+    fn entries(&self, id: NodeId, limit: usize) -> Vec<SpaceNode> {
         let Some(node) = self.nodes.get(&id) else {
             return Vec::new();
         };
@@ -281,8 +316,8 @@ impl Tree {
             node.smaller_items as f64,
             node.smaller_count as f64,
         );
-        if kids.len() > MAX_CHILDREN {
-            for extra in kids.drain(MAX_CHILDREN..) {
+        if kids.len() > limit {
+            for extra in kids.drain(limit..) {
                 bytes += extra.bytes;
                 items += extra.items;
                 count += 1.0;
@@ -300,6 +335,7 @@ impl Tree {
                 items,
                 done: node.done,
                 openable: false,
+                children: Vec::new(),
             });
         }
         kids
@@ -358,6 +394,37 @@ mod tests {
         assert_eq!(view.len(), MAX_CHILDREN + 1);
         assert_eq!(view[MAX_CHILDREN].bytes as u64, 30 * 100);
         assert_eq!(t.get(root).unwrap().bytes, 15_000, "totals stay exact");
+    }
+
+    #[test]
+    fn folder_entries_preview_their_own_largest_entries() {
+        let (mut t, root) = Tree::with_root("root");
+        let subs = t.record_listing(root, vec!["big".into()], files(&[1]));
+        t.record_listing(subs[0], vec![], files(&[100; 30]));
+        let view = t.breakdown(root);
+        let big = &view[0];
+        assert_eq!(big.name, "big");
+        assert_eq!(big.children.len(), SPACE_PREVIEW + 1);
+        let rest = &big.children[SPACE_PREVIEW];
+        assert_eq!((rest.kind, rest.bytes as u64), (SpaceKind::Smaller, 600));
+        assert!(rest.children.is_empty(), "only folders preview");
+        assert!(view[1].children.is_empty(), "files have no preview");
+    }
+
+    #[test]
+    fn a_preview_follows_a_folder_that_holds_nearly_all_of_it() {
+        let (mut t, root) = Tree::with_root("root");
+        let users = t.record_listing(root, vec!["Users".into()], vec![]);
+        let homes = t.record_listing(users[0], vec!["me".into(), "guest".into()], vec![]);
+        t.record_listing(homes[0], vec![], files(&[600, 400]));
+        t.record_listing(homes[1], vec![], files(&[50]));
+        let users = &t.breakdown(root)[0];
+        let me = &users.children[0];
+        assert_eq!((me.name.as_str(), me.children.len()), ("me", 2));
+        assert!(
+            users.children[1].children.is_empty(),
+            "guest is not dominant"
+        );
     }
 
     #[test]

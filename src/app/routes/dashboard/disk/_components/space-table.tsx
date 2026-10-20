@@ -28,10 +28,11 @@ import { cn } from "~/lib/utils";
 import { MeterTrack } from "~/widgets/meter-track";
 import {
   canOpen,
-  itemsLabel,
+  countLabel,
   kindLabel,
   middleTruncate,
   shareLabel,
+  sizeLabel,
 } from "../_lib/space";
 
 export interface SpaceItemActions {
@@ -117,7 +118,10 @@ export const SpaceTable = memo(function SpaceTable({
             key={spaceKey(r)}
             node={r}
             total={total}
-            active={hovered === spaceKey(r)}
+            active={
+              hovered === spaceKey(r) ||
+              (hovered?.startsWith(`${spaceKey(r)}/`) ?? false)
+            }
             onHover={onHover}
             onOpen={onOpen}
             actions={actions}
@@ -145,6 +149,7 @@ const NodeRow = memo(function NodeRow({
 }) {
   const key = spaceKey(node);
   const pending = node.kind === "folder" && !node.done;
+  const sizeText = sizeLabel(node);
   const share = total > 0 ? (node.bytes ?? 0) / total : 0;
   const opens = canOpen(node);
   const target: SpaceTarget | null =
@@ -153,7 +158,7 @@ const NodeRow = memo(function NodeRow({
     <TableRow
       data-row={key}
       tabIndex={0}
-      aria-label={`${node.name}, ${pending ? "scanning" : formatBytes(node.bytes)}${opens ? ", folder" : ""}`}
+      aria-label={`${node.name}, ${pending ? `scanning, ${sizeText}` : sizeText}${opens ? ", folder" : ""}`}
       className={cn(
         "group text-[12px] outline-none focus-visible:bg-selected focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
         active && "bg-selected",
@@ -167,13 +172,18 @@ const NodeRow = memo(function NodeRow({
     >
       <NameCell node={node} />
       <TableCell
-        className={cn("figures text-right", pending && "text-muted-foreground")}
+        className={cn(
+          "figures whitespace-nowrap text-right",
+          pending && "text-muted-foreground"
+        )}
       >
-        {pending ? "Scanning…" : formatBytes(node.bytes)}
+        {sizeText}
       </TableCell>
       <TableCell>{!pending && <ShareCell share={share} />}</TableCell>
       <TableCell className="figures text-right text-fg-subtle">
-        {COUNTED.has(node.kind) ? itemsLabel(node.items) : ""}
+        {COUNTED.has(node.kind) && (node.items ?? 0) > 0
+          ? countLabel(node.items)
+          : ""}
       </TableCell>
       <TableCell>
         {target && (
@@ -202,19 +212,24 @@ function NameCell({ node }: { node: SpaceNode }) {
         ? null
         : kindLabel(node.kind, node);
   return (
-    <TableCell className="max-w-0">
+    <TableCell className="w-full max-w-0">
       <div className="flex min-w-0 items-center gap-2">
         <KindIcon node={node} />
         <span
           className={cn(
-            "shrink-0 truncate",
+            "min-w-0 truncate",
             real ? "text-foreground" : "text-muted-foreground"
           )}
           title={real ? node.name : (note ?? undefined)}
         >
           {node.kind === "other" ? "Other" : node.name}
         </span>
-        {note && <span className="truncate text-fg-faint">{note}</span>}
+        {/* The note gives way first, so the name keeps its room. */}
+        {note && (
+          <span className="min-w-0 shrink-[100] truncate text-fg-faint">
+            {note}
+          </span>
+        )}
       </div>
     </TableCell>
   );
@@ -369,7 +384,7 @@ export const LargestFilesTable = memo(function LargestFilesTable({
                 >
                   {middleTruncate(f.parent, 64)}
                 </TableCell>
-                <TableCell className="figures text-right">
+                <TableCell className="figures whitespace-nowrap text-right">
                   {formatBytes(f.bytes)}
                 </TableCell>
                 <TableCell>

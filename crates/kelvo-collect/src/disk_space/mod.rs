@@ -302,6 +302,7 @@ fn synthetic(name: &str, kind: SpaceKind, bytes: f64) -> SpaceNode {
         items: 0.0,
         done: true,
         openable: false,
+        children: Vec::new(),
     }
 }
 

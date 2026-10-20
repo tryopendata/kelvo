@@ -130,6 +130,7 @@ describe("canOpen", () => {
     items: 1,
     done: true,
     openable: true,
+    children: [],
   };
   it("opens finished folders only", () => {
     expect(canOpen(folder)).toBe(true);

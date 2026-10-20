@@ -2309,6 +2309,13 @@ export type SpaceNode = {
 	done: boolean,
 	/**  It can be opened: a finished or in-progress folder with a breakdown. */
 	openable: boolean,
+	/**
+	 *  For a folder listed in a `SpaceSubtree`: its own largest entries, at most
+	 *  `SPACE_PREVIEW` with the rest merged, so a treemap can draw two levels. A
+	 *  subfolder holding 90% or more of it previews its own entries the same way (up to
+	 *  three levels). Empty everywhere else.
+	 */
+	children: SpaceNode[],
 };
 
 export type SpacePhase = "idle" | "scanning" | "done" | "cancelled" | "failed";

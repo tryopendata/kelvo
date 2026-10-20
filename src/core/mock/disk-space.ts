@@ -43,6 +43,9 @@ type Methods = Pick<
 export const MOCK_SCAN_MS = 8000;
 const HOME = "Users/riley";
 const MAX_CHILDREN = 120;
+/** Rust's `SPACE_PREVIEW`: entries in a folder entry's preview. */
+const SPACE_PREVIEW = 24;
+const PREVIEW_CHAIN = 3;
 const MIN_SHARE_DIVISOR = 200;
 
 const ok = <T>(data: T): CommandResult<T> => ({ status: "ok", data });
@@ -136,11 +139,47 @@ class Scan {
       items: m.items,
       done: t >= n.last,
       openable: n.kind === "folder" && m.bytes > 0,
+      children: [],
     };
   }
 
-  /** Rust's breakdown: sorted, finished folders fold small entries into "smaller items". */
+  /**
+   * Rust's breakdown: sorted, finished folders fold small entries into
+   * "smaller items", and each folder entry previews its own breakdown.
+   */
   breakdown(n: Node, t: number): SpaceNode[] {
+    return this.entries(n, t, MAX_CHILDREN).map((k) => {
+      const node = k.id === null ? undefined : this.byId.get(k.id);
+      return node?.kind === "folder"
+        ? { ...k, children: this.preview(node, k.bytes ?? 0, t, PREVIEW_CHAIN) }
+        : k;
+    });
+  }
+
+  /** Rust's preview: a subfolder holding 90% or more previews its own entries. */
+  private preview(
+    n: Node,
+    bytes: number,
+    t: number,
+    depth: number
+  ): SpaceNode[] {
+    const kids = this.entries(n, t, SPACE_PREVIEW);
+    const first = kids[0];
+    const node = first?.id == null ? undefined : this.byId.get(first.id);
+    if (
+      depth > 1 &&
+      first &&
+      node?.kind === "folder" &&
+      (first.bytes ?? 0) >= bytes * 0.9
+    )
+      kids[0] = {
+        ...first,
+        children: this.preview(node, first.bytes ?? 0, t, depth - 1),
+      };
+    return kids;
+  }
+
+  private entries(n: Node, t: number, limit: number): SpaceNode[] {
     const done = t >= n.last;
     const total = this.measured(n, t).bytes;
     const floor = this.used / 1_000_000;
@@ -161,10 +200,10 @@ class Scan {
     kids.sort((a, b) => (b.bytes ?? 0) - (a.bytes ?? 0) || cmp(a.name, b.name));
     const kept = kids.filter(
       (k, i) =>
-        !done ||
-        (i < MAX_CHILDREN &&
-          (k.bytes ?? 0) >= floor &&
-          (k.bytes ?? 0) * MIN_SHARE_DIVISOR >= total)
+        i < limit &&
+        (!done ||
+          ((k.bytes ?? 0) >= floor &&
+            (k.bytes ?? 0) * MIN_SHARE_DIVISOR >= total))
     );
     for (const k of kids.filter((k) => !kept.includes(k))) {
       small.bytes += k.bytes ?? 0;
@@ -301,7 +340,16 @@ function synthetic(
   done = true,
   items = 0
 ): SpaceNode {
-  return { id: null, name, kind, bytes, items, done, openable: false };
+  return {
+    id: null,
+    name,
+    kind,
+    bytes,
+    items,
+    done,
+    openable: false,
+    children: [],
+  };
 }
 
 function volumes(scenarios: readonly ScenarioName[]): SpaceVolume[] {

@@ -117,8 +117,10 @@ while it runs instead of appearing at the end.
 1. Within a second of Scan, Rust lists the volume root and publishes its top-level folders
    (Applications, Library, Users, opt, private and so on) with "Scanning…" in place of size.
 2. While the root is incomplete, the treemap is laid out against the volume's used bytes:
-   finished folders are tiles at their true share, and everything else is one gap-hatched
-   "Not yet measured" region that shrinks as folders finish. A finished tile therefore never
+   finished folders are tiles at their true share, and everything else is one region that
+   shrinks as folders finish. Inside it, folders still being measured are drawn as live
+   tiles at their size so far ("12.4 GB so far"), in discovery order so they grow in place,
+   and the gap-hatched "Not yet measured" remainder fills the rest. A finished tile therefore never
    balloons and then collapses when a larger sibling lands. Tile positions are kept stable
    while scanning: finished tiles keep their slice order and the layout appends rather than
    re-sorting (an ordered slice-and-dice for the root during the scan, squarify once it
@@ -139,13 +141,16 @@ while it runs instead of appearing at the end.
 The finished report, top to bottom:
 
 1. A summary: hero "Used 418 GB" (the volume's own used space, see Volume identity), then
-   "In files 371 GB", "Not attributed 47 GB", "Scanned 2 min ago · 41 s · 1.8 M items", using
+   "In files 371 GB", "Other volumes", "Other 47 GB", "Scanned 2 min ago · 41 s · 1.8 M items", using
    `StatStrip` for the figures with a separate Rescan button beside it (`StatStrip` is a
    render-only widget). A muted line where relevant: "About 22 GB of this is purgeable; macOS
-   frees it when space is needed." and "312 folders could not be read."
+   frees it when space is needed." and one sentence saying what Other holds, with the skipped
+   folders in a "Skipped folders" disclosure. The summary's swatches double as the map legend.
 2. The treemap, full card width, 360 px tall at 1280×900, showing the largest files and
-   folders directly inside the current folder, one level only. Clicking a folder tile
-   replaces the treemap with that folder's own breakdown, and so on down. A breadcrumb above
+   folders directly inside the current folder, two levels at once: a folder tile with room
+   becomes a frame with a name row and its own largest entries inside it. Clicking a tile
+   opens that folder (a nested tile opens itself, or its frame when it is a file), and the
+   map zooms from the tile into its new breakdown. A breadcrumb above
    it (Macintosh HD › Users › riley › Library) is the way back up; each crumb is a button.
    Drill-down is instant because the scan already holds the subtree.
 3. A table of the current folder's children: name, kind, size, share of the parent as an
@@ -177,6 +182,11 @@ Labels are text in `--color-foreground` (never accent-colored text, per light-mo
 on the first line and `.figures` size on the second, drawn only when the tile fits them; a
 tile too small for a label is named in its tooltip and the table.
 
+Rust sends each folder entry a preview of its own 24 largest entries, so frames need no
+extra command. When one subfolder holds at least 90% of its parent, the preview follows it
+(up to three levels) and the frame's name row reads as a path, "Users › riley", since a frame
+showing one giant tile says nothing. Live tiles are framed too, with "so far" in the name row.
+
 Rust merges children smaller than 0.5% of the current folder, or beyond its 120 largest, into
 one "Smaller items (N)" tile: a flat `--ramp-4` tile with its label. It is measured data, so
 it gets no hatch.
@@ -191,8 +201,9 @@ what they are and why.
 
 Pointer interaction lives on the tiles, which are `aria-hidden`; the SVG wrapper has an
 accessible name naming the folder and its three largest children, and the table carries the
-detail and all keyboard access. Drill-down uses the standard 150 ms opacity cross-fade, none
-under Reduce Motion. The treemap renders on navigation and on scan progress (at most 1/s),
+detail and all keyboard access. Drill-down zooms the map from the opened tile to the full
+area (and back out on the way up) on `--motion-enter`, falling back to the cross-fade when
+the tile is not on screen; both are zero under Reduce Motion and Performance mode. The treemap renders on navigation and on scan progress (at most 1/s),
 never on the 1 Hz tick.
 
 ### Error and edge states

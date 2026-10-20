@@ -85,23 +85,29 @@ describe("Disk › Space", () => {
     const r = setup();
     await scanBoot(r);
     expect(search(r).get("vol")).toBe("/");
-    // Top-level folders are listed at once; unfinished ones say so.
-    expect(row(/^Users, scanning/)).toHaveTextContent("Scanning…");
+    // Top-level folders are listed at once: a running one with what it has
+    // so far, one the scan has not reached yet as waiting.
+    expect(row(/^Users, scanning/)).toHaveTextContent(/MB so far/);
+    expect(row(/^Applications, scanning, Waiting/)).toHaveTextContent(
+      "Waiting"
+    );
     expect(screen.getByRole("radio", { name: "Largest files" })).toBeDisabled();
     await finish(r);
     // The finished tree replaces the last in-progress poll.
     await waitFor(() =>
-      expect(within(contents()).queryByText("Scanning…")).toBeNull()
+      expect(within(contents()).queryByText(/so far|Waiting/)).toBeNull()
     );
     expect(row(/^Other/)).toBeVisible();
-    expect(row(/^Users, 234 GB, folder/)).toBeVisible();
+    expect(row(/^Users, 234 GB, folder/)).toHaveTextContent("1,434");
     expect(
       screen.getByRole("img", { name: /^Treemap of Macintosh HD/ })
     ).toBeVisible();
     expect(screen.queryByText(/Scanning · about/)).toBeNull();
     expect(
-      screen.getByText(/Skipped, protected by macOS: Desktop/)
+      screen.getByText(/7 locations protected by macOS and 312 folders/)
     ).toBeVisible();
+    await r.user.click(screen.getByText("Skipped folders"));
+    expect(screen.getByText(/Protected by macOS: Desktop/)).toBeVisible();
   });
 
   it("does not open a folder that is still scanning", async () => {
@@ -156,7 +162,9 @@ describe("Disk › Space", () => {
     ).toBeVisible();
     await scanBoot(r);
     await finish(r);
-    const note = screen.getByText(/Skipped, protected by macOS/);
+    expect(screen.getByText(/6 locations protected by macOS/)).toBeVisible();
+    await r.user.click(screen.getByText("Skipped folders"));
+    const note = screen.getByText(/Protected by macOS:/);
     expect(note).not.toHaveTextContent("Downloads");
     expect(note).toHaveTextContent("Documents");
   });

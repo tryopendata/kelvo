@@ -82,6 +82,14 @@ Status values: Not started, In progress, Blocked (say on what), Done (with the v
 
 ## Log
 
+### 2026-10-19 (Disk space report: map UX pass)
+
+- The treemap shows two levels: folders with room become frames with a name row and their own largest entries, and a frame whose folder is 90% one subfolder previews that subfolder ("Users › riley"). Rust adds `SpaceNode.children` (24-entry previews, up to three levels), mirrored in the mock.
+- Scanning: folders being measured are live tiles that grow in place inside the unmeasured region, labelled "so far"; the table shows "X so far" or "Waiting" instead of "Scanning…".
+- Drill-down zooms from the opened tile and back out on the way up (`--motion-enter`, off under Reduce Motion and Performance mode), replacing the plan's 150 ms cross-fade.
+- Summary: "Not attributed" is now "Other" everywhere, the stat swatches are the map legend, and the notes are one sentence with skipped folders in a disclosure. Item counts are compact ("482 K"), labels show the size whole or not at all, and table names keep their room at 760 px.
+- Verified: `make check` (Rust 941 tests, Vitest 1,173), `bun run test:e2e` 431 passed and 10 skipped with one webkit failure in `disk-io.spec.ts`'s viewport-edge checkbox test that passed 3 of 3 on rerun. The live-growth layout test was revert-verified. Screenshots in both themes at 1280 and 760 px; nested tiles have lower contrast in light mode than dark.
+
 ### 2026-10-19 (Disk space report)
 
 - Phase 0 on the dev Mac (warm cache): the `getattrlistbulk` walk read 1.7 M files in 3.3 s on 4 workers against 18.6 s for `du -x -k -d 1`, with per-folder totals within 0.1% of `du -skx`; `ATTR_VOL_SPACEUSED` sizes each APFS volume, summing to the container within 0.2 GB. Results and deviations are in the plan's implementation record.
