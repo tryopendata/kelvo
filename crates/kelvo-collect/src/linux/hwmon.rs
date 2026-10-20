@@ -12,10 +12,14 @@
 //! - `power<N>_input` (µW), or `power<N>_average` when the chip has no `_input` for that
 //!   channel (older amdgpu). `curr*` and `in*` are current and voltage, never power.
 //!
-//! Names are `<chip>/<label>`, `<chip>/temp<N>` without a label, bounded by
-//! [`bound_label_value`]. A chip name that more than one hwmon directory carries is
-//! qualified by its parent device (`nvme@nvme0`, `jc42@1-0018`), which survives a reboot
-//! where the `hwmon<N>` number does not. Fans are labelled `0`, `1`, ... (hwmon `fan1` is
+//! A temperature or power sensor is named by its kernel label alone ("NAND Flash
+//! Temperature", "Total System Power"), as the macOS names read. It is qualified as
+//! `<chip>/<label>` when the label names no part ([`generic_label`]: `Composite`,
+//! `Sensor 2`, amdgpu's `edge`) or when another chip on the host carries the same label;
+//! without a label it is `<chip>/temp<N>`. A chip name that more than one hwmon directory
+//! carries is qualified by its parent device (`nvme@nvme0`, `jc42@1-0018`), which
+//! survives a reboot where the `hwmon<N>` number does not. Anything still over the label
+//! cap is bounded by [`bound_label_value`]. Fans are labelled `0`, `1`, ... (hwmon `fan1` is
 //! `0`), the macOS scheme, when one chip carries every fan; otherwise `<chip>/<N-1>`.
 //!
 //! Thermal zones (`/sys/class/thermal/thermal_zone*`) add `thermal.sensor{name =
@@ -112,8 +116,11 @@ fn thermal_name(s: &str) -> bool {
 #[derive(Clone, Debug, PartialEq)]
 pub(super) struct Found {
     pub(super) kind: Kind,
-    /// The label value: `name` for temperatures and power, `fan` for fans.
+    /// The label value: `name` for temperatures and power, `fan` for fans. Qualified by
+    /// the chip until [`unqualify`] runs.
     pub(super) label: String,
+    /// The kernel label, when it can stand alone ([`unqualify`]).
+    bare: Option<String>,
     input: PathBuf,
     /// `fan<N>_max`, when it reads.
     max: Option<PathBuf>,
@@ -179,6 +186,7 @@ pub(super) fn scan(root: &SysRoot, parent: &ParentDevice) -> Vec<Found> {
         chip_sensors(root, chip, &id, dir, &mut out);
     }
     fan_labels(&mut out);
+    unqualify(&mut out);
     zones(root, &mut out);
     for f in &mut out {
         f.label = bound_label_value(&f.label).into_owned();
@@ -206,10 +214,9 @@ fn chip_sensors(root: &SysRoot, chip: &str, id: &str, dir: &str, out: &mut Vec<F
             continue;
         }
         let prefix = file.split('_').next().unwrap_or_default();
-        let label = root
-            .read_trimmed(&format!("/sys/class/hwmon/{dir}/{prefix}_label"))
-            .unwrap_or_else(|| prefix.to_owned());
-        let system = kind == Kind::Power && is_system_power(chip, &label);
+        let kernel = root.read_trimmed(&format!("/sys/class/hwmon/{dir}/{prefix}_label"));
+        let label = kernel.as_deref().unwrap_or(prefix);
+        let system = kind == Kind::Power && is_system_power(chip, label);
         let (label, max) = if kind == Kind::Fan {
             let max = base.join(format!("fan{n}_max"));
             let max = read(kind, &max).filter(|m| *m > 0.0).map(|_| max);
@@ -217,11 +224,13 @@ fn chip_sensors(root: &SysRoot, chip: &str, id: &str, dir: &str, out: &mut Vec<F
         } else {
             (format!("{id}/{label}"), None)
         };
+        let bare = kernel.filter(|l| kind != Kind::Fan && !generic_label(l));
         out.push(Found {
             kind,
             system,
             cpu_class: kind == Kind::Temp && cpu_class_chip(chip),
             label,
+            bare,
             input,
             max,
         });
@@ -233,6 +242,32 @@ fn chip_sensors(root: &SysRoot, chip: &str, id: &str, dir: &str, out: &mut Vec<F
 /// is taken as the counterpart of the macOS `PSTR` key; no other chip is mapped.
 fn is_system_power(chip: &str, label: &str) -> bool {
     chip == "macsmc_hwmon" && label == "Total System Power"
+}
+
+/// Labels that say which reading of a device this is but not which device: NVMe's
+/// `Composite` and `Sensor <N>`, amdgpu's `edge`, `junction` and `mem`. Kept with their
+/// chip.
+fn generic_label(label: &str) -> bool {
+    matches!(label, "Composite" | "edge" | "junction" | "mem") || label.starts_with("Sensor ")
+}
+
+/// Drops the chip from a sensor whose kernel label no other chip on the host carries for
+/// the same kind. Two channels of one chip with one label share a qualified name and
+/// count once; the later dedup keeps the first.
+fn unqualify(out: &mut [Found]) {
+    let shared = |f: &Found, b: &str| {
+        out.iter()
+            .any(|o| o.kind == f.kind && o.bare.as_deref() == Some(b) && o.label != f.label)
+    };
+    let bare: Vec<Option<String>> = out
+        .iter()
+        .map(|f| f.bare.clone().filter(|b| !shared(f, b)))
+        .collect();
+    for (f, b) in out.iter_mut().zip(bare) {
+        if let Some(b) = b {
+            f.label = b;
+        }
+    }
 }
 
 /// Fans carry `<chip>/<N-1>`; when they all share one chip, the bare `<N-1>`.
@@ -281,6 +316,7 @@ fn zones(root: &SysRoot, out: &mut Vec<Found>) {
             },
             input,
             max: None,
+            bare: None,
             cpu_class: cpu_class_zone(ty),
             system: false,
         });
@@ -550,8 +586,8 @@ mod tests {
         let Probe::Supported(series) = s.probe() else {
             panic!("sensors probe");
         };
-        let nand = temp("macsmc_hwmon/NAND Flash Temperature");
-        let wifi = temp("macsmc_hwmon/WiFi/BT Module Temp");
+        let nand = temp("NAND Flash Temperature");
+        let wifi = temp("WiFi/BT Module Temp");
         let nvme = temp("nvme/Composite");
         let rpm = key("fan.rpm", "fan", "0");
         let max = key("fan.max", "fan", "0");
@@ -580,34 +616,99 @@ mod tests {
         };
         assert_eq!(series.len(), 4);
         let buf = sample_once(&mut p);
-        assert_eq!(
-            buf.get(&power("macsmc_hwmon/Total System Power")),
-            Some(6.131752)
-        );
-        assert_eq!(
-            buf.get(&power("macsmc_hwmon/AC Input Power")),
-            Some(6.231627)
-        );
-        assert_eq!(
-            buf.get(&power("macsmc_hwmon/3.8 V Rail Power")),
-            Some(2.552584)
-        );
+        assert_eq!(buf.get(&power("Total System Power")), Some(6.131752));
+        assert_eq!(buf.get(&power("AC Input Power")), Some(6.231627));
+        assert_eq!(buf.get(&power("3.8 V Rail Power")), Some(2.552584));
         assert_eq!(buf.get(&bare("power.system")), Some(6.131752));
         assert_eq!(buf.values().len(), 4, "curr1 is not power");
     }
 
+    /// The names linux-tailscale shows: kernel labels as they read, the NVMe's generic
+    /// `Composite` with its chip.
     #[test]
-    fn long_names_are_bounded_and_short_ones_kept() {
+    fn fixture_names_are_kernel_labels() {
         let found = scan(&asahi_t0(), &fixture_parents());
-        let labels: Vec<&str> = found.iter().map(|f| f.label.as_str()).collect();
-        assert!(labels.contains(&"nvme/Composite"));
-        assert!(
-            labels
-                .iter()
-                .all(|l| l.len() <= kelvo_schema::LABEL_VALUE_MAX)
+        let labels: Vec<(Kind, &str)> = found.iter().map(|f| (f.kind, f.label.as_str())).collect();
+        assert_eq!(
+            labels,
+            [
+                (Kind::Temp, "NAND Flash Temperature"),
+                (Kind::Temp, "WiFi/BT Module Temp"),
+                (Kind::Temp, "nvme/Composite"),
+                (Kind::Fan, "0"),
+                (Kind::Power, "3.8 V Rail Power"),
+                (Kind::Power, "AC Input Power"),
+                (Kind::Power, "Total System Power"),
+            ]
         );
-        // 24 bytes leave room for 15 of "macsmc_hwmon/NAND Flash Temperature".
-        assert!(labels.contains(&"macsmc_hwmon/NA~ca423563"), "{labels:?}");
+    }
+
+    /// A label is qualified by its chip when it is generic, when another chip carries
+    /// it, or when it is missing; one chip repeating its own label stays bare. A label
+    /// over the cap is still bounded.
+    #[test]
+    fn labels_qualified_only_when_ambiguous() {
+        let dir = tree(&[]);
+        let long = "Southbridge Platform Controller Hub Temperature";
+        chip(
+            &dir,
+            "hwmon0",
+            "nct6775",
+            &[
+                ("temp1_input", "40000"),
+                ("temp1_label", "CPUTIN"),
+                ("temp2_input", "41000"),
+                ("temp2_label", "SYSTIN"),
+                ("temp3_input", "42000"),
+                ("temp3_label", "AUXTIN"),
+                ("temp4_input", "43000"),
+                ("temp4_label", "AUXTIN"),
+                ("temp5_input", "44000"),
+                ("temp5_label", long),
+                ("power1_input", "5000000"),
+                ("power1_label", "SYSTIN"),
+            ],
+        );
+        chip(
+            &dir,
+            "hwmon1",
+            "it8792",
+            &[
+                ("temp1_input", "50000"),
+                ("temp1_label", "SYSTIN"),
+                ("temp2_input", "51000"),
+            ],
+        );
+        chip(
+            &dir,
+            "hwmon2",
+            "amdgpu",
+            &[("temp1_input", "60000"), ("temp1_label", "edge")],
+        );
+        chip(
+            &dir,
+            "hwmon3",
+            "nvme",
+            &[("temp2_input", "45000"), ("temp2_label", "Sensor 1")],
+        );
+        let found = scan(&SysRoot::at(dir.path()), &no_parents());
+        let labels: Vec<(Kind, &str)> = found.iter().map(|f| (f.kind, f.label.as_str())).collect();
+        let bounded = bound_label_value(long);
+        assert!(bounded.len() <= kelvo_schema::LABEL_VALUE_MAX);
+        let mut want = vec![
+            (Kind::Temp, "AUXTIN"),
+            (Kind::Temp, "CPUTIN"),
+            (Kind::Temp, &*bounded),
+            (Kind::Temp, "amdgpu/edge"),
+            (Kind::Temp, "it8792/SYSTIN"),
+            (Kind::Temp, "it8792/temp2"),
+            (Kind::Temp, "nct6775/SYSTIN"),
+            (Kind::Temp, "nvme/Sensor 1"),
+            // Another kind's label does not count as a repeat.
+            (Kind::Power, "SYSTIN"),
+        ];
+        want.sort();
+        assert_eq!(labels, want);
     }
 
     fn chip(dir: &tempfile::TempDir, hwmon: &str, name: &str, files: &[(&str, &str)]) {
@@ -679,7 +780,7 @@ mod tests {
         assert!(series.contains(&bare("thermal.hottest")));
         let buf = sample_once(&mut c);
         assert_eq!(buf.get(&bare("thermal.hottest")), Some(55.5));
-        assert_eq!(buf.get(&temp("k10temp/Tctl")), Some(55.5));
+        assert_eq!(buf.get(&temp("Tctl")), Some(55.5));
         assert_eq!(buf.get(&temp("nvme/temp1")), Some(70.0));
 
         assert!(cpu_class_chip("coretemp") && cpu_class_chip("cpu_thermal"));

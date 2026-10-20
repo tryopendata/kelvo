@@ -3568,8 +3568,11 @@ deltas (percent, mean, 5 s); `power.sensor{name}` (watts only, 5 s); `cgroup.cpu
 of one core), `cgroup.mem`, `cgroup.mem_max`, `cgroup.io_read`, `cgroup.io_write`,
 `cgroup.mem_psi` (`some`), all `{kind,name}`, 5 s, capped at 32 with the rest folded into
 `{kind=other,name=_other}`, plus an unlabelled `cgroup.other_count`. `cpu.total` is all
-non-idle, non-iowait time, the macOS meaning. hwmon names are `<chip>/<label|tempN>`,
-qualified by parent device when a chip repeats, never by enumeration order.
+non-idle, non-iowait time, the macOS meaning. hwmon names are the kernel label
+alone ("NAND Flash Temperature", "Total System Power"), as macOS names read; `<chip>/<label>`
+when the label is generic (`Composite`, `Sensor N`, amdgpu's `edge`) or another chip on the
+host carries it, `<chip>/tempN` without a label. A chip that repeats is qualified by parent
+device, never by enumeration order.
 `thermal.hottest` comes only from CPU/SoC-class sensors and is absent without them.
 
 Wire additions, all defaulted and D-040-safe, with old/new skew fixtures in kelvo-proto:

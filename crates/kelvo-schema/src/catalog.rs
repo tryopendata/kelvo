@@ -223,8 +223,10 @@ pub static CATALOG: &[MetricDef] = &[
     def("thermal.gpu", M::Sensors, U::Celsius, Gauge, &[], P).every(5),
     // From CPU/SoC-class sensors only; absent where there are none (D-115).
     def("thermal.hottest", M::Sensors, U::Celsius, Gauge, &[], P).every(5),
-    // On Linux `name` is `<chip>/<label or tempN>` from hwmon; a chip name that repeats
-    // is qualified by its parent device (`nvme0`, an i2c address), never by
+    // On Linux `name` is the hwmon kernel label ("NAND Flash Temperature"), or
+    // `<chip>/<label>` when the label is generic (`Composite`) or another chip has it,
+    // and `<chip>/tempN` without one; thermal zones are `zone/<type>`. A chip name that
+    // repeats is qualified by its parent device (`nvme0`, an i2c address), never by
     // enumeration order, so a name survives a reboot (D-115).
     def(
         "thermal.sensor",
