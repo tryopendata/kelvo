@@ -93,9 +93,16 @@ export const selectPower = (s: S) => ({
   package: held(s, "power.package"),
   /** `power.cpu_source` (D-065); null when absent (PMP) or not current. */
   cpuSource: held(s, "power.cpu_source"),
-  /** The layout splits power by component (`power.cpu`); a Linux agent does not. */
-  components: keysOf(s, "power.cpu").length > 0,
+  components: selectPowerComponents(s),
 });
+
+/**
+ * The layout splits power by component (`power.cpu`); a Linux agent does not.
+ * On its own for a page that branches on it: `usePower()` would re-render
+ * that page on every tick's power values.
+ */
+export const selectPowerComponents = (s: S): boolean =>
+  keysOf(s, "power.cpu").length > 0;
 
 export const selectSensors = (s: S) => ({
   hottest: held(s, "thermal.hottest"),
@@ -184,6 +191,7 @@ export const useSelfCpu = () => useHost(selectSelfCpu);
 export const useCgroups = () => useHost(selectCgroups);
 export const usePrimaryIface = () => useHost(selectPrimaryIface);
 export const usePowerSource = () => useHost(selectPowerSource);
+export const usePowerComponents = () => useHost(selectPowerComponents);
 export const useSeriesCount = () => useHost(selectSeriesCount);
 
 /**

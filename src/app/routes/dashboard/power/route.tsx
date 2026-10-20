@@ -20,7 +20,7 @@ import { useHostRecord } from "~/hooks/use-host-record";
 import { useProcessColumnCaps } from "~/hooks/use-process-interest";
 import { useHeld } from "~/hooks/use-ring";
 import { useHost } from "~/stores/host-store";
-import { usePower, usePowerSource } from "~/stores/live-selectors";
+import { usePowerComponents, usePowerSource } from "~/stores/live-selectors";
 import { PowerStackCard } from "./_components/power-stack-card";
 import { RingCards } from "./_components/ring-cards";
 import { SystemPowerCard } from "./_components/system-power-card";
@@ -66,7 +66,7 @@ export default function PowerRoute() {
   const windowMs = useChartWindow()?.windowMs ?? null;
   // A Linux agent (D-115) splits power by no component and attributes no
   // energy to processes.
-  const components = usePower().components;
+  const components = usePowerComponents();
   const energy = useProcessColumnCaps().energy;
 
   if (unknownChip) {
