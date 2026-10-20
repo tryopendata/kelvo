@@ -2,13 +2,16 @@
 //! [`SysRoot`] so every parser runs against captured fixtures in tests. Modules no
 //! collector covers yet probe as `Unsupported` through [`Unsupported`].
 
+pub mod battery;
 mod blockdev;
 mod counters;
 pub mod diskstats;
 pub mod fs;
+pub mod hwmon;
 pub mod ifaddrs;
 mod mountinfo;
 pub mod net;
+pub mod rapl;
 mod sysroot;
 
 pub mod cpu;
@@ -61,13 +64,7 @@ impl Collector for Unsupported {
 }
 
 /// Modules no Linux collector covers yet. Shrinks as collectors land.
-const UNCOVERED: &[Module] = &[
-    Module::Gpu,
-    Module::Power,
-    Module::Sensors,
-    Module::Battery,
-    Module::Containers,
-];
+const UNCOVERED: &[Module] = &[Module::Gpu, Module::Containers];
 
 pub fn collectors() -> Vec<Box<dyn Collector>> {
     let mut out: Vec<Box<dyn Collector>> = Vec::new();
@@ -81,6 +78,10 @@ pub fn collectors() -> Vec<Box<dyn Collector>> {
     out.push(Box::new(net::Network::new()));
     out.push(Box::new(processes::Processes::new()));
     out.push(Box::new(self_cpu::SelfCpu::new()));
+    out.push(Box::new(hwmon::Hwmon::sensors()));
+    out.push(Box::new(hwmon::Hwmon::power()));
+    out.push(Box::new(rapl::Rapl::new()));
+    out.push(Box::new(battery::Battery::new()));
     if !UNCOVERED.is_empty() {
         out.push(Box::new(Unsupported { modules: UNCOVERED }));
     }
