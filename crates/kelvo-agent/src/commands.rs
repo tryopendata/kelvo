@@ -126,8 +126,8 @@ pub fn reset_identity(paths: &AgentPaths, system: bool) -> anyhow::Result<HostId
         .with_context(|| format!("resetting the host id in {}", paths.data_dir.display()))
 }
 
-/// How long `sample` collects after the first frame: long enough for rate series to take
-/// two samples.
+/// How long `sample` collects after the first frame by default: long enough for the
+/// 1 s rate series to take two samples (the 5 s ones need `sample --json 12`).
 const SAMPLE_FOR: Duration = Duration::from_millis(2500);
 /// How long the engine may take to probe its collectors before the first frame.
 const FIRST_FRAME_WITHIN: Duration = Duration::from_secs(20);
@@ -136,10 +136,13 @@ const FIRST_FRAME_WITHIN: Duration = Duration::from_secs(20);
 /// its visible cadence, and prints the latest measured value of every series, the
 /// capabilities and the host record. For checking readings against `free`, `mpstat`
 /// and `iostat`. It uses a throwaway host id and touches no data directory.
-pub async fn sample() -> anyhow::Result<Value> {
+pub async fn sample(seconds: Option<u64>) -> anyhow::Result<Value> {
+    let sample_for = seconds.map_or(SAMPLE_FOR, Duration::from_secs);
     let record = kelvo_engine::host_record(HostId(uuid::Uuid::new_v4()));
+    let names = crate::container_names::spawn();
+    crate::container_names::first_pass(&names, crate::container_names::FIRST_PASS_WITHIN).await;
     let host = tokio::task::spawn_blocking(move || {
-        let host = AgentHost::start(record, Settings::agent_default(), None)?;
+        let host = AgentHost::start(record, Settings::agent_default(), None, names)?;
         host.set_local_interest(RemoteInterest {
             detail: true,
             process_period_ms: Some(0),
@@ -162,7 +165,7 @@ pub async fn sample() -> anyhow::Result<Value> {
             continue;
         }
         if last_ts.is_none() {
-            deadline = tokio::time::Instant::now() + SAMPLE_FOR;
+            deadline = tokio::time::Instant::now() + sample_for;
         }
         last_ts = Some(frame.ts_ms);
         frames += 1;

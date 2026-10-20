@@ -20,7 +20,12 @@
 //!   [`Visibility::io_readable`] counts the rows that were measured.
 //! - Energy and idle wakeups have no Linux source; `fill_capabilities` says so and the
 //!   rows carry 0.
-//! - `app` is `None` until cgroup grouping (D-115) lands.
+//! - `app` is the unit or container the process runs in (D-115), from
+//!   `/proc/<pid>/cgroup` read once per process: `nginx.service` for a service (system
+//!   or user manager), `docker:<name>` and `podman:<name>` for containers, named through
+//!   [`ContainerNames`] (else the short id; a name being looked up is waited for).
+//!   Kind-qualified, so a container never merges with a host process of the same name.
+//!   Sessions, slices and `init.scope` give `None`.
 
 use std::collections::HashMap;
 use std::fmt::Write as _;
@@ -30,9 +35,11 @@ use std::sync::Arc;
 use kelvo_schema::Entitlement;
 
 use super::SysRoot;
+use super::cgroup_names::{Kind, Resolved, Unit, classify, proc_cgroup_path, resolve};
 use super::procfs::{PidDir, field, read_into, user_name, word};
 use crate::{
-    Cadence, CollectError, Collector, CollectorId, Interest, Probe, ProcessSample, SampleBuf, Tick,
+    Cadence, CollectError, Collector, CollectorId, ContainerNames, Interest, Probe, ProcessSample,
+    SampleBuf, Tick,
 };
 
 /// The kernel's `TASK_COMM_LEN` minus the NUL: a `comm` this long may be cut short.
@@ -114,9 +121,20 @@ struct Prev {
     at_ns: u64,
 }
 
+/// A process's `app`, or the container whose name is being looked up.
+enum App {
+    Known(Option<Arc<str>>),
+    Pending {
+        kind: Kind,
+        id: Box<str>,
+        asked: u64,
+    },
+}
+
 struct Known {
     name: Arc<str>,
     user: Arc<str>,
+    app: App,
     /// `io` was refused (another user's process, not root): not tried again.
     io_denied: bool,
     prev: Option<Prev>,
@@ -146,20 +164,21 @@ pub struct Processes {
     known: HashMap<(i32, u64), Known>,
     seen: HashMap<(i32, u64), Known>,
     users: HashMap<u32, Arc<str>>,
+    /// `app` values, shared by every process of one unit.
+    apps: HashMap<String, Arc<str>>,
+    app_buf: String,
+    names: ContainerNames,
     visibility: Visibility,
     /// The probe could read another user's `io` (pid 1's).
     disk_io: bool,
 }
 
-impl Default for Processes {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl Processes {
-    pub fn new() -> Self {
-        Self::at(SysRoot::host(), super::page_size(), super::clk_tck())
+    /// The live host; containers are named through `names`.
+    pub fn new(names: ContainerNames) -> Self {
+        let mut p = Self::at(SysRoot::host(), super::page_size(), super::clk_tck());
+        p.names = names;
+        p
     }
 
     /// Reads the tree under `root` with the given page size and `USER_HZ` (tests: the
@@ -178,6 +197,9 @@ impl Processes {
             known: HashMap::new(),
             seen: HashMap::new(),
             users: HashMap::new(),
+            apps: HashMap::new(),
+            app_buf: String::new(),
+            names: ContainerNames::default(),
             visibility: Visibility::default(),
             disk_io: false,
         }
@@ -217,11 +239,67 @@ impl Processes {
                 .clone(),
             None => Arc::from("?"),
         };
+        let app = self.app_of(pid);
         Known {
             name: Arc::from(name),
             user,
+            app,
             io_denied: false,
             prev: None,
+        }
+    }
+
+    /// The shared `app` value `<prefix><name>`.
+    fn app_value(&mut self, prefix: &str, name: &str) -> Arc<str> {
+        self.app_buf.clear();
+        self.app_buf.push_str(prefix);
+        self.app_buf.push_str(name);
+        if let Some(app) = self.apps.get(self.app_buf.as_str()) {
+            return Arc::clone(app);
+        }
+        if self.apps.len() >= 4096 {
+            self.apps.clear();
+        }
+        let app: Arc<str> = Arc::from(self.app_buf.as_str());
+        self.apps.insert(self.app_buf.clone(), Arc::clone(&app));
+        app
+    }
+
+    /// What `/proc/<pid>/cgroup` says the process belongs to.
+    fn app_of(&mut self, pid: i32) -> App {
+        if self.read_pid(pid, "cgroup").is_err() {
+            return App::Known(None);
+        }
+        let text = std::mem::take(&mut self.buf);
+        let unit = proc_cgroup_path(&text).and_then(classify);
+        let app = match unit {
+            None => App::Known(None),
+            Some(Unit::Service(u) | Unit::User { unit: u, .. }) => {
+                App::Known(Some(self.app_value("", u)))
+            }
+            Some(Unit::Docker(id)) => self.container(Kind::Docker, id, None),
+            Some(Unit::Podman(id)) => self.container(Kind::Podman, id, None),
+        };
+        self.buf = text;
+        app
+    }
+
+    /// A container's `app`, once its name is known.
+    fn container(&mut self, kind: Kind, id: &str, asked: Option<u64>) -> App {
+        match resolve(&self.names, id, asked) {
+            Resolved::Named(name) => {
+                let prefix = if kind == Kind::Docker {
+                    "docker:"
+                } else {
+                    "podman:"
+                };
+                App::Known(Some(self.app_value(prefix, &name)))
+            }
+            Resolved::Pending(asked) => App::Pending {
+                kind,
+                id: id.into(),
+                asked,
+            },
         }
     }
 
@@ -263,6 +341,9 @@ impl Processes {
             io,
             at_ns: now,
         };
+        if let App::Pending { kind, id, asked } = &known.app {
+            known.app = self.container(*kind, id, Some(*asked));
+        }
         if let Some(prev) = known.prev
             && now > prev.at_ns
         {
@@ -290,7 +371,10 @@ impl Processes {
                 energy: 0.0,
                 energy_j: 0.0,
                 interval_s: secs as f32,
-                app: None,
+                app: match &known.app {
+                    App::Known(app) => app.clone(),
+                    App::Pending { .. } => None,
+                },
                 app_main: false,
                 disk_read_bps: read_bps as f32,
                 disk_write_bps: write_bps as f32,
@@ -576,6 +660,99 @@ mod tests {
         assert_eq!(display_name("sshd", b"/usr/sbin/sshd-session\0"), "sshd");
     }
 
+    /// `app` from `/proc/<pid>/cgroup`: the unit or container, kind-qualified, waiting
+    /// for a container's name while a refresh is due and falling back to its short id.
+    #[test]
+    fn app_is_the_unit_or_container() {
+        const NGINX: &str = "ba1d8caf4daec08a0dfd56c5d1e80e270631bedc443634cc398d78deb1769013";
+        const REDIS: &str = "47d70c0c2814b54a3bf9cfc143c8c4ec5632efd4732a4c9afa4f7d831daf270b";
+        let real = |pid: &str| {
+            testdata::cgroup_t0()
+                .read(&format!("/proc/{pid}/cgroup"))
+                .unwrap()
+        };
+        let dir = host();
+        testdata::write(&dir, "proc/1/cgroup", &real("1"));
+        let procs = [
+            (2, real("3176")), // an nginx worker
+            (3, real("1053")), // sshd
+            (4, format!("0::/system.slice/docker-{REDIS}.scope\n")),
+            (
+                5,
+                "0::/user.slice/user-0.slice/session-23.scope\n".to_owned(),
+            ),
+            (6, real("4741")), // user@0.service/init.scope
+            (
+                7,
+                "0::/user.slice/user-1000.slice/user@1000.service/app.slice/pipewire.service\n"
+                    .to_owned(),
+            ),
+            (8, "0::/system.slice/sshd.service\n".to_owned()),
+        ];
+        for (pid, cgroup) in &procs {
+            let stat = format!("{pid} (p{pid}) S 0 0 0 0 -1 0 0 0 0 0 7 3 0 0 20 0 1 0 5 0 0");
+            testdata::write(&dir, &format!("proc/{pid}/stat"), &stat);
+            testdata::write(&dir, &format!("proc/{pid}/cgroup"), cgroup);
+        }
+        let names = ContainerNames::attached();
+        names.finish(Some([(NGINX.to_owned(), Arc::from("nginx"))].into()));
+        let mut p = Processes::at(SysRoot::at(dir.path()), 4096, 100);
+        p.names = names.clone();
+        p.probe();
+        let mut buf = SampleBuf::new();
+        let mut apps = |p: &mut Processes, at: u64| {
+            buf.clear();
+            p.sample(&tick(at * S), &mut buf).unwrap();
+            let mut rows: Vec<(i32, Option<Arc<str>>)> = buf
+                .processes()
+                .iter()
+                .map(|r| (r.pid, r.app.clone()))
+                .collect();
+            rows.sort_by_key(|r| r.0);
+            rows
+        };
+        apps(&mut p, 1);
+        let rows = apps(&mut p, 2);
+        let app = |rows: &[(i32, Option<Arc<str>>)], pid| {
+            rows.iter()
+                .find(|r| r.0 == pid)
+                .and_then(|r| r.1.as_deref().map(str::to_owned))
+        };
+        assert_eq!(app(&rows, 1), None, "init.scope");
+        assert_eq!(app(&rows, 2).as_deref(), Some("docker:nginx"));
+        assert_eq!(app(&rows, 3).as_deref(), Some("sshd.service"));
+        assert_eq!(app(&rows, 4), None, "waiting for the refresh it asked for");
+        assert!(names.requested());
+        assert_eq!(app(&rows, 5), None, "a session");
+        assert_eq!(app(&rows, 6), None, "the user manager itself");
+        assert_eq!(app(&rows, 7).as_deref(), Some("pipewire.service"));
+        let shared = |pid| {
+            rows.iter()
+                .find(|r| r.0 == pid)
+                .and_then(|r| r.1.clone())
+                .unwrap()
+        };
+        assert!(Arc::ptr_eq(&shared(3), &shared(8)), "one value per unit");
+        // The refresh finds redis.
+        names.finish(Some(
+            [
+                (NGINX.to_owned(), Arc::from("nginx")),
+                (REDIS.to_owned(), Arc::from("opendata-redis")),
+            ]
+            .into(),
+        ));
+        let rows = apps(&mut p, 3);
+        assert_eq!(app(&rows, 4).as_deref(), Some("docker:opendata-redis"));
+
+        // Without a name map: short ids at once.
+        let mut p = Processes::at(SysRoot::at(dir.path()), 4096, 100);
+        p.probe();
+        apps(&mut p, 1);
+        let rows = apps(&mut p, 2);
+        assert_eq!(app(&rows, 2).as_deref(), Some("docker:ba1d8caf4dae"));
+        assert_eq!(app(&rows, 4).as_deref(), Some("docker:47d70c0c2814"));
+    }
+
     #[test]
     fn capabilities_hide_energy_and_wakeups() {
         let p = Processes::at(SysRoot::at("/nonexistent"), 4096, 100);
@@ -625,7 +802,7 @@ mod tests {
     #[test]
     #[ignore = "reads every live process; run by hand on Linux"]
     fn live_smoke() {
-        let mut p = Processes::new();
+        let mut p = Processes::new(ContainerNames::default());
         assert_eq!(p.probe(), Probe::Supported(Vec::new()));
         let mut buf = SampleBuf::new();
         p.sample(&tick(S), &mut buf).unwrap();

@@ -21,6 +21,19 @@ pub fn asahi_t1() -> SysRoot {
     SysRoot::at(fixture("asahi-m1/t1"))
 }
 
+/// linux-tailscale's cgroup v2 tree, a subset: three Docker scopes (nginx,
+/// opendata-redis, cadvisor), `sshd`, `docker` and `getty@tty1` services, root's user
+/// manager with `dbus-broker`, a session scope, `init.scope`s, and four
+/// `/proc/<pid>/cgroup` files.
+pub fn cgroup_t0() -> SysRoot {
+    SysRoot::at(fixture("asahi-m1-cgroup/t0"))
+}
+
+/// The same files about five seconds after [`cgroup_t0`].
+pub fn cgroup_t1() -> SysRoot {
+    SysRoot::at(fixture("asahi-m1-cgroup/t1"))
+}
+
 /// A synthetic 4-CPU x86 VM: acpi-cpufreq steps, no `cpu_capacity`, DMI, no device tree.
 pub fn x86() -> SysRoot {
     SysRoot::at(fixture("x86-synthetic"))

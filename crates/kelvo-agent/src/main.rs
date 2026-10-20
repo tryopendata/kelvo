@@ -10,6 +10,7 @@ use kelvo_remote::AgentEnv;
 
 mod cli;
 mod commands;
+mod container_names;
 mod daemon;
 mod host;
 mod settings;
@@ -96,7 +97,7 @@ async fn dispatch(command: Command) -> anyhow::Result<ExitCode> {
                 commands::reset_identity(&at.resolve(&env)?, at.system)?
             );
         }
-        Command::Sample => println!("{}", commands::sample().await?),
+        Command::Sample { seconds } => println!("{}", commands::sample(seconds).await?),
     }
     Ok(ExitCode::SUCCESS)
 }

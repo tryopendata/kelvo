@@ -5,7 +5,8 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::Context;
 use kelvo_engine::{
-    EngineParts, LiveHub, LocalSource, NoScaleStore, Source, SourceHandle, SourceSink,
+    ContainerNames, EngineParts, LiveHub, LocalSource, NoScaleStore, Source, SourceHandle,
+    SourceSink,
 };
 use kelvo_proto::RemoteInterest;
 use kelvo_remote::{InterestSet, ServedHost};
@@ -24,14 +25,16 @@ pub struct AgentHost {
 impl AgentHost {
     /// Starts this platform's engine for `record` into a new hub and, when history is
     /// available, `store`. The agent learns no CPU power scales (`NoScaleStore`).
+    /// Containers are named through `names`.
     pub fn start(
         record: HostRecord,
         settings: Settings,
         store: Option<Writer>,
+        names: ContainerNames,
     ) -> anyhow::Result<Arc<Self>> {
         let source = Arc::new(LocalSource::new(
             record.clone(),
-            EngineParts::platform(Arc::new(NoScaleStore)),
+            EngineParts::platform_with(Arc::new(NoScaleStore), names),
             settings,
         ));
         let hub = LiveHub::default();

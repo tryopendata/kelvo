@@ -78,29 +78,42 @@ impl PidDir {
     /// Lists the pids into `out` (cleared first). False if the directory can't be opened.
     pub fn list(&self, out: &mut Vec<i32>) -> bool {
         out.clear();
-        // SAFETY: `path` is a valid NUL-terminated string that outlives the call.
-        let dir = unsafe { libc::opendir(self.path.as_ptr()) };
-        if dir.is_null() {
-            return false;
-        }
-        loop {
-            // SAFETY: `dir` is the open stream from opendir above, used by this thread
-            // only and not yet closed.
-            let ent = unsafe { libc::readdir(dir) };
-            if ent.is_null() {
-                break;
-            }
-            // SAFETY: readdir returned a valid entry, live until the next readdir or
-            // closedir on `dir`; `d_name` is NUL-terminated (POSIX).
-            let name = unsafe { CStr::from_ptr((*ent).d_name.as_ptr()) };
-            if let Some(pid) = parse_pid(name.to_bytes()) {
+        for_each_entry(&self.path, |name, _| {
+            if let Some(pid) = parse_pid(name) {
                 out.push(pid);
             }
-        }
-        // SAFETY: `dir` came from opendir and is closed exactly once.
-        unsafe { libc::closedir(dir) };
-        true
+        })
     }
+}
+
+/// Calls `f` with each entry name of directory `path` and whether the entry may be a
+/// directory (`d_type` is `DT_DIR`, or unknown on a filesystem that does not fill it),
+/// without allocating per entry the way `std::fs::read_dir` does. False if the directory
+/// can't be opened.
+pub fn for_each_entry(path: &CStr, mut f: impl FnMut(&[u8], bool)) -> bool {
+    // SAFETY: `path` is a valid NUL-terminated string that outlives the call.
+    let dir = unsafe { libc::opendir(path.as_ptr()) };
+    if dir.is_null() {
+        return false;
+    }
+    loop {
+        // SAFETY: `dir` is the open stream from opendir above, used by this thread
+        // only and not yet closed.
+        let ent = unsafe { libc::readdir(dir) };
+        if ent.is_null() {
+            break;
+        }
+        // SAFETY: readdir returned a valid entry, live until the next readdir or
+        // closedir on `dir`; `d_name` is NUL-terminated (POSIX).
+        let (name, d_type) = unsafe { (CStr::from_ptr((*ent).d_name.as_ptr()), (*ent).d_type) };
+        let name = name.to_bytes();
+        if name != b"." && name != b".." {
+            f(name, matches!(d_type, libc::DT_DIR | libc::DT_UNKNOWN));
+        }
+    }
+    // SAFETY: `dir` came from opendir and is closed exactly once.
+    unsafe { libc::closedir(dir) };
+    true
 }
 
 fn parse_pid(name: &[u8]) -> Option<i32> {

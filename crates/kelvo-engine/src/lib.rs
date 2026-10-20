@@ -91,6 +91,11 @@ pub use housekeeping::{
     HistoryHealth, Housekeeping, HousekeepingHandle, Schedule, next_health, retention_for,
 };
 pub use inbox::{Inbox, SleepAck};
+/// Container names for the Linux cgroup and process collectors, and the Docker-backed
+/// refresher the agent runs (D-115).
+pub use kelvo_collect::ContainerNames;
+#[cfg(unix)]
+pub use kelvo_collect::NameRefresher;
 /// The rows of a [`ProcessBatch`], re-exported for the same reason.
 pub use kelvo_collect::ProcessSample;
 /// Re-exported so engine users need not depend on `kelvo-collect` for it (D-044).

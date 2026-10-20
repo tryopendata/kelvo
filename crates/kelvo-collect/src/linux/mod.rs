@@ -4,6 +4,10 @@
 
 pub mod battery;
 mod blockdev;
+mod cap;
+pub mod cgroup;
+mod cgroup_names;
+mod cgroup_walk;
 mod counters;
 pub mod diskstats;
 pub mod fs;
@@ -29,7 +33,9 @@ pub use sysroot::{SysRoot, clk_tck, page_size};
 
 use kelvo_schema::{Entitlement, Module, UnsupportedReason};
 
-use crate::{Cadence, CollectError, Collector, CollectorId, Probe, SampleBuf, Tick};
+use crate::{
+    Cadence, CollectError, Collector, CollectorId, ContainerNames, Probe, SampleBuf, Tick,
+};
 
 /// Reports `Unsupported { NoHardware }` for the modules no Linux collector covers yet,
 /// and never emits values.
@@ -66,9 +72,11 @@ impl Collector for Unsupported {
 }
 
 /// Modules no Linux collector covers yet. Shrinks as collectors land.
-const UNCOVERED: &[Module] = &[Module::Gpu, Module::Containers];
+const UNCOVERED: &[Module] = &[Module::Gpu];
 
-pub fn collectors() -> Vec<Box<dyn Collector>> {
+/// Every Linux collector. Container names for the cgroup and process collectors come
+/// from `names` (D-115); an unattached map gives short ids.
+pub fn collectors(names: ContainerNames) -> Vec<Box<dyn Collector>> {
     let mut out: Vec<Box<dyn Collector>> = Vec::new();
     // Each collector group pushes here; keep them in probe order.
     out.extend([
@@ -78,7 +86,7 @@ pub fn collectors() -> Vec<Box<dyn Collector>> {
     out.push(Box::new(diskstats::DiskStats::new()));
     out.push(Box::new(fs::Filesystems::new()));
     out.push(Box::new(net::Network::new()));
-    out.push(Box::new(processes::Processes::new()));
+    out.push(Box::new(processes::Processes::new(names.clone())));
     out.push(Box::new(cpufreq::CpuFreq::new()));
     out.push(Box::new(psi::Psi::new()));
     out.push(Box::new(self_cpu::SelfCpu::new()));
@@ -86,6 +94,7 @@ pub fn collectors() -> Vec<Box<dyn Collector>> {
     out.push(Box::new(hwmon::Hwmon::power()));
     out.push(Box::new(rapl::Rapl::new()));
     out.push(Box::new(battery::Battery::new()));
+    out.push(Box::new(cgroup::Cgroups::new(names)));
     if !UNCOVERED.is_empty() {
         out.push(Box::new(Unsupported { modules: UNCOVERED }));
     }
@@ -98,7 +107,7 @@ mod tests {
 
     #[test]
     fn uncovered_modules_are_unsupported() {
-        for mut c in collectors() {
+        for mut c in collectors(ContainerNames::default()) {
             if c.id() == CollectorId("linux_unsupported") {
                 assert!(matches!(c.probe(), Probe::Unsupported { .. }));
             }

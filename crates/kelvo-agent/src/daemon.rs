@@ -57,7 +57,9 @@ pub async fn run(paths: &AgentPaths, system: bool) -> anyhow::Result<()> {
     if writer.is_none() {
         tracing::warn!("history unavailable; serving live data only");
     }
-    let host = AgentHost::start(record, settings.clone(), writer)?;
+    let names = crate::container_names::spawn();
+    crate::container_names::first_pass(&names, crate::container_names::FIRST_PASS_WITHIN).await;
+    let host = AgentHost::start(record, settings.clone(), writer, names)?;
     let budget = settings.history;
     let housekeeping = history
         .spawn_pruner(

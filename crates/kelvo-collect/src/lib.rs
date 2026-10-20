@@ -34,6 +34,7 @@
 mod cadence;
 pub mod calib;
 pub mod calls;
+mod container_names;
 pub mod host_info;
 mod process;
 pub mod process_control;
@@ -47,6 +48,9 @@ use std::fmt;
 use std::sync::Arc;
 
 pub use cadence::{Cadence, Every, IDLE_MS, LIVE_OR_IDLE, period_elapsed};
+pub use container_names::ContainerNames;
+#[cfg(unix)]
+pub use container_names::NameRefresher;
 pub use kelvo_schema::{Entitlement, Module, SeriesKey, UnsupportedReason};
 pub use process::{ProcessGpu, ProcessNet, ProcessSample};
 
@@ -558,20 +562,31 @@ impl Collector for Denied {
 
 /// Every collector this platform has, unfiltered. Callers pass the result through
 /// [`filter_by_entitlements`] with [`allowed_entitlements`]. Learned power calibration
-/// scales persist through `scales` ([`calib::ScaleStore`]).
+/// scales persist through `scales` ([`calib::ScaleStore`]). Container names come from an
+/// unattached map, so containers show short ids; see [`platform_collectors_with`].
 pub fn platform_collectors(scales: Arc<dyn calib::ScaleStore>) -> Vec<Box<dyn Collector>> {
+    platform_collectors_with(scales, ContainerNames::default())
+}
+
+/// [`platform_collectors`] with the container names a refresher fills (the Linux
+/// agent's Docker task, D-115). Unused on macOS.
+pub fn platform_collectors_with(
+    scales: Arc<dyn calib::ScaleStore>,
+    names: ContainerNames,
+) -> Vec<Box<dyn Collector>> {
     #[cfg(target_os = "macos")]
     {
+        drop(names);
         macos::collectors(scales)
     }
     #[cfg(target_os = "linux")]
     {
         drop(scales);
-        linux::collectors()
+        linux::collectors(names)
     }
     #[cfg(not(any(target_os = "macos", target_os = "linux")))]
     {
-        drop(scales);
+        drop((scales, names));
         Vec::new()
     }
 }

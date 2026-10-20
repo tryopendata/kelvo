@@ -9,9 +9,10 @@ use bollard::{API_DEFAULT_VERSION, BollardRequest, Docker};
 use futures_util::{Stream, StreamExt};
 use kelvo_schema::docker::*;
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, HashMap},
     path::{Path, PathBuf},
     pin::Pin,
+    sync::Arc,
     task::{Context, Poll},
     time::Duration,
 };
@@ -157,6 +158,9 @@ impl DockerAdapter {
                         }
                     })?;
                     *req.uri_mut() = hyper::Uri::builder().path_and_query(path).build()?;
+                    // No authority means no Host header, which Docker 29 refuses (400).
+                    let host = hyper::header::HeaderValue::from_static("localhost");
+                    req.headers_mut().entry(hyper::header::HOST).or_insert(host);
                     sender.send_request(req).await.map_err(Into::into)
                 }
             },
@@ -225,6 +229,24 @@ impl DockerAdapter {
         })))
         .await?;
         Ok(!list.is_empty())
+    }
+    /// Running containers' names by full id (cgroup labels, D-115), one list request.
+    pub async fn running_names(&self) -> Result<HashMap<String, Arc<str>>, DockerError> {
+        let _permit = self.permits.try_acquire().map_err(|_| DockerError::Busy)?;
+        let list = finite(self.client.list_containers(Some(ListContainersOptions {
+            all: false,
+            limit: Some(4096),
+            ..Default::default()
+        })))
+        .await?;
+        Ok(list
+            .into_iter()
+            .filter_map(|c| {
+                let id = c.id.filter(|id| valid_id(id))?;
+                let name = bounded(c.names?.into_iter().next()?.trim_start_matches('/'), 512);
+                (!name.is_empty()).then(|| (id, Arc::from(name)))
+            })
+            .collect())
     }
     pub async fn inventory(&self) -> Result<(Vec<DockerContainer>, bool), DockerError> {
         let _permit = self.permits.try_acquire().map_err(|_| DockerError::Busy)?;
@@ -854,6 +876,16 @@ mod transport_tests {
                         }
                     }
                     let req = String::from_utf8_lossy(&request);
+                    // Docker 29 refuses a request without a Host header.
+                    if !req.to_ascii_lowercase().contains("\r\nhost:") {
+                        let body = r#"{"message":"missing required Host header"}"#;
+                        let response = format!(
+                            "HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                            body.len()
+                        );
+                        let _ = socket.write_all(response.as_bytes()).await;
+                        return;
+                    }
                     if req.contains("/events") {
                         let _=socket.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nTransfer-Encoding: chunked\r\n\r\n").await;
                         tokio::time::sleep(Duration::from_millis(2300)).await;
@@ -867,6 +899,8 @@ mod transport_tests {
                             r#"{"ApiVersion":"1.49","MinAPIVersion":"1.40"}"#
                         } else if req.contains("/info") {
                             r#"{"ID":"fake-daemon","MemTotal":1024}"#
+                        } else if req.contains("/containers/json") {
+                            r#"[{"Id":"abc123","Names":["/nginx"]},{"Id":"bad id!","Names":["/x"]},{"Id":"def456","Names":[]}]"#
                         } else {
                             "[]"
                         };
@@ -894,6 +928,15 @@ mod transport_tests {
             capacity_observed_ms: None,
         };
         (dir, engine, task)
+    }
+    #[tokio::test]
+    async fn running_names_by_id_with_a_host_header() {
+        let (_dir, engine, task) = fake_daemon().await;
+        let adapter = DockerAdapter::connect(engine).await.unwrap();
+        let names = adapter.running_names().await.unwrap();
+        assert_eq!(names.len(), 1, "invalid ids and unnamed rows are dropped");
+        assert_eq!(names.get("abc123").map(|n| &**n), Some("nginx"));
+        task.abort();
     }
     #[tokio::test]
     async fn quiet_event_stream_survives_finite_request_timeout() {

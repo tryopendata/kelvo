@@ -18,12 +18,13 @@
 //! The engine's `impl` is split by concern: [`cadence`] (base tick and Performance
 //! mode), [`control`] (the handles other threads hold), [`tick`] (the per-tick path),
 //! [`persist`] (store writes), [`layout`] (layout and capabilities) and [`lifecycle`]
-//! (power, pause, settings, store swap and shutdown).
+//! (power, pause, settings, store swap and shutdown). [`parts`] holds what it runs on.
 
 mod cadence;
 mod control;
 mod layout;
 mod lifecycle;
+mod parts;
 mod persist;
 mod tick;
 
@@ -33,6 +34,7 @@ pub use cadence::{
     effective_interval_ms, performance_period,
 };
 pub use control::{EngineControl, EngineHandle};
+pub use parts::EngineParts;
 
 use std::collections::BTreeSet;
 use std::sync::atomic::{AtomicBool, AtomicU32};
@@ -106,44 +108,6 @@ impl EngineSettings {
             menu_bar,
             alerts: s.alerts,
             performance_mode: s.sampling.performance_mode,
-        }
-    }
-}
-
-/// Everything platform-specific the engine runs on.
-pub struct EngineParts {
-    pub collectors: Vec<Box<dyn Collector>>,
-    pub ticker: Box<dyn Ticker>,
-    pub power: Box<dyn PowerSignals>,
-    pub hints: Option<Box<dyn DeviceHints>>,
-}
-
-impl EngineParts {
-    /// This platform's collectors (filtered by the build's entitlements), timer, power
-    /// signals and device hints. Learned CPU power scales persist through `scales`
-    /// (D-065).
-    pub fn platform(scales: Arc<dyn kelvo_collect::calib::ScaleStore>) -> Self {
-        let collectors = kelvo_collect::filter_by_entitlements(
-            kelvo_collect::platform_collectors(scales),
-            kelvo_collect::allowed_entitlements(),
-        );
-        #[cfg(target_os = "macos")]
-        {
-            Self {
-                collectors,
-                ticker: Box::new(crate::macos::GcdTicker::new()),
-                power: Box::new(crate::macos::MacPowerSignals::new()),
-                hints: Some(Box::new(crate::macos::IoKitDeviceHints::new())),
-            }
-        }
-        #[cfg(not(target_os = "macos"))]
-        {
-            Self {
-                collectors,
-                ticker: Box::new(crate::ticker::ThreadTicker::new()),
-                power: Box::new(crate::power::NoPowerSignals),
-                hints: None,
-            }
         }
     }
 }

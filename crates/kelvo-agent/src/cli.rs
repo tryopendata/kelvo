@@ -18,7 +18,7 @@ commands:
                                                user unit runs with these paths
   uninstall [--purge] [--system] [--data-dir P]
   reset-identity [--system] [--data-dir P]     give this host a new id
-  sample [--json]                              sample for a few seconds and print every series
+  sample [--json] [SECONDS]                    sample (2.5 s by default) and print every series
 
 --system selects the root layout (/var/lib/kelvo-agent, /run/kelvo-agent); without it
 the per-user layout under $HOME is used.";
@@ -66,7 +66,7 @@ pub enum Command {
     InstallUnit(Location),
     Uninstall { at: Location, purge: bool },
     ResetIdentity(Location),
-    Sample,
+    Sample { seconds: Option<u64> },
     Help,
 }
 
@@ -155,10 +155,18 @@ pub fn parse(args: &[String]) -> anyhow::Result<Command> {
             positional(0)?;
             Command::ResetIdentity(p.at)
         }
-        "sample" => {
-            positional(0)?;
-            Command::Sample
-        }
+        "sample" => match p.positional.as_slice() {
+            [] => Command::Sample { seconds: None },
+            [s] => Command::Sample {
+                seconds: Some(
+                    s.parse()
+                        .ok()
+                        .filter(|&s| (1..=600).contains(&s))
+                        .with_context(|| format!("sample: {s:?} is not 1 to 600 seconds"))?,
+                ),
+            },
+            _ => bail!("sample: unexpected arguments {:?}", p.positional),
+        },
         _ => {
             positional(0)?;
             Command::Version
@@ -254,7 +262,16 @@ mod tests {
     fn simple_commands_and_flags() {
         assert_eq!(parse_str("version --json").unwrap(), Command::Version);
         assert_eq!(parse_str("--version").unwrap(), Command::Version);
-        assert_eq!(parse_str("sample --json").unwrap(), Command::Sample);
+        assert_eq!(
+            parse_str("sample --json").unwrap(),
+            Command::Sample { seconds: None }
+        );
+        assert_eq!(
+            parse_str("sample --json 12").unwrap(),
+            Command::Sample { seconds: Some(12) }
+        );
+        assert!(parse_str("sample 0").is_err());
+        assert!(parse_str("sample x").is_err());
         assert_eq!(parse_str("").unwrap(), Command::Help);
         assert_eq!(
             parse_str("uninstall --purge").unwrap(),
