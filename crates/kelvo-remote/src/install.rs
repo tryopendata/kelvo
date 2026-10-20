@@ -65,7 +65,7 @@ async fn run_remote_with_timeout(alias: &str, command: &str, timeout: Duration) 
     .await
 }
 
-async fn setup_timeout<T>(
+pub(crate) async fn setup_timeout<T>(
     timeout: Duration,
     operation: impl std::future::Future<Output = Result<T>>,
 ) -> Result<T> {
@@ -75,7 +75,7 @@ async fn setup_timeout<T>(
 }
 const RESTORE_TIMEOUT: Duration = Duration::from_secs(600);
 
-fn setup_ssh_error(message: String) -> RemoteError {
+pub(crate) fn setup_ssh_error(message: String) -> RemoteError {
     let lower = message.to_ascii_lowercase();
     if lower.contains("host key verification failed")
         || lower.contains("remote host identification has changed")

@@ -1,4 +1,4 @@
-.PHONY: help install dev dev-web build test test-e2e test-fill test-read-perf lint format fix typecheck check rust-fmt rust-check rust-test rust-linux-check rust-linux-test rust-portable-check rust-portable-test appstore-check agent-linux agent-linux-tools check-deps deny perf bench bench-perf-mode bench-vs-stats bindings bindings-check e2e-perf hooks clean stub-dist
+.PHONY: help install dev dev-web build test test-e2e test-fill test-read-perf lint format fix typecheck check rust-fmt rust-check rust-test rust-linux-check rust-linux-test remote-scripts-test rust-portable-check rust-portable-test appstore-check agent-linux agent-linux-tools check-deps deny perf bench bench-perf-mode bench-vs-stats bindings bindings-check e2e-perf hooks clean stub-dist
 .PHONY: agent-config agent-config-check agent-config-test agent-hooks-test architecture-check architecture-test
 
 # All library crates are portable by default. New workspace crates enter this gate
@@ -38,6 +38,7 @@ help:
 	@echo "  make rust-portable-test   cargo test all portable workspace crates on the current host"
 	@echo "  make rust-linux-check  cargo check the portable crates for x86_64-unknown-linux-gnu"
 	@echo "  make rust-linux-test   cargo test the portable crates on Linux, in Docker (rust:1.99-bookworm; run ensure-docker first)"
+	@echo "  make remote-scripts-test  Linux agent install/update/uninstall scripts under dash and busybox, in Docker"
 	@echo "  make appstore-check    cargo check + clippy the sandboxed App Store edition (--features appstore)"
 	@echo "  make check-deps    Fail if the built app links a library macOS does not ship (D-058)"
 	@echo "  make deny          cargo-deny: advisories, licenses, bans, sources (deny.toml); skips if not installed"
@@ -145,6 +146,12 @@ rust-linux-check:
 # are incremental and the host's macOS target/ is untouched.
 rust-linux-test:
 	docker run --rm -e HOST_UID="$$(id -u)" -e HOST_GID="$$(id -g)" -e HOME=/tmp -v "$(PWD)":/w -w /w -v kelvo-linux-cargo:/usr/local/cargo -v kelvo-linux-rustup:/usr/local/rustup -e CARGO_TARGET_DIR=/usr/local/cargo/target-linux rust:1.99-bookworm scripts/linux-test-entry.sh cargo test $(LINUX_CRATES)
+
+# The Linux agent's install, update and uninstall scripts (D-115) under dash
+# (debian:bookworm-slim) and busybox ash, as root and as a user, with stub systemd.
+# `cargo test` runs the same lifecycle under this machine's /bin/sh.
+remote-scripts-test:
+	cargo test -p kelvo-remote --lib agent_install::tests::lifecycle -- --ignored
 
 # The Linux agent (D-115), bundled as app resources and uploaded to hosts by Add host.
 # cargo-zigbuild links the static musl targets from the macOS host with zig, so both

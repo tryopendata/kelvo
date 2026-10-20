@@ -100,7 +100,9 @@ impl From<kelvo_remote::RemoteError> for CommandError {
             RemoteError::Authentication(_) => Self::RemoteAuth { message },
             RemoteError::HostKey(_) => Self::HostKeyUnknown { message },
             RemoteError::Incompatible(_) => Self::RemoteIncompatible { message },
-            RemoteError::Identity(_) => Self::RemoteIdentity { message },
+            RemoteError::Identity(_) | RemoteError::IdentityMismatch { .. } => {
+                Self::RemoteIdentity { message }
+            }
             // A typed state of its own arrives with the Linux Add host flow (D-115).
             RemoteError::AgentNotRunning(_)
             | RemoteError::Transport(_)

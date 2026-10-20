@@ -78,7 +78,7 @@ fn stored_host_id(data_dir: &Path) -> Option<String> {
 /// `install-unit`: writes the unit only when its text changed. Returns `"written"` or
 /// `"unchanged"`; starting it is the controller's `systemctl` call.
 pub fn install_unit(layout: AgentLayout, paths: &AgentPaths) -> anyhow::Result<&'static str> {
-    let text = layout.unit_text(&paths.binary);
+    let text = layout.unit_text(paths);
     if std::fs::read_to_string(&paths.unit).is_ok_and(|current| current == text) {
         return Ok("unchanged");
     }
@@ -214,7 +214,7 @@ mod tests {
         );
         assert_eq!(
             std::fs::read_to_string(&paths.unit).unwrap(),
-            AgentLayout::User.unit_text(&paths.binary)
+            AgentLayout::User.unit_text(&paths)
         );
         // A hand-edited or older unit is replaced.
         std::fs::write(&paths.unit, "[Service]\n").unwrap();

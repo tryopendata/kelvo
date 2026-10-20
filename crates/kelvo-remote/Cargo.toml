@@ -22,6 +22,7 @@ libc = "0.2.190"
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }
 tempfile.workspace = true
+sha2 = "0.10.9"
 
 [lints]
 workspace = true

@@ -93,7 +93,7 @@ impl Installation {
                 &EndpointConfig {
                     lan: config.lan.clone(),
                     tailscale: config.tailscale.clone(),
-                    helper_path: self.helper.clone(),
+                    command: kelvo_remote::RemoteCommand::MacHelper(self.helper.clone()),
                 },
                 state.local,
                 Some(expected),

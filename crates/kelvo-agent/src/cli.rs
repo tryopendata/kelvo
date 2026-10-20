@@ -13,7 +13,9 @@ commands:
   status [--json] [--system] [--data-dir P] [--socket P]
   version [--json]
   configure '<json>' [--system] [--data-dir P] merge settings into settings.json (applies on restart)
-  install-unit [--system]                      write the systemd unit (does not start it)
+  install-unit [--system] [--data-dir P] [--socket P]
+                                               write the systemd unit (does not start it); the
+                                               user unit runs with these paths
   uninstall [--purge] [--system] [--data-dir P]
   reset-identity [--system] [--data-dir P]     give this host a new id
   sample [--json]                              sample for a few seconds and print every series
@@ -104,7 +106,7 @@ pub fn parse(args: &[String]) -> anyhow::Result<Command> {
         "status" => accepts(true, true, true, true),
         "version" | "--version" => accepts(false, false, false, true),
         "configure" | "uninstall" | "reset-identity" => accepts(true, true, false, false),
-        "install-unit" => accepts(true, false, false, false),
+        "install-unit" => accepts(true, true, true, false),
         "sample" => accepts(false, false, false, true),
         "help" | "--help" | "-h" => return Ok(Command::Help),
         other => bail!("unknown command {other:?}\n\n{USAGE}"),
@@ -269,6 +271,14 @@ mod tests {
             })
         );
         assert!(parse_str("install-unit --purge").is_err());
+        assert_eq!(
+            parse_str("install-unit --data-dir /d --socket /s").unwrap(),
+            Command::InstallUnit(Location {
+                system: false,
+                data_dir: Some("/d".into()),
+                socket: Some("/s".into()),
+            })
+        );
         assert!(parse_str("frobnicate").is_err());
     }
 

@@ -42,7 +42,7 @@ pub(super) fn register(app: &AppHandle, saved: SavedHost) -> Result<(), CommandE
         EndpointConfig {
             lan: saved.config.lan.clone(),
             tailscale: saved.config.tailscale.clone(),
-            helper_path: saved.helper_path.clone(),
+            command: kelvo_remote::RemoteCommand::MacHelper(saved.helper_path.clone()),
         },
         cb,
         Some(mirror.clone()),

@@ -47,7 +47,7 @@ impl AgentEnv {
         )
     }
 
-    fn from_vars(
+    pub(crate) fn from_vars(
         home: Option<OsString>,
         state: Option<OsString>,
         runtime: Option<OsString>,
@@ -132,15 +132,22 @@ impl AgentLayout {
         }
     }
 
-    /// The unit file text for `binary`.
+    /// The unit file text for `paths`.
     ///
     /// The system unit runs as root with systemd-managed state and runtime directories
     /// and a read-only view of the rest of the system. The user unit leaves out
     /// `ProtectSystem`, `ProtectHome`, `PrivateTmp` and the directory settings: in a
     /// user manager they need unprivileged user namespaces, and where those are missing
     /// the unit fails to start; the agent creates its own private directories there.
-    pub fn unit_text(self, binary: &Path) -> String {
-        let exec = unit_quote(&binary.to_string_lossy());
+    ///
+    /// The user unit names its data directory and socket explicitly. The user manager's
+    /// environment is not the SSH session's (`XDG_*` set in a shell profile never reach
+    /// it), so the paths the controller computed from the session are baked in rather
+    /// than left for the daemon to derive again.
+    pub fn unit_text(self, paths: &AgentPaths) -> String {
+        let exec = unit_quote(&paths.binary.to_string_lossy());
+        let data = unit_quote(&paths.data_dir.to_string_lossy());
+        let socket = unit_quote(&paths.socket.to_string_lossy());
         match self {
             Self::System => format!(
                 "[Unit]\n\
@@ -169,7 +176,7 @@ impl AgentLayout {
                  Description=Kelvo agent\n\
                  \n\
                  [Service]\n\
-                 ExecStart={exec} run\n\
+                 ExecStart={exec} run --data-dir {data} --socket {socket}\n\
                  NoNewPrivileges=yes\n\
                  Nice=10\n\
                  IOSchedulingClass=best-effort\n\
@@ -297,7 +304,8 @@ mod tests {
 
     #[test]
     fn system_unit_matches_the_plan() {
-        let text = AgentLayout::System.unit_text(Path::new("/usr/local/bin/kelvo-agent"));
+        let paths = AgentLayout::System.paths(&AgentEnv::default()).unwrap();
+        let text = AgentLayout::System.unit_text(&paths);
         assert_eq!(
             text,
             "[Unit]\nDescription=Kelvo agent\n\n[Service]\n\
@@ -311,8 +319,24 @@ mod tests {
 
     #[test]
     fn user_unit_drops_root_only_hardening() {
-        let text = AgentLayout::User.unit_text(Path::new("/home/a/.local/bin/kelvo-agent"));
-        assert!(text.contains("ExecStart=/home/a/.local/bin/kelvo-agent run\n"));
+        let paths = AgentLayout::User
+            .paths(&env("/home/a", "", "/run/user/1000", ""))
+            .unwrap();
+        let text = AgentLayout::User.unit_text(&paths);
+        // The session's paths are baked in: the user manager may not share its XDG_*.
+        assert!(text.contains(
+            "ExecStart=/home/a/.local/bin/kelvo-agent run \
+             --data-dir /home/a/.local/state/kelvo-agent \
+             --socket /run/user/1000/kelvo-agent/metrics.sock\n"
+        ));
+        let spaced = AgentLayout::User
+            .paths(&env("/home/my user", "", "", ""))
+            .unwrap();
+        assert!(AgentLayout::User.unit_text(&spaced).contains(
+            "ExecStart=\"/home/my user/.local/bin/kelvo-agent\" run \
+             --data-dir \"/home/my user/.local/state/kelvo-agent\" \
+             --socket \"/home/my user/.local/state/kelvo-agent/metrics.sock\"\n"
+        ));
         assert!(text.contains("WantedBy=default.target"));
         assert!(text.contains("NoNewPrivileges=yes") && text.contains("MemoryMax=96M"));
         for root_only in [

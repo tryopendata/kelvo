@@ -68,16 +68,9 @@ pub(crate) fn bind_private(path: &Path) -> Result<UnixListener> {
     let parent = path
         .parent()
         .ok_or_else(|| RemoteError::Protocol("socket needs parent".into()))?;
-    std::fs::create_dir_all(parent)?;
-    let meta = std::fs::symlink_metadata(parent)?;
     // SAFETY: geteuid has no preconditions.
     let uid = unsafe { libc::geteuid() };
-    if !meta.is_dir() || meta.uid() != uid {
-        return Err(RemoteError::Protocol(
-            "socket directory must be owned by this user".into(),
-        ));
-    }
-    std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700))?;
+    private_socket_dir(parent, uid)?;
     if let Ok(meta) = std::fs::symlink_metadata(path) {
         use std::os::unix::fs::FileTypeExt;
         if !meta.file_type().is_socket() || meta.uid() != uid {
@@ -92,6 +85,35 @@ pub(crate) fn bind_private(path: &Path) -> Result<UnixListener> {
     std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
     Ok(listener)
 }
+/// Makes `dir` the socket's private directory: created owner-only when missing, and
+/// tightened to 0700 when it is already ours. A directory that is shared (world-writable
+/// or sticky, like `/tmp`), not ours, or a symlink is refused rather than chmodded: that
+/// would lock everyone else out of it or follow a link someone else planted.
+fn private_socket_dir(dir: &Path, uid: u32) -> Result<()> {
+    use std::os::unix::fs::DirBuilderExt;
+    if !dir.exists() {
+        std::fs::DirBuilder::new()
+            .recursive(true)
+            .mode(0o700)
+            .create(dir)?;
+    }
+    let meta = std::fs::symlink_metadata(dir)?;
+    if !meta.is_dir() || meta.uid() != uid {
+        return Err(RemoteError::Protocol(format!(
+            "socket directory {} must be a directory owned by this user",
+            dir.display()
+        )));
+    }
+    if meta.mode() & 0o1002 != 0 {
+        return Err(RemoteError::Protocol(format!(
+            "socket directory {} is shared (world-writable or sticky); use a directory of its own",
+            dir.display()
+        )));
+    }
+    std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))?;
+    Ok(())
+}
+
 pub(crate) fn same_uid(stream: &UnixStream) -> Result<()> {
     let credentials = stream.peer_cred()?;
     // SAFETY: geteuid has no preconditions.
@@ -222,6 +244,45 @@ mod tests {
         assert_eq!(start.elapsed(), std::time::Duration::from_millis(200));
         assert!(sessions.is_empty());
     }
+    #[tokio::test]
+    async fn socket_directory_is_never_a_shared_one() {
+        // SAFETY: geteuid has no preconditions.
+        let uid = unsafe { libc::geteuid() };
+        let dir = tempfile::tempdir_in("/tmp").unwrap();
+        // A shared directory keeps its mode and is refused.
+        let shared = dir.path().join("shared");
+        std::fs::create_dir(&shared).unwrap();
+        for mode in [0o1777, 0o777, 0o1700] {
+            std::fs::set_permissions(&shared, std::fs::Permissions::from_mode(mode)).unwrap();
+            assert!(bind_private(&shared.join("metrics.sock")).is_err());
+            let after = std::fs::metadata(&shared).unwrap().permissions().mode() & 0o7777;
+            assert_eq!(after, mode, "a shared directory was chmodded");
+        }
+        assert!(private_socket_dir(Path::new("/tmp"), uid).is_err());
+        // A symlink to our own directory is refused, not followed.
+        let real = dir.path().join("real");
+        std::fs::create_dir(&real).unwrap();
+        let link = dir.path().join("link");
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+        assert!(private_socket_dir(&link, uid).is_err());
+        // Our own directory (the app data dir's `remote`) is tightened; a missing one is
+        // created owner-only, parents included.
+        let open = dir.path().join("app/remote");
+        std::fs::create_dir_all(&open).unwrap();
+        std::fs::set_permissions(&open, std::fs::Permissions::from_mode(0o755)).unwrap();
+        drop(bind_private(&open.join("metrics.sock")).unwrap());
+        assert_eq!(
+            std::fs::metadata(&open).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+        let fresh = dir.path().join("a/b/kelvo-agent");
+        drop(bind_private(&fresh.join("metrics.sock")).unwrap());
+        assert_eq!(
+            std::fs::metadata(&fresh).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+    }
+
     #[tokio::test]
     async fn control_is_private_and_roundtrips() {
         let dir = tempfile::tempdir_in("/tmp").unwrap();

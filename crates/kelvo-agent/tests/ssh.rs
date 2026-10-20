@@ -24,7 +24,7 @@ fn config(helper: String) -> EndpointConfig {
     EndpointConfig {
         lan: Some(std::env::var("KELVO_AGENT_SSH_ALIAS").unwrap()),
         tailscale: None,
-        helper_path: helper,
+        command: kelvo_remote::RemoteCommand::MacHelper(helper),
     }
 }
 

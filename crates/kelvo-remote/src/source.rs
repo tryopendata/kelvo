@@ -508,7 +508,7 @@ impl Session<'_> {
                 let config = EndpointConfig {
                     lan: Some(lan.clone()),
                     tailscale: None,
-                    helper_path: self.source.endpoints.helper_path.clone(),
+                    command: self.source.endpoints.command.clone(),
                 };
                 // Debounced, cancellable promotion runs beside the old stream.
                 let tx = self.promotion_tx.clone();
@@ -980,7 +980,7 @@ mod tests {
             EndpointConfig {
                 lan: Some("fixture".into()),
                 tailscale: None,
-                helper_path: String::new(),
+                command: crate::RemoteCommand::default(),
             },
             Arc::new(|_| {}),
             mirror,
@@ -1254,7 +1254,7 @@ mod tests {
             EndpointConfig {
                 lan: Some("fixture".into()),
                 tailscale: None,
-                helper_path: String::new(),
+                command: crate::RemoteCommand::default(),
             },
             Arc::new(|_| {}),
             None,
@@ -1417,7 +1417,7 @@ mod tests {
             EndpointConfig {
                 lan: Some("test".into()),
                 tailscale: None,
-                helper_path: String::new(),
+                command: crate::RemoteCommand::default(),
             },
             Arc::new(|_| {}),
             Some(mirror.clone()),

@@ -2,9 +2,23 @@
 //! Only bridges authenticated local sockets; it never starts a collector or opens SQLite.
 use kelvo_remote::{ControlRequest, SocketPaths, control_request, stdio_bridge};
 
-#[tokio::main(flavor = "current_thread")]
-async fn main() {
-    if let Err(error) = run().await {
+fn main() {
+    let runtime = match tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+    {
+        Ok(runtime) => runtime,
+        Err(error) => {
+            eprintln!("kelvo-remote-helper: {error}");
+            std::process::exit(1);
+        }
+    };
+    let result = runtime.block_on(run());
+    // Without waiting on blocking tasks: `serve`'s stdin reader stays blocked in read(2)
+    // after the app closes the session, and dropping the runtime would wait for it and
+    // keep the bridge (and the SSH session) alive.
+    runtime.shutdown_background();
+    if let Err(error) = result {
         eprintln!("kelvo-remote-helper: {error}");
         std::process::exit(1);
     }

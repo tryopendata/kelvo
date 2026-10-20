@@ -1,5 +1,6 @@
 #![cfg_attr(test, allow(clippy::too_many_lines))]
 //! Persistent, direct SSH sessions. No network listener, collector, or Tauri dependency.
+pub mod agent_install;
 pub mod agent_layout;
 mod clock;
 mod codec;
@@ -27,7 +28,7 @@ pub use server::{ServerProvider, headline_metrics, serve_connection, serve_metri
 pub use socket::{ControlRequest, ControlResponse, SocketPaths, control_request, serve_control};
 pub use source::{ConnectionStatus, MirrorSink, RemoteSource, StatusCallback};
 pub use stdio::stdio_bridge;
-pub use transport::{EndpointConfig, Route, SshSession, connect, ssh_command};
+pub use transport::{EndpointConfig, RemoteCommand, Route, SshSession, connect, ssh_command};
 
 #[derive(Debug, thiserror::Error)]
 pub enum RemoteError {
@@ -41,6 +42,16 @@ pub enum RemoteError {
     Incompatible(String),
     #[error("remote host identity does not match: {0}")]
     Identity(String),
+    /// The host answered with a different id than the one paired. Carries both, so the
+    /// shell can offer to re-pair it as a new host (D-115).
+    #[error(
+        "remote host identity does not match: {alias} identified {actual}, expected {expected}"
+    )]
+    IdentityMismatch {
+        alias: String,
+        expected: kelvo_schema::HostId,
+        actual: kelvo_schema::HostId,
+    },
     /// The host has `kelvo-agent` but its daemon is not running ([`AGENT_NOT_RUNNING`]).
     /// Retryable: the service manager restarts it.
     #[error("Kelvo agent is not running on {0}")]
@@ -60,6 +71,7 @@ impl RemoteError {
                 | Self::HostKey(_)
                 | Self::Incompatible(_)
                 | Self::Identity(_)
+                | Self::IdentityMismatch { .. }
                 | Self::Protocol(_)
         )
     }

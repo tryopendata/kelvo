@@ -62,3 +62,38 @@ async fn helper_relays_binary_frames_in_both_directions_and_exits_on_eof() {
             .exists()
     );
 }
+
+/// The app closing the session ends the helper even while SSH keeps its stdin open:
+/// the stdin reader blocked in read(2) must not hold the process.
+#[tokio::test]
+async fn helper_exits_when_the_app_closes_with_stdin_still_open() {
+    let dir = tempfile::tempdir_in("/tmp").unwrap();
+    let paths = kelvo_remote::SocketPaths::new(
+        dir.path()
+            .join("Library/Application Support/com.tryopendata.kelvo"),
+    );
+    std::fs::create_dir_all(paths.metrics.parent().unwrap()).unwrap();
+    let listener = UnixListener::bind(&paths.metrics).unwrap();
+    let mut helper = Command::new(env!("CARGO_BIN_EXE_kelvo-remote-helper"))
+        .args(["serve", "--stdio"])
+        .env("HOME", dir.path())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
+        .unwrap();
+    let (socket, _) = tokio::time::timeout(Duration::from_secs(3), listener.accept())
+        .await
+        .unwrap()
+        .unwrap();
+    let _stdin_held_open = helper.stdin.take().unwrap();
+    drop(socket);
+    assert!(
+        tokio::time::timeout(Duration::from_secs(3), helper.wait())
+            .await
+            .expect("the helper must exit once the app closes the session")
+            .unwrap()
+            .success()
+    );
+}
