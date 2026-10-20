@@ -82,37 +82,43 @@ export function RingCards({
   );
 
   const sys = at("power.system");
+  // A Linux agent (D-115) has no SoC CPU and GPU groups, fan mode or package.
+  const has = (metric: string) => layout?.byMetric.has(metric) ?? !layout;
   const fromAdapter =
     !hasBattery || source === "adapter" || source === "charging";
 
   return (
     <div className="grid grid-cols-[repeat(auto-fit,minmax(210px,1fr))] gap-4">
-      <RingStatCard
-        accent="power"
-        origin="tl"
-        title="CPU"
-        description="Max of SMC CPU group"
-        ring={{
-          fractions: [frac(at("thermal.cpu"), TEMP_MAX_C)],
-          value: cpuT.value,
-          label: cpuT.unit,
-          accent: "temp",
-        }}
-        kv={{ label: "P-cluster", value: formatGhz(at(pFreqKey)) }}
-      />
-      <RingStatCard
-        accent="power"
-        origin="tr"
-        title="GPU"
-        description="Max of SMC GPU group"
-        ring={{
-          fractions: [frac(at("thermal.gpu"), TEMP_MAX_C)],
-          value: gpuT.value,
-          label: gpuT.unit,
-          accent: "temp",
-        }}
-        kv={{ label: "Frequency", value: formatGhz(at("gpu.freq")) }}
-      />
+      {has("thermal.cpu") && (
+        <RingStatCard
+          accent="power"
+          origin="tl"
+          title="CPU"
+          description="Max of SMC CPU group"
+          ring={{
+            fractions: [frac(at("thermal.cpu"), TEMP_MAX_C)],
+            value: cpuT.value,
+            label: cpuT.unit,
+            accent: "temp",
+          }}
+          kv={{ label: "P-cluster", value: formatGhz(at(pFreqKey)) }}
+        />
+      )}
+      {has("thermal.gpu") && (
+        <RingStatCard
+          accent="power"
+          origin="tr"
+          title="GPU"
+          description="Max of SMC GPU group"
+          ring={{
+            fractions: [frac(at("thermal.gpu"), TEMP_MAX_C)],
+            value: gpuT.value,
+            label: gpuT.unit,
+            accent: "temp",
+          }}
+          kv={{ label: "Frequency", value: formatGhz(at("gpu.freq")) }}
+        />
+      )}
       {fanIds.length === 0 ? (
         <RingStatCard
           accent="power"
@@ -134,7 +140,11 @@ export function RingCards({
             label: "RPM",
             accent: "power",
           }}
-          kv={{ label: "Mode", value: fanModeLabel(at("fan.mode")) }}
+          kv={
+            has("fan.mode")
+              ? { label: "Mode", value: fanModeLabel(at("fan.mode")) }
+              : undefined
+          }
         />
       )}
       <RingStatCard
@@ -148,7 +158,11 @@ export function RingCards({
           label: "W",
           accent: "power",
         }}
-        kv={{ label: "Package", value: formatWatts(at("power.package")) }}
+        kv={
+          has("power.package")
+            ? { label: "Package", value: formatWatts(at("power.package")) }
+            : undefined
+        }
       />
     </div>
   );

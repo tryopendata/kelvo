@@ -1,4 +1,5 @@
 import type { HostRecord } from "@core/generated/bindings";
+import { hostNoun } from "@core/host-os";
 import { hostKeys } from "@core/query-keys";
 import { unwrap } from "@core/transport";
 import { useQuery } from "@tanstack/react-query";
@@ -25,4 +26,9 @@ export function useHostRecord(): HostRecord | undefined {
 export function useGpuMaxMhz(): number | null {
   const dvfs = useHostRecord()?.info.gpu_dvfs_mhz ?? [];
   return dvfs.length === 0 ? null : Math.max(...dvfs);
+}
+
+/** "Mac", or "host" for a Linux agent (D-115): "Processes on this host". */
+export function useHostNoun(): "Mac" | "host" {
+  return hostNoun(useHostRecord()?.info.os);
 }

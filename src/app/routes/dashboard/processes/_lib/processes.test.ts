@@ -10,31 +10,42 @@ import {
 
 describe("columnSetOptions", () => {
   it("offers Network only with per-process network (D-081)", () => {
-    expect(columnSetOptions(true, false).map((o) => o.value)).toEqual([
-      "cpu",
-      "memory",
-      "energy",
-      "disk",
-      "network",
-    ]);
-    expect(columnSetOptions(false, true).map((o) => o.value)).not.toContain(
-      "network"
-    );
+    expect(
+      columnSetOptions({
+        network: true,
+        gpu: false,
+        energy: true,
+        disk: true,
+      }).map((o) => o.value)
+    ).toEqual(["cpu", "memory", "energy", "disk", "network"]);
+    expect(
+      columnSetOptions({
+        network: false,
+        gpu: true,
+        energy: true,
+        disk: true,
+      }).map((o) => o.value)
+    ).not.toContain("network");
     expect(COLUMN_SETS.network.sort).toEqual({ by: "netTotal", dir: "desc" });
   });
 
   it("offers GPU only with per-process GPU time (D-085)", () => {
-    expect(columnSetOptions(true, true).map((o) => o.value)).toEqual([
-      "cpu",
-      "memory",
-      "energy",
-      "disk",
-      "network",
-      "gpu",
-    ]);
-    expect(columnSetOptions(true, false).map((o) => o.value)).not.toContain(
-      "gpu"
-    );
+    expect(
+      columnSetOptions({
+        network: true,
+        gpu: true,
+        energy: true,
+        disk: true,
+      }).map((o) => o.value)
+    ).toEqual(["cpu", "memory", "energy", "disk", "network", "gpu"]);
+    expect(
+      columnSetOptions({
+        network: true,
+        gpu: false,
+        energy: true,
+        disk: true,
+      }).map((o) => o.value)
+    ).not.toContain("gpu");
     expect(COLUMN_SETS.gpu.sort).toEqual({ by: "gpu", dir: "desc" });
   });
 });

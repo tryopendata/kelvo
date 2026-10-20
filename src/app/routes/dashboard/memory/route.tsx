@@ -22,9 +22,17 @@ import { SwapCard } from "./_components/swap-card";
  */
 export default function MemoryRoute() {
   const info = useHostRecord()?.info;
+  const mac = info === undefined || info.os === "mac_os";
   const totalGb = info ? marketingGb(info.mem_total_bytes) : null;
   const windowMs = useChartWindow()?.windowMs ?? null;
   const bytes = useUnits().bytes;
+  // A Linux host's MemTotal as measured, not a marketing size.
+  const totalLabel =
+    totalGb === null
+      ? null
+      : mac
+        ? `${totalGb} GB`
+        : formatBytes(info?.mem_total_bytes ?? null, { units: bytes });
   const table = useMemo((): UsageTableConfig => {
     const fmt = (n: number | undefined) =>
       n === undefined ? MISSING : formatBytes(n, { units: bytes });
@@ -53,18 +61,21 @@ export default function MemoryRoute() {
         <PageHeader
           title="Memory"
           subtitle={
-            totalGb !== null && (
+            totalGb !== null &&
+            (mac ? (
               <>
                 <span className="figures">{totalGb}</span> GB unified
               </>
-            )
+            ) : (
+              <span className="figures">{totalLabel}</span>
+            ))
           }
           actions={<WindowControl />}
         />
         {windowMs !== null && (
           <>
             <CompositionCard
-              totalGb={totalGb}
+              totalLabel={totalLabel}
               totalBytes={info?.mem_total_bytes ?? null}
               windowMs={windowMs}
             />

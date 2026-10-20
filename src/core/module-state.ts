@@ -91,8 +91,11 @@ export function isUnknownChip(caps: Capabilities | null): boolean {
 }
 
 /** Text for a card whose module cannot run here. */
-export function unavailableText(state: ModuleState): string | null {
+export function unavailableText(
+  state: ModuleState,
+  noun: "Mac" | "host" = "Mac"
+): string | null {
   if (state === "edition") return "Not available in this edition";
-  if (state === "unavailable") return "Not available on this Mac";
+  if (state === "unavailable") return `Not available on this ${noun}`;
   return null;
 }

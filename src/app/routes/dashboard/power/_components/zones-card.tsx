@@ -24,8 +24,12 @@ function labelValue(key: string): string {
 export function ZonesCard({ windowMs }: { windowMs: number }) {
   const units = useUnits();
   const layout = useLayout();
-  const zoneKeys = layout?.byMetric.get("thermal.zone") ?? [];
-  const sensorKeys = layout?.byMetric.get("thermal.sensor") ?? [];
+  const zoneList = layout?.byMetric.get("thermal.zone") ?? [];
+  const sensorList = layout?.byMetric.get("thermal.sensor") ?? [];
+  // Without SoC zones (a Linux agent, D-115) the named sensors are the rows.
+  const zones = zoneList.length > 0 || sensorList.length === 0;
+  const zoneKeys = zones ? zoneList : sensorList;
+  const sensorKeys = zones ? sensorList : [];
   const now = useHeld([...zoneKeys, ...sensorKeys]);
   const range = useRingStats(zoneKeys, windowMs);
   const lastTs = useHost((s) => s.lastTsMs) ?? 0;
@@ -43,18 +47,22 @@ export function ZonesCard({ windowMs }: { windowMs: number }) {
       accent="power"
       origin="bl"
       variant="default"
-      title="SoC thermal zones"
+      title={zones ? "SoC thermal zones" : "Temperature sensors"}
     >
       <p className="-mt-3 font-normal text-[12px] text-muted-foreground">
-        Apple doesn't document which zone sits over which core, so zones keep
-        their sensor names. Hottest first.
+        {zones
+          ? "Apple doesn't document which zone sits over which core, so zones keep their sensor names. Hottest first."
+          : "As the kernel names them. Hottest first."}
       </p>
       <ZoneTable
+        variant={zones ? "zones" : "sensors"}
         units={units.temperature}
         rangeLabel={windowLabel(windowMs)}
         rows={order.current.keys.map((k) => ({
           key: labelValue(k),
-          name: zoneName(position.get(k) ?? 0),
+          name: zones
+            ? zoneName(position.get(k) ?? 0)
+            : sensorLabel(labelValue(k)),
           now: now[k] ?? null,
           min: range[k]?.min ?? null,
           max: range[k]?.max ?? null,

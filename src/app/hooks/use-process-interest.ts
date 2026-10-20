@@ -4,6 +4,7 @@ import {
   type ProcessView,
 } from "@core/process-interest";
 import { useEffect, useState } from "react";
+import { useShallow } from "zustand/react/shallow";
 import type {
   ProcessColumn,
   ProcessSort as TableSort,
@@ -93,6 +94,28 @@ export function useProcessNetwork(): boolean {
  */
 export function useProcessGpu(): boolean {
   return useHost((s) => s.capabilities?.process_gpu === true);
+}
+
+/**
+ * Whether process rows carry energy impact (`process_energy`), idle wakeups
+ * (`process_wakeups`) and measured disk rates (`process_disk_io`). A Linux
+ * agent has no energy or wakeups, and no disk rates when it cannot read
+ * other users' `/proc/<pid>/io` (D-115); its rows hold zeros the columns
+ * must not show. Each defaults to true, as Rust decodes an older sender, so
+ * a Mac's columns show before capabilities arrive.
+ */
+export function useProcessColumnCaps(): {
+  energy: boolean;
+  wakeups: boolean;
+  diskIo: boolean;
+} {
+  return useHost(
+    useShallow((s) => ({
+      energy: s.capabilities?.process_energy !== false,
+      wakeups: s.capabilities?.process_wakeups !== false,
+      diskIo: s.capabilities?.process_disk_io !== false,
+    }))
+  );
 }
 
 /** The latest process rows, or `null` before the first batch. */

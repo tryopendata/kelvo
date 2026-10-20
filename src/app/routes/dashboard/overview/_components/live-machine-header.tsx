@@ -2,9 +2,9 @@ import {
   formatBytes,
   formatClock,
   formatDuration,
-  formatMarketingMemory,
   formatPercent,
 } from "@core/format";
+import { hostNoun, memoryTotalLabel, osLabel } from "@core/host-os";
 import { useShallow } from "zustand/react/shallow";
 import { MachineHeader, type MachineSpec } from "~/components/machine-header";
 import { useHostRecord } from "~/hooks/use-host-record";
@@ -47,17 +47,16 @@ export function LiveMachineHeader() {
   const info = host.info;
   const topology = info.cpu_topology;
   const cores = topology.reduce((n, c) => n + c.cores.length, 0);
+  // "4P + 4E"; empty when every core is one kind (`uniform`, D-115).
+  const kinds = coresLabel(topology);
 
   const chipParts = [
     info.chip,
-    cores > 0 ? `${cores}-core CPU (${coresLabel(topology)})` : null,
+    cores > 0 ? `${cores}-core CPU${kinds ? ` (${kinds})` : ""}` : null,
   ].filter((p): p is string => Boolean(p));
   const specs: MachineSpec[] = [
     { label: "Chip", value: chipParts.join(" · ") || "—" },
-    {
-      label: "Memory",
-      value: `${formatMarketingMemory(info.mem_total_bytes)} unified`,
-    },
+    { label: "Memory", value: memoryTotalLabel(info) },
     {
       label: "Storage",
       value:
@@ -73,6 +72,11 @@ export function LiveMachineHeader() {
     });
   }
   specs.push({ label: "Model", value: info.model ?? "—" });
+  // A Linux host's kernel says as much as its distribution; a Mac's Darwin
+  // release adds nothing to the macOS version.
+  if (info.os !== "mac_os" && info.kernel) {
+    specs.push({ label: "Kernel", value: info.kernel });
+  }
   specs.push({
     label: "Uptime",
     value: [
@@ -90,7 +94,8 @@ export function LiveMachineHeader() {
           ? `${host.display_name} (${shortChip(info.chip)})`
           : host.display_name
       }
-      osVersion={`macOS ${info.os_version}`}
+      osVersion={osLabel(info)}
+      ariaLabel={`This ${hostNoun(info.os)}`}
       specs={specs}
     />
   );

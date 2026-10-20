@@ -16,7 +16,8 @@ export interface RingStatCardProps {
    * description then carries the state.
    */
   ring: Omit<RingGaugeProps, "size"> | null;
-  kv: { label: string; value: string };
+  /** Omit when the host has no such reading (a Linux host's fan mode). */
+  kv?: { label: string; value: string } | undefined;
 }
 
 /** Ring plus title, description and one key/value. */
@@ -50,10 +51,12 @@ export function RingStatCard({
             {description}
           </span>
         )}
-        <dl className="flex flex-col gap-px">
-          <dt className={FIELD_LABEL}>{kv.label}</dt>
-          <dd className="figures text-[13px]">{kv.value}</dd>
-        </dl>
+        {kv && (
+          <dl className="flex flex-col gap-px">
+            <dt className={FIELD_LABEL}>{kv.label}</dt>
+            <dd className="figures text-[13px]">{kv.value}</dd>
+          </dl>
+        )}
       </div>
     </Card>
   );

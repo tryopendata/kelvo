@@ -34,6 +34,7 @@ import {
   type UsageTableConfig,
 } from "~/components/usage-apps-card";
 import { useEdition } from "~/hooks/use-edition";
+import { useHostNoun } from "~/hooks/use-host-record";
 import { useIsLocalHost } from "~/hooks/use-is-local-host";
 import {
   useProcessInterest,
@@ -109,6 +110,7 @@ function DiskProcessList({
 }) {
   const range = useBrushRange();
   const local = useIsLocalHost();
+  const noun = useHostNoun();
   const canSignal = useEdition()?.process_signal === true;
   useProcessInterest(local && range === null ? FULL_TABLE : null);
   const live = useProcessRows();
@@ -141,7 +143,7 @@ function DiskProcessList({
     <div {...brushScopeProps} className="contents">
       <AppsShell
         accent="disk"
-        title={`Processes on this Mac · ${scope}`}
+        title={`Processes on this ${noun} · ${scope}`}
         aside={
           <>
             {viewControl}
@@ -151,7 +153,9 @@ function DiskProcessList({
       >
         {!local ? (
           <AppsNote>
-            Process accounting is available on the monitored Mac.
+            {noun === "Mac"
+              ? "Process accounting is available on the monitored Mac."
+              : "Process I/O history isn't kept for this host."}
           </AppsNote>
         ) : history.isError && range ? (
           <AppsNote>Couldn't load process I/O for this range.</AppsNote>

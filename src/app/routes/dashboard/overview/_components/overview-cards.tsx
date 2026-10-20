@@ -10,7 +10,11 @@ import type { LiveProcess } from "@core/generated/bindings";
 import { useNavigate } from "react-router";
 import { useShallow } from "zustand/react/shallow";
 import { useGpuMaxMhz, useHostRecord } from "~/hooks/use-host-record";
-import { useProcessGpu, useProcessNetwork } from "~/hooks/use-process-interest";
+import {
+  useProcessColumnCaps,
+  useProcessGpu,
+  useProcessNetwork,
+} from "~/hooks/use-process-interest";
 import { useReadFailure } from "~/hooks/use-read-failure";
 import { useHost } from "~/stores/host-store";
 import {
@@ -40,7 +44,13 @@ import {
   powerCard,
 } from "../_lib/card-props";
 import { scaleFrom } from "../_lib/history";
-import { ifaceRates, linkRate, volumeCapacity } from "../_lib/selectors";
+import { sensorPowerCard, usedMemoryCard } from "../_lib/host-card-props";
+import {
+  ifaceRates,
+  linkRate,
+  thermalSensors,
+  volumeCapacity,
+} from "../_lib/selectors";
 
 const NO_PROCESSES: readonly LiveProcess[] = [];
 
@@ -79,10 +89,17 @@ export function OverviewCpuCard({ origin }: CardProps) {
     const top = mhz?.[mhz.length - 1];
     return top === undefined ? null : top * 1e6;
   };
-  const clusters: [ClusterInput, ClusterInput] = [
-    { label: "P-cluster", freqHz: freq.p, maxHz: maxHz(p?.dvfs_mhz) },
-    { label: "E-cluster", freqHz: freq.e, maxHz: maxHz(e?.dvfs_mhz) },
-  ];
+  // A host whose cores are all one kind (`uniform`, D-115) has one cluster.
+  const only = !p || !e ? topology[0] : undefined;
+  const onlyFreq = useHost((s) =>
+    only ? (s.held[`cpu.cluster.freq{cluster=${only.name}}`] ?? null) : null
+  );
+  const clusters: [ClusterInput, ClusterInput] | [ClusterInput] = only
+    ? [{ label: "Frequency", freqHz: onlyFreq, maxHz: maxHz(only.dvfs_mhz) }]
+    : [
+        { label: "P-cluster", freqHz: freq.p, maxHz: maxHz(p?.dvfs_mhz) },
+        { label: "E-cluster", freqHz: freq.e, maxHz: maxHz(e?.dvfs_mhz) },
+      ];
   const props = cpuCard({
     ...cpu,
     coresLabel: coresLabel(topology),
@@ -177,12 +194,17 @@ export function OverviewMemoryCard({ origin }: CardProps) {
   const mem = useMemory();
   const host = useHostRecord();
   const binary = useSettings((s) => s.units.memory) === "binary";
-  const props = memoryCard({
+  const input = {
     ...mem,
     totalBytes: host?.info.mem_total_bytes ?? null,
     binary,
     processes: useProcesses(),
-  });
+  };
+  // A Mac always has the composition; a Linux layout has no `mem.app`.
+  const props =
+    host === undefined || host.info.os === "mac_os" || mem.composition
+      ? memoryCard(input)
+      : usedMemoryCard(input);
   return (
     <MetricCard
       {...props}
@@ -205,19 +227,35 @@ export function OverviewPowerCard({ origin }: CardProps) {
       s.layoutNo !== null &&
       (s.layouts[s.layoutNo]?.byMetric.has("thermal.hottest") ?? false)
   );
-  const props = powerCard({
+  const energy = useProcessColumnCaps().energy;
+  const processes = useHost((s) =>
+    energy ? (s.processes?.rows ?? NO_PROCESSES) : NO_PROCESSES
+  );
+  const thermal = useHost(useShallow(thermalSensors));
+  const common = {
     system: p.system,
-    cpu: p.cpu,
-    gpu: p.gpu,
-    dram: p.dram,
-    hottestC: sensors.hottest,
     fanRpm: sensors.fanRpm,
     fanMax: sensors.fanMax,
     passive: hasSensorLayout && sensors.fanCount === 0,
     powerSource,
     temperature: fahrenheit ? "F" : "C",
-    processes: useProcesses(),
-  });
+  } as const;
+  // Without a component split or process energy (a Linux agent, D-115) the
+  // card is built from the system draw and the temperature sensors.
+  const props =
+    p.components || energy
+      ? powerCard({
+          ...common,
+          cpu: p.cpu,
+          gpu: p.gpu,
+          dram: p.dram,
+          hottestC: sensors.hottest,
+          processes,
+        })
+      : sensorPowerCard({
+          ...common,
+          sensors: Object.entries(thermal).map(([name, c]) => ({ name, c })),
+        });
   return (
     <MetricCard
       {...props}
@@ -283,9 +321,22 @@ export function OverviewDiskCard({ origin }: CardProps) {
     rate: useRateUnits(),
     processes: useProcesses(),
   });
+  // Rows without measured disk rates (`process_disk_io` false, D-115) hold
+  // zeros that must not read as idle processes.
+  const diskIo = useProcessColumnCaps().diskIo;
   return (
     <MetricCard
       {...props}
+      body={
+        diskIo
+          ? props.body
+          : {
+              kind: "list",
+              ariaLabel: "Top processes by disk I/O",
+              rows: [],
+              note: "Disk rates by process aren't readable on this host",
+            }
+      }
       origin={origin}
       href="/dashboard/disk"
       onOpen={useOpen()}

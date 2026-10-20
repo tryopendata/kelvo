@@ -1,6 +1,6 @@
 import type { MockCommands } from "./commands";
 import type { MockTransport } from "./contracts";
-import { TOPOLOGY, withGpuPct } from "./fixtures";
+import { hostInfo, withGpuPct } from "./fixtures";
 import { mockSeriesStats } from "./history";
 import {
   appsReportedTo,
@@ -139,7 +139,10 @@ export class MockUsageQueries {
             limit,
             gpu,
             stats,
-            cores: TOPOLOGY.reduce((n, c) => n + c.cores.length, 0),
+            cores: hostInfo(this.ring.flags, 0).cpu_topology.reduce(
+              (n, c) => n + c.cores.length,
+              0
+            ),
           })
         );
       }

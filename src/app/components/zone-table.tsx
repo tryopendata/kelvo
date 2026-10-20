@@ -33,6 +33,11 @@ export interface ZoneTableProps {
   units: TemperatureUnits;
   /** Range column heading, the chart window's short form ("15m", "1h"). */
   rangeLabel: string;
+  /**
+   * `sensors`: rows are named sensors (a Linux host's hwmon labels, D-115),
+   * so the name takes the key column's width and there is no key column.
+   */
+  variant?: "zones" | "sensors";
 }
 
 /** The bar spans 20 to 110 °C (design-system.md "Y scale"). */
@@ -66,7 +71,14 @@ const MAX_ROWS = 10.5;
  * by value; the hottest zone is the top row. Past about ten zones the table
  * scrolls inside the card under a pinned header.
  */
-export function ZoneTable({ rows, extras, units, rangeLabel }: ZoneTableProps) {
+export function ZoneTable({
+  rows,
+  extras,
+  units,
+  rangeLabel,
+  variant = "zones",
+}: ZoneTableProps) {
+  const zones = variant === "zones";
   // A scrolling list takes focus, so the keyboard can scroll it; WebKit does
   // not make scroll regions focusable on its own.
   const scrolls = rows.length > MAX_ROWS;
@@ -80,23 +92,33 @@ export function ZoneTable({ rows, extras, units, rangeLabel }: ZoneTableProps) {
         {...(scrolls && {
           tabIndex: 0,
           role: "region",
-          "aria-label": "SoC thermal zones",
+          "aria-label": zones ? "SoC thermal zones" : "Temperature sensors",
         })}
       >
         <table className="w-full border-collapse text-[12px]">
           <colgroup>
-            <col className="w-16" />
-            <col className="w-[84px]" />
+            {zones ? (
+              <>
+                <col className="w-16" />
+                <col className="w-[84px]" />
+              </>
+            ) : (
+              <col className="w-[148px]" />
+            )}
             <col />
             <col className="w-[52px]" />
             <col className="w-[60px]" />
           </colgroup>
           <thead className="sticky top-0 z-10 bg-card">
             <tr className="h-(--zone-head)">
-              <th className={`${FIELD_LABEL} pb-1.5 text-left`}>Zone</th>
-              <th className={`${FIELD_LABEL} pb-1.5 pl-2.5 text-left`}>
-                Sensor
+              <th className={`${FIELD_LABEL} pb-1.5 text-left`}>
+                {zones ? "Zone" : "Sensor"}
               </th>
+              {zones && (
+                <th className={`${FIELD_LABEL} pb-1.5 pl-2.5 text-left`}>
+                  Sensor
+                </th>
+              )}
               <th className="pb-1.5">
                 <span className="sr-only">Range bar</span>
               </th>
@@ -109,12 +131,14 @@ export function ZoneTable({ rows, extras, units, rangeLabel }: ZoneTableProps) {
           <tbody>
             {rows.map((r) => (
               <tr key={r.key} className="h-(--zone-row)">
-                <td className="py-[3px] font-normal text-fg-subtle">
+                <td className="truncate py-[3px] font-normal text-fg-subtle">
                   {r.name}
                 </td>
-                <td className="figures py-[3px] pl-2.5 text-[11px] text-muted-foreground">
-                  {r.key}
-                </td>
+                {zones && (
+                  <td className="figures py-[3px] pl-2.5 text-[11px] text-muted-foreground">
+                    {r.key}
+                  </td>
+                )}
                 <td className="px-2.5 py-[3px]">
                   <MeterTrack
                     fraction={barFraction(r.now)}

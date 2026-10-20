@@ -21,13 +21,13 @@ export class MockPower {
       frame_period_ms: startInterval,
       paused: flags.paused,
       display_idle: false,
-      on_battery: !flags.noBattery,
+      on_battery: !flags.noBattery && !flags.linux,
       // As the engine resolves it: on battery wins; a Mac without one is on the
       // adapter (D-092). The mock never charges.
-      power_source: flags.noBattery ? "adapter" : "battery",
+      power_source: flags.noBattery || flags.linux ? "adapter" : "battery",
       // The default route is on en0, the reported Wi-Fi interface; on a
       // full-tunnel VPN it is on the tunnel, which is not reported.
-      primary_iface: flags.vpn ? null : "en0",
+      primary_iface: flags.vpn ? null : flags.linux ? "end0" : "en0",
       performance: "off",
     };
     this.lowPowerMode = flags.lowPowerMode;

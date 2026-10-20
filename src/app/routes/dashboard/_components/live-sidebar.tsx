@@ -1,3 +1,4 @@
+import { ratio } from "@core/chart-math";
 import { formatPercent, formatWatts } from "@core/format";
 import type { UiModule } from "@core/module-state";
 import { useCallback } from "react";
@@ -5,6 +6,7 @@ import { useLocation, useNavigate } from "react-router";
 import { HostSwitcher } from "~/components/host-switcher";
 import { PerformanceExplainer } from "~/components/performance-explainer";
 import { Sidebar, type SidebarEntry } from "~/components/sidebar";
+import { useHostRecord } from "~/hooks/use-host-record";
 import { useIsLocalHost } from "~/hooks/use-is-local-host";
 import { useModuleStates } from "~/hooks/use-module-states";
 import {
@@ -70,6 +72,8 @@ export function compactRate(bps: number | null): string | undefined {
   return `${mb >= 100 ? mb.toFixed(0) : mb.toFixed(1)}M`;
 }
 
+const mul = (a: number | null, k: number) => (a === null ? null : a * k);
+
 /** Both directions, or null when either is missing (a part is not the total). */
 export const sum = (a: number | null, b: number | null) =>
   a === null || b === null ? null : a + b;
@@ -95,6 +99,11 @@ export function LiveSidebar() {
   const net = useNetwork();
   const disk = useDisk();
   const battery = useBattery();
+  const memTotal = useHostRecord()?.info.mem_total_bytes ?? null;
+  // A host without macOS memory pressure (a Linux agent) shows memory used.
+  const memValue = mem.hasPressure
+    ? mem.pressure
+    : mul(ratio(mem.used, memTotal), 100);
   const performanceLabel =
     sampling.performance === "low_power_mode"
       ? "Performance mode · Low Power"
@@ -131,7 +140,7 @@ export function LiveSidebar() {
       entries: [
         ...module("cpu", "CPU", "cpu", formatPercent(cpu.total)),
         ...module("gpu", "GPU", "gpu", formatPercent(gpu.util)),
-        ...module("memory", "Memory", "memory", formatPercent(mem.pressure)),
+        ...module("memory", "Memory", "memory", formatPercent(memValue)),
         ...module(
           "power",
           "Power & Sensors",

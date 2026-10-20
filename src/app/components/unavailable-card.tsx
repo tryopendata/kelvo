@@ -4,6 +4,7 @@ import {
   type UiModule,
   unavailableText,
 } from "@core/module-state";
+import { useHostNoun } from "~/hooks/use-host-record";
 import type { Accent } from "~/widgets/lib/accent";
 import { ModuleCard } from "~/widgets/module-card";
 
@@ -29,10 +30,11 @@ export function UnavailableCard({
   module: UiModule;
   state: ModuleState;
 }) {
+  const noun = useHostNoun();
   return (
     <ModuleCard accent={MODULE_ACCENT[module]} title={MODULE_NAMES[module]}>
       <p className="m-0 font-normal text-[12px] text-muted-foreground">
-        {unavailableText(state) ?? "Not available"}
+        {unavailableText(state, noun) ?? "Not available"}
       </p>
     </ModuleCard>
   );

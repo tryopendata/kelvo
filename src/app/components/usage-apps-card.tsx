@@ -50,6 +50,7 @@ import {
   TableRow,
 } from "~/components/ui/table";
 import { useEdition } from "~/hooks/use-edition";
+import { useHostNoun } from "~/hooks/use-host-record";
 import { useIsLocalHost } from "~/hooks/use-is-local-host";
 import { heldFor, useRangeScope } from "~/hooks/use-range-scope";
 import { useUsageByApp } from "~/hooks/use-usage-by-app";
@@ -95,11 +96,15 @@ export function UsageAppsCard(props: {
   viewControl?: ReactNode;
 }) {
   const local = useIsLocalHost();
+  // A Linux agent keeps no per-app history to open elsewhere (D-115).
+  const mac = useHostNoun() === "Mac";
   return local ? (
     <LocalUsageAppsCard {...props} />
   ) : (
     <p className="text-[12px] text-muted-foreground">
-      Historical use by app is available on the monitored Mac.
+      {mac
+        ? "Historical use by app is available on the monitored Mac."
+        : "Historical use by app isn't kept for this host."}
     </p>
   );
 }

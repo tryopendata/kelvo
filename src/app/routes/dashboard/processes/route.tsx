@@ -9,13 +9,16 @@ import { SectionCard } from "~/components/section-card";
 import { SegmentedControl } from "~/components/segmented-control";
 import { useEdition } from "~/hooks/use-edition";
 import { useElementSize } from "~/hooks/use-element-size";
+import { useHostNoun } from "~/hooks/use-host-record";
 import { useIsLocalHost } from "~/hooks/use-is-local-host";
 import {
+  useProcessColumnCaps,
   useProcessGpu,
   useProcessInterest,
   useProcessNetwork,
   useProcessRows,
 } from "~/hooks/use-process-interest";
+import { useLayout } from "~/hooks/use-ring";
 import { useUnits } from "~/hooks/use-units";
 import {
   COLUMN_SETS,
@@ -53,13 +56,23 @@ export default function ProcessesRoute() {
   const local = useIsLocalHost();
   const processNetwork = useProcessNetwork();
   const processGpu = useProcessGpu();
+  const caps = useProcessColumnCaps();
+  const options = columnSetOptions({
+    network: processNetwork,
+    gpu: processGpu,
+    energy: caps.energy,
+    disk: caps.diskIo,
+  });
+  // A host without compressed memory (Linux, D-115) has no such column.
+  const compressed = useLayout()?.byMetric.has("mem.compressed") ?? true;
+  // Without root, macOS hides other users' processes; Linux does not (D-045).
+  const mac = useHostNoun() === "Mac";
   const [chosen, setChosen] = useState<ColumnSet>("cpu");
-  // The Network and GPU sets go away with their capability; fall back to CPU.
-  const set =
-    (chosen === "network" && !processNetwork) ||
-    (chosen === "gpu" && !processGpu)
-      ? "cpu"
-      : chosen;
+  // A set goes away with its capability; fall back to CPU.
+  const set = options.some((o) => o.value === chosen) ? chosen : "cpu";
+  const columns = compressed
+    ? COLUMN_SETS[set].columns
+    : COLUMN_SETS[set].columns.filter((c) => c !== "compressed");
   useProcessInterest(
     set === "network"
       ? FULL_TABLE_NETWORK
@@ -76,9 +89,7 @@ export default function ProcessesRoute() {
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<ProcessSort>(COLUMN_SETS.cpu.sort);
   // The table's sort, unless it names a column the shown set does not have.
-  const tableSort = COLUMN_SETS[set].columns.includes(sort.by)
-    ? sort
-    : COLUMN_SETS[set].sort;
+  const tableSort = columns.includes(sort.by) ? sort : COLUMN_SETS[set].sort;
   const [bodyRef, measured] = useElementSize("height", 480);
   const bodyHeight = Math.floor(measured);
 
@@ -86,8 +97,8 @@ export default function ProcessesRoute() {
   const loading = live === null;
   const coverage =
     set === "network" ? NETWORK_COVERAGE : set === "gpu" ? GPU_COVERAGE : null;
-  const note =
-    coverage === null ? hiddenNote(null) : `${hiddenNote(null)} ${coverage}`;
+  const hidden = mac ? hiddenNote(null) : "";
+  const note = [hidden, coverage].filter(Boolean).join(" ");
 
   return (
     <div className="flex h-full min-h-[420px] flex-col gap-4">
@@ -101,7 +112,7 @@ export default function ProcessesRoute() {
               placeholder="Name, PID or port"
             />
             <SegmentedControl
-              options={columnSetOptions(processNetwork, processGpu)}
+              options={options}
               value={set}
               onChange={(next) => {
                 setChosen(next);
@@ -122,7 +133,7 @@ export default function ProcessesRoute() {
         <div ref={bodyRef} className="min-h-0 flex-1 px-1 pt-1">
           <ProcessTable
             rows={shown}
-            columns={COLUMN_SETS[set].columns}
+            columns={columns}
             sort={tableSort}
             onSort={setSort}
             height={Math.max(

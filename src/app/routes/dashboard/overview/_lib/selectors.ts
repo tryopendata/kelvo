@@ -40,6 +40,16 @@ export function linkRate(s: HostLive, iface: string | null): number | null {
   return s.held[`net.link_rate{iface=${iface}}`] ?? null;
 }
 
+/** `{ "NAND Flash Temperature": 40, … }`: every `thermal.sensor{name}`. */
+export function thermalSensors(s: HostLive): Record<string, number | null> {
+  const out: Record<string, number | null> = {};
+  for (const k of keysOf(s, "thermal.sensor")) {
+    const name = labelValue(k, "name");
+    if (name !== undefined) out[name] = s.held[k] ?? null;
+  }
+  return out;
+}
+
 /**
  * Capacity of volume `vol` (the boot volume is `HostInfo.boot_mounts[0]`,
  * D-092). On APFS every volume reports its container's size and free space.

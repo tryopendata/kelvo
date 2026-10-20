@@ -15,6 +15,8 @@ export interface MachineHeaderProps {
   osBuild?: string;
   /** Two-column spec grid, filled row by row. */
   specs: readonly MachineSpec[];
+  /** The card's accessible name. Default "This Mac". */
+  ariaLabel?: string;
 }
 
 /** Laptop line drawing with a live-looking trace in the CPU ink. */
@@ -90,13 +92,14 @@ export function MachineHeader({
   osVersion,
   osBuild,
   specs,
+  ariaLabel = "This Mac",
 }: MachineHeaderProps) {
   return (
     <Card
       accent="cpu"
       origin="tr"
       variant="chart"
-      ariaLabel="This Mac"
+      ariaLabel={ariaLabel}
       className="grid grid-cols-[150px_minmax(0,1fr)] items-center gap-6 px-5 py-4"
     >
       <Illustration />

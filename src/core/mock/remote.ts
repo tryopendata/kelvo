@@ -5,13 +5,19 @@ import type {
 import type { MockCommands } from "./commands";
 import type { MockTransport, MockTransportOptions } from "./contracts";
 import type { MockEmitters } from "./emitters";
-import { hostRecord, MOCK_HOST_ID } from "./fixtures";
+import {
+  hostRecord,
+  MOCK_HOST_ID,
+  type ScenarioFlags,
+  type ScenarioName,
+  scenarioFlags,
+} from "./fixtures";
 import { err, ok } from "./protocol";
 import type { MockRing } from "./ring";
 export class MockRemotes {
   readonly remotes = new Map<
     string,
-    { record: RemoteHostRecord; peer: MockTransport }
+    { record: RemoteHostRecord; peer: MockTransport; flags: ScenarioFlags }
   >();
   private trustedAliases = new Set<string>();
   private setups = new Map<string, () => void>();
@@ -24,16 +30,32 @@ export class MockRemotes {
       options: MockTransportOptions
     ) => MockTransport
   ) {}
+  /** A remote's host record: what its peer reports, under the saved name. */
+  private readonly remoteRecord = (
+    { flags }: { flags: ScenarioFlags },
+    id: string,
+    name: string
+  ) => ({
+    ...hostRecord(flags, this.ring.startMs),
+    id,
+    is_local: false,
+    display_name: name,
+  });
   readonly allHosts = () => [
     hostRecord(this.ring.flags, this.ring.startMs),
-    ...[...this.remotes.values()].map(({ record }) => ({
-      ...hostRecord(this.ring.flags, this.ring.startMs),
-      id: record.config.id,
-      is_local: false,
-      display_name: record.config.name,
-    })),
+    ...[...this.remotes.values()].map((remote) =>
+      this.remoteRecord(
+        remote,
+        remote.record.config.id,
+        remote.record.config.name
+      )
+    ),
   ];
-  readonly addRemote = (config: RemoteHostConfig): RemoteHostRecord => {
+  /** `peerScenarios` shape the peer: a remote Mac without battery or fans by default. */
+  readonly addRemote = (
+    config: RemoteHostConfig,
+    peerScenarios: readonly ScenarioName[] = ["no-battery", "no-fans"]
+  ): RemoteHostRecord => {
     const saved = {
       ...config,
       id: config.id || `remote-${config.lan ?? config.tailscale}`,
@@ -47,15 +69,16 @@ export class MockRemotes {
         error: null,
         sync: "current",
         clock_offset_ms: 120000,
-        cpu_pct: 18,
-        memory_pct: 42,
+        cpu_pct: peerScenarios.includes("linux") ? 3 : 18,
+        memory_pct: peerScenarios.includes("linux") ? 43 : 42,
       },
     };
     this.remotes.set(saved.id, {
       record: remote,
+      flags: scenarioFlags(peerScenarios),
       peer: this.createPeer({
         ...this.options,
-        scenarios: ["no-battery", "no-fans"],
+        scenarios: [...peerScenarios],
         now: () => this.ring.now() + 120000,
       }),
     });
@@ -206,12 +229,7 @@ export class MockRemotes {
   readonly getHost: MockTransport["getHost"] = async (host) => {
     const remote = this.remotes.get(host);
     if (remote)
-      return ok({
-        ...hostRecord(this.ring.flags, this.ring.startMs),
-        id: host,
-        is_local: false,
-        display_name: remote.record.config.name,
-      });
+      return ok(this.remoteRecord(remote, host, remote.record.config.name));
     return this.commands.hostCommand("get_host", host, [host], {}, () =>
       ok(hostRecord(this.ring.flags, this.ring.startMs))
     );
@@ -237,6 +255,18 @@ export class MockRemotes {
         enabled: true,
         mirror_budget_mb: 100,
       });
+    if (this.options.scenarios?.includes("linux-host"))
+      this.addRemote(
+        {
+          id: "remote-linux",
+          name: "linux-tailscale",
+          lan: null,
+          tailscale: "linux-tailscale",
+          enabled: true,
+          mirror_budget_mb: 100,
+        },
+        ["linux"]
+      );
   }
   dispose() {
     for (const remote of this.remotes.values()) remote.peer.dispose();

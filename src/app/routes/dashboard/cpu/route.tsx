@@ -7,7 +7,7 @@ import {
 } from "~/components/usage-apps-card";
 import { WindowControl } from "~/components/window-control";
 import { useChartWindow } from "~/hooks/use-chart-window";
-import { useHostRecord } from "~/hooks/use-host-record";
+import { useHostNoun, useHostRecord } from "~/hooks/use-host-record";
 import { BrushProvider } from "~/stores/brush-store";
 import { CoreLoadCard } from "./_components/core-load-card";
 import { TotalCard } from "./_components/total-card";
@@ -33,7 +33,14 @@ export default function CpuRoute() {
           title="CPU"
           subtitle={
             info &&
-            counts && (
+            counts &&
+            (counts.efficiency === 0 ? (
+              // One kind of core (`uniform`, D-115) has no split to name.
+              <>
+                {info.chip ?? "Unknown chip"} ·{" "}
+                <span className="figures">{counts.performance}</span> cores
+              </>
+            ) : (
               <>
                 {info.chip ?? "Unknown chip"} ·{" "}
                 <span className="figures">{counts.performance}</span>{" "}
@@ -41,7 +48,7 @@ export default function CpuRoute() {
                 <span className="figures">{counts.efficiency}</span> efficiency
                 cores
               </>
-            )
+            ))
           }
           actions={<WindowControl />}
         />
@@ -75,6 +82,7 @@ function cpuTable(coreCount: number | null): UsageTableConfig {
 
 function CpuFootnote({ coreCount }: { coreCount: number | null }) {
   const navigate = useNavigate();
+  const os = useHostNoun() === "Mac" ? "macOS" : "system";
   return (
     <>
       Average % of one core over the sampled time
@@ -84,8 +92,8 @@ function CpuFootnote({ coreCount }: { coreCount: number | null }) {
           <span className="figures">{coreCount * 100}%</span>
         </>
       )}
-      . System and other is the rest of the CPU total: other users&apos; and
-      macOS processes, and ones that ran for less than a sample.{" "}
+      . System and other is the rest of the CPU total: other users&apos; and{" "}
+      {os} processes, and ones that ran for less than a sample.{" "}
       <button
         type="button"
         onClick={() => navigate("/dashboard/processes")}

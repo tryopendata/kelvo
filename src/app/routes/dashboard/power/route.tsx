@@ -17,11 +17,13 @@ import {
 import { WindowControl } from "~/components/window-control";
 import { useChartWindow } from "~/hooks/use-chart-window";
 import { useHostRecord } from "~/hooks/use-host-record";
+import { useProcessColumnCaps } from "~/hooks/use-process-interest";
 import { useHeld } from "~/hooks/use-ring";
 import { useHost } from "~/stores/host-store";
-import { usePowerSource } from "~/stores/live-selectors";
+import { usePower, usePowerSource } from "~/stores/live-selectors";
 import { PowerStackCard } from "./_components/power-stack-card";
 import { RingCards } from "./_components/ring-cards";
+import { SystemPowerCard } from "./_components/system-power-card";
 import { ZonesCard } from "./_components/zones-card";
 
 /** Energy by app over the chart window (D-093, D-099). */
@@ -62,6 +64,10 @@ export default function PowerRoute() {
   const unknownChip =
     caps !== null && moduleState(caps, null, "power") === "unknown_chip";
   const windowMs = useChartWindow()?.windowMs ?? null;
+  // A Linux agent (D-115) splits power by no component and attributes no
+  // energy to processes.
+  const components = usePower().components;
+  const energy = useProcessColumnCaps().energy;
 
   if (unknownChip) {
     return (
@@ -91,9 +97,15 @@ export default function PowerRoute() {
           />
           <div className="grid grid-cols-[repeat(auto-fit,minmax(340px,1fr))] gap-4">
             <ZonesCard windowMs={windowMs} />
-            <PowerStackCard windowMs={windowMs} />
+            {components ? (
+              <PowerStackCard windowMs={windowMs} />
+            ) : (
+              <SystemPowerCard windowMs={windowMs} />
+            )}
           </div>
-          <UsageAppsCard windowMs={windowMs} config={ENERGY_TABLE} />
+          {energy && (
+            <UsageAppsCard windowMs={windowMs} config={ENERGY_TABLE} />
+          )}
           {hasBattery && <BatteryDayCard origin="tl" />}
         </>
       )}

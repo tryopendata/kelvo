@@ -21,19 +21,28 @@ const ALL_SETS: { value: ColumnSet; label: string }[] = [
   { value: "gpu", label: "GPU" },
 ];
 
-/**
- * The sets the control offers: Network only when the host can attribute
- * traffic to processes (`process_network`, D-081), GPU only when it can
- * attribute GPU time (`process_gpu`, D-085).
- */
+/** Which per-process figures the host can measure (`Capabilities`). */
+export interface ColumnCaps {
+  /** `process_network` (D-081). */
+  network: boolean;
+  /** `process_gpu` (D-085). */
+  gpu: boolean;
+  /** `process_energy`; false on a Linux agent (D-115). */
+  energy: boolean;
+  /** `process_disk_io`; false on a Linux host without readable I/O counters. */
+  disk: boolean;
+}
+
+/** The sets the control offers: each one only when its figures are measured. */
 export function columnSetOptions(
-  processNetwork: boolean,
-  processGpu: boolean
+  caps: ColumnCaps
 ): { value: ColumnSet; label: string }[] {
   return ALL_SETS.filter(
     (s) =>
-      (s.value !== "network" || processNetwork) &&
-      (s.value !== "gpu" || processGpu)
+      (s.value !== "network" || caps.network) &&
+      (s.value !== "gpu" || caps.gpu) &&
+      (s.value !== "energy" || caps.energy) &&
+      (s.value !== "disk" || caps.disk)
   );
 }
 

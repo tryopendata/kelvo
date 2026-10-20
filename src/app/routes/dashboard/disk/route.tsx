@@ -1,4 +1,5 @@
 import { formatRate } from "@core/format";
+import type { DiskDevice } from "@core/generated/bindings";
 import { labelValues, sk } from "@core/series-key";
 import { type ReactNode, useEffect, useMemo } from "react";
 import { Link, useSearchParams } from "react-router";
@@ -19,8 +20,9 @@ import { WindowControl } from "~/components/window-control";
 import { useChartWindow } from "~/hooks/use-chart-window";
 import { useEdition } from "~/hooks/use-edition";
 import { useElementSize } from "~/hooks/use-element-size";
-import { useHostRecord } from "~/hooks/use-host-record";
+import { useHostNoun, useHostRecord } from "~/hooks/use-host-record";
 import { useIsLocalHost } from "~/hooks/use-is-local-host";
+import { useProcessColumnCaps } from "~/hooks/use-process-interest";
 import { useOpenEdge } from "~/hooks/use-range-scope";
 import { useHeld, useLayout } from "~/hooks/use-ring";
 import {
@@ -28,6 +30,7 @@ import {
   useBrushRange,
   useBrushStore,
 } from "~/stores/brush-store";
+import { useHost } from "~/stores/host-store";
 import { useMemory } from "~/stores/live-selectors";
 import { StatStrip } from "~/widgets/stat-strip";
 import { DiskIoCharts } from "./_components/disk-io-charts";
@@ -98,13 +101,17 @@ function DiskActivity({
   const windowMs = useChartWindow()?.windowMs ?? null;
   const [params, setParams] = useSearchParams();
   const hostRecord = useHostRecord();
+  // Rows without measured disk rates would list every process at 0 B/s.
+  const diskIo = useProcessColumnCaps().diskIo;
   const local = useIsLocalHost();
   const inventory = useDiskDevices(local && hostRecord !== undefined);
+  const remote = useRemoteDevices(!local);
   const chosen = params.get("device");
-  const device =
-    !local || chosen === "all"
+  const device = local
+    ? chosen === "all"
       ? null
-      : (chosen ?? inventory.data?.default_device ?? null);
+      : (chosen ?? inventory.data?.default_device ?? null)
+    : remote.pick(chosen);
   const secondary = params.get("response") === "ops" ? "ops" : "time";
   const selection = useBrushRange();
   const brush = useBrushStore();
@@ -148,7 +155,7 @@ function DiskActivity({
   );
   const held = useHeld(volKeys);
   const mounts = hostRecord?.info.boot_mounts ?? [];
-  const devices = local ? (inventory.data?.devices ?? []) : [];
+  const devices = local ? (inventory.data?.devices ?? []) : remote.devices;
   const selected = devices.find((d) => d.dev === device);
   const missing =
     device !== null && inventory.data !== undefined && selected === undefined;
@@ -156,6 +163,8 @@ function DiskActivity({
     const next = new URLSearchParams(params);
     if (local && chosen === null && inventory.data)
       next.set("device", inventory.data.default_device ?? "all");
+    if (!local && chosen === null && remote.defaultDevice !== null)
+      next.set("device", remote.defaultDevice);
     if (selection) {
       next.set("from", String(selection.fromMs));
       next.set("to", String(selection.toMs));
@@ -165,7 +174,15 @@ function DiskActivity({
     }
     if (next.toString() !== params.toString())
       setParams(next, { replace: true });
-  }, [chosen, inventory.data, local, params, selection, setParams]);
+  }, [
+    chosen,
+    inventory.data,
+    local,
+    params,
+    remote.defaultDevice,
+    selection,
+    setParams,
+  ]);
   return (
     <div className="flex min-w-0 flex-col gap-4 [&_[data-slot=toggle-group-item][data-state=on]]:text-foreground">
       <PageHeader
@@ -288,7 +305,7 @@ function DiskActivity({
           )}
         </SectionCard>
       </div>
-      {windowMs !== null && <DiskProcesses windowMs={windowMs} />}
+      {windowMs !== null && diskIo && <DiskProcesses windowMs={windowMs} />}
       <MemoryContext />
       <SectionCard
         accent="disk"
@@ -317,6 +334,32 @@ function DiskActivity({
     </div>
   );
 }
+const NO_DEVICES: readonly DiskDevice[] = [];
+
+/**
+ * A remote host's devices come with its capabilities (D-115): the local
+ * device inventory command only describes this Mac. A host from before
+ * D-115 lists none, and its page shows all devices as it always has.
+ */
+function useRemoteDevices(remote: boolean) {
+  const devices = useHost((s) =>
+    remote ? (s.capabilities?.disk_devices ?? NO_DEVICES) : NO_DEVICES
+  );
+  const defaultDevice =
+    devices.find((d) => d.default)?.dev ?? devices[0]?.dev ?? null;
+  return {
+    devices,
+    defaultDevice,
+    /** The device shown: the chosen one when the host has it, else the default. */
+    pick: (chosen: string | null): string | null =>
+      chosen === "all"
+        ? null
+        : devices.some((d) => d.dev === chosen)
+          ? chosen
+          : defaultDevice,
+  };
+}
+
 function CurrentRates({ device }: { device: string | null }) {
   const read =
     device === null ? "disk.read_total" : sk("disk.read", { dev: device });
@@ -355,11 +398,12 @@ function AnalyzeLink({
 
 function MemoryContext() {
   const memory = useMemory();
+  const noun = useHostNoun();
   if ((memory.pressureLevel ?? 0) === 0 && (memory.swapUsed ?? 0) === 0)
     return null;
   return (
     <p className="text-[12px] text-muted-foreground">
-      This Mac is using swap or reporting memory pressure.{" "}
+      This {noun} is using swap or reporting memory pressure.{" "}
       <Link
         className="rounded-sm text-fg-subtle underline underline-offset-2 outline-none focus-visible:ring-2 focus-visible:ring-ring"
         to="/dashboard/memory"

@@ -30,6 +30,7 @@ export interface MetricCardProps {
     Omit<InlineBarProps, "layout" | "accent">,
     Omit<InlineBarProps, "layout" | "accent">,
   ];
+  /** Keys for the ring's segments; empty when the ring has none. */
   legend: LegendItem[];
   body: MetricCardBody;
   /** A state line under the header ("Sensor read failed · last value 11:02"). */
@@ -80,7 +81,7 @@ export function MetricCard({
           ))}
         </div>
       </div>
-      <Legend items={legend} />
+      {legend.length > 0 && <Legend items={legend} />}
       <div className="border-border-subtle border-t pt-[9px]">
         {body.kind === "list" ? (
           <>

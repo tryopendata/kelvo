@@ -150,7 +150,7 @@ describe("Disk and Memory pages over a range (D-099)", () => {
     }
   });
 
-  it("keeps remote throughput history available without local device metadata", async () => {
+  it("lists a remote host's devices from its capabilities, without the local inventory (D-115)", async () => {
     const transport = createMockTransport({
       now: () => NOW,
       autoTick: false,
@@ -203,8 +203,11 @@ describe("Disk and Memory pages over a range (D-099)", () => {
     ).toBeVisible();
     expect(
       screen.getByRole("combobox", { name: "Disk device" })
-    ).toHaveTextContent("All devices");
+    ).toHaveTextContent("Apple SSD · disk3");
     expect(screen.queryByText("Couldn't load disk devices.")).toBeNull();
+    expect(
+      transport.calls.some((c) => c.command === "list_disk_io_devices")
+    ).toBe(false);
     expect(screen.getByTestId("disk-response-current")).toHaveTextContent(
       "Read — · Unavailable · Write — · Unavailable"
     );
@@ -222,7 +225,7 @@ describe("Disk and Memory pages over a range (D-099)", () => {
         transport.calls
           .filter((c) => c.command === "query_disk_io")
           .every(
-            (c) => (c.args[0] as { device: string | null }).device === null
+            (c) => (c.args[0] as { device: string | null }).device === "disk3"
           )
       ).toBe(true)
     );

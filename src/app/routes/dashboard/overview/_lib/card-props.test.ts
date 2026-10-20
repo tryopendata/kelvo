@@ -71,6 +71,22 @@ describe("cpuCard", () => {
       fraction: null,
     });
   });
+
+  it("gives one cluster of uniform cores a frequency bar and I/O wait (D-115)", () => {
+    const card = cpuCard({
+      total: 3.1,
+      user: 2,
+      system: 0.9,
+      iowait: 0.4,
+      coresLabel: "",
+      coreCount: 8,
+      clusters: [{ label: "Frequency", freqHz: 1.2e9, maxHz: 2.4e9 }],
+      processes: [],
+    });
+    expect(card.subtitle).toBe("8-core");
+    expect(card.bars.map((b) => b.label)).toEqual(["Frequency", "I/O wait"]);
+    expect(card.bars[1]?.value).toBe("0.4%");
+  });
 });
 
 describe("powerCard", () => {

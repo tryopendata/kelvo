@@ -24,7 +24,7 @@ import type { MetricCardProps } from "~/widgets/metric-card";
 import type { ProcessListRow } from "~/widgets/process-list";
 import type { StreamAreaProps } from "~/widgets/stream-area";
 
-type CardBase = Omit<MetricCardProps, "origin" | "href" | "onOpen">;
+export type CardBase = Omit<MetricCardProps, "origin" | "href" | "onOpen">;
 
 /**
  * Top `n` processes by `value`, highest first. Rows without a value drop out;
@@ -65,24 +65,43 @@ export function cpuCard(input: {
   coresLabel: string;
   /** Logical cores; Overview shows process CPU as a share of the machine. */
   coreCount: number;
-  clusters: [ClusterInput, ClusterInput];
+  /**
+   * P then E; one cluster on a host whose cores are all one kind (`uniform`,
+   * D-115), whose second bar is then `cpu.iowait`.
+   */
+  clusters: [ClusterInput, ClusterInput] | [ClusterInput];
+  iowait?: number | null;
   processes: readonly LiveProcess[];
 }): CardBase {
   const cores = Math.max(1, input.coreCount);
+  const freqBar = (c: ClusterInput) => ({
+    label: c.label,
+    value: formatGhz(c.freqHz),
+    fraction: ratio(c.freqHz, c.maxHz),
+  });
+  const [first, second] = input.clusters;
+  const iowait = input.iowait ?? null;
   return {
     accent: "cpu",
     title: "CPU",
-    subtitle: input.coresLabel,
+    subtitle:
+      input.coresLabel ||
+      (input.coreCount > 0 ? `${input.coreCount}-core` : ""),
     ring: {
       fractions: [ratio(input.user, 100), ratio(input.system, 100)],
       value: formatPercent(input.total),
       label: "Load",
     },
-    bars: input.clusters.map((c) => ({
-      label: c.label,
-      value: formatGhz(c.freqHz),
-      fraction: ratio(c.freqHz, c.maxHz),
-    })) as CardBase["bars"],
+    bars: [
+      freqBar(first),
+      second
+        ? freqBar(second)
+        : {
+            label: "I/O wait",
+            value: formatPercent(iowait, { decimals: 1 }),
+            fraction: ratio(iowait, 100),
+          },
+    ],
     legend: [
       {
         label: "User",

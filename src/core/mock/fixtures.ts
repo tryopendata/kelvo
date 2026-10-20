@@ -16,6 +16,7 @@ import type {
   SignalRefusal,
 } from "@core/generated/bindings";
 import { trayStyleMenuBar } from "@core/settings-patch";
+import { LINUX_HOST_NAME, linuxCapabilities, linuxHostInfo } from "./linux";
 
 export type ScenarioName =
   | "disk-io-comparison"
@@ -28,6 +29,8 @@ export type ScenarioName =
   | "ssh-no-config"
   | "ssh-untrusted"
   | "multi-host"
+  | "linux"
+  | "linux-host"
   | "default"
   | "sleep-gap"
   | "unknown-chip"
@@ -80,6 +83,8 @@ export const SCENARIOS: readonly ScenarioName[] = [
   "ssh-untrusted",
   "ssh-no-config",
   "multi-host",
+  "linux",
+  "linux-host",
   "default",
   "sleep-gap",
   "unknown-chip",
@@ -191,6 +196,12 @@ export interface ScenarioFlags {
    * cover both interfaces.
    */
   vpn: boolean;
+  /**
+   * The mock is a headless Linux agent (D-115), linux-tailscale
+   * (`mock/linux.ts`): its host facts, capabilities, series and processes.
+   * `linux-host` adds it as a remote host beside the Mac instead.
+   */
+  linux: boolean;
 }
 
 export function scenarioFlags(names: readonly ScenarioName[]): ScenarioFlags {
@@ -232,6 +243,7 @@ export function scenarioFlags(names: readonly ScenarioName[]): ScenarioFlags {
     lowPowerMode: has("low-power-mode"),
     performanceMode: has("performance-mode"),
     vpn: has("vpn"),
+    linux: has("linux"),
   };
 }
 
@@ -256,6 +268,7 @@ export const MEM_TOTAL_BYTES = 24 * 2 ** 30;
 export const UPTIME_MS = ((3 * 24 + 4) * 60 + 12) * 60_000;
 
 export function hostInfo(flags: ScenarioFlags, nowMs: number): HostInfo {
+  if (flags.linux) return linuxHostInfo(nowMs);
   return {
     os: "mac_os",
     os_version: "27.0.1",
@@ -277,7 +290,11 @@ export function hostRecord(flags: ScenarioFlags, nowMs: number): HostRecord {
   return {
     id: MOCK_HOST_ID,
     is_local: true,
-    display_name: flags.noBattery ? "Mac mini" : "MacBook Pro",
+    display_name: flags.linux
+      ? LINUX_HOST_NAME
+      : flags.noBattery
+        ? "Mac mini"
+        : "MacBook Pro",
     info: hostInfo(flags, nowMs),
   };
 }
@@ -291,6 +308,7 @@ export function capabilities(
   seriesPerModule: Record<string, number>,
   revision = 1
 ): Capabilities {
+  if (flags.linux) return linuxCapabilities(seriesPerModule, revision);
   const n = (m: string) => seriesPerModule[m] ?? 0;
   return {
     revision,
@@ -334,7 +352,7 @@ export function defaultSettings(flags: ScenarioFlags): Settings {
       power: { enabled: true },
       network: { enabled: true },
       disk: { enabled: true },
-      battery: { enabled: !flags.noBattery },
+      battery: { enabled: !flags.noBattery && !flags.linux },
     },
     menu_bar: trayStyleMenuBar("combined"),
     // The mock shows "Sampling every 1s" while on battery, so it has the

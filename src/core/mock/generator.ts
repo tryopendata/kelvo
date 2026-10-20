@@ -23,6 +23,7 @@ import {
   type ScenarioFlags,
   WIDE_LAYOUT_SERIES,
 } from "./fixtures";
+import { buildLinuxSpecs, LINUX_PROCESSES } from "./linux";
 import { clampWalk, rng, type WalkSpec, walkStep } from "./rng";
 
 export interface SeriesSpec extends WalkSpec {
@@ -146,6 +147,25 @@ export function buildSpecs(flags: ScenarioFlags): SeriesSpec[] {
       idleCadence: ADAPTIVE_METRICS.has(metric) ? 10 : (opts.cadence ?? 1),
     });
   };
+  // Totals over the reported parts, appended after them as the collectors do.
+  const total = (module: Module, metric: string, part: string) => {
+    const sumOf = specs.flatMap((s, i) => (s.key.metric === part ? [i] : []));
+    // Live values are derived; base and noise shape the mock's history.
+    const of = (f: (s: SeriesSpec) => number) =>
+      sumOf.reduce((n, i) => n + f(specs[i] as SeriesSpec), 0);
+    add(
+      module,
+      metric,
+      {},
+      of((s) => s.base),
+      { noise: of((s) => s.noise) }
+    );
+    (specs[specs.length - 1] as SeriesSpec).sumOf = sumOf;
+  };
+  if (flags.linux) {
+    buildLinuxSpecs(add, total, METRIC_PERIODS_MS["self.cpu"]);
+    return specs;
+  }
   const pct = { min: 0, max: 100 };
 
   // CPU. Total uses series(60, 5, 18, 9).
@@ -275,21 +295,6 @@ export function buildSpecs(flags: ScenarioFlags): SeriesSpec[] {
     add("network", "net.tx", { iface: "en7" }, 0.4e6, { noise: 0.2e6 });
     add("network", "net.link_rate", { iface: "en7" }, 1e9, { cadence: 60 });
   }
-  // Totals over the reported parts, appended after them as the collectors do.
-  const total = (module: Module, metric: string, part: string) => {
-    const sumOf = specs.flatMap((s, i) => (s.key.metric === part ? [i] : []));
-    // Live values are derived; base and noise shape the mock's history.
-    const of = (f: (s: SeriesSpec) => number) =>
-      sumOf.reduce((n, i) => n + f(specs[i] as SeriesSpec), 0);
-    add(
-      module,
-      metric,
-      {},
-      of((s) => s.base),
-      { noise: of((s) => s.noise) }
-    );
-    (specs[specs.length - 1] as SeriesSpec).sumOf = sumOf;
-  };
   total("network", "net.rx_total", "net.rx");
   total("network", "net.tx_total", "net.tx");
 
@@ -430,7 +435,7 @@ export class MockGenerator {
   /** The sampling interval the next tick is taken at. */
   intervalMs = 1000;
 
-  constructor(flags: ScenarioFlags) {
+  constructor(private readonly flags: ScenarioFlags) {
     this.specs = buildSpecs(flags);
     this.keys = this.specs.map((s) => s.key);
     this.state = this.specs.map((s) => ({ v: s.base, r: rng(s.seed) }));
@@ -511,20 +516,21 @@ export class MockGenerator {
   }
 
   /**
-   * The top processes, then quiet background and idle ones (800 in all),
-   * with a little per-tick jitter.
+   * The top processes, then quiet background and idle ones (800 in all, or
+   * the Linux host's 320), with a little per-tick jitter.
    */
   processes(): LiveProcess[] {
     const r = rng(7 + this.tick);
-    return [...PROCESSES, ...BACKGROUND_PROCESSES, ...IDLE_PROCESSES].map(
-      (p) => ({
-        ...p,
-        cpu_pct:
-          p.cpu_pct === null
-            ? null
-            : round(Math.max(0, p.cpu_pct * (0.85 + r() * 0.3))),
-      })
-    );
+    const rows = this.flags.linux
+      ? LINUX_PROCESSES
+      : [...PROCESSES, ...BACKGROUND_PROCESSES, ...IDLE_PROCESSES];
+    return rows.map((p) => ({
+      ...p,
+      cpu_pct:
+        p.cpu_pct === null
+          ? null
+          : round(Math.max(0, p.cpu_pct * (0.85 + r() * 0.3))),
+    }));
   }
 }
 

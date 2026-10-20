@@ -5,10 +5,10 @@ import { useMemo } from "react";
 import { brushScopeProps } from "~/components/brush-overlay";
 import { RangeTotalsStrip } from "~/components/range-totals-strip";
 import { SectionCard } from "~/components/section-card";
-import { useHeld } from "~/hooks/use-ring";
+import { useHeld, useLayout } from "~/hooks/use-ring";
 import { useUnits } from "~/hooks/use-units";
 import { StackBar } from "~/widgets/stack-bar";
-import { StatStrip } from "~/widgets/stat-strip";
+import { StatStrip, type StatStripItem } from "~/widgets/stat-strip";
 import { pressureState } from "../_lib/pressure";
 
 const HELD = [
@@ -21,7 +21,41 @@ const HELD = [
   "mem.pressure",
   "mem.pressure_level",
   "mem.swap_used",
+  "mem.psi{stall=some}",
+  "mem.psi{stall=full}",
 ];
+
+type Segment = Parameters<typeof StackBar>[0]["segments"][number];
+
+/**
+ * The bar's segments in the layout. A Mac splits used memory into app, wired
+ * and compressed; a Linux agent (D-115) reports used, cached and free, which
+ * add up to MemTotal.
+ */
+function segmentsFor(
+  has: (metric: string) => boolean,
+  at: (k: string) => number | null,
+  fmt: (x: number | null) => string,
+  frac: (x: number | null) => number | null
+): Segment[] {
+  const seg = (key: string, label: string, step: Segment["step"]): Segment => ({
+    key,
+    label,
+    value: fmt(at(`mem.${key}`)),
+    fraction: frac(at(`mem.${key}`)),
+    step,
+  });
+  const used: Segment[] = has("mem.app")
+    ? [seg("app", "App", 1), seg("wired", "Wired", 2)]
+    : [seg("used", "Used", 1)];
+  if (has("mem.compressed"))
+    used.push(seg("compressed", "Compressed", "hatch"));
+  return [
+    ...used,
+    seg("cached", "Cached files", 4),
+    seg("free", "Free", "track"),
+  ];
+}
 
 /**
  * What memory holds right now: used of total, pressure with its state word,
@@ -30,11 +64,12 @@ const HELD = [
  * chart window or the brushed range (D-099).
  */
 export function CompositionCard({
-  totalGb,
+  totalLabel,
   totalBytes,
   windowMs,
 }: {
-  totalGb: number | null;
+  /** "24 GB" on a Mac, MemTotal as measured elsewhere. */
+  totalLabel: string | null;
   /** `HostInfo.mem_total_bytes`: the bar's denominator, as in the popover (D-092). */
   totalBytes: number | null;
   windowMs: number;
@@ -47,6 +82,27 @@ export function CompositionCard({
   const frac = (x: number | null) => ratio(x, totalBytes);
   const fmt = (x: number | null) => formatBytes(x, { units: units.bytes });
   const state = pressureState(at("mem.pressure_level"));
+  const layout = useLayout();
+  const has = (metric: string) => layout?.byMetric.has(metric) ?? false;
+  const items: StatStripItem[] = [];
+  if (has("mem.psi") && !has("mem.pressure")) {
+    // Linux pressure stall information: time some, and all, tasks waited.
+    items.push({
+      label: "Pressure stall",
+      value: formatPercent(at("mem.psi{stall=some}"), { decimals: 1 }),
+      secondary: `full ${formatPercent(at("mem.psi{stall=full}"), { decimals: 1 })}`,
+    });
+  } else {
+    items.push({
+      label: "Pressure",
+      value: formatPercent(at("mem.pressure")),
+      secondary: state ?? undefined,
+    });
+  }
+  items.push({ label: "Swap", value: fmt(at("mem.swap_used")) });
+  if (has("mem.compressed") || !layout) {
+    items.push({ label: "Compressed", value: fmt(at("mem.compressed")) });
+  }
   const totals = useMemo(
     () =>
       [
@@ -77,17 +133,9 @@ export function CompositionCard({
                   ? MISSING
                   : bytesParts(used, { units: units.bytes, unit: units.bytes })
                       .value,
-              unit: totalGb === null ? undefined : `/ ${totalGb} GB`,
+              unit: totalLabel === null ? undefined : `/ ${totalLabel}`,
             }}
-            items={[
-              {
-                label: "Pressure",
-                value: formatPercent(at("mem.pressure")),
-                secondary: state ?? undefined,
-              },
-              { label: "Swap", value: fmt(at("mem.swap_used")) },
-              { label: "Compressed", value: fmt(at("mem.compressed")) },
-            ]}
+            items={items}
           />
           <RangeTotalsStrip
             windowMs={windowMs}
@@ -99,43 +147,7 @@ export function CompositionCard({
           accent="mem"
           showLegend
           legendColumns={2}
-          segments={[
-            {
-              key: "app",
-              label: "App",
-              value: fmt(at("mem.app")),
-              fraction: frac(at("mem.app")),
-              step: 1,
-            },
-            {
-              key: "wired",
-              label: "Wired",
-              value: fmt(at("mem.wired")),
-              fraction: frac(at("mem.wired")),
-              step: 2,
-            },
-            {
-              key: "compressed",
-              label: "Compressed",
-              value: fmt(at("mem.compressed")),
-              fraction: frac(at("mem.compressed")),
-              step: "hatch",
-            },
-            {
-              key: "cached",
-              label: "Cached files",
-              value: fmt(at("mem.cached")),
-              fraction: frac(at("mem.cached")),
-              step: 4,
-            },
-            {
-              key: "free",
-              label: "Free",
-              value: fmt(at("mem.free")),
-              fraction: frac(at("mem.free")),
-              step: "track",
-            },
-          ]}
+          segments={segmentsFor(has, at, fmt, frac)}
         />
       </SectionCard>
     </div>
