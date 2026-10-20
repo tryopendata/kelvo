@@ -5,7 +5,10 @@ import { useLocation, useSearchParams } from "react-router";
 import { PageHeader } from "~/components/page-header";
 import { SegmentedControl } from "~/components/segmented-control";
 import { Button } from "~/components/ui/button";
+import { useIsLocalHost } from "~/hooks/use-is-local-host";
 import { BrushProvider } from "~/stores/brush-store";
+import { useCgroups } from "~/stores/live-selectors";
+import { CgroupContainers } from "./_components/cgroup-containers";
 import { ContainerActionProvider } from "./_components/container-actions";
 import { ContainerActivity } from "./_components/container-activity";
 import { DockerCleanupFlow } from "./_components/docker-cleanup-flow";
@@ -21,6 +24,11 @@ import { type ContainerSort, statusLabel } from "./_lib/presentation";
 import { containerRouteState, restoredScroll } from "./_lib/route-state";
 
 export default function ContainersRoute() {
+  const local = useIsLocalHost();
+  const cgroups = useCgroups();
+  // A remote Linux host's page reads its cgroup series; the local Docker
+  // page keeps its own model (D-115).
+  if (!local && cgroups) return <CgroupContainers />;
   return (
     <DockerLocalOnly>
       <BrushProvider>

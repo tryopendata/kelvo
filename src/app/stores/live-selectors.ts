@@ -153,6 +153,15 @@ export const selectSampling = (s: S) => ({
 
 export const selectSelfCpu = (s: S) => held(s, "self.cpu");
 
+/**
+ * The host reports cgroup v2 groups (`Module::Containers`, D-115): a Linux
+ * agent's series-backed Containers page. False before capabilities arrive.
+ */
+export const selectCgroups = (s: S): boolean => {
+  const cap = s.capabilities?.modules.containers;
+  return typeof cap === "object" && "available" in cap;
+};
+
 /** Battery, adapter or charging (`LiveStatus.power_source`, D-092); null before the first status. */
 export const selectPowerSource = (s: S): PowerSource | null =>
   s.status?.power_source ?? null;
@@ -172,6 +181,7 @@ export const useDisk = () => useHost(useShallow(selectDisk));
 export const useBattery = () => useHost(useShallow(selectBattery));
 export const useSampling = () => useHost(useShallow(selectSampling));
 export const useSelfCpu = () => useHost(selectSelfCpu);
+export const useCgroups = () => useHost(selectCgroups);
 export const usePrimaryIface = () => useHost(selectPrimaryIface);
 export const usePowerSource = () => useHost(selectPowerSource);
 export const useSeriesCount = () => useHost(selectSeriesCount);

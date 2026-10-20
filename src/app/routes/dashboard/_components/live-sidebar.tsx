@@ -11,6 +11,7 @@ import { useIsLocalHost } from "~/hooks/use-is-local-host";
 import { useModuleStates } from "~/hooks/use-module-states";
 import {
   useBattery,
+  useCgroups,
   useCpu,
   useDisk,
   useGpu,
@@ -86,6 +87,8 @@ export const sum = (a: number | null, b: number | null) =>
  */
 export function LiveSidebar() {
   const local = useIsLocalHost();
+  // A remote host lists Containers when it reports cgroup groups (D-115).
+  const cgroups = useCgroups();
   const navigate = useNavigate();
   const onNavigate = useCallback((href: string) => navigate(href), [navigate]);
   const { pathname } = useLocation();
@@ -169,7 +172,7 @@ export function LiveSidebar() {
     },
     {
       id: "tools",
-      entries: local ? LOCAL_TOOLS : REMOTE_TOOLS,
+      entries: local || cgroups ? LOCAL_TOOLS : REMOTE_TOOLS,
     },
   ];
 

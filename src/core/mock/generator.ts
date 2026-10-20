@@ -56,6 +56,11 @@ export interface SeriesSpec extends WalkSpec {
    * tick rate (Kelvo's own CPU); the rest does not.
    */
   perTick?: number;
+  /**
+   * In the layout but never sampled: a container that has exited and not yet
+   * left the collector's membership (`linux/cgroup.rs`), a gap on every tick.
+   */
+  silent?: boolean;
 }
 
 /**
@@ -144,6 +149,7 @@ export function buildSpecs(flags: ScenarioFlags): SeriesSpec[] {
       cadence: opts.cadence ?? 1,
       ...(opts.periodMs === undefined ? {} : { periodMs: opts.periodMs }),
       ...(opts.perTick === undefined ? {} : { perTick: opts.perTick }),
+      ...(opts.silent ? { silent: true } : {}),
       idleCadence: ADAPTIVE_METRICS.has(metric) ? 10 : (opts.cadence ?? 1),
     });
   };
@@ -471,7 +477,8 @@ export class MockGenerator {
       const st = this.state[i] as { v: number; r: () => number };
       if (spec.noise > 0) st.v = walkStep(st.v, st.r, spec);
       if (land) st.v = spec.base;
-      if (!sampled[i] || this.failing.has(i) || spec.sumOf) return null;
+      if (!sampled[i] || this.failing.has(i) || spec.sumOf || spec.silent)
+        return null;
       const scaled =
         spec.perTick === undefined
           ? st.v

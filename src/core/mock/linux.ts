@@ -4,7 +4,8 @@
  * Remix 41 Server. Its host facts, capabilities, series and processes are
  * what `kelvo-collect/src/linux/` and `host_info/linux.rs` publish there:
  * E/P clusters from cpufreq policies, PSI, hwmon sensors named by their
- * kernel label, three block devices and no GPU, battery or containers yet.
+ * kernel label, three block devices, cgroup v2 services and containers, and
+ * no GPU or battery.
  */
 import type {
   Capabilities,
@@ -72,8 +73,7 @@ export function linuxCapabilities(
       network: available("network"),
       disk: available("disk"),
       battery: "not_present",
-      // No cgroup collector yet (Milestone F).
-      containers: { unsupported: "no_hardware" },
+      containers: available("containers"),
     },
     process_network: false,
     process_gpu: false,
@@ -106,6 +106,7 @@ type Add = (
     cadence?: number;
     periodMs?: number;
     perTick?: number;
+    silent?: boolean;
   }
 ) => void;
 type Total = (module: Module, metric: string, part: string) => void;
@@ -252,6 +253,85 @@ function disk(add: Add, total: Total) {
     add("disk", "disk.psi", { stall }, v, { noise: 3, cadence: 5, ...pct });
 }
 
+const MIB = 1024 * 1024;
+const GIB = 1024 * MIB;
+
+/**
+ * cgroup groups on linux-tailscale, as `linux/cgroup.rs` labels them: kind,
+ * name, CPU (% of one core), memory, `memory.max` when it is a number, disk
+ * read and write (B/s), memory PSI `some` (%).
+ */
+const CGROUPS: [
+  "service" | "docker",
+  string,
+  number,
+  number,
+  number | null,
+  number,
+  number,
+  number,
+][] = [
+  ["docker", "opendata-worker", 2.6, 625 * MIB, 4 * GIB, 12e3, 180e3, 0.2],
+  ["docker", "opendata-backend", 1.9, 879 * MIB, 2 * GIB, 4e3, 36e3, 0.4],
+  ["service", "docker.service", 1.1, 1.69 * GIB, null, 0, 420e3, 0],
+  ["docker", "cadvisor", 1.4, 96 * MIB, null, 0, 0, 0],
+  ["docker", "prometheus-agent", 0.9, 210 * MIB, GIB, 0, 64e3, 0.1],
+  ["docker", "promtail", 0.6, 71 * MIB, null, 8e3, 2e3, 0],
+  ["docker", "traefik", 0.5, 54 * MIB, null, 0, 1e3, 0],
+  ["docker", "opendata-redis", 0.4, 38 * MIB, 512 * MIB, 0, 22e3, 0],
+  ["docker", "opendata-mcp", 0.3, 142 * MIB, null, 0, 0, 0],
+  ["docker", "node-exporter", 0.2, 18 * MIB, null, 0, 0, 0],
+  ["service", "sshd.service", 0, 6 * MIB, null, 0, 0, 0],
+];
+
+/** A one-shot migration that exited: its series are gaps until it leaves. */
+const EXITED = "opendata-migrate";
+
+function cgroups(add: Add) {
+  const every = { cadence: 5 };
+  for (const [kind, name, cpu, mem, max, read, write, psi] of CGROUPS) {
+    const labels = { kind, name };
+    add("containers", "cgroup.cpu", labels, cpu, {
+      ...every,
+      noise: cpu * 0.4,
+      min: 0,
+    });
+    add("containers", "cgroup.mem", labels, mem, { ...every, noise: mem / 50 });
+    if (max !== null) add("containers", "cgroup.mem_max", labels, max, every);
+    add("containers", "cgroup.io_read", labels, read, {
+      ...every,
+      noise: read,
+      min: 0,
+    });
+    add("containers", "cgroup.io_write", labels, write, {
+      ...every,
+      noise: write,
+      min: 0,
+    });
+    add("containers", "cgroup.mem_psi", labels, psi, {
+      ...every,
+      noise: psi,
+      ...pct,
+    });
+  }
+  const exited = { kind: "docker", name: EXITED };
+  for (const metric of [
+    "cgroup.cpu",
+    "cgroup.mem",
+    "cgroup.io_read",
+    "cgroup.io_write",
+    "cgroup.mem_psi",
+  ])
+    add("containers", metric, exited, 0, { ...every, silent: true });
+  // The remainder: no `mem_max` or `mem_psi`, neither adds up.
+  const other = { kind: "other", name: "_other" };
+  add("containers", "cgroup.cpu", other, 0.9, { ...every, noise: 0.3 });
+  add("containers", "cgroup.mem", other, 310 * MIB, { ...every, noise: MIB });
+  add("containers", "cgroup.io_read", other, 2e3, { ...every, noise: 2e3 });
+  add("containers", "cgroup.io_write", other, 9e3, { ...every, noise: 6e3 });
+  add("containers", "cgroup.other_count", {}, 25, every);
+}
+
 /** The series the agent publishes on linux-tailscale, in collector order. */
 export function buildLinuxSpecs(add: Add, total: Total, selfPeriodMs: number) {
   cpu(add);
@@ -259,6 +339,7 @@ export function buildLinuxSpecs(add: Add, total: Total, selfPeriodMs: number) {
   sensors(add);
   network(add, total);
   disk(add, total);
+  cgroups(add);
   add("cpu", "self.cpu", {}, 0.1, { noise: 0.03, periodMs: selfPeriodMs });
 }
 

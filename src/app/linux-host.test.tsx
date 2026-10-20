@@ -2,6 +2,8 @@ import { createMockTransport } from "@core/mock-transport";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import { renderWithProviders } from "@tests/test-utils";
 import type { ReactElement } from "react";
+import { LiveSidebar } from "~/routes/dashboard/_components/live-sidebar";
+import ContainersRoute from "~/routes/dashboard/containers/route";
 import CpuRoute from "~/routes/dashboard/cpu/route";
 import DiskRoute from "~/routes/dashboard/disk/route";
 import MemoryRoute from "~/routes/dashboard/memory/route";
@@ -134,4 +136,123 @@ describe("a Linux host (D-115)", () => {
       screen.getByRole("option", { name: "WDC WD40EFRX-68N · sdb" })
     ).toBeVisible();
   });
+});
+
+/** The Containers route on the `linux-host` peer after its backfill. */
+async function remoteContainers() {
+  const transport = createMockTransport({
+    now: () => NOW,
+    autoTick: false,
+    chartWindow: "5m",
+    scenarios: ["linux-host"],
+  });
+  const r = renderWithProviders(
+    <HostStoreProvider hostId="remote-linux">
+      <ContainersRoute />
+    </HostStoreProvider>,
+    { transport, route: "/dashboard/containers" }
+  );
+  const table = await screen.findByRole("table", {
+    name: "Services and containers",
+  });
+  await waitFor(() =>
+    expect(within(table).getByText("opendata-worker")).toBeVisible()
+  );
+  return { ...r, table };
+}
+
+function rowOf(table: HTMLElement, name: string): HTMLElement {
+  const row = within(table).getByText(name).closest("tr");
+  if (!row) throw new Error(`no row for ${name}`);
+  return row;
+}
+
+describe("Containers on a Linux host (D-115)", () => {
+  it("lists cgroup groups by CPU with the memory limit when there is one", async () => {
+    const { table } = await remoteContainers();
+    const rows = within(table).getAllByRole("row").slice(1);
+    expect(rows[0]).toHaveTextContent("opendata-worker");
+    expect(rows[0]).toHaveTextContent("Docker");
+    expect(rows[0]).toHaveTextContent("2.6");
+    expect(rows[0]).toHaveTextContent("/ 4.3 GB");
+    expect(rowOf(table, "docker.service")).toHaveTextContent("Service");
+    // cadvisor has no `memory.max`: no limit, not "/ 0".
+    expect(rowOf(table, "cadvisor")).not.toHaveTextContent(/B \/ /);
+    for (const head of [
+      "Name",
+      "Kind",
+      "% CPU",
+      "Memory",
+      "Disk read",
+      "Disk write",
+      "Memory pressure",
+    ])
+      expect(
+        within(table).getByRole("columnheader", {
+          name: new RegExp(`^${head}( [↑↓])?$`),
+        })
+      ).toBeVisible();
+  });
+
+  it("pins the folded remainder last as its count of groups", async () => {
+    const { table, user } = await remoteContainers();
+    const last = () => within(table).getAllByRole("row").at(-1);
+    expect(last()).toHaveTextContent("25 others");
+    expect(within(table).queryByText("_other")).toBeNull();
+    await user.click(within(table).getByRole("button", { name: "Memory" }));
+    expect(last()).toHaveTextContent("25 others");
+  });
+
+  it("shows an exited container as a gap, sorted last, never 0", async () => {
+    const { table } = await remoteContainers();
+    const row = rowOf(table, "opendata-migrate");
+    expect(row).toHaveTextContent("—");
+    expect(row).not.toHaveTextContent(/\b0(\.0)?\b/);
+    const named = within(table).getAllByRole("row").slice(1, -1);
+    expect(named.at(-1)).toBe(row);
+  });
+
+  it("separates services from containers", async () => {
+    const { table, user } = await remoteContainers();
+    const show = screen.getByRole("radiogroup", { name: "Show" });
+    await user.click(within(show).getByRole("radio", { name: "Services" }));
+    expect(within(table).getByText("docker.service")).toBeVisible();
+    expect(within(table).queryByText("opendata-worker")).toBeNull();
+    expect(within(table).queryByText(/others$/)).toBeNull();
+    await user.click(within(show).getByRole("radio", { name: "Containers" }));
+    expect(within(table).getByText("opendata-worker")).toBeVisible();
+    expect(within(table).queryByText("sshd.service")).toBeNull();
+  });
+
+  it.each([
+    ["remote-linux", true],
+    ["remote-studio", false],
+  ])(
+    "lists Containers in the sidebar of %s only when it reports cgroups",
+    async (hostId, listed) => {
+      const transport = createMockTransport({
+        now: () => NOW,
+        autoTick: false,
+        scenarios: ["linux-host", "multi-host"],
+      });
+      renderWithProviders(
+        <HostStoreProvider hostId={hostId}>
+          <LiveSidebar />
+        </HostStoreProvider>,
+        { transport }
+      );
+      // Before its record and capabilities arrive every host reads as local.
+      await waitFor(() =>
+        expect(
+          screen.queryByRole("link", { name: /^Battery/ }) === null &&
+            screen.queryByRole("link", { name: /^Memory \d+%/ }) !== null
+        ).toBe(true)
+      );
+      await waitFor(() =>
+        expect(
+          screen.queryByRole("link", { name: "Containers" }) !== null
+        ).toBe(listed)
+      );
+    }
+  );
 });
