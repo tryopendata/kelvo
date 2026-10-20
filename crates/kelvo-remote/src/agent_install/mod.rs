@@ -24,11 +24,12 @@ mod upload;
 mod tests;
 
 pub use flows::{
-    StepOutcome, UninstallReport, UninstallStep, install, reset_identity, status, uninstall, update,
+    StepOutcome, UninstallReport, UninstallStep, install, reset_identity, status, uninstall,
+    uninstall_at, update,
 };
 pub use probe::{
-    AgentStatus, AgentVersion, DigestTool, ExistingAgent, HostProbe, LinuxProbe, probe_host,
-    probe_linux,
+    AgentStatus, AgentVersion, DigestTool, DockerSocket, ExistingAgent, HostProbe, LinuxProbe,
+    OtherUserAgent, probe_host, probe_linux,
 };
 pub use upload::{run_remote_with_stdin, upload_agent};
 
@@ -61,11 +62,17 @@ pub enum AgentInstallError {
         free_bytes: u64,
         needed_bytes: u64,
     },
-    /// A host gets one agent: the other layout already has one (D-115).
-    #[error("This host already runs a Kelvo agent installed as {} at {binary}; remove it first", existing.as_str())]
+    /// A host gets one agent: the other layout, or for root another login's user layout,
+    /// already has one (D-115). `user` names that other login.
+    #[error(
+        "This host already runs a Kelvo agent installed as {}{} at {binary}; remove it first",
+        existing.as_str(),
+        user.as_deref().map(|u| format!(" for {u}")).unwrap_or_default()
+    )]
     OtherLayout {
         existing: AgentLayout,
         binary: String,
+        user: Option<String>,
     },
     #[error("The Kelvo agent is already installed at {binary}; update it instead")]
     AlreadyInstalled { binary: String },

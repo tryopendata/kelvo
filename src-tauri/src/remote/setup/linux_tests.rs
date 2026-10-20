@@ -27,7 +27,7 @@ fn asahi_probe() -> LinuxProbe {
         "disk_free_bytes": 14_554_480_640_u64,
         "disk_total_bytes": 161_008_844_800_u64,
         "cgroup_fs": "cgroup2fs",
-        "docker_socket": true,
+        "docker": "readable",
         "page_size": 16384,
         "system_agent": null,
         "user_agent": null
@@ -119,9 +119,17 @@ fn an_installed_agent_is_compared_with_this_build_and_its_id_with_saved_hosts() 
         Some(env!("CARGO_PKG_VERSION"))
     );
 
+    assert!(!prep.newer_installed);
+
     let old = with_agent(asahi_probe(), "0.0.1", id);
     let prep = preparation("linux-tailscale", &old, &BTreeMap::new()).unwrap();
     assert!(prep.installed && !prep.compatible, "an older agent updates");
+    assert!(!prep.newer_installed);
+
+    // A newer agent connects as it is: offering "Update" would be a downgrade.
+    let newer = with_agent(asahi_probe(), "999.0.0", id);
+    let prep = preparation("linux-tailscale", &newer, &BTreeMap::new()).unwrap();
+    assert!(prep.installed && prep.compatible && prep.newer_installed);
 
     let mut saved = BTreeMap::new();
     saved.insert(id, saved_host(id, "Basement server", agent_command()));
@@ -129,6 +137,150 @@ fn an_installed_agent_is_compared_with_this_build_and_its_id_with_saved_hosts() 
     assert_eq!(
         prep.linux.unwrap().duplicate_of.as_deref(),
         Some("Basement server")
+    );
+}
+
+/// A newer agent is never replaced: asked to install, setup connects to it as it is,
+/// before any SSH step (the alias here reaches nothing).
+#[tokio::test]
+async fn a_newer_agent_is_never_replaced_with_this_builds() {
+    let id = HostId(Uuid::new_v4());
+    let newer = with_agent(asahi_probe(), "999.0.0", id);
+    let binary = AgentBinary::new(b"older agent".to_vec());
+    let installed = install_agent("kelvo-test-unreachable.invalid", &newer, Some(&binary))
+        .await
+        .unwrap();
+    assert_eq!(installed, Installed::Existing);
+    // Updating a saved host refuses it too.
+    assert!(matches!(
+        check_update(&newer, id),
+        Err(CommandError::InvalidArgument { message }) if message.contains("newer than this app")
+    ));
+}
+
+#[test]
+fn undoing_a_fresh_install_keeps_a_data_directory_that_was_there() {
+    let mut probe = asahi_probe();
+    assert_eq!(
+        Installed::fresh(&probe).undo(),
+        Some(true),
+        "purge what setup made"
+    );
+    probe.data_exists = true;
+    assert_eq!(
+        Installed::fresh(&probe).undo(),
+        Some(false),
+        "history and host-id kept from an earlier removal"
+    );
+    assert_eq!(Installed::Existing.undo(), None);
+    assert_eq!(Installed::Updated.undo(), None);
+}
+
+#[test]
+fn an_update_needs_the_saved_identity() {
+    let id = HostId(Uuid::new_v4());
+    let current = with_agent(asahi_probe(), env!("CARGO_PKG_VERSION"), id);
+    check_update(&current, id).unwrap();
+    let other = HostId(Uuid::new_v4());
+    assert!(matches!(
+        check_update(&current, other),
+        Err(CommandError::RemoteIdentity { message }) if message.contains("Re-pair")
+    ));
+    // An agent that did not answer cannot be checked; updating it may be the fix.
+    let mut silent = current;
+    silent.system_agent.as_mut().unwrap().status = None;
+    check_update(&silent, other).unwrap();
+}
+
+#[test]
+fn removal_from_another_login_names_the_layout_instead_of_reporting_clean() {
+    let root = asahi_probe().target().unwrap();
+    let mut probe = asahi_probe();
+    probe.uid = 1000;
+    probe.user = "riley".into();
+    probe.home = Some("/home/riley".into());
+    probe.xdg_runtime_dir = Some("/run/user/1000".into());
+    let riley = probe.target().unwrap();
+    let user_command = |bin: &str| RemoteCommand::Agent {
+        bin: bin.into(),
+        system: false,
+        socket: Some("/run/user/1000/kelvo-agent/metrics.sock".into()),
+    };
+
+    assert_eq!(layout_mismatch(&agent_command(), &root), None);
+    let system_from_user = layout_mismatch(&agent_command(), &riley).unwrap();
+    assert!(
+        system_from_user.contains("system service; connect as root"),
+        "{system_from_user}"
+    );
+    let riley_bin = "/home/riley/.local/bin/kelvo-agent";
+    assert_eq!(layout_mismatch(&user_command(riley_bin), &riley), None);
+    for here in [&root, &riley] {
+        let message =
+            layout_mismatch(&user_command("/home/ann/.local/bin/kelvo-agent"), here).unwrap();
+        assert!(
+            message.contains("user service at /home/ann/.local/bin/kelvo-agent"),
+            "{message}"
+        );
+    }
+    assert_eq!(layout_mismatch(&RemoteCommand::default(), &root), None);
+}
+
+#[test]
+fn docker_socket_states_reach_the_disclosure() {
+    let mut probe = asahi_probe();
+    for (found, shown) in [
+        (DockerSocket::Absent, RemoteDockerAccess::Absent),
+        (DockerSocket::Unreadable, RemoteDockerAccess::Unreadable),
+        (DockerSocket::Readable, RemoteDockerAccess::Readable),
+    ] {
+        probe.docker = found;
+        let linux = preparation("box", &probe, &BTreeMap::new())
+            .unwrap()
+            .linux
+            .unwrap();
+        assert_eq!(linux.docker, shown);
+    }
+}
+
+#[test]
+fn a_failed_re_registration_puts_the_previous_host_back() {
+    use super::super::commands::register_or_restore;
+    let restored = std::cell::Cell::new(false);
+    let err = register_or_restore(
+        || Err(failure("mirror directory is read-only")),
+        || {
+            restored.set(true);
+            Ok(())
+        },
+    )
+    .unwrap_err();
+    assert!(restored.get());
+    assert!(err.to_string().contains("read-only"), "{err}");
+
+    let err = register_or_restore(
+        || Err(failure("mirror directory is read-only")),
+        || Err(failure("still read-only")),
+    )
+    .unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("restoring the previous connection failed: internal error: still read-only"),
+        "{err}"
+    );
+
+    let restored = std::cell::Cell::new(false);
+    register_or_restore(
+        || Ok(()),
+        || {
+            restored.set(true);
+            Ok(())
+        },
+    )
+    .unwrap();
+    assert!(
+        !restored.get(),
+        "nothing to restore after a good registration"
     );
 }
 
@@ -238,6 +390,7 @@ fn agent_install_errors_map_to_kinds_the_ui_explains() {
             AgentInstallError::OtherLayout {
                 existing: AgentLayout::User,
                 binary: "/home/r/.local/bin/kelvo-agent".into(),
+                user: Some("r".into()),
             },
             "remote_agent_conflict",
         ),
@@ -306,7 +459,9 @@ async fn linux_host_lifecycle_against_a_real_server() {
         enabled: true,
         mirror_budget_mb: 100,
     };
-    let (route, probe) = linux_probe(None, Some(alias.clone())).await.unwrap();
+    let (route, probe) = linux_probe(None, Some(alias.clone()), ProbeFor::Install)
+        .await
+        .unwrap();
     assert!(
         probe.system_agent.is_none() && probe.user_agent.is_none(),
         "the server already has an agent; this test only runs against a clean server"
@@ -320,7 +475,7 @@ async fn linux_host_lifecycle_against_a_real_server() {
     let binary = AgentBinary::new(bytes);
 
     let installed = install_agent(&route, &probe, Some(&binary)).await.unwrap();
-    assert_eq!(installed, Installed::Fresh);
+    assert!(matches!(installed, Installed::Fresh { .. }));
     println!("install: fresh");
 
     let result = lifecycle(&route, &config, &binary).await;

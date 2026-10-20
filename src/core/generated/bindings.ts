@@ -1569,8 +1569,8 @@ export type LinuxPreparation = {
 	budget_mb: number,
 	/**  The installed agent's version, when one is installed. */
 	existing_version: string | null,
-	/**  Whether the agent can read the Docker socket to name containers. */
-	docker_readable: boolean,
+	/**  Whether the agent can use the Docker socket to name containers. */
+	docker: RemoteDockerAccess,
 	/**  Non-blocking notes from the probe (the linger command for a user service). */
 	warnings: string[],
 	/**
@@ -2215,6 +2215,13 @@ export type RemoteAccessSettings = {
  */
 export type RemoteAgentLayout = "system" | "user";
 
+/**  Whether the agent's login can use the Docker socket to name containers. */
+export type RemoteDockerAccess =
+/**  No Docker socket on the host. */
+"absent" |
+/**  There is a socket this login cannot use; containers show by short id. */
+"unreadable" | "readable";
+
 export type RemoteHostConfig = {
 	id: string,
 	name: string,
@@ -2234,7 +2241,13 @@ export type RemoteHostKind =
 export type RemoteHostPreparation = {
 	kind: RemoteHostKind,
 	installed: boolean,
+	/**  Connecting needs no install or update. */
 	compatible: boolean,
+	/**
+	 *  The installed agent is newer than this app: it connects as it is and is never
+	 *  replaced with this build's older one. Linux only; always false for a Mac.
+	 */
+	newer_installed: boolean,
 	host_id: string | null,
 	name: string,
 	message: string | null,

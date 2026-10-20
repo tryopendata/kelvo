@@ -13,7 +13,7 @@ use crate::transport::sh_word;
 
 /// Installs the agent on a host with no agent yet: validates the probe for `budget_mb`,
 /// uploads `bytes` (checked against `sha256_hex` on the host), writes the unit, records
-/// the history budget, enables and starts the service, and waits up to 5 s for it.
+/// the history budget, enables and starts the service, and waits up to 10 s for it.
 pub async fn install(
     alias: &str,
     probe: &LinuxProbe,
@@ -221,6 +221,12 @@ pub(crate) async fn uninstall_with(remote: &impl Remote, purge: bool) -> Uninsta
         Err(e) => return UninstallReport::failed("probe", e),
     };
     uninstall_target(remote, &target, purge).await
+}
+
+/// Removes the agent at `target`, found by an earlier probe. Never fails, like
+/// [`uninstall`].
+pub async fn uninstall_at(alias: &str, target: &AgentTarget, purge: bool) -> UninstallReport {
+    uninstall_target(&Ssh(alias), target, purge).await
 }
 
 pub(crate) async fn uninstall_target(

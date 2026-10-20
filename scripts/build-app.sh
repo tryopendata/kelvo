@@ -41,5 +41,8 @@ if tools="$(make -s -C "$ROOT" agent-linux-tools 2>&1)"; then
   CONFIGS+=(--config "$ROOT/src-tauri/tauri.agent.conf.json")
 else
   echo "build-app: packaging without the Linux agents. $tools" >&2
+  # Agents left from an earlier build would be hashed into this one by build.rs while
+  # the package carries none; with the directory empty the app says they are missing.
+  rm -f "$ROOT"/src-tauri/binaries/agent/kelvo-agent-*
 fi
 bun run tauri build "${CONFIGS[@]}" "$@"

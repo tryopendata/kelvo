@@ -96,7 +96,6 @@ fn load(
         .iter()
         .map(|d| d.join(&name))
         .find(|p| p.is_file())
-        .or_else(|| dirs.first().map(|d| d.join(&name)))
         .ok_or_else(|| AgentBundleError::NotBuilt {
             triple: triple.to_owned(),
         })?;
@@ -195,10 +194,12 @@ mod tests {
         assert!(matches!(err, AgentBundleError::NotBuilt { .. }));
         assert!(err.to_string().contains("make agent-linux"), "{err}");
 
+        // A digest compiled in, but no directory has the file: not built, not unreadable.
         let digest = sha256_hex(b"x");
         let table = [(TRIPLE, digest.as_str())];
         let err = load(&dirs, TRIPLE, &table).unwrap_err();
-        assert!(matches!(err, AgentBundleError::Read { .. }), "{err:?}");
+        assert!(matches!(err, AgentBundleError::NotBuilt { .. }), "{err:?}");
+        assert!(err.to_string().contains("make agent-linux"), "{err}");
     }
 
     #[test]

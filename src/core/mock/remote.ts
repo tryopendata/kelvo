@@ -158,6 +158,7 @@ export class MockRemotes {
       kind: "mac",
       installed: true,
       compatible: true,
+      newer_installed: false,
       host_id: `remote-${alias}`,
       name: alias || "Remote Mac",
       message: null,

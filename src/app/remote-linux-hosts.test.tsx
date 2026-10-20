@@ -103,6 +103,35 @@ describe("Linux hosts", () => {
     ).toBeInTheDocument();
   });
 
+  it("connects to a newer agent as it is, never downgrading it", async () => {
+    const source = mount();
+    await check("linux-newer");
+    expect(
+      await screen.findByText(/newer agent than this app/)
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Update and connect" })
+    ).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Connect" }));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+    );
+    expect(
+      source.calls.find((call) => call.command === "add_remote_host")?.args[1]
+    ).toBe(false);
+  });
+
+  it("notes the Docker socket only when it is there but unusable", async () => {
+    mount();
+    await check("linux-nodocker");
+    expect(
+      await screen.findByText(/as a system service that runs as root/)
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(/can’t read the Docker socket/)
+    ).not.toBeInTheDocument();
+  });
+
   it("resets a duplicate identity before adding", async () => {
     const source = mount(["linux-host"]);
     await screen.findByRole("heading", { name: "linux-tailscale" });

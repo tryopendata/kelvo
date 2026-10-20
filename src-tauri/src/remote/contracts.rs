@@ -90,7 +90,11 @@ pub enum RemoteHostKind {
 pub struct RemoteHostPreparation {
     pub kind: RemoteHostKind,
     pub installed: bool,
+    /// Connecting needs no install or update.
     pub compatible: bool,
+    /// The installed agent is newer than this app: it connects as it is and is never
+    /// replaced with this build's older one. Linux only; always false for a Mac.
+    pub newer_installed: bool,
     pub host_id: Option<String>,
     pub name: String,
     pub message: Option<String>,
@@ -105,6 +109,17 @@ pub struct RemoteHostPreparation {
 pub enum RemoteAgentLayout {
     System,
     User,
+}
+
+/// Whether the agent's login can use the Docker socket to name containers.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum RemoteDockerAccess {
+    /// No Docker socket on the host.
+    Absent,
+    /// There is a socket this login cannot use; containers show by short id.
+    Unreadable,
+    Readable,
 }
 
 /// The Linux disclosure: what setup will put on the host and what it found there.
@@ -138,8 +153,8 @@ pub struct LinuxPreparation {
     pub budget_mb: u32,
     /// The installed agent's version, when one is installed.
     pub existing_version: Option<String>,
-    /// Whether the agent can read the Docker socket to name containers.
-    pub docker_readable: bool,
+    /// Whether the agent can use the Docker socket to name containers.
+    pub docker: RemoteDockerAccess,
     /// Non-blocking notes from the probe (the linger command for a user service).
     pub warnings: Vec<String>,
     /// The saved host already using the installed agent's id. Adding needs a new

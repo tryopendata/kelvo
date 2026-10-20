@@ -5,13 +5,22 @@ use kelvo_remote::agent_install::HostProbe;
 pub(super) mod linux;
 mod mac;
 use mac::Installation;
+/// Whether a probe is for an install, which validates a Linux host for the agent's
+/// history budget, or for an agent already there (update, remove), which does not.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum ProbeFor {
+    Install,
+    Existing,
+}
+
 /// Probes each configured route (LAN first, Tailscale 500 ms later) and returns the
-/// first that answers, with what it found. A Linux host is validated for the agent's
-/// history budget.
+/// first that answers, with what it found.
 pub(super) async fn probe_routes(
     lan: Option<String>,
     tailscale: Option<String>,
+    purpose: ProbeFor,
 ) -> Result<(String, HostProbe), CommandError> {
+    let budget = (purpose == ProbeFor::Install).then_some(linux::AGENT_BUDGET_MB);
     let config = RemoteHostConfig {
         id: String::new(),
         name: "Host".into(),
@@ -26,8 +35,7 @@ pub(super) async fn probe_routes(
         if let Some(alias) = alias {
             attempts.spawn(async move {
                 tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
-                let result =
-                    kelvo_remote::agent_install::probe_host(&alias, linux::AGENT_BUDGET_MB).await;
+                let result = kelvo_remote::agent_install::probe_host(&alias, budget).await;
                 result.map(|probe| (alias, probe))
             });
         }
@@ -103,7 +111,7 @@ pub async fn prepare_remote_host(
     lan: Option<String>,
     tailscale: Option<String>,
 ) -> Result<RemoteHostPreparation, CommandError> {
-    match probe_routes(lan, tailscale).await? {
+    match probe_routes(lan, tailscale, ProbeFor::Install).await? {
         (alias, HostProbe::Mac(p)) => mac::prepare(&alias, p).await,
         (alias, HostProbe::Linux(p)) => {
             let saved = app.state::<AppState>().remotes.saved.lock_ok().clone();
@@ -124,9 +132,9 @@ pub async fn reset_remote_host_identity(
 ) -> Result<RemoteHostPreparation, CommandError> {
     let state = app.state::<AppState>();
     let _guard = state.remotes.operation.lock().await;
-    let (alias, probe) = linux_probe(lan.clone(), tailscale.clone()).await?;
+    let (alias, probe) = linux_probe(lan.clone(), tailscale.clone(), ProbeFor::Install).await?;
     kelvo_remote::agent_install::reset_identity(&alias, &probe).await?;
-    let (alias, probe) = linux_probe(lan, tailscale).await?;
+    let (alias, probe) = linux_probe(lan, tailscale, ProbeFor::Install).await?;
     let saved = state.remotes.saved.lock_ok().clone();
     linux::preparation(&alias, &probe, &saved)
 }
@@ -143,8 +151,9 @@ pub async fn update_remote_agent(app: AppHandle, id: String) -> Result<(), Comma
 pub(super) async fn linux_probe(
     lan: Option<String>,
     tailscale: Option<String>,
+    purpose: ProbeFor,
 ) -> Result<(String, kelvo_remote::agent_install::LinuxProbe), CommandError> {
-    match probe_routes(lan, tailscale).await? {
+    match probe_routes(lan, tailscale, purpose).await? {
         (alias, HostProbe::Linux(p)) => Ok((alias, *p)),
         (_, HostProbe::Mac(_)) => Err(CommandError::RemoteIdentity {
             message: "A Mac answered where a Linux host was expected. Check the SSH alias".into(),
@@ -266,7 +275,11 @@ pub async fn add_remote_host(
     .await?;
     let (alias, probe) = setup_step(
         &mut cancel,
-        probe_routes(config.lan.clone(), config.tailscale.clone()),
+        probe_routes(
+            config.lan.clone(),
+            config.tailscale.clone(),
+            ProbeFor::Install,
+        ),
     )
     .await?;
     let probe = match probe {

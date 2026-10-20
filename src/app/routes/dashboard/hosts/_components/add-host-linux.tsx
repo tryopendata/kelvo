@@ -8,6 +8,8 @@ import { Command } from "./ssh-setup-help";
 
 /** What setup will do on a Linux host, in the Mac status line's place (D-105). */
 function plan(prepared: RemoteHostPreparation, linux: LinuxPreparation) {
+  if (prepared.installed && prepared.newer_installed)
+    return `Kelvo agent ${linux.existing_version} is installed. This server runs a newer agent than this app, so Kelvo connects to it without updating it.`;
   if (prepared.installed && prepared.compatible)
     return `Kelvo agent ${linux.existing_version} is installed and ready to connect.`;
   if (prepared.installed)
@@ -66,7 +68,7 @@ export function AddHostLinux({
           SELinux is enforcing. Kelvo labels the binary so systemd can run it.
         </p>
       )}
-      {!linux.docker_readable && (
+      {linux.docker === "unreadable" && (
         <p className="text-[12px] text-muted-foreground">
           {linux.user} can’t read the Docker socket, so containers show by short
           id instead of name.

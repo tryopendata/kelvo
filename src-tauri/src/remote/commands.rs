@@ -167,8 +167,12 @@ fn stop_sharing_request() -> ControlRequest {
 /// Bounded so removing an offline Mac doesn't hang on SSH.
 async fn stop_remote_sharing(saved: &SavedHost) -> Result<(), CommandError> {
     let attempt = async {
-        let (alias, _) =
-            probe_routes(saved.config.lan.clone(), saved.config.tailscale.clone()).await?;
+        let (alias, _) = probe_routes(
+            saved.config.lan.clone(),
+            saved.config.tailscale.clone(),
+            super::setup::ProbeFor::Existing,
+        )
+        .await?;
         let RemoteCommand::MacHelper(helper) = &saved.command else {
             return Ok(());
         };
@@ -278,6 +282,24 @@ pub async fn remove_remote_host(
     Ok(warning)
 }
 
+/// Registers `next` in place of a registration just discarded; when that fails, puts
+/// the previous one back (`restore`) and returns the error, so a failed step never
+/// leaves the host missing from the list.
+pub(super) fn register_or_restore(
+    next: impl FnOnce() -> Result<(), CommandError>,
+    restore: impl FnOnce() -> Result<(), CommandError>,
+) -> Result<(), CommandError> {
+    let Err(error) = next() else {
+        return Ok(());
+    };
+    match restore() {
+        Ok(()) => Err(error),
+        Err(restore) => Err(failure(format!(
+            "{error}; restoring the previous connection failed: {restore}"
+        ))),
+    }
+}
+
 /// Re-pairs a host that now answers with a different id (a reinstall, a reset
 /// identity, a replaced machine). The answering host is added as a new host with the
 /// same name and routes; the old one is kept, disabled, with its mirrored history
@@ -329,9 +351,7 @@ pub async fn repair_remote_host(
     old.config.name = format!("{} (before re-pair)", previous.config.name);
     old.record.display_name = old.config.name.clone();
     discard_host_async(&app, id).await?;
-    if let Err(error) = register(&app, old) {
-        tracing::warn!("keeping the old host offline: {error}");
-    }
+    register_or_restore(|| register(&app, old), || register(&app, previous.clone()))?;
     let mut config = previous.config.clone();
     config.id = record.id.to_string();
     config.enabled = true;

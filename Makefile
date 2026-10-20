@@ -151,7 +151,7 @@ rust-linux-test:
 # (debian:bookworm-slim) and busybox ash, as root and as a user, with stub systemd.
 # `cargo test` runs the same lifecycle under this machine's /bin/sh.
 remote-scripts-test:
-	cargo test -p kelvo-remote --lib agent_install::tests::lifecycle -- --ignored
+	cargo test -p kelvo-remote --lib agent_install::tests -- --ignored
 
 # The Linux agent (D-115), bundled as app resources and uploaded to hosts by Add host.
 # cargo-zigbuild links the static musl targets from the macOS host with zig, so both

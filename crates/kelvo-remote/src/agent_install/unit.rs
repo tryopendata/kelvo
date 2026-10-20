@@ -40,12 +40,14 @@ set +e
         all = w.all,
         data_only = w.data_only,
         systemctl = w.systemctl,
-        wait = wait_running(w, 5),
+        // The daemon waits up to 3 s for Docker names before it binds its socket.
+        wait = wait_running(w, 10),
     )
 }
 
-/// Before an update's upload: stop the daemon so the history is consistent, copy it
-/// aside, and drop any `.prev` binary an earlier attempt left.
+/// Before an update's upload: drop any backup and `.prev` binary an earlier attempt
+/// left (first, so a stale backup can never be restored over newer history), stop the
+/// daemon so the history is consistent, and copy it aside.
 pub(crate) fn stop_and_back_up(w: &Words) -> String {
     format!(
         r#"set -eu
@@ -53,8 +55,8 @@ umask 077
 data={data}
 bin={bin}
 rm -f "${{bin%/*}}/.kelvo-agent.prev"
-{systemctl} stop {UNIT_NAME}
 rm -rf "$data/backup"
+{systemctl} stop {UNIT_NAME}
 mkdir -p "$data/backup"
 for f in {HISTORY_FILES}; do
   if [ -e "$data/$f" ]; then cp -p "$data/$f" "$data/backup/$f"; fi
@@ -85,7 +87,9 @@ set +e
 
 /// After a failed update: put the previous binary and the copied history back, rewrite
 /// the unit with the old binary and start it. Runs every step and prints
-/// `restored=1|0` after the status line.
+/// `restored=1|0` after the status line. With neither a `.prev` binary nor a complete
+/// backup, the update failed before it replaced anything (stopping, or copying the
+/// history aside): the history is left as it is, and only the restart decides.
 pub(crate) fn roll_back(w: &Words) -> String {
     format!(
         r#"set -u
@@ -94,7 +98,9 @@ data={data}
 bin={bin}
 prev=${{bin%/*}}/.kelvo-agent.prev
 {systemctl} stop {UNIT_NAME} 2>/dev/null
+replaced=0
 if [ -e "$prev" ]; then
+  replaced=1
   mv -f "$prev" "$bin" || ok=0
   if command -v restorecon >/dev/null 2>&1; then restorecon -F "$bin"; fi
 fi
@@ -104,7 +110,8 @@ if [ -f "$data/backup/complete" ]; then
     if [ -e "$data/backup/$f" ]; then cp -p "$data/backup/$f" "$data/$f" || ok=0; fi
   done
 else
-  ok=0
+  rm -rf "$data/backup"
+  if [ $replaced = 1 ]; then ok=0; fi
 fi
 {bin} install-unit{all} >/dev/null || ok=0
 {systemctl} daemon-reload || ok=0

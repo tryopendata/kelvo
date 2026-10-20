@@ -18,6 +18,7 @@ pub(super) async fn prepare(
         kind: RemoteHostKind::Mac,
         installed: p.app_path.is_some(),
         compatible,
+        newer_installed: false,
         host_id: None,
         name: p.user.clone(),
         message: if !compatible {

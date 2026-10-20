@@ -54,7 +54,10 @@ async fn sh(alias: &str, command: &str) -> String {
 
 async fn lifecycle(alias: String, bytes: Vec<u8>, sha: String) {
     let alias = alias.as_str();
-    let probe = match agent_install::probe_host(alias, BUDGET_MB).await.unwrap() {
+    let probe = match agent_install::probe_host(alias, Some(BUDGET_MB))
+        .await
+        .unwrap()
+    {
         HostProbe::Linux(probe) => *probe,
         HostProbe::Mac(p) => panic!("{alias} is a Mac: {p:?}"),
     };

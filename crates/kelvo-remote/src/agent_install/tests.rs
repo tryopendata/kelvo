@@ -22,10 +22,13 @@ const HOST_ID: &str = "11111111-1111-4111-8111-111111111111";
 const NEW_ID: &str = "22222222-2222-4222-8222-222222222222";
 const EPOCH: &str = "33333333-3333-4333-8333-333333333333";
 
+/// `state/fail-stop` makes `stop` fail; `state/no-user-manager` makes the user manager
+/// report `offline`.
 const SYSTEMCTL: &str = r#"#!/bin/sh
 s=$KELVO_FAKE_STATE
 echo "systemctl $*" >> "$s/log"
-[ "$1" = --user ] && shift
+user=0
+[ "$1" = --user ] && { user=1; shift; }
 start() {
   if grep -q "health: good" "$KELVO_FAKE_BIN"; then
     mkdir -p "$KELVO_FAKE_DATA"
@@ -40,15 +43,28 @@ start() {
 }
 case $1 in
   --version) echo "systemd 256 (256.4-1.fc41)";;
-  is-system-running) echo running;;
+  is-system-running)
+    if [ $user = 1 ] && [ -e "$s/no-user-manager" ]; then echo offline; else echo running; fi;;
   enable) [ "$2" = --now ] && start;;
   start) start;;
-  stop|disable) rm -f "$s/running";;
+  stop) [ -e "$s/fail-stop" ] && { echo "Failed to stop kelvo-agent.service" >&2; exit 1; }
+    rm -f "$s/running";;
+  disable) rm -f "$s/running";;
 esac
 exit 0
 "#;
 
-const STUBS: [(&str, &str); 3] = [
+/// `cp` fails while `state/fail-cp` exists. `uname -m` says aarch64 where macOS says
+/// arm64, so validation sees a supported architecture under this machine's sh too.
+const STUBS: [(&str, &str); 5] = [
+    (
+        "cp",
+        "#!/bin/sh\nif [ -e \"$KELVO_FAKE_STATE/fail-cp\" ]; then echo 'cp: No space left on device' >&2; exit 1; fi\nexec /bin/cp \"$@\"\n",
+    ),
+    (
+        "uname",
+        "#!/bin/sh\nfor u in /usr/bin/uname /bin/uname; do if [ -x \"$u\" ]; then break; fi; done\nif [ \"$1\" = -m ]; then m=$(\"$u\" -m); if [ \"$m\" = arm64 ]; then m=aarch64; fi; echo \"$m\"; else exec \"$u\" \"$@\"; fi\n",
+    ),
     ("loginctl", "#!/bin/sh\necho no\n"),
     ("getenforce", "#!/bin/sh\necho Enforcing\n"),
     (
@@ -330,6 +346,7 @@ async fn lifecycle(shell: Shell, layout: AgentLayout) {
     assert!(probe.digest.is_some());
     assert!(probe.disk_free_bytes.is_some_and(|b| b > 0), "{probe:?}");
     assert_eq!(probe.existing(), None);
+    assert!(!probe.data_exists);
     assert_eq!(probe.target().unwrap().paths, paths);
     if layout == AgentLayout::User {
         assert_eq!(probe.user_state.as_deref(), Some("running"));
@@ -363,6 +380,7 @@ async fn lifecycle(shell: Shell, layout: AgentLayout) {
         .unwrap();
     assert!(String::from_utf8_lossy(&mode.stdout).starts_with("-rwxr-xr-x"));
     let probe = shell.probe().await;
+    assert!(probe.data_exists, "a later failed install must keep it");
     let existing = probe.existing().unwrap();
     assert_eq!(existing.version.as_ref().unwrap().version, "v1");
     assert!(existing.status.as_ref().unwrap().running);
@@ -507,6 +525,132 @@ async fn lifecycle_under_busybox_as_a_user() {
     .await;
 }
 
+/// Updates that fail before replacing anything: `stop` fails while a complete backup
+/// from an earlier rollback is still there, and copying the history aside fails. Both
+/// leave the current history and binary alone, restart the agent, report it restored
+/// and leave no backup behind.
+async fn failed_backups(shell: Shell) {
+    let paths = shell.paths.clone();
+    let state = shell.base.join("state");
+    let backup = paths.data_dir.join("backup");
+    let v1 = fake_agent("v1", true);
+    install_with(&shell, &shell.probe().await, &v1, &sha(&v1), 150)
+        .await
+        .unwrap();
+    let probe = shell.probe().await;
+    let target = probe.target().unwrap();
+    shell.write(&paths.data_dir.join("history.sqlite"), "current history");
+    shell.write(&paths.data_dir.join("history.sqlite-wal"), "current wal");
+    let v2 = fake_agent("v2", true);
+    let expect_restored = |result: super::Result<_>, step: &str| match result {
+        Err(AgentInstallError::UpdateFailed { restored, cause }) => {
+            assert!(restored, "{step}: the restart alone decides, after {cause}");
+        }
+        other => panic!("{step}: expected a failed update, got {other:?}"),
+    };
+    let expect_untouched = |step: &str| {
+        assert_eq!(
+            shell
+                .read(&paths.data_dir.join("history.sqlite"))
+                .as_deref(),
+            Some("current history"),
+            "{step}"
+        );
+        assert_eq!(
+            shell
+                .read(&paths.data_dir.join("history.sqlite-wal"))
+                .as_deref(),
+            Some("current wal"),
+            "{step}"
+        );
+        assert_eq!(shell.read(&paths.binary).unwrap().as_bytes(), v1, "{step}");
+        assert!(!shell.exists(&backup), "{step}: the backup remains");
+    };
+
+    // A stale backup from an earlier rollback, then `stop` fails.
+    shell.setup(&format!(
+        "mkdir -p {b}; printf 'stale history' > {b}/history.sqlite; : > {b}/complete; : > {s}/fail-stop; chmod -R a+rwX {b}",
+        b = q(&backup),
+        s = q(&state),
+    ));
+    expect_restored(
+        update_with(&shell, &probe, &v2, &sha(&v2)).await,
+        "stop fails",
+    );
+    expect_untouched("stop fails");
+    assert!(
+        super::flows::status_with(&shell, &target)
+            .await
+            .unwrap()
+            .running
+    );
+
+    // Copying the history aside fails part-way.
+    shell.setup(&format!(
+        "rm -f {s}/fail-stop; : > {s}/fail-cp; chmod a+rw {s}/fail-cp",
+        s = q(&state)
+    ));
+    expect_restored(
+        update_with(&shell, &probe, &v2, &sha(&v2)).await,
+        "cp fails",
+    );
+    expect_untouched("cp fails");
+}
+
+#[tokio::test]
+async fn failed_backups_under_this_machines_sh() {
+    failed_backups(Shell::local()).await;
+}
+
+#[tokio::test]
+#[ignore = "needs docker; make remote-scripts-test"]
+async fn failed_backups_under_dash_as_root() {
+    failed_backups(Shell::docker("debian:bookworm-slim", None)).await;
+}
+
+#[tokio::test]
+#[ignore = "needs docker; make remote-scripts-test"]
+async fn failed_backups_under_busybox_as_a_user() {
+    failed_backups(Shell::docker("busybox:stable", Some(1000))).await;
+}
+
+/// Update and remove take the probe unvalidated: a user whose manager is offline
+/// cannot take a new install, but its agent can still be updated or removed.
+#[tokio::test]
+async fn only_an_install_validates_the_probe() {
+    let shell = Shell::local();
+    shell.setup(&format!(
+        ": > {}",
+        q(&shell.base.join("state/no-user-manager"))
+    ));
+    let probe = |budget| super::probe::probe_linux_with(&shell, budget);
+    assert!(matches!(
+        probe(Some(150)).await,
+        Err(AgentInstallError::NoUserManager { .. })
+    ));
+    let unvalidated = probe(None).await.unwrap();
+    assert_eq!(unvalidated.user_state.as_deref(), Some("offline"));
+}
+
+#[test]
+fn install_waits_as_long_as_update_for_the_daemon() {
+    let probe = LinuxProbe::parse(ASAHI_PROBE).unwrap();
+    let w = probe.target().unwrap().words().unwrap();
+    let polls = |script: &str| {
+        script
+            .lines()
+            .find_map(|l| l.strip_prefix("while [ $i -lt "))
+            .and_then(|rest| rest.split(' ').next())
+            .map(str::to_owned)
+    };
+    // 4 polls a second: the daemon may wait 3 s for Docker names before it binds.
+    assert_eq!(
+        polls(&super::unit::activate(&w, "x")).as_deref(),
+        Some("40")
+    );
+    assert_eq!(polls(&super::unit::restart(&w)).as_deref(), Some("40"));
+}
+
 /// The probe of linux-tailscale (root, Fedora Asahi), trimmed.
 const ASAHI_PROBE: &str = r#"os=Linux
 arch=aarch64
@@ -547,7 +691,9 @@ fn probe_parses_and_validates() {
     );
     assert_eq!(probe.disk_free_bytes, Some(14_213_360 * 1024));
     assert_eq!(probe.cgroup_fs.as_deref(), Some("cgroup2fs"));
-    assert!(probe.docker_socket && probe.restorecon);
+    assert!(probe.docker == super::DockerSocket::Readable && probe.restorecon);
+    assert!(!probe.data_exists);
+    assert!(probe.other_user_agents.is_empty());
     assert_eq!(probe.linger, Some(false));
     assert_eq!(probe.xdg_runtime_dir, None);
     // A degraded system still runs units.
@@ -575,9 +721,41 @@ fn probe_parses_and_validates() {
     // One agent per host.
     assert!(matches!(
         with("user_bin=/root/.local/bin/kelvo-agent\n").validate(150),
-        Err(AgentInstallError::OtherLayout { existing: AgentLayout::User, binary })
+        Err(AgentInstallError::OtherLayout { existing: AgentLayout::User, binary, user: None })
             if binary == "/root/.local/bin/kelvo-agent"
     ));
+    // ...including another login's user service, which root's probe also looks for.
+    let other = with("other_user_agent=ann active /home/ann/.local/bin/kelvo-agent\n");
+    assert_eq!(
+        other.other_user_agents,
+        [super::OtherUserAgent {
+            user: "ann".into(),
+            binary: "/home/ann/.local/bin/kelvo-agent".into(),
+            active: true,
+        }]
+    );
+    let err = other.validate(150).unwrap_err();
+    assert!(
+        matches!(&err, AgentInstallError::OtherLayout { existing: AgentLayout::User, user: Some(u), .. } if u == "ann"),
+        "{err:?}"
+    );
+    assert!(
+        err.to_string()
+            .contains("installed as user for ann at /home/ann/.local/bin/kelvo-agent"),
+        "{err}"
+    );
+    assert!(
+        !with("other_user_agent=bob  /home/bob/.local/bin/kelvo-agent\n").other_user_agents[0]
+            .active,
+        "no user manager to ask"
+    );
+    // The data directory a removed host's agent kept, and the Docker socket's states.
+    assert!(with("data_exists=yes\n").data_exists);
+    assert_eq!(
+        with("docker=unreadable\n").docker,
+        super::DockerSocket::Unreadable
+    );
+    assert_eq!(with("docker=absent\n").docker, super::DockerSocket::Absent);
     assert!(matches!(
         with("arch=armv7l\n").validate(150),
         Err(AgentInstallError::UnsupportedArch(arch)) if arch == "armv7l"
@@ -662,6 +840,7 @@ fn flows_are_send() {
     send(&super::update("a", &probe, &[], ""));
     send(&super::uninstall("a", true));
     send(&super::upload_agent("a", &target, &[], ""));
-    send(&super::probe_host("a", 150));
+    send(&super::probe_host("a", Some(150)));
+    send(&super::uninstall_at("a", &target, true));
     send(&super::reset_identity("a", &probe));
 }

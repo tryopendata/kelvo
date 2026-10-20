@@ -40,11 +40,14 @@ done
 if [ "$uid" = 0 ]; then d=/var/lib/kelvo-agent
 else case "${XDG_STATE_HOME:-}" in /*) d=$XDG_STATE_HOME/kelvo-agent;; *) d=${HOME:-/}/.local/state/kelvo-agent;; esac
 fi
+if [ -d "$d" ]; then kv data_exists yes; fi
 while [ ! -d "$d" ]; do d=$(dirname "$d"); done
 kv data_parent "$d"
 df -Pk "$d" 2>/dev/null | { read -r _; read -r _ total _ avail _; kv disk_total_kb "$total"; kv disk_free_kb "$avail"; }
 kv cgroup_fs "$(stat -fc %T /sys/fs/cgroup 2>/dev/null)"
-if [ -r /var/run/docker.sock ] && [ -w /var/run/docker.sock ]; then kv docker yes; fi
+if [ -r /var/run/docker.sock ] && [ -w /var/run/docker.sock ]; then kv docker yes
+elif [ -e /var/run/docker.sock ]; then kv docker unreadable
+else kv docker absent; fi
 kv page_size "$(getconf PAGESIZE 2>/dev/null)"
 agent() {
   if [ -e "$2" ]; then
@@ -57,6 +60,14 @@ agent() {
 }
 agent system /usr/local/bin/kelvo-agent --system
 if [ -n "${HOME:-}" ]; then agent user "$HOME/.local/bin/kelvo-agent" ""; fi
+# Root also sees the user layout of every other login: one agent per host.
+if [ "$uid" = 0 ]; then
+  for f in /root/.local/bin/kelvo-agent /home/*/.local/bin/kelvo-agent; do
+    if [ ! -e "$f" ] || [ "$f" = "${HOME:-}/.local/bin/kelvo-agent" ]; then continue; fi
+    case $f in /root/*) u=root;; *) u=${f#/home/}; u=${u%%/*};; esac
+    kv other_user_agent "$u $(systemctl --user -M "$u@" is-active kelvo-agent 2>/dev/null) $f"
+  done
+fi
 exit 0
 "#;
 
@@ -141,6 +152,42 @@ impl AgentStatus {
     }
 }
 
+/// Whether the agent's login can use the Docker socket to name containers.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DockerSocket {
+    /// No `/var/run/docker.sock`.
+    #[default]
+    Absent,
+    /// The socket is there, but this login cannot read and write it.
+    Unreadable,
+    Readable,
+}
+
+/// A user-layout agent of another login, seen by a root probe.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OtherUserAgent {
+    pub user: String,
+    pub binary: String,
+    /// `systemctl --user -M <user>@ is-active kelvo-agent` said `active`.
+    pub active: bool,
+}
+
+impl OtherUserAgent {
+    /// `<user> <is-active output> <binary>`; the state may be empty.
+    fn parse(value: &str) -> Option<Self> {
+        let mut parts = value.splitn(3, ' ');
+        let user = parts.next().filter(|u| !u.is_empty())?;
+        let state = parts.next()?;
+        let binary = parts.next().filter(|b| !b.is_empty())?;
+        Some(Self {
+            user: user.into(),
+            binary: binary.into(),
+            active: state == "active",
+        })
+    }
+}
+
 /// An agent binary found in one layout.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ExistingAgent {
@@ -180,20 +227,33 @@ pub struct LinuxProbe {
     pub selinux: Option<String>,
     pub restorecon: bool,
     pub digest: Option<DigestTool>,
+    /// Whether this login's data directory already exists (a kept history and host-id,
+    /// for one), so undoing a failed install must not purge it.
+    #[serde(default)]
+    pub data_exists: bool,
     /// The nearest existing directory to the data directory, and its volume's space.
     pub data_parent: Option<String>,
     pub disk_free_bytes: Option<u64>,
     pub disk_total_bytes: Option<u64>,
     /// `stat -fc %T /sys/fs/cgroup`: `cgroup2fs` on a unified hierarchy.
     pub cgroup_fs: Option<String>,
-    pub docker_socket: bool,
+    #[serde(default)]
+    pub docker: DockerSocket,
     pub page_size: Option<u64>,
     pub system_agent: Option<ExistingAgent>,
     pub user_agent: Option<ExistingAgent>,
+    /// Other logins' user-layout agents; only a root probe looks.
+    #[serde(default)]
+    pub other_user_agents: Vec<OtherUserAgent>,
 }
 
 impl LinuxProbe {
     pub(crate) fn parse(text: &str) -> Result<Self> {
+        let other_user_agents = text
+            .lines()
+            .filter_map(|l| l.strip_prefix("other_user_agent="))
+            .filter_map(OtherUserAgent::parse)
+            .collect();
         let mut kv = BTreeMap::new();
         for line in text.lines() {
             if let Some((key, value)) = line.split_once('=') {
@@ -236,14 +296,20 @@ impl LinuxProbe {
             selinux: text("selinux"),
             restorecon: kv.get("restorecon") == Some(&"yes"),
             digest: kv.get("sha256").and_then(|v| DigestTool::parse(v)),
+            data_exists: kv.get("data_exists") == Some(&"yes"),
             data_parent: text("data_parent"),
             disk_free_bytes: number("disk_free_kb").map(|kb| kb.saturating_mul(1024)),
             disk_total_bytes: number("disk_total_kb").map(|kb| kb.saturating_mul(1024)),
             cgroup_fs: text("cgroup_fs"),
-            docker_socket: kv.get("docker") == Some(&"yes"),
+            docker: match kv.get("docker").copied() {
+                Some("yes") => DockerSocket::Readable,
+                Some("unreadable") => DockerSocket::Unreadable,
+                _ => DockerSocket::Absent,
+            },
             page_size: number("page_size"),
             system_agent: agent("system"),
             user_agent: agent("user"),
+            other_user_agents,
         })
     }
 
@@ -293,16 +359,7 @@ impl LinuxProbe {
         if self.digest.is_none() {
             return Err(AgentInstallError::NoDigestTool);
         }
-        let (other, other_layout) = match self.layout() {
-            AgentLayout::System => (&self.user_agent, AgentLayout::User),
-            AgentLayout::User => (&self.system_agent, AgentLayout::System),
-        };
-        if let Some(other) = other {
-            return Err(AgentInstallError::OtherLayout {
-                existing: other_layout,
-                binary: other.binary.clone(),
-            });
-        }
+        self.validate_one_agent()?;
         if self.existing().is_none()
             && let (Some(free), Some(total)) = (self.disk_free_bytes, self.disk_total_bytes)
         {
@@ -317,6 +374,37 @@ impl LinuxProbe {
             }
         }
         self.target().map(drop)
+    }
+
+    /// A host gets one agent (D-115): none in the other layout, and for root none in
+    /// another login's user layout either.
+    fn validate_one_agent(&self) -> Result<()> {
+        let conflict =
+            |existing, binary: &str, user: Option<&str>| AgentInstallError::OtherLayout {
+                existing,
+                binary: binary.to_owned(),
+                user: user.map(str::to_owned),
+            };
+        match self.layout() {
+            AgentLayout::System => {
+                if let Some(own) = &self.user_agent {
+                    return Err(conflict(AgentLayout::User, &own.binary, None));
+                }
+                if let Some(other) = self.other_user_agents.first() {
+                    return Err(conflict(
+                        AgentLayout::User,
+                        &other.binary,
+                        Some(&other.user),
+                    ));
+                }
+            }
+            AgentLayout::User => {
+                if let Some(system) = &self.system_agent {
+                    return Err(conflict(AgentLayout::System, &system.binary, None));
+                }
+            }
+        }
+        Ok(())
     }
 
     fn validate_systemd(&self) -> Result<()> {
@@ -364,16 +452,16 @@ impl LinuxProbe {
 }
 
 /// Probes `alias`: a Mac through [`crate::install::probe`], a Linux host through the
-/// agent probe, validated for a history budget of `budget_mb`.
-pub async fn probe_host(alias: &str, budget_mb: u32) -> Result<HostProbe> {
+/// agent probe. With `install_budget_mb` (Add host) a Linux host is validated for an
+/// install with that history budget; without it (update, remove) it is not, so a host
+/// that could not take a new install can still have its agent updated or removed.
+pub async fn probe_host(alias: &str, install_budget_mb: Option<u32>) -> Result<HostProbe> {
     let os = run_script(&Ssh(alias), UNAME_SCRIPT, None, STEP_TIMEOUT).await?;
     match os.trim() {
         "Darwin" => Ok(HostProbe::Mac(crate::install::probe(alias).await?)),
-        "Linux" => {
-            let probe = probe_linux(alias).await?;
-            probe.validate(budget_mb)?;
-            Ok(HostProbe::Linux(Box::new(probe)))
-        }
+        "Linux" => Ok(HostProbe::Linux(Box::new(
+            probe_linux_with(&Ssh(alias), install_budget_mb).await?,
+        ))),
         other => Err(RemoteError::Incompatible(format!(
             "Kelvo monitors macOS and Linux hosts; this one runs {}",
             if other.is_empty() {
@@ -389,6 +477,18 @@ pub async fn probe_host(alias: &str, budget_mb: u32) -> Result<HostProbe> {
 /// The Linux probe alone, unvalidated.
 pub async fn probe_linux(alias: &str) -> Result<LinuxProbe> {
     probe_with(&Ssh(alias)).await
+}
+
+/// The Linux probe, validated for an install when `install_budget_mb` is given.
+pub(crate) async fn probe_linux_with(
+    remote: &impl Remote,
+    install_budget_mb: Option<u32>,
+) -> Result<LinuxProbe> {
+    let probe = probe_with(remote).await?;
+    if let Some(budget_mb) = install_budget_mb {
+        probe.validate(budget_mb)?;
+    }
+    Ok(probe)
 }
 
 pub(crate) async fn probe_with(remote: &impl Remote) -> Result<LinuxProbe> {
