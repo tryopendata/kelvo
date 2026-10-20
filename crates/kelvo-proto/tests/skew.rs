@@ -16,6 +16,8 @@
 // test-only file panic on bad fixtures by design.
 #![allow(clippy::unwrap_used)]
 
+mod pre_d115;
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
@@ -985,91 +987,80 @@ fn d115_fields_default_for_an_older_peer() {
     assert!(c.process_energy && c.process_wakeups);
 }
 
-/// D-115, the old direction: a Linux agent's `hello` decodes on a build from before
-/// D-115, pinned here as that build's shapes and text-enum lists (D-040). The new
-/// fields are ignored, `uniform` and `permission_denied` read as `Unknown`, the
-/// Containers entry is dropped like any unknown module, and everything else is intact.
+/// D-115, the old direction: a Linux agent's `hello` and `capabilities_changed` decode
+/// on a build from before D-115, with that build's own types ([`pre_d115`], vendored
+/// from the merge base). The new fields are ignored, `uniform` and `permission_denied`
+/// read as `Unknown`, the Containers entry is dropped like any unknown module (D-040),
+/// and everything else is intact.
 #[test]
 fn d115_values_decode_on_a_pre_d115_build() {
-    const PRE_MODULES: [&str; 8] = [
-        "cpu", "gpu", "memory", "power", "sensors", "network", "disk", "battery",
-    ];
-    const PRE_CORE_KINDS: [&str; 2] = ["performance", "efficiency"];
-    const PRE_REASONS: [&str; 3] = ["unknown_chip", "missing_entitlement", "no_hardware"];
-    /// The text-enum fallback a pre-D-115 build applies (`compat::text_enum_deserialize`).
-    fn pre<'a>(known: &[&str], text: &'a str) -> &'a str {
-        if known.contains(&text) {
-            text
-        } else {
-            "unknown"
-        }
-    }
-    #[derive(serde::Deserialize)]
-    struct PreCluster {
-        name: String,
-        kind: String,
-        cores: Vec<String>,
-    }
-    #[derive(serde::Deserialize)]
-    struct PreInfo {
-        os: String,
-        os_version: String,
-        cpu_topology: Vec<PreCluster>,
-        mem_total_bytes: u64,
-    }
-    #[derive(serde::Deserialize)]
-    struct PreIdentity {
-        display_name: String,
-        info: PreInfo,
-    }
-    #[derive(serde::Deserialize)]
-    struct PreCaps {
-        modules: BTreeMap<String, Value>,
-        revision: u64,
-        #[serde(default)]
-        process_network: bool,
-    }
-    #[derive(serde::Deserialize)]
-    struct PreHello {
-        host: PreIdentity,
-        capabilities: PreCaps,
-    }
-    #[derive(serde::Deserialize)]
-    struct Envelope {
-        t: String,
-        c: PreHello,
-    }
+    use pre_d115 as old;
+
     let body = std::fs::read(fixtures_dir().join("hello_linux.cbor")).unwrap();
-    let old: Envelope = ciborium::from_reader(body.as_slice()).unwrap();
-    assert_eq!(old.t, "Hello");
-    let info = &old.c.host.info;
-    assert_eq!(old.c.host.display_name, "asahi");
+    let old::Message::Hello(hello) = ciborium::from_reader(body.as_slice()).unwrap() else {
+        panic!("hello_linux is a Hello")
+    };
     assert_eq!(
-        (info.os.as_str(), info.mem_total_bytes),
-        ("linux", 16 << 30)
+        (
+            hello.proto_version,
+            hello.min_compatible,
+            hello.app_version.as_str()
+        ),
+        (1, 1, "1.1.0")
+    );
+    assert_eq!(hello.host.id, old::HostId(Uuid::from_u128(0x11_4E7)));
+    assert_eq!(hello.db_instance_uuid, Uuid::from_u128(0xE3));
+    assert_eq!(hello.host.display_name, "asahi");
+    let info = &hello.host.info;
+    assert_eq!(
+        (info.os, info.mem_total_bytes, info.boot_time_ms),
+        (old::OsKind::Linux, 16 << 30, 1_790_000_000_000)
     );
     assert!(info.os_version.starts_with("Fedora"));
-    let cluster = &info.cpu_topology[0];
-    assert_eq!((cluster.name.as_str(), cluster.cores.len()), ("C0", 2));
-    assert_eq!(pre(&PRE_CORE_KINDS, &cluster.kind), "unknown");
+    assert_eq!(
+        (info.model.as_deref(), info.chip.as_deref(), info.chip_known),
+        (Some("Apple Mac mini (M1, 2020)"), Some("Apple M1"), false)
+    );
+    assert_eq!(
+        info.cpu_topology,
+        [old::ClusterInfo {
+            name: "C0".into(),
+            kind: old::CoreKind::Unknown,
+            cores: vec!["0".into(), "1".into()],
+            dvfs_mhz: vec![600, 2064],
+        }]
+    );
+    assert_eq!(
+        hello.capabilities,
+        old::Capabilities {
+            modules: BTreeMap::from([
+                (old::Module::Cpu, old::ModuleCap::Available { series: 12 }),
+                (
+                    old::Module::Power,
+                    old::ModuleCap::Unsupported(old::UnsupportedReason::Unknown)
+                ),
+            ]),
+            revision: 1,
+            process_network: false,
+            process_gpu: false,
+        },
+        "containers is dropped, permission_denied is unknown"
+    );
 
-    let caps = &old.c.capabilities;
-    assert_eq!((caps.revision, caps.process_network), (1, false));
-    let known: Vec<&str> = caps
-        .modules
-        .keys()
-        .map(|m| pre(&PRE_MODULES, m))
-        .filter(|m| *m != "unknown")
-        .collect();
-    assert_eq!(known, ["cpu", "power"], "containers is dropped");
-    let Some(Value::Map(power)) = caps.modules.get("power") else {
-        panic!("power capability")
+    let body = std::fs::read(fixtures_dir().join("capabilities_linux.cbor")).unwrap();
+    let old::Message::CapabilitiesChanged(caps) = ciborium::from_reader(body.as_slice()).unwrap()
+    else {
+        panic!("capabilities_linux is CapabilitiesChanged")
     };
-    let [(Value::Text(state), Value::Text(reason))] = power.as_slice() else {
-        panic!("unsupported with a reason")
-    };
-    assert_eq!(state, "unsupported");
-    assert_eq!(pre(&PRE_REASONS, reason), "unknown");
+    assert_eq!(
+        caps,
+        old::Capabilities {
+            modules: BTreeMap::from([(old::Module::Cpu, old::ModuleCap::Available { series: 12 })]),
+            revision: 4,
+            process_network: false,
+            process_gpu: false,
+        }
+    );
 }
 
 fn remote_samples() -> Vec<(&'static str, Message)> {
