@@ -5,7 +5,7 @@ import type {
 } from "@core/generated/bindings";
 import { Switch } from "~/components/ui/switch";
 import { HOST_INPUT } from "./host-input";
-export function AddMacFields({
+export function AddHostFields({
   busy,
   name,
   setName,
@@ -15,6 +15,7 @@ export function AddMacFields({
   setTailscale,
   showMenuBar,
   setShowMenuBar,
+  linux,
   setPrepared,
   setTrust,
   setHostKeyError,
@@ -29,6 +30,8 @@ export function AddMacFields({
   setTailscale: (value: string) => void;
   showMenuBar: boolean;
   setShowMenuBar: (value: boolean) => void;
+  /** A Linux host has no menu bar; its switch is hidden once the probe says so. */
+  linux: boolean;
   setPrepared: (value: RemoteHostPreparation | null) => void;
   setTrust: (value: RemoteSshHostTrust | null) => void;
   setHostKeyError: (value: boolean) => void;
@@ -42,7 +45,7 @@ export function AddMacFields({
           className={HOST_INPUT}
           value={name}
           onChange={(e) => setName(e.target.value)}
-          placeholder="Studio Mac"
+          placeholder="Studio"
         />
       </label>
       <label className="grid gap-1 text-[12px]">
@@ -57,7 +60,7 @@ export function AddMacFields({
             setHostKeyError(false);
             setError(null);
           }}
-          placeholder="studio or username@studio.local"
+          placeholder="studio or root@server.local"
           autoCapitalize="none"
           spellCheck={false}
         />
@@ -80,17 +83,19 @@ export function AddMacFields({
         />
       </label>
       <p className="text-[12px] text-muted-foreground">
-        Enter an alias from ~/.ssh/config or user@address, without “ssh”. Use
-        the account signed in on the other Mac. Only one address is needed.
+        Enter an alias from ~/.ssh/config or user@address, without “ssh”. On a
+        Mac, use the account signed in there. Only one address is needed.
       </p>
-      <div className="flex items-center justify-between gap-3 text-[12px]">
-        <span>Show menu-bar icon on the other Mac</span>
-        <Switch
-          aria-label="Show menu-bar icon on remote Mac"
-          checked={showMenuBar}
-          onCheckedChange={setShowMenuBar}
-        />
-      </div>
+      {!linux && (
+        <div className="flex items-center justify-between gap-3 text-[12px]">
+          <span>Show menu-bar icon on a Mac</span>
+          <Switch
+            aria-label="Show menu-bar icon on remote Mac"
+            checked={showMenuBar}
+            onCheckedChange={setShowMenuBar}
+          />
+        </div>
+      )}
     </fieldset>
   );
 }

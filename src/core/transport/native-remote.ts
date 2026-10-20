@@ -13,6 +13,9 @@ export function nativeRemote(): Pick<
   | "updateRemoteHost"
   | "removeRemoteHost"
   | "retryRemoteHost"
+  | "resetRemoteHostIdentity"
+  | "updateRemoteAgent"
+  | "repairRemoteHost"
 > {
   return {
     listRemoteHosts: () => commands.listRemoteHosts(),
@@ -25,8 +28,24 @@ export function nativeRemote(): Pick<
       commands.addRemoteHost(config, install, showMenuBar, setupId),
     cancelRemoteSetup: (setupId) => commands.cancelRemoteSetup(setupId),
     updateRemoteHost: (config) => commands.updateRemoteHost(config),
-    removeRemoteHost: (id, deleteMirror, stopSharing) =>
-      commands.removeRemoteHost(id, deleteMirror, stopSharing),
+    removeRemoteHost: (
+      id,
+      deleteMirror,
+      stopSharing,
+      uninstallAgent,
+      purgeAgent
+    ) =>
+      commands.removeRemoteHost(
+        id,
+        deleteMirror,
+        stopSharing,
+        uninstallAgent,
+        purgeAgent
+      ),
     retryRemoteHost: (id) => commands.retryRemoteHost(id),
+    resetRemoteHostIdentity: (lan, tailscale) =>
+      commands.resetRemoteHostIdentity(lan, tailscale),
+    updateRemoteAgent: (id) => commands.updateRemoteAgent(id),
+    repairRemoteHost: (id) => commands.repairRemoteHost(id),
   };
 }

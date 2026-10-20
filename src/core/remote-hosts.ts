@@ -1,4 +1,7 @@
-import type { RemoteHostRecord } from "@core/generated/bindings";
+import type {
+  LinuxPreparation,
+  RemoteHostRecord,
+} from "@core/generated/bindings";
 
 export function connectionLabel(remote: RemoteHostRecord): string {
   const { status } = remote;
@@ -12,4 +15,16 @@ export function connectionLabel(remote: RemoteHostRecord): string {
       error: "Connection failed",
     }[status.state] ?? status.state
   );
+}
+
+/** What the probe found on a Linux host: "Linux 6.17 · aarch64 · systemd 256". */
+export function linuxSystemLine(linux: LinuxPreparation): string {
+  const kernel = linux.kernel?.match(/^\d+\.\d+/)?.[0];
+  return [
+    kernel ? `Linux ${kernel}` : "Linux",
+    linux.arch,
+    linux.systemd_version === null ? null : `systemd ${linux.systemd_version}`,
+  ]
+    .filter((part) => part)
+    .join(" · ");
 }

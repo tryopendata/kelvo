@@ -26,6 +26,21 @@ pub enum CommandError {
     /// The other Mac could not be reached, or the connection broke.
     #[error("{message}")]
     RemoteUnreachable { message: String },
+    /// The Linux host has too little free space for the agent's history budget plus the
+    /// low-disk reserve.
+    #[error("{message}")]
+    RemoteLowDisk { message: String },
+    /// The Linux host already has an agent this setup must not replace (installed for
+    /// another login), or has none where one was expected.
+    #[error("{message}")]
+    RemoteAgentConflict { message: String },
+    /// The agent is installed but its service is not answering.
+    #[error("{message}")]
+    RemoteAgentNotRunning { message: String },
+    /// Updating the agent failed. `restored` says whether the previous version and its
+    /// history were put back and are running again.
+    #[error("{message}")]
+    RemoteAgentUpdateFailed { message: String, restored: bool },
     /// A bounded, sanitized Docker monitoring error.
     #[error("Docker: {message}")]
     Docker { message: String },

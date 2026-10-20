@@ -67,8 +67,31 @@ export const commands = {
 	addRemoteHost: (config: RemoteHostConfig, install: boolean, showMenuBar: boolean, setupId: string) => typedError<RemoteHostRecord, CommandError>(__TAURI_INVOKE("add_remote_host", { config, install, showMenuBar, setupId })),
 	cancelRemoteSetup: (setupId: string) => typedError<null, CommandError>(__TAURI_INVOKE("cancel_remote_setup", { setupId })),
 	updateRemoteHost: (config: RemoteHostConfig) => typedError<RemoteHostRecord, CommandError>(__TAURI_INVOKE("update_remote_host", { config })),
-	removeRemoteHost: (id: string, deleteMirror: boolean, stopSharing: boolean) => typedError<string | null, CommandError>(__TAURI_INVOKE("remove_remote_host", { id, deleteMirror, stopSharing })),
+	/**
+	 *  Removes a host. A Mac can also stop sharing; a Linux host can also have its agent
+	 *  uninstalled (with `purge_agent`, its history and identity too). Remote failures
+	 *  warn and never block removal (D-105).
+	 */
+	removeRemoteHost: (id: string, deleteMirror: boolean, stopSharing: boolean, uninstallAgent: boolean, purgeAgent: boolean) => typedError<string | null, CommandError>(__TAURI_INVOKE("remove_remote_host", { id, deleteMirror, stopSharing, uninstallAgent, purgeAgent })),
 	retryRemoteHost: (id: string) => typedError<null, CommandError>(__TAURI_INVOKE("retry_remote_host", { id })),
+	/**
+	 *  Gives the Linux agent at these routes a new host id, for a server whose agent
+	 *  reports the id of a host already in the list (a clone, or a reinstall that kept
+	 *  the data directory). Returns the preparation with the new id.
+	 */
+	resetRemoteHostIdentity: (lan: string | null, tailscale: string | null) => typedError<RemoteHostPreparation, CommandError>(__TAURI_INVOKE("reset_remote_host_identity", { lan, tailscale })),
+	/**
+	 *  Updates a saved Linux host's agent to the one this build bundles, keeping its
+	 *  identity and history; a failed update restores the previous agent.
+	 */
+	updateRemoteAgent: (id: string) => typedError<null, CommandError>(__TAURI_INVOKE("update_remote_agent", { id })),
+	/**
+	 *  Re-pairs a host that now answers with a different id (a reinstall, a reset
+	 *  identity, a replaced machine). The answering host is added as a new host with the
+	 *  same name and routes; the old one is kept, disabled, with its mirrored history
+	 *  (D-115).
+	 */
+	repairRemoteHost: (id: string) => typedError<RemoteHostRecord, CommandError>(__TAURI_INVOKE("repair_remote_host", { id })),
 	getHost: (host: HostId) => typedError<HostRecord, CommandError>(__TAURI_INVOKE("get_host", { host })),
 	getCapabilities: (host: HostId) => typedError<Capabilities, CommandError>(__TAURI_INVOKE("get_capabilities", { host })),
 	/**
@@ -526,6 +549,23 @@ export type CommandError = { kind: "update"; message: string } |
 { kind: "remote_identity"; message: string } |
 /**  The other Mac could not be reached, or the connection broke. */
 { kind: "remote_unreachable"; message: string } |
+/**
+ *  The Linux host has too little free space for the agent's history budget plus the
+ *  low-disk reserve.
+ */
+{ kind: "remote_low_disk"; message: string } |
+/**
+ *  The Linux host already has an agent this setup must not replace (installed for
+ *  another login), or has none where one was expected.
+ */
+{ kind: "remote_agent_conflict"; message: string } |
+/**  The agent is installed but its service is not answering. */
+{ kind: "remote_agent_not_running"; message: string } |
+/**
+ *  Updating the agent failed. `restored` says whether the previous version and its
+ *  history were put back and are running again.
+ */
+{ kind: "remote_agent_update_failed"; message: string; restored: boolean } |
 /**  A bounded, sanitized Docker monitoring error. */
 { kind: "docker"; message: string } |
 /**  The requested container, retained run or storage resource no longer exists. */
@@ -1497,6 +1537,49 @@ export type ItemsPatch = {
  */
 export type Labels = ([string, string])[];
 
+/**  The Linux disclosure: what setup will put on the host and what it found there. */
+export type LinuxPreparation = {
+	layout: RemoteAgentLayout,
+	/**  The SSH login the agent installs for. */
+	user: string,
+	/**  os-release `PRETTY_NAME`. */
+	distro: string | null,
+	/**  `uname -r`. */
+	kernel: string | null,
+	/**  `uname -m`. */
+	arch: string,
+	systemd_version: number | null,
+	/**
+	 *  A user service keeps running after logout only with lingering on. Always true
+	 *  for the system layout.
+	 */
+	linger_ok: boolean,
+	/**  `getenforce`: `Enforcing`, `Permissive` or `Disabled`; `None` without SELinux. */
+	selinux: string | null,
+	binary_path: string,
+	data_dir: string,
+	/**  Free space on the data directory's volume. */
+	free_bytes: number | null,
+	/**
+	 *  The low-disk reserve plus the history budget; `None` when an agent is already
+	 *  installed (its history already holds its share) or the volume size is unknown.
+	 */
+	needed_bytes: number | null,
+	/**  The agent's history size limit (decimal MB). */
+	budget_mb: number,
+	/**  The installed agent's version, when one is installed. */
+	existing_version: string | null,
+	/**  Whether the agent can read the Docker socket to name containers. */
+	docker_readable: boolean,
+	/**  Non-blocking notes from the probe (the linger command for a user service). */
+	warnings: string[],
+	/**
+	 *  The saved host already using the installed agent's id. Adding needs a new
+	 *  identity first (`reset_remote_host_identity`).
+	 */
+	duplicate_of: string | null,
+};
+
 /**
  *  One message on a window's live channel (D-049, D-066).
  *
@@ -2126,6 +2209,12 @@ export type RemoteAccessSettings = {
 	enabled: boolean,
 };
 
+/**
+ *  How the agent runs on a Linux host: root installs a system service, anyone else a
+ *  user service (D-115).
+ */
+export type RemoteAgentLayout = "system" | "user";
+
 export type RemoteHostConfig = {
 	id: string,
 	name: string,
@@ -2135,16 +2224,27 @@ export type RemoteHostConfig = {
 	mirror_budget_mb: number,
 };
 
+/**  What answered at an SSH alias, which decides the setup path. */
+export type RemoteHostKind =
+/**  Another Mac, running Kelvo.app (D-104). */
+"mac" |
+/**  A Linux host, running the headless agent (D-115). */
+"linux";
+
 export type RemoteHostPreparation = {
+	kind: RemoteHostKind,
 	installed: boolean,
 	compatible: boolean,
 	host_id: string | null,
 	name: string,
 	message: string | null,
+	/**  What installing on a Linux host involves; `None` for a Mac. */
+	linux: LinuxPreparation | null,
 };
 
 export type RemoteHostRecord = {
 	config: RemoteHostConfig,
+	os: OsKind,
 	status: RemoteHostStatus,
 };
 
@@ -2157,6 +2257,18 @@ export type RemoteHostStatus = {
 	clock_offset_ms: number | null,
 	cpu_pct: number | null,
 	memory_pct: number | null,
+	/**  The version the host last reported (`Hello.app_version`). */
+	agent_version: string | null,
+	/**
+	 *  A Linux host whose agent is older than the one this build bundles; the host
+	 *  list offers "Update agent".
+	 */
+	update_available: boolean,
+	/**
+	 *  The id the host answered with when it is not the paired one. The host list
+	 *  offers "Re-pair as a new host" (D-115).
+	 */
+	identity_changed: string | null,
 };
 
 export type RemoteRoute = "lan" | "tailscale";

@@ -39,11 +39,7 @@ pub(super) fn register(app: &AppHandle, saved: SavedHost) -> Result<(), CommandE
     let source = RemoteSource::new(
         saved.record.clone(),
         state.local,
-        EndpointConfig {
-            lan: saved.config.lan.clone(),
-            tailscale: saved.config.tailscale.clone(),
-            command: kelvo_remote::RemoteCommand::MacHelper(saved.helper_path.clone()),
-        },
+        saved.endpoint(),
         cb,
         Some(mirror.clone()),
     );
@@ -136,5 +132,8 @@ fn connection_status(s: kelvo_remote::ConnectionStatus) -> RemoteHostStatus {
         clock_offset_ms: s.clock_offset_ms as f64,
         cpu_pct: None,
         memory_pct: None,
+        agent_version: s.remote_version,
+        update_available: false,
+        identity_changed: s.identity_changed.map(|id| id.to_string()),
     }
 }

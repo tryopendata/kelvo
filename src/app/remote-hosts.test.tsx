@@ -79,7 +79,7 @@ describe("remote host selection", () => {
 
   it("checks endpoints before connecting and saves a new selectable host", async () => {
     const { transport, unmount } = setup();
-    fireEvent.click(await screen.findByRole("button", { name: "Add Mac" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Add host" }));
     expect(
       screen.getByRole("button", { name: "Check connection" })
     ).toBeDisabled();
@@ -117,7 +117,7 @@ describe("remote host selection", () => {
       trusted = true;
       return accept(token);
     };
-    fireEvent.click(await screen.findByRole("button", { name: "Add Mac" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Add host" }));
     fireEvent.change(screen.getByLabelText("LAN SSH alias"), {
       target: { value: "office.local" },
     });
@@ -146,7 +146,7 @@ describe("remote host selection", () => {
       await cleanup;
       return cancel(id);
     };
-    fireEvent.click(await screen.findByRole("button", { name: "Add Mac" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Add host" }));
     fireEvent.change(screen.getByLabelText("LAN SSH alias"), {
       target: { value: "office.local" },
     });
@@ -182,7 +182,7 @@ describe("remote host selection", () => {
     expect(
       screen.getByRole("heading", { name: "Studio Mac" })
     ).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Add Mac" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add host" }));
     expect(screen.getByLabelText("LAN SSH alias")).toHaveValue("");
     expect(
       screen.getByRole("button", { name: "Check connection" })

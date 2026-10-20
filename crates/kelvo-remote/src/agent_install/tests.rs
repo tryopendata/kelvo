@@ -510,6 +510,8 @@ async fn lifecycle_under_busybox_as_a_user() {
 /// The probe of linux-tailscale (root, Fedora Asahi), trimmed.
 const ASAHI_PROBE: &str = r#"os=Linux
 arch=aarch64
+kernel=6.17.4-400.asahi.fc41.aarch64+16k
+pretty_name=Fedora Linux Asahi Remix 41 (Server Edition)
 uid=0
 user=root
 home=/root
@@ -535,6 +537,14 @@ fn probe_parses_and_validates() {
     let probe = LinuxProbe::parse(ASAHI_PROBE).unwrap();
     assert_eq!(probe.layout(), AgentLayout::System);
     assert_eq!(probe.page_size, Some(16384));
+    assert_eq!(
+        probe.pretty_name.as_deref(),
+        Some("Fedora Linux Asahi Remix 41 (Server Edition)")
+    );
+    assert_eq!(
+        probe.kernel.as_deref(),
+        Some("6.17.4-400.asahi.fc41.aarch64+16k")
+    );
     assert_eq!(probe.disk_free_bytes, Some(14_213_360 * 1024));
     assert_eq!(probe.cgroup_fs.as_deref(), Some("cgroup2fs"));
     assert!(probe.docker_socket && probe.restorecon);

@@ -1,11 +1,13 @@
-//! Mac-to-Mac monitoring: shell adapters, saved hosts and host-specific history.
-//! Transport and protocol state machines live in kelvo-remote (D-104).
+//! Remote monitoring of other Macs (D-104) and Linux agents (D-115): shell adapters,
+//! saved hosts and host-specific history. Transport, protocol state machines and agent
+//! installation live in kelvo-remote.
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use kelvo_remote::{
-    ControlRequest, ControlResponse, EndpointConfig, HostServer, Mirror, RemoteSource, SocketPaths,
+    ControlRequest, ControlResponse, EndpointConfig, HostServer, Mirror, RemoteCommand,
+    RemoteSource, SocketPaths,
 };
 use kelvo_schema::lock::LockExt;
 use kelvo_schema::{HostId, HostRecord};
@@ -37,11 +39,50 @@ pub fn remote_ssh_config_status(app: AppHandle) -> Result<RemoteSshConfigStatus,
     ssh_config_status(&app.path().home_dir().map_err(failure)?.join(".ssh/config"))
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 struct SavedHost {
     config: RemoteHostConfig,
     record: HostRecord,
-    helper_path: String,
+    /// What the SSH session runs. Hosts saved before Linux support stored the Mac
+    /// helper's path as `helper_path`, which reads as [`RemoteCommand::MacHelper`].
+    #[serde(default, alias = "helper_path")]
+    command: RemoteCommand,
+}
+impl SavedHost {
+    fn endpoint(&self) -> EndpointConfig {
+        EndpointConfig {
+            lan: self.config.lan.clone(),
+            tailscale: self.config.tailscale.clone(),
+            command: self.command.clone(),
+        }
+    }
+    fn is_linux(&self) -> bool {
+        matches!(self.command, RemoteCommand::Agent { .. })
+    }
+}
+
+/// Reads `remote-hosts.json` one host at a time, so a host this build can't read is
+/// skipped instead of dropping every saved host. Returns what could not be read.
+fn parse_saved(bytes: &[u8]) -> (BTreeMap<HostId, SavedHost>, Vec<String>) {
+    let entries: BTreeMap<String, serde_json::Value> = match serde_json::from_slice(bytes) {
+        Ok(entries) => entries,
+        Err(e) => return (BTreeMap::new(), vec![e.to_string()]),
+    };
+    let mut saved = BTreeMap::new();
+    let mut errors = Vec::new();
+    for (key, value) in entries {
+        match (
+            Uuid::parse_str(&key),
+            serde_json::from_value::<SavedHost>(value),
+        ) {
+            (Ok(id), Ok(host)) => {
+                saved.insert(HostId(id), host);
+            }
+            (Err(e), _) => errors.push(format!("{key}: {e}")),
+            (_, Err(e)) => errors.push(format!("{key}: {e}")),
+        }
+    }
+    (saved, errors)
 }
 /// The shell adapter and transport sink share one store without per-query allocation.
 struct RegisteredMirror {
@@ -103,12 +144,44 @@ impl From<kelvo_remote::RemoteError> for CommandError {
             RemoteError::Identity(_) | RemoteError::IdentityMismatch { .. } => {
                 Self::RemoteIdentity { message }
             }
-            // A typed state of its own arrives with the Linux Add host flow (D-115).
-            RemoteError::AgentNotRunning(_)
-            | RemoteError::Transport(_)
+            RemoteError::AgentNotRunning(_) => Self::RemoteAgentNotRunning { message },
+            RemoteError::Transport(_)
             | RemoteError::Io(_)
             | RemoteError::Codec(_)
             | RemoteError::Protocol(_) => Self::RemoteUnreachable { message },
+        }
+    }
+}
+
+impl From<kelvo_remote::agent_install::AgentInstallError> for CommandError {
+    fn from(error: kelvo_remote::agent_install::AgentInstallError) -> Self {
+        use kelvo_remote::agent_install::AgentInstallError as E;
+        let message = error.to_string();
+        match error {
+            E::Remote(e) => e.into(),
+            E::UnsupportedArch(_)
+            | E::NoSystemd { .. }
+            | E::NoUserManager { .. }
+            | E::NoDigestTool => Self::RemoteIncompatible { message },
+            E::LowDisk { .. } => Self::RemoteLowDisk { message },
+            E::OtherLayout { .. } | E::AlreadyInstalled { .. } | E::NotInstalled { .. } => {
+                Self::RemoteAgentConflict { message }
+            }
+            E::NotRunning { .. } => Self::RemoteAgentNotRunning { message },
+            // Nothing was replaced; the transfer can be retried.
+            E::DigestMismatch { .. } => Self::RemoteUnreachable { message },
+            E::UpdateFailed { restored, .. } => Self::RemoteAgentUpdateFailed { message, restored },
+        }
+    }
+}
+impl From<agent_bundle::AgentBundleError> for CommandError {
+    fn from(error: agent_bundle::AgentBundleError) -> Self {
+        let message = error.to_string();
+        match error {
+            agent_bundle::AgentBundleError::UnsupportedArch { .. } => {
+                Self::RemoteIncompatible { message }
+            }
+            _ => Self::Internal { message },
         }
     }
 }

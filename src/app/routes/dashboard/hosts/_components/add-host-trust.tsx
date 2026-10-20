@@ -6,7 +6,7 @@ import type {
 import { Button } from "~/components/ui/button";
 import { SshSetupHelp } from "./ssh-setup-help";
 
-export function AddMacTrust({
+export function AddHostTrust({
   hostKeyError,
   error,
   prepared,

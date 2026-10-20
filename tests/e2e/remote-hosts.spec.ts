@@ -32,7 +32,7 @@ for (const theme of ["light", "dark"]) {
     await page.goto(
       `/?route=/dashboard/hosts&scenario=ssh-auth&theme=${theme}&ticks=0`
     );
-    await page.getByRole("button", { name: "Add Mac", exact: true }).click();
+    await page.getByRole("button", { name: "Add host", exact: true }).click();
     await page
       .getByLabel("LAN SSH alias", { exact: true })
       .fill("user@office.local");
@@ -66,7 +66,7 @@ for (const theme of ["light", "dark"]) {
     await page.goto(
       `/?route=/dashboard/hosts&scenario=ssh-no-config&theme=${theme}&ticks=0`
     );
-    await page.getByRole("button", { name: "Add Mac", exact: true }).click();
+    await page.getByRole("button", { name: "Add host", exact: true }).click();
     await expect(page.getByText(/No ~\/\.ssh\/config found/)).toBeVisible();
     await expect(
       page.getByRole("button", { name: "Hide SSH setup guide" })
@@ -120,11 +120,11 @@ for (const theme of ["light", "dark"]) {
       animations: "disabled",
       path: `test-results/screens/hosts-${theme}-${info.project.name}.png`,
     });
-    await page.getByRole("button", { name: "Add Mac", exact: true }).click();
+    await page.getByRole("button", { name: "Add host", exact: true }).click();
     await expect(page.getByRole("dialog")).toBeVisible();
     await page.screenshot({
       animations: "disabled",
-      path: `test-results/screens/add-mac-${theme}-${info.project.name}.png`,
+      path: `test-results/screens/add-host-${theme}-${info.project.name}.png`,
     });
     await page.getByRole("button", { name: "Cancel", exact: true }).click();
     await page.getByRole("combobox", { name: "Selected machine" }).click();
@@ -161,7 +161,7 @@ test("SSH host trust requires fingerprint confirmation", async ({
   await page.goto(
     "/?route=/dashboard/hosts&scenario=ssh-untrusted&theme=dark&ticks=0"
   );
-  await page.getByRole("button", { name: "Add Mac", exact: true }).click();
+  await page.getByRole("button", { name: "Add host", exact: true }).click();
   await page.getByLabel("LAN SSH alias", { exact: true }).fill("office.local");
   await page
     .getByRole("button", { name: "Check connection", exact: true })
@@ -194,7 +194,7 @@ test("a saved Mac can be renamed, disabled, selected, and removed without losing
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto("/?route=/dashboard/hosts&theme=dark&ticks=0");
-  await page.getByRole("button", { name: "Add Mac", exact: true }).click();
+  await page.getByRole("button", { name: "Add host", exact: true }).click();
   await page.getByLabel("Name", { exact: true }).fill("Office Mac");
   await page.getByLabel("LAN SSH alias", { exact: true }).fill("office.local");
   await page
@@ -237,7 +237,7 @@ test("a saved Mac can be renamed, disabled, selected, and removed without losing
   await expect(
     page.getByRole("switch", { name: "Connect automatically", exact: true })
   ).not.toBeChecked();
-  await page.getByRole("button", { name: "Remove Mac…", exact: true }).click();
+  await page.getByRole("button", { name: "Remove host…", exact: true }).click();
   await expect(
     page.getByLabel("Delete mirrored history from this Mac")
   ).not.toBeChecked();
@@ -245,14 +245,14 @@ test("a saved Mac can be renamed, disabled, selected, and removed without losing
   await expect(page.getByLabel("LAN SSH alias", { exact: true })).toHaveValue(
     "office.local"
   );
-  await page.getByRole("button", { name: "Remove Mac…", exact: true }).click();
-  await page.getByRole("button", { name: "Remove Mac", exact: true }).click();
+  await page.getByRole("button", { name: "Remove host…", exact: true }).click();
+  await page.getByRole("button", { name: "Remove host", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(
     page.getByRole("heading", { name: "Work Mac", exact: true })
   ).toHaveCount(0);
   await expect(
-    page.getByText(/Add a Mac to view its live metrics/)
+    page.getByText(/Add a Linux server or another Mac over SSH/)
   ).toBeVisible();
   await page.getByRole("button", { name: "View metrics", exact: true }).click();
   await expect(
@@ -264,3 +264,41 @@ test("a saved Mac can be renamed, disabled, selected, and removed without losing
   await expect(page.getByRole("link", { name: /^Battery/ })).toBeVisible();
   expect(errors).toEqual([]);
 });
+
+for (const theme of ["light", "dark"]) {
+  test(`Linux host setup and agent states (${theme})`, async ({
+    page,
+  }, info) => {
+    await page.setViewportSize({ width: 1280, height: 833 });
+    await page.goto(
+      `/?route=/dashboard/hosts&scenario=linux-host,linux-agent-update&theme=${theme}&ticks=0`
+    );
+    await expect(
+      page.getByRole("button", { name: "Update agent", exact: true })
+    ).toBeVisible();
+    await page.screenshot({
+      animations: "disabled",
+      path: `test-results/screens/hosts-linux-update-${theme}-${info.project.name}.png`,
+    });
+    await page.getByRole("button", { name: "Add host", exact: true }).click();
+    await page
+      .getByLabel("Tailscale SSH alias", { exact: true })
+      .fill("linux-user");
+    await page
+      .getByRole("button", { name: "Check connection", exact: true })
+      .click();
+    await expect(
+      page.getByText("sudo loginctl enable-linger riley", { exact: true })
+    ).toBeVisible();
+    await page.screenshot({
+      animations: "disabled",
+      path: `test-results/screens/add-host-linux-user-${theme}-${info.project.name}.png`,
+    });
+    await page
+      .getByRole("button", { name: "Install and connect", exact: true })
+      .click();
+    await expect(
+      page.getByRole("heading", { name: "build-box", exact: true })
+    ).toBeVisible();
+  });
+}

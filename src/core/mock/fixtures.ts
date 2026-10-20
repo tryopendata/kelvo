@@ -31,6 +31,8 @@ export type ScenarioName =
   | "multi-host"
   | "linux"
   | "linux-host"
+  | "linux-agent-update"
+  | "linux-identity-changed"
   | "default"
   | "sleep-gap"
   | "unknown-chip"
@@ -85,6 +87,8 @@ export const SCENARIOS: readonly ScenarioName[] = [
   "multi-host",
   "linux",
   "linux-host",
+  "linux-agent-update",
+  "linux-identity-changed",
   "default",
   "sleep-gap",
   "unknown-chip",

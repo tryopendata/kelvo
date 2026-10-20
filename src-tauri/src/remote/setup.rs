@@ -1,14 +1,20 @@
 //! Setup transaction: read-only cancellation boundaries, configure, register and recover.
+//! The probe decides the path: [`mac`] installs Kelvo.app, [`linux`] the headless agent.
 use super::*;
-mod installation;
-use installation::Installation;
+use kelvo_remote::agent_install::HostProbe;
+pub(super) mod linux;
+mod mac;
+use mac::Installation;
+/// Probes each configured route (LAN first, Tailscale 500 ms later) and returns the
+/// first that answers, with what it found. A Linux host is validated for the agent's
+/// history budget.
 pub(super) async fn probe_routes(
     lan: Option<String>,
     tailscale: Option<String>,
-) -> Result<(String, kelvo_remote::install::InstallProbe), CommandError> {
+) -> Result<(String, HostProbe), CommandError> {
     let config = RemoteHostConfig {
         id: String::new(),
-        name: "Mac".into(),
+        name: "Host".into(),
         lan: lan.clone(),
         tailscale: tailscale.clone(),
         enabled: true,
@@ -20,7 +26,8 @@ pub(super) async fn probe_routes(
         if let Some(alias) = alias {
             attempts.spawn(async move {
                 tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
-                let result = kelvo_remote::install::probe(&alias).await;
+                let result =
+                    kelvo_remote::agent_install::probe_host(&alias, linux::AGENT_BUDGET_MB).await;
                 result.map(|probe| (alias, probe))
             });
         }
@@ -42,7 +49,10 @@ pub(super) fn most_actionable(errors: Vec<CommandError>) -> Option<CommandError>
     let rank = |e: &CommandError| match e {
         CommandError::HostKeyUnknown { .. } => 0,
         CommandError::RemoteAuth { .. } => 1,
-        CommandError::RemoteIncompatible { .. } | CommandError::RemoteIdentity { .. } => 2,
+        CommandError::RemoteIncompatible { .. }
+        | CommandError::RemoteIdentity { .. }
+        | CommandError::RemoteLowDisk { .. }
+        | CommandError::RemoteAgentConflict { .. } => 2,
         _ => 3,
     };
     let messages: Vec<String> = errors.iter().map(ToString::to_string).collect();
@@ -55,6 +65,9 @@ pub(super) fn most_actionable(errors: Vec<CommandError>) -> Option<CommandError>
             | CommandError::RemoteIncompatible { message }
             | CommandError::RemoteIdentity { message }
             | CommandError::RemoteUnreachable { message }
+            | CommandError::RemoteLowDisk { message }
+            | CommandError::RemoteAgentConflict { message }
+            | CommandError::RemoteAgentNotRunning { message }
             | CommandError::Internal { message } => *message = joined,
             _ => {}
         }
@@ -86,28 +99,90 @@ async fn wait_for_control(alias: &str, helper: &str) -> Result<ControlResponse, 
 #[tauri::command]
 #[specta::specta]
 pub async fn prepare_remote_host(
+    app: AppHandle,
     lan: Option<String>,
     tailscale: Option<String>,
 ) -> Result<RemoteHostPreparation, CommandError> {
-    let (alias, p) = probe_routes(lan, tailscale).await?;
-    let compatible = if let Some(helper) = p.helper_path.as_deref() {
-        kelvo_remote::install::version(&alias, helper)
-            .await
-            .is_ok_and(|version| version == env!("CARGO_PKG_VERSION"))
-    } else {
-        false
-    };
-    Ok(RemoteHostPreparation {
-        installed: p.app_path.is_some(),
-        compatible,
-        host_id: None,
-        name: p.user.clone(),
-        message: if !compatible {
-            Some(if p.app_path.is_some(){"Quit Kelvo on the other Mac, then update it with this build. Your settings and history are kept."}else{"Install this Kelvo build to enable remote monitoring"}.into())
-        } else {
-            None
+    match probe_routes(lan, tailscale).await? {
+        (alias, HostProbe::Mac(p)) => mac::prepare(&alias, p).await,
+        (alias, HostProbe::Linux(p)) => {
+            let saved = app.state::<AppState>().remotes.saved.lock_ok().clone();
+            linux::preparation(&alias, &p, &saved)
+        }
+    }
+}
+
+/// Gives the Linux agent at these routes a new host id, for a server whose agent
+/// reports the id of a host already in the list (a clone, or a reinstall that kept
+/// the data directory). Returns the preparation with the new id.
+#[tauri::command]
+#[specta::specta]
+pub async fn reset_remote_host_identity(
+    app: AppHandle,
+    lan: Option<String>,
+    tailscale: Option<String>,
+) -> Result<RemoteHostPreparation, CommandError> {
+    let state = app.state::<AppState>();
+    let _guard = state.remotes.operation.lock().await;
+    let (alias, probe) = linux_probe(lan.clone(), tailscale.clone()).await?;
+    kelvo_remote::agent_install::reset_identity(&alias, &probe).await?;
+    let (alias, probe) = linux_probe(lan, tailscale).await?;
+    let saved = state.remotes.saved.lock_ok().clone();
+    linux::preparation(&alias, &probe, &saved)
+}
+
+/// Updates a saved Linux host's agent to the one this build bundles, keeping its
+/// identity and history; a failed update restores the previous agent.
+#[tauri::command]
+#[specta::specta]
+pub async fn update_remote_agent(app: AppHandle, id: String) -> Result<(), CommandError> {
+    linux::update_saved(app, id).await
+}
+
+/// The probe of a host that must be Linux (an agent operation on a saved host).
+pub(super) async fn linux_probe(
+    lan: Option<String>,
+    tailscale: Option<String>,
+) -> Result<(String, kelvo_remote::agent_install::LinuxProbe), CommandError> {
+    match probe_routes(lan, tailscale).await? {
+        (alias, HostProbe::Linux(p)) => Ok((alias, *p)),
+        (_, HostProbe::Mac(_)) => Err(CommandError::RemoteIdentity {
+            message: "A Mac answered where a Linux host was expected. Check the SSH alias".into(),
+        }),
+    }
+}
+
+/// Registers a host that just answered setup, saves it, and returns its row. A failed
+/// save takes the registration back out.
+pub(super) async fn register_new(
+    app: &AppHandle,
+    config: RemoteHostConfig,
+    record: HostRecord,
+    command: kelvo_remote::RemoteCommand,
+) -> Result<RemoteHostRecord, CommandError> {
+    let state = app.state::<AppState>();
+    let id = record.id;
+    let os = record.info.os;
+    register(
+        app,
+        SavedHost {
+            config: config.clone(),
+            record,
+            command,
         },
-    })
+    )?;
+    if let Err(error) = save(app) {
+        discard_host_async(app, id).await?;
+        return Err(error);
+    }
+    let status = state
+        .remotes
+        .statuses
+        .lock_ok()
+        .get(&id)
+        .cloned()
+        .unwrap_or_default();
+    Ok(RemoteHostRecord { config, os, status })
 }
 
 struct SetupGuard {
@@ -194,6 +269,12 @@ pub async fn add_remote_host(
         probe_routes(config.lan.clone(), config.tailscale.clone()),
     )
     .await?;
+    let probe = match probe {
+        HostProbe::Linux(probe) => {
+            return linux::add(&app, &alias, *probe, config, install, &mut cancel).await;
+        }
+        HostProbe::Mac(probe) => probe,
+    };
     let installation = Installation::prepare(&alias, probe, install).await?;
     let mut before = None;
     let result = installation

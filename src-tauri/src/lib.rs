@@ -91,6 +91,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             remote::update_remote_host,
             remote::remove_remote_host,
             remote::retry_remote_host,
+            remote::reset_remote_host_identity, remote::update_remote_agent, remote::repair_remote_host,
             commands::get_host,
             commands::get_capabilities,
             commands::subscribe_live,

@@ -2,11 +2,22 @@
 use super::*;
 pub fn start(app: &AppHandle) -> anyhow::Result<()> {
     let state = app.state::<AppState>();
-    if let Ok(bytes) = std::fs::read(saved_path(app)?) {
-        match serde_json::from_slice::<BTreeMap<HostId, SavedHost>>(&bytes) {
-            Ok(saved) => *state.remotes.saved.lock_ok() = saved,
-            Err(e) => tracing::warn!("remote host configuration could not be read: {e}"),
+    let path = saved_path(app)?;
+    if let Ok(bytes) = std::fs::read(&path) {
+        let (saved, errors) = parse_saved(&bytes);
+        if !errors.is_empty() {
+            // The next save rewrites the file without these hosts; keep the original.
+            let kept = path.with_extension("json.unreadable");
+            tracing::warn!(
+                "remote hosts could not be read ({}); the file is kept at {}",
+                errors.join("; "),
+                kept.display()
+            );
+            if let Err(e) = std::fs::copy(&path, &kept) {
+                tracing::warn!("keeping the unreadable remote host file: {e}");
+            }
         }
+        *state.remotes.saved.lock_ok() = saved;
     }
     let (stop, mut rx) = tokio::sync::watch::channel(false);
     *state.remotes.stop.lock_ok() = Some(stop);

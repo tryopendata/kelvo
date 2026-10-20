@@ -2,10 +2,6 @@
 //! from `make agent-linux`). Before one is uploaded to a host it is read and re-hashed
 //! against the digest `build.rs` compiled in, so a resource that was swapped or damaged
 //! after the build never reaches a host.
-#![expect(
-    dead_code,
-    reason = "Milestone D's Linux install and update flows are the first callers"
-)]
 
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
@@ -53,6 +49,17 @@ pub fn agent_triple(machine: &str) -> Result<&'static str, AgentBundleError> {
     }
 }
 
+/// The agent `make agent-linux` wrote for `triple`, checked like a bundled one, for
+/// tests that drive the install flow without an app.
+#[cfg(test)]
+pub(super) fn built_agent(triple: &str) -> Result<(PathBuf, Vec<u8>), AgentBundleError> {
+    load(
+        &[Path::new(env!("CARGO_MANIFEST_DIR")).join("binaries/agent")],
+        triple,
+        digests::AGENT_SHA256,
+    )
+}
+
 /// The bundled agent for `triple`: its path and verified bytes.
 pub fn bundled_agent(
     app: &AppHandle,
@@ -97,7 +104,7 @@ fn load(
         path: path.clone(),
         source,
     })?;
-    let actual = hex_sha256(&bytes);
+    let actual = sha256_hex(&bytes);
     if actual != expected {
         return Err(AgentBundleError::DigestMismatch {
             path,
@@ -108,7 +115,8 @@ fn load(
     Ok((path, bytes))
 }
 
-fn hex_sha256(bytes: &[u8]) -> String {
+/// A lowercase hex SHA-256, the form the host's digest tool prints.
+pub fn sha256_hex(bytes: &[u8]) -> String {
     Sha256::digest(bytes)
         .iter()
         .fold(String::with_capacity(64), |mut s, b| {
@@ -146,7 +154,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let bytes = b"\x7fELF agent".to_vec();
         std::fs::write(dir.path().join(format!("kelvo-agent-{TRIPLE}")), &bytes).unwrap();
-        let digest = hex_sha256(&bytes);
+        let digest = sha256_hex(&bytes);
         let table = [(TRIPLE, digest.as_str())];
 
         let dirs = [empty.path().to_path_buf(), dir.path().to_path_buf()];
@@ -163,7 +171,7 @@ mod tests {
             b"tampered",
         )
         .unwrap();
-        let built = hex_sha256(b"original");
+        let built = sha256_hex(b"original");
         let table = [(TRIPLE, built.as_str())];
 
         let err = load(&[dir.path().to_path_buf()], TRIPLE, &table).unwrap_err();
@@ -172,7 +180,7 @@ mod tests {
                 expected, actual, ..
             } => {
                 assert_eq!(expected, built);
-                assert_eq!(actual, hex_sha256(b"tampered"));
+                assert_eq!(actual, sha256_hex(b"tampered"));
             }
             other => panic!("expected DigestMismatch, got {other:?}"),
         }
@@ -187,7 +195,7 @@ mod tests {
         assert!(matches!(err, AgentBundleError::NotBuilt { .. }));
         assert!(err.to_string().contains("make agent-linux"), "{err}");
 
-        let digest = hex_sha256(b"x");
+        let digest = sha256_hex(b"x");
         let table = [(TRIPLE, digest.as_str())];
         let err = load(&dirs, TRIPLE, &table).unwrap_err();
         assert!(matches!(err, AgentBundleError::Read { .. }), "{err:?}");

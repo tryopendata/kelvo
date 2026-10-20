@@ -1,6 +1,33 @@
-//! Remote installation identity and its commit/rollback phases.
+//! The Mac path of Add host: installing or updating Kelvo.app, then its commit and
+//! rollback phases.
 //! Side-effecting install/configure calls settle before cancellation is observed.
 use super::*;
+
+pub(super) async fn prepare(
+    alias: &str,
+    p: kelvo_remote::install::InstallProbe,
+) -> Result<RemoteHostPreparation, CommandError> {
+    let compatible = if let Some(helper) = p.helper_path.as_deref() {
+        kelvo_remote::install::version(alias, helper)
+            .await
+            .is_ok_and(|version| version == env!("CARGO_PKG_VERSION"))
+    } else {
+        false
+    };
+    Ok(RemoteHostPreparation {
+        kind: RemoteHostKind::Mac,
+        installed: p.app_path.is_some(),
+        compatible,
+        host_id: None,
+        name: p.user.clone(),
+        message: if !compatible {
+            Some(if p.app_path.is_some(){"Quit Kelvo on the other Mac, then update it with this build. Your settings and history are kept."}else{"Install this Kelvo build to enable remote monitoring"}.into())
+        } else {
+            None
+        },
+        linux: None,
+    })
+}
 
 pub(super) struct Installation {
     alias: String,
@@ -107,31 +134,13 @@ impl Installation {
         check_setup_cancel(cancel)?;
         config.id = record.id.to_string();
         record.display_name = config.name.clone();
-        register(
+        register_new(
             app,
-            SavedHost {
-                config: config.clone(),
-                record,
-                helper_path: self.helper.clone(),
-            },
-        )?;
-        if let Err(error) = save(app) {
-            let id = host_id(&config.id)?;
-            discard_host_async(app, id).await?;
-            return Err(error);
-        }
-        let id = host_id(&config.id)?;
-        let status = state
-            .remotes
-            .statuses
-            .lock_ok()
-            .get(&id)
-            .cloned()
-            .unwrap_or_default();
-        Ok(RemoteHostRecord {
-            config: config.clone(),
-            status,
-        })
+            config,
+            record,
+            kelvo_remote::RemoteCommand::MacHelper(self.helper.clone()),
+        )
+        .await
     }
     pub(super) async fn finish(&self) {
         if let Some(update) = &self.update

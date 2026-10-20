@@ -12,15 +12,18 @@ import {
   DialogTitle,
 } from "~/components/ui/dialog";
 import { useTransport } from "~/lib/transport-context";
-import { AddMacFields } from "./add-mac-fields";
-import { AddMacFooter } from "./add-mac-footer";
-import { AddMacStatus } from "./add-mac-status";
-import { AddMacTrust } from "./add-mac-trust";
-import { type SetupPhase, useAddMacConnection } from "./use-add-mac-connection";
+import { AddHostFields } from "./add-host-fields";
+import { AddHostFooter } from "./add-host-footer";
+import { AddHostStatus } from "./add-host-status";
+import { AddHostTrust } from "./add-host-trust";
+import {
+  type SetupPhase,
+  useAddHostConnection,
+} from "./use-add-host-connection";
 
 export { HOST_INPUT } from "./host-input";
 
-export function AddMacDialog({
+export function AddHostDialog({
   open,
   onOpenChange,
 }: {
@@ -122,7 +125,7 @@ export function AddMacDialog({
       setPhase("idle");
     }
   };
-  const { add, cancel } = useAddMacConnection({
+  const { add, resetAndAdd, cancel } = useAddHostConnection({
     prepared,
     name,
     endpoints,
@@ -147,13 +150,12 @@ export function AddMacDialog({
         showCloseButton={!busy}
         className="max-h-[calc(100svh-2rem)] overflow-y-auto"
       >
-        <DialogTitle>Add Mac</DialogTitle>
+        <DialogTitle>Add host</DialogTitle>
         <DialogDescription>
-          Connect through SSH. Kelvo prefers LAN and falls back to Tailscale
-          when both are configured. Kelvo on that Mac will start at login and
-          share its metrics with this Mac.
+          Connect to another Mac or a Linux server through SSH. Kelvo prefers
+          LAN and falls back to Tailscale when both are configured.
         </DialogDescription>
-        <AddMacFields
+        <AddHostFields
           busy={busy}
           name={name}
           setName={setName}
@@ -163,19 +165,20 @@ export function AddMacDialog({
           setTailscale={setTailscale}
           showMenuBar={showMenuBar}
           setShowMenuBar={setShowMenuBar}
+          linux={prepared?.kind === "linux"}
           setPrepared={setPrepared}
           setTrust={setTrust}
           setHostKeyError={setHostKeyError}
           setError={setError}
         />
-        <AddMacStatus
+        <AddHostStatus
           endpointError={endpointError}
           prepared={prepared}
           error={error}
           busy={busy}
           phase={phase}
         />
-        <AddMacTrust
+        <AddHostTrust
           hostKeyError={hostKeyError}
           error={error}
           prepared={prepared}
@@ -185,13 +188,14 @@ export function AddMacDialog({
           inspect={inspect}
           accept={accept}
         />
-        <AddMacFooter
+        <AddHostFooter
           phase={phase}
           busy={busy}
           cancel={cancel}
           trust={trust}
           prepared={prepared}
-          add={add}
+          add={() => add()}
+          resetAndAdd={resetAndAdd}
           endpointError={endpointError}
           endpoints={endpoints}
           prepare={prepare}

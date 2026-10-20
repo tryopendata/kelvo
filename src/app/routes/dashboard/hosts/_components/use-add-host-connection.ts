@@ -14,8 +14,9 @@ export type SetupPhase =
   | "checking"
   | "adding"
   | "verifying"
+  | "resetting"
   | "cancelling";
-export function useAddMacConnection({
+export function useAddHostConnection({
   prepared,
   name,
   endpoints,
@@ -45,15 +46,15 @@ export function useAddMacConnection({
   const transport = useTransport();
   const cache = useQueryClient();
   const setupId = useRef<string | null>(null);
-  const add = async () => {
-    if (!prepared) return;
+  const add = async (next: RemoteHostPreparation | null = prepared) => {
+    if (!next) return;
     const attempt = crypto.randomUUID();
     setupId.current = attempt;
     setPhase("adding");
     setError(null);
     const config: RemoteHostConfig = {
-      id: prepared.host_id ?? "",
-      name: name.trim() || prepared.name,
+      id: next.host_id ?? "",
+      name: name.trim() || next.name,
       ...endpoints,
       enabled: true,
       mirror_budget_mb: 100,
@@ -61,7 +62,7 @@ export function useAddMacConnection({
     try {
       const result = await transport.addRemoteHost(
         config,
-        !prepared.installed || !prepared.compatible,
+        !next.installed || !next.compatible,
         showMenuBar,
         attempt
       );
@@ -80,6 +81,32 @@ export function useAddMacConnection({
       setError(String(e));
     } finally {
       setupId.current = null;
+      setPhase("idle");
+    }
+  };
+  /** A Linux agent that reports a saved host's id gets a new one, then is added. */
+  const resetAndAdd = async () => {
+    setPhase("resetting");
+    setError(null);
+    try {
+      const result = await transport.resetRemoteHostIdentity(
+        endpoints.lan,
+        endpoints.tailscale
+      );
+      if (result.status === "error") {
+        setError(result.error);
+        setPhase("idle");
+        return;
+      }
+      setPrepared(result.data);
+      await add(result.data);
+    } catch (e) {
+      console.error("[remote setup] identity reset failed", {
+        lan,
+        tailscale,
+        error: e,
+      });
+      setError(String(e));
       setPhase("idle");
     }
   };
@@ -106,5 +133,5 @@ export function useAddMacConnection({
     // The original add response owns completion: its rollback must finish first.
   };
 
-  return { add, cancel };
+  return { add, resetAndAdd, cancel };
 }

@@ -31,12 +31,31 @@ pub fn list_remote_hosts(state: State<'_, AppState>) -> Vec<RemoteHostRecord> {
                         .map(|used| used / h.record.info.mem_total_bytes as f64 * 100.0);
                 }
             }
+            status.update_available = h.is_linux()
+                && status
+                    .agent_version
+                    .as_deref()
+                    .is_some_and(|v| older_version(v, env!("CARGO_PKG_VERSION")));
             RemoteHostRecord {
                 config: h.config.clone(),
+                os: h.record.info.os,
                 status,
             }
         })
         .collect()
+}
+
+/// Whether dotted version `a` is older than `b`, numerically per component. A
+/// component that is not a number compares as 0, so a malformed version never offers
+/// a downgrade.
+pub(super) fn older_version(a: &str, b: &str) -> bool {
+    let parts = |v: &str| -> Vec<u64> {
+        v.split(['.', '-', '+'])
+            .take(3)
+            .map(|p| p.parse().unwrap_or(0))
+            .collect()
+    };
+    parts(a) < parts(b)
 }
 
 #[tauri::command]
@@ -104,6 +123,7 @@ pub async fn update_remote_host(
         .ok_or(CommandError::UnknownHost { host: id })?;
     let mut saved = previous.clone();
     saved.config = config.clone();
+    let os = saved.record.info.os;
     saved.record.display_name = config.name.clone();
     discard_host_async(&app, id).await?;
     if let Err(error) = register(&app, saved).and_then(|()| save(&app)) {
@@ -122,7 +142,7 @@ pub async fn update_remote_host(
         .get(&id)
         .cloned()
         .unwrap_or_default();
-    Ok(RemoteHostRecord { config, status })
+    Ok(RemoteHostRecord { config, os, status })
 }
 #[tauri::command]
 #[specta::specta]
@@ -149,8 +169,11 @@ async fn stop_remote_sharing(saved: &SavedHost) -> Result<(), CommandError> {
     let attempt = async {
         let (alias, _) =
             probe_routes(saved.config.lan.clone(), saved.config.tailscale.clone()).await?;
+        let RemoteCommand::MacHelper(helper) = &saved.command else {
+            return Ok(());
+        };
         configure_stop_sharing(|request| async move {
-            kelvo_remote::install::configure(&alias, &saved.helper_path, &request)
+            kelvo_remote::install::configure(&alias, helper, &request)
                 .await
                 .map_err(CommandError::from)
         })
@@ -195,6 +218,9 @@ pub(super) async fn finish_removal(
     Ok(warning)
 }
 
+/// Removes a host. A Mac can also stop sharing; a Linux host can also have its agent
+/// uninstalled (with `purge_agent`, its history and identity too). Remote failures
+/// warn and never block removal (D-105).
 #[tauri::command]
 #[specta::specta]
 pub async fn remove_remote_host(
@@ -202,6 +228,8 @@ pub async fn remove_remote_host(
     id: String,
     delete_mirror: bool,
     stop_sharing: bool,
+    uninstall_agent: bool,
+    purge_agent: bool,
 ) -> Result<Option<String>, CommandError> {
     let state = app.state::<AppState>();
     let _guard = state.remotes.operation.lock().await;
@@ -219,12 +247,27 @@ pub async fn remove_remote_host(
         state.remotes.saved.lock_ok().insert(id, previous);
         return Err(error);
     }
-    let warning = finish_removal(
-        stop_sharing,
-        stop_remote_sharing(&previous),
-        discard_host_async(&app, id),
-    )
-    .await?;
+    let warning = if previous.is_linux() {
+        let warning = if uninstall_agent {
+            // Stop the session first so the agent's uninstall isn't racing a reconnect.
+            if let Ok(entry) = state.host(id) {
+                let entry = entry.clone();
+                let _ = tokio::task::spawn_blocking(move || entry.stop()).await;
+            }
+            super::setup::linux::uninstall_saved(&previous, purge_agent).await
+        } else {
+            None
+        };
+        discard_host_async(&app, id).await?;
+        warning
+    } else {
+        finish_removal(
+            stop_sharing,
+            stop_remote_sharing(&previous),
+            discard_host_async(&app, id),
+        )
+        .await?
+    };
     state.emit_hosts_changed(&app);
     if delete_mirror {
         let dir = data_dir(&app)?.join("mirrors").join(id.to_string());
@@ -233,4 +276,65 @@ pub async fn remove_remote_host(
         }
     }
     Ok(warning)
+}
+
+/// Re-pairs a host that now answers with a different id (a reinstall, a reset
+/// identity, a replaced machine). The answering host is added as a new host with the
+/// same name and routes; the old one is kept, disabled, with its mirrored history
+/// (D-115).
+#[tauri::command]
+#[specta::specta]
+pub async fn repair_remote_host(
+    app: AppHandle,
+    id: String,
+) -> Result<RemoteHostRecord, CommandError> {
+    let state = app.state::<AppState>();
+    let _guard = state.remotes.operation.lock().await;
+    let id = host_id(&id)?;
+    let previous = state
+        .remotes
+        .saved
+        .lock_ok()
+        .get(&id)
+        .cloned()
+        .ok_or(CommandError::UnknownHost { host: id })?;
+    let session = kelvo_remote::connect(&previous.endpoint(), state.local, None)
+        .await
+        .map_err(CommandError::from)?;
+    let mut record = HostRecord::from_identity(session.hello.host.clone(), false);
+    session.close().await;
+    if record.id == id {
+        if let Some(source) = state.remotes.sources.lock_ok().get(&id) {
+            source.retry();
+        }
+        return Err(CommandError::InvalidArgument {
+            message:
+                "This host answers with its paired identity again; it reconnects without re-pairing"
+                    .into(),
+        });
+    }
+    if record.id == state.local {
+        return Err(failure("This host reports this Mac's identity"));
+    }
+    if let Some(other) = state.remotes.saved.lock_ok().get(&record.id) {
+        return Err(CommandError::RemoteIdentity {
+            message: format!(
+                "This host now reports the identity of {}, which is already in your host list",
+                other.config.name
+            ),
+        });
+    }
+    let mut old = previous.clone();
+    old.config.enabled = false;
+    old.config.name = format!("{} (before re-pair)", previous.config.name);
+    old.record.display_name = old.config.name.clone();
+    discard_host_async(&app, id).await?;
+    if let Err(error) = register(&app, old) {
+        tracing::warn!("keeping the old host offline: {error}");
+    }
+    let mut config = previous.config.clone();
+    config.id = record.id.to_string();
+    config.enabled = true;
+    record.display_name = config.name.clone();
+    super::setup::register_new(&app, config, record, previous.command.clone()).await
 }

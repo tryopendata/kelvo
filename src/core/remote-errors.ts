@@ -4,9 +4,9 @@ export function remoteErrorText(error: CommandError): string {
   if ("message" in error) return error.message;
   switch (error.kind) {
     case "unknown_host":
-      return "This Mac is no longer in your host list.";
+      return "This host is no longer in your host list.";
     case "remote_host":
-      return "This Mac does not share this data.";
+      return "This host does not share this data.";
     case "history_unavailable":
       return "History is unavailable.";
     case "store_too_new":
@@ -27,7 +27,7 @@ export function remoteErrorAdvice(
       return {
         title: "SSH could not sign in.",
         recovery:
-          "Use the account currently signed in on the other Mac, allow it in Remote Login, and set up SSH key access. Kelvo cannot ask for a password or key passphrase; unlock your key in your SSH agent, then check the connection again.",
+          "Set up SSH key access for the account. On a Mac, use the account signed in there and allow it in Remote Login. Kelvo cannot ask for a password or key passphrase; unlock your key in your SSH agent, then check the connection again.",
       };
     case "remote_unreachable":
       return {
@@ -38,22 +38,53 @@ export function remoteErrorAdvice(
       };
     case "host_key_unknown":
       return {
-        title: "SSH needs to verify this Mac.",
+        title: "SSH needs to verify this host.",
         recovery:
-          "Compare its fingerprint with the other Mac before trusting it. If SSH says the key changed, confirm why with the owner and resolve it in Terminal; Kelvo will not replace a known key.",
+          "Compare its fingerprint with the host before trusting it. If SSH says the key changed, confirm why with the owner and resolve it in Terminal; Kelvo will not replace a known key.",
       };
     case "remote_incompatible":
       return {
-        title: "This Mac cannot run this Kelvo build.",
+        title: "This host cannot run this Kelvo build.",
         recovery:
-          "Remote monitoring needs an Apple Silicon Mac running macOS 26 or newer and a compatible Kelvo version. See the details for what needs to change.",
+          "A Mac needs Apple Silicon, macOS 26 or newer and a compatible Kelvo version. A Linux server needs a 64-bit ARM or x86 processor and systemd. See the details for what needs to change.",
       };
     case "remote_identity":
       return {
-        title: "A different Mac answered at this address.",
+        title: "A different host answered at this address.",
         recovery:
-          "Check the SSH alias, address, and account before trying again. Add it as a new Mac if the replacement was intentional.",
+          "Check the SSH alias, address, and account before trying again. If the host was reinstalled or replaced on purpose, add or re-pair it as a new host.",
       };
+    case "remote_low_disk":
+      return {
+        title: "The server is low on disk space.",
+        recovery:
+          "The agent needs room for its history plus the reserve Kelvo keeps free. Free some space on the server, then check the connection again.",
+      };
+    case "remote_agent_conflict":
+      return {
+        title: "This server’s Kelvo agent needs attention first.",
+        recovery: error.message,
+      };
+    case "remote_agent_not_running":
+      return {
+        title: "The Kelvo agent is not running on the server.",
+        recovery:
+          "Check it on the server with systemctl status kelvo-agent (add --user for a user service), then retry. The service restarts on its own after most failures.",
+      };
+    case "remote_agent_update_failed":
+      return error.restored
+        ? {
+            title:
+              "The agent update failed. The previous version was restored.",
+            recovery:
+              "Its history and identity are unchanged and it is running again. See the details, then retry the update.",
+          }
+        : {
+            title:
+              "The agent update failed, and the previous version could not be restored.",
+            recovery:
+              "The agent may not be running. See the details, then retry the update or add the host again to reinstall it.",
+          };
     default:
       return null;
   }

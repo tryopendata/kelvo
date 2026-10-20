@@ -5,12 +5,11 @@ import { remoteErrorText, sshEndpointError } from "@core/remote-errors";
 import { connectionLabel } from "@core/remote-hosts";
 import { unwrap } from "@core/transport";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useId, useState } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router";
 import { toast } from "sonner";
 import { PageHeader } from "~/components/page-header";
 import { Button } from "~/components/ui/button";
-import { Checkbox } from "~/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -21,8 +20,13 @@ import { Switch } from "~/components/ui/switch";
 import { useRemoteHosts } from "~/hooks/use-remote-hosts";
 import { useHostSelection } from "~/lib/host-selection";
 import { useTransport } from "~/lib/transport-context";
-import { AddMacDialog, HOST_INPUT } from "./_components/add-mac-dialog";
+import { AddHostDialog, HOST_INPUT } from "./_components/add-host-dialog";
+import { HostAgentActions } from "./_components/host-agent-actions";
 import { RemoteSetupError } from "./_components/remote-setup-error";
+import {
+  type RemoveChoices,
+  RemoveHostOptions,
+} from "./_components/remove-host-options";
 import { SshSetupHelp } from "./_components/ssh-setup-help";
 
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Controller and presentation split tracked in architecture refactor package H.
@@ -35,16 +39,19 @@ function HostSettings({
 }) {
   const transport = useTransport();
   const cache = useQueryClient();
-  const stopSharingId = useId();
-  const deleteMirrorId = useId();
   const [config, setConfig] = useState(remote.config);
   const size = useQuery({
     queryKey: hostKeys.historySize(remote.config.id),
     queryFn: () => unwrap(transport.historySize(remote.config.id)),
     refetchInterval: 60000,
   });
-  const [stopSharing, setStopSharing] = useState(true);
-  const [deleteMirror, setDeleteMirror] = useState(false);
+  const linux = remote.os === "linux";
+  const [choices, setChoices] = useState<RemoveChoices>({
+    stopSharing: true,
+    uninstallAgent: true,
+    purgeAgent: false,
+    deleteMirror: false,
+  });
   const [removing, setRemoving] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<CommandError | string | null>(null);
@@ -60,7 +67,13 @@ function HostSettings({
     setError(null);
     try {
       const result = remove
-        ? await transport.removeRemoteHost(config.id, deleteMirror, stopSharing)
+        ? await transport.removeRemoteHost(
+            config.id,
+            choices.deleteMirror,
+            !linux && choices.stopSharing,
+            linux && choices.uninstallAgent,
+            linux && choices.uninstallAgent && choices.purgeAgent
+          )
         : await transport.updateRemoteHost(config);
       if (result.status === "error") setError(result.error);
       else {
@@ -95,36 +108,18 @@ function HostSettings({
         </DialogTitle>
         <DialogDescription>
           {removing
-            ? "This disconnects the Mac. Kelvo on that Mac keeps running and its start-at-login setting stays the same."
+            ? linux
+              ? "This disconnects the server. Unless you uninstall it, the agent keeps running and recording history there."
+              : "This disconnects the Mac. Kelvo on that Mac keeps running and its start-at-login setting stays the same."
             : "Connection and history stored on this Mac."}
         </DialogDescription>
         {removing ? (
-          <div className="grid gap-3">
-            <label
-              htmlFor={stopSharingId}
-              className="flex items-center gap-2 text-[13px]"
-            >
-              <Checkbox
-                id={stopSharingId}
-                checked={stopSharing}
-                onCheckedChange={(checked) => setStopSharing(checked === true)}
-                disabled={busy}
-              />
-              Also stop sharing on that Mac
-            </label>
-            <label
-              htmlFor={deleteMirrorId}
-              className="flex items-center gap-2 text-[13px]"
-            >
-              <Checkbox
-                id={deleteMirrorId}
-                checked={deleteMirror}
-                onCheckedChange={(checked) => setDeleteMirror(checked === true)}
-                disabled={busy}
-              />
-              Delete mirrored history from this Mac
-            </label>
-          </div>
+          <RemoveHostOptions
+            linux={linux}
+            choices={choices}
+            setChoices={setChoices}
+            busy={busy}
+          />
         ) : (
           <fieldset disabled={busy} className="grid gap-3">
             <label className="grid gap-1 text-[12px]">
@@ -230,7 +225,7 @@ function HostSettings({
               disabled={busy}
               onClick={() => setRemoving(true)}
             >
-              Remove Mac…
+              Remove host…
             </Button>
           )}
           <Button
@@ -242,7 +237,7 @@ function HostSettings({
             }
             onClick={() => run(removing)}
           >
-            {busy ? "Saving…" : removing ? "Remove Mac" : "Save"}
+            {busy ? "Saving…" : removing ? "Remove host" : "Save"}
           </Button>
         </div>
       </DialogContent>
@@ -278,7 +273,7 @@ export default function HostsRoute() {
     <div className="flex flex-col gap-5">
       <PageHeader
         title="Hosts"
-        actions={<Button onClick={() => setAdding(true)}>Add Mac</Button>}
+        actions={<Button onClick={() => setAdding(true)}>Add host</Button>}
       />
       <div className="divide-y divide-border-subtle border-border-subtle border-y">
         {local && (
@@ -311,9 +306,21 @@ export default function HostsRoute() {
                     {new Date(remote.status.last_seen_ms).toLocaleString()}
                   </p>
                 )}
-              {remote.status.error && (
+              {remote.status.identity_changed !== null ? (
                 <p className="mt-1 text-[12px] text-destructive">
-                  {remote.status.error}
+                  This host now answers with a different identity.
+                </p>
+              ) : (
+                remote.status.error && (
+                  <p className="mt-1 text-[12px] text-destructive">
+                    {remote.status.error}
+                  </p>
+                )
+              )}
+              {remote.status.update_available && (
+                <p className="mt-1 text-[12px] text-muted-foreground">
+                  Agent {remote.status.agent_version} · this Kelvo includes a
+                  newer one
                 </p>
               )}
             </div>
@@ -338,15 +345,18 @@ export default function HostsRoute() {
               </div>
             </dl>
             <div className="flex gap-2">
-              {remote.status.state !== "connected" && remote.config.enabled && (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => retry(remote.config.id)}
-                >
-                  Retry
-                </Button>
-              )}
+              <HostAgentActions remote={remote} onError={setError} />
+              {remote.status.state !== "connected" &&
+                remote.config.enabled &&
+                remote.status.identity_changed === null && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => retry(remote.config.id)}
+                  >
+                    Retry
+                  </Button>
+                )}
               <Button
                 variant="ghost"
                 size="sm"
@@ -367,13 +377,13 @@ export default function HostsRoute() {
       </div>
       {remotes.isPending ? (
         <p role="status" className="text-[13px] text-muted-foreground">
-          Loading saved Macs…
+          Loading saved hosts…
         </p>
       ) : (
         remotes.data?.length === 0 && (
           <p className="text-[13px] text-muted-foreground">
-            Add a Mac to view its live metrics and keep a copy of its history
-            here.
+            Add a Linux server or another Mac over SSH to view its live metrics
+            and keep a copy of its history here.
           </p>
         )
       )}
@@ -382,7 +392,7 @@ export default function HostsRoute() {
           {error ?? String(remotes.error)}
         </p>
       )}
-      {adding && <AddMacDialog open onOpenChange={setAdding} />}
+      {adding && <AddHostDialog open onOpenChange={setAdding} />}
       {editing && (
         <HostSettings remote={editing} close={() => setEditing(null)} />
       )}

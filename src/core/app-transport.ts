@@ -14,6 +14,7 @@ import type { Transport } from "./transport";
  *   ?interval=30000                        starting sample interval, ms
  *   ?chart_window=30m                      starting chart window (5m|15m|30m|1h)
  *   ?update=available                      preview an available app update
+ *   ?setup_delay=60000                     hold Add host's setup step, ms
  */
 export async function createAppTransport(search: string): Promise<Transport> {
   if (
@@ -37,6 +38,7 @@ export async function createAppTransport(search: string): Promise<Transport> {
     (w) => w === params.get("chart_window")
   );
   const intervalMs = Number(params.get("interval"));
+  const remoteSetupDelayMs = Number(params.get("setup_delay"));
   return createMockTransport({
     windowLabel,
     ...(params.get("update") === "available"
@@ -54,6 +56,7 @@ export async function createAppTransport(search: string): Promise<Transport> {
     scenarios,
     autoTick: params.get("ticks") !== "0",
     ...(intervalMs ? { intervalMs } : {}),
+    ...(remoteSetupDelayMs ? { remoteSetupDelayMs } : {}),
     ...(chartWindow ? { chartWindow } : {}),
   });
 }

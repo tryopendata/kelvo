@@ -6,7 +6,7 @@ import { useState } from "react";
 import { Button } from "~/components/ui/button";
 import { useTransport } from "~/lib/transport-context";
 
-function Command({ text }: { text: string }) {
+export function Command({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState(false);
   return (

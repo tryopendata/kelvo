@@ -30,6 +30,12 @@ pub struct ConnectionStatus {
     pub last_seen_ms: Option<i64>,
     pub catching_up: bool,
     pub clock_offset_ms: i64,
+    /// The connected peer's `Hello.app_version`, kept after it disconnects so the
+    /// shell can offer an agent update while the host is offline.
+    pub remote_version: Option<String>,
+    /// The id a host answered with when it is not the paired one
+    /// ([`RemoteError::IdentityMismatch`]), so the shell can offer re-pairing.
+    pub identity_changed: Option<HostId>,
 }
 pub type StatusCallback = Arc<dyn Fn(ConnectionStatus) + Send + Sync>;
 /// Each sink owns its isolated mirror and reset generation. Methods must reject
@@ -255,6 +261,8 @@ async fn run(source: Arc<RemoteSource>, sink: SourceSink) {
                 status.route = Some(session.route);
                 status.retrying = false;
                 status.error = None;
+                status.identity_changed = None;
+                status.remote_version = Some(session.hello.app_version.clone());
                 *source.caps.lock_ok() = session.hello.capabilities.clone();
                 sink.live
                     .publish(BusMsg::Caps(Arc::new(session.hello.capabilities.clone())));
@@ -281,6 +289,10 @@ async fn run(source: Arc<RemoteSource>, sink: SourceSink) {
             Err(e) => {
                 status.connected = false;
                 status.error = Some(e.to_string());
+                status.identity_changed = match &e {
+                    RemoteError::IdentityMismatch { actual, .. } => Some(*actual),
+                    _ => None,
+                };
                 status.catching_up = false;
                 status.retrying = e.retryable();
                 (source.on_status)(status.clone());

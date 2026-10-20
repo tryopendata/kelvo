@@ -90,7 +90,7 @@ describe("remote Mac recovery workflows", () => {
       },
     });
     mount(source);
-    fireEvent.click(await screen.findByRole("button", { name: "Add Mac" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Add host" }));
     fireEvent.change(screen.getByLabelText("LAN SSH alias"), {
       target: { value: "office.local" },
     });
@@ -109,7 +109,7 @@ describe("remote Mac recovery workflows", () => {
       data: "missing",
     });
     mount(source);
-    fireEvent.click(await screen.findByRole("button", { name: "Add Mac" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Add host" }));
     expect(
       await screen.findByText(/No ~\/\.ssh\/config found/)
     ).toBeInTheDocument();
@@ -130,7 +130,7 @@ describe("remote Mac recovery workflows", () => {
     source.remoteSshConfigStatus = async () =>
       unavailable("Cannot read config metadata");
     mount(source);
-    fireEvent.click(await screen.findByRole("button", { name: "Add Mac" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Add host" }));
     expect(
       await screen.findByText(/Could not check ~\/\.ssh\/config/)
     ).toBeInTheDocument();
@@ -154,7 +154,7 @@ describe("remote Mac recovery workflows", () => {
       error: { kind: "remote_auth", message: "Permission denied (publickey)." },
     });
     mount(source);
-    fireEvent.click(await screen.findByRole("button", { name: "Add Mac" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Add host" }));
     fireEvent.change(screen.getByLabelText("LAN SSH alias"), {
       target: { value: "user@office.local" },
     });
@@ -180,7 +180,7 @@ describe("remote Mac recovery workflows", () => {
       error: { kind: "host_key_unknown", message: "Unknown key" },
     });
     mount(source);
-    fireEvent.click(await screen.findByRole("button", { name: "Add Mac" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Add host" }));
     fireEvent.change(screen.getByLabelText("LAN SSH alias"), {
       target: { value: "old.local" },
     });
@@ -204,7 +204,7 @@ describe("remote Mac recovery workflows", () => {
     source.acceptRemoteSshHost = async () =>
       unavailable("SSH verification expired. Check the host again");
     mount(source);
-    fireEvent.click(await screen.findByRole("button", { name: "Add Mac" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Add host" }));
     fireEvent.change(screen.getByLabelText("LAN SSH alias"), {
       target: { value: "office.local" },
     });
@@ -229,7 +229,7 @@ describe("remote Mac recovery workflows", () => {
   it("explains pasted SSH commands before trying to connect", async () => {
     const source = transport();
     mount(source);
-    fireEvent.click(await screen.findByRole("button", { name: "Add Mac" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Add host" }));
     fireEvent.change(screen.getByLabelText("LAN SSH alias"), {
       target: { value: "ssh user@office.local" },
     });
@@ -257,7 +257,7 @@ describe("remote Mac recovery workflows", () => {
         },
       });
       mount(source);
-      fireEvent.click(await screen.findByRole("button", { name: "Add Mac" }));
+      fireEvent.click(await screen.findByRole("button", { name: "Add host" }));
       fireEvent.change(screen.getByLabelText("LAN SSH alias"), {
         target: { value: "mac.local" },
       });
@@ -346,20 +346,20 @@ describe("remote Mac recovery workflows", () => {
       mount(source);
       await screen.findByRole("heading", { name: "Studio Mac" });
       fireEvent.click(hostRow().getByRole("button", { name: "Settings" }));
-      fireEvent.click(screen.getByRole("button", { name: "Remove Mac…" }));
+      fireEvent.click(screen.getByRole("button", { name: "Remove host…" }));
       expect(
         screen.getByLabelText("Also stop sharing on that Mac")
       ).toBeChecked();
       if (!stopSharing)
         fireEvent.click(screen.getByLabelText("Also stop sharing on that Mac"));
-      fireEvent.click(screen.getByRole("button", { name: "Remove Mac" }));
+      fireEvent.click(screen.getByRole("button", { name: "Remove host" }));
       await waitFor(() =>
         expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
       );
       expect(await source.listRemoteHosts()).toHaveLength(0);
       expect(
         source.calls.find((call) => call.command === "remove_remote_host")?.args
-      ).toEqual(["remote-studio", false, stopSharing]);
+      ).toEqual(["remote-studio", false, stopSharing, false, false]);
     }
   );
 
@@ -378,8 +378,8 @@ describe("remote Mac recovery workflows", () => {
     mount(source);
     await screen.findByRole("heading", { name: "Studio Mac" });
     fireEvent.click(hostRow().getByRole("button", { name: "Settings" }));
-    fireEvent.click(screen.getByRole("button", { name: "Remove Mac…" }));
-    fireEvent.click(screen.getByRole("button", { name: "Remove Mac" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove host…" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove host" }));
     await waitFor(() =>
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
     );
@@ -401,7 +401,7 @@ describe("remote Mac recovery workflows", () => {
           )
         : add(...args);
     mount(source);
-    fireEvent.click(await screen.findByRole("button", { name: "Add Mac" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Add host" }));
     fireEvent.change(screen.getByLabelText("Name"), {
       target: { value: "Office Mac" },
     });
@@ -494,26 +494,26 @@ describe("remote Mac recovery workflows", () => {
     fireEvent.click(screen.getByRole("link", { name: "Hosts" }));
     await screen.findByRole("heading", { name: "Hosts" });
     fireEvent.click(hostRow().getByRole("button", { name: "Settings" }));
-    fireEvent.click(screen.getByRole("button", { name: "Remove Mac…" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove host…" }));
     expect(
       screen.getByLabelText("Delete mirrored history from this Mac")
     ).not.toBeChecked();
-    fireEvent.click(screen.getByRole("button", { name: "Remove Mac" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove host" }));
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Could not save host settings"
     );
     expect(screen.getByRole("dialog")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
     expect(screen.getByLabelText("Name")).toHaveValue("Studio Mac");
-    fireEvent.click(screen.getByRole("button", { name: "Remove Mac…" }));
-    fireEvent.click(screen.getByRole("button", { name: "Remove Mac" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove host…" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove host" }));
     await waitFor(() =>
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
     );
     expect(
       screen.queryByRole("heading", { name: "Studio Mac" })
     ).not.toBeInTheDocument();
-    await screen.findByText(/Add a Mac to view its live metrics/);
+    await screen.findByText(/Add a Linux server or another Mac over SSH/);
     fireEvent.click(screen.getByRole("link", { name: "Overview" }));
     await screen.findByRole("heading", { name: "Overview" });
     expect(

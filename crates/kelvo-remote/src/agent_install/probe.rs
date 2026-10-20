@@ -15,6 +15,9 @@ kv() { printf "%s=%s\n" "$1" "$2"; }
 uid=$(id -u)
 kv os "$(uname -s)"
 kv arch "$(uname -m)"
+kv kernel "$(uname -r)"
+kv hostname "$(uname -n)"
+if [ -r /etc/os-release ]; then kv pretty_name "$(. /etc/os-release; printf %s "${PRETTY_NAME:-}")"; fi
 kv uid "$uid"
 kv user "$(id -un 2>/dev/null)"
 kv home "${HOME:-}"
@@ -151,6 +154,15 @@ pub struct ExistingAgent {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LinuxProbe {
     pub arch: String,
+    /// `uname -r`.
+    #[serde(default)]
+    pub kernel: Option<String>,
+    /// `uname -n`.
+    #[serde(default)]
+    pub hostname: Option<String>,
+    /// os-release `PRETTY_NAME`, such as "Fedora Linux Asahi Remix 41 (Server Edition)".
+    #[serde(default)]
+    pub pretty_name: Option<String>,
     pub uid: u32,
     pub user: String,
     pub home: Option<String>,
@@ -208,6 +220,9 @@ impl LinuxProbe {
         };
         Ok(Self {
             arch: text("arch").unwrap_or_default(),
+            kernel: text("kernel"),
+            hostname: text("hostname"),
+            pretty_name: text("pretty_name"),
             uid,
             user: text("user").unwrap_or_default(),
             home: text("home"),
