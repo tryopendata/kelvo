@@ -167,11 +167,10 @@ function memory(add: Add) {
 }
 
 function sensors(add: Add) {
-  // Power: SMC's "Total System Power" is also `power.system` (hwmon.rs).
+  // Power: SMC's "Total System Power" is `power.system`, not also a sensor (hwmon.rs).
   for (const [name, v] of [
     ["3.8 V Rail Power", 2.6],
     ["AC Input Power", 7.1],
-    ["Total System Power", 7.0],
   ] as const)
     add("power", "power.sensor", { name }, v, { noise: 0.4, cadence: 5 });
   add("power", "power.system", {}, 7.0, { noise: 0.4 });

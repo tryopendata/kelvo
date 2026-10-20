@@ -126,7 +126,7 @@ pub(super) struct Found {
     max: Option<PathBuf>,
     /// Counts towards `thermal.hottest`.
     cpu_class: bool,
-    /// Also `power.system`.
+    /// The whole machine's draw: emitted as `power.system` instead of `power.sensor`.
     system: bool,
 }
 
@@ -344,7 +344,6 @@ struct Slot {
     key: SeriesKey,
     max: Option<(PathBuf, SeriesKey)>,
     cpu_class: bool,
-    system: bool,
 }
 
 /// hwmon and thermal-zone readings for one module ([`Hwmon::sensors`], [`Hwmon::power`]).
@@ -356,7 +355,6 @@ pub struct Hwmon {
     /// Kind and label of each slot, what a rescan compares.
     ident: Vec<(Kind, String)>,
     hottest: Option<SeriesKey>,
-    system: Option<SeriesKey>,
     fan_max: Every,
     rescan: Every,
     /// Set by `probe`: the first rescan due after it is the probe's own scan.
@@ -383,7 +381,6 @@ impl Hwmon {
             slots: Vec::new(),
             ident: Vec::new(),
             hottest: None,
-            system: None,
             fan_max: Every::new(FAN_MAX_MS),
             rescan: Every::new(RESCAN_MS),
             fresh: true,
@@ -414,15 +411,21 @@ fn slot(f: Found) -> Slot {
         Kind::Power => ("power.sensor", "name"),
     };
     let labels = Labels::single(label, &f.label);
+    // The system rail is `power.system` alone; as a `power.sensor` too it would list the
+    // same reading twice.
+    let key = if f.system {
+        SeriesKey::bare(m("power.system"))
+    } else {
+        SeriesKey::new(m(metric), labels.clone())
+    };
     Slot {
         kind: f.kind,
         max: f
             .max
             .map(|p| (p, SeriesKey::new(m("fan.max"), labels.clone()))),
-        key: SeriesKey::new(m(metric), labels),
+        key,
         input: f.input,
         cpu_class: f.cpu_class,
-        system: f.system,
     }
 }
 
@@ -460,10 +463,6 @@ impl Collector for Hwmon {
             .iter()
             .any(|f| f.cpu_class)
             .then(|| SeriesKey::bare(m("thermal.hottest")));
-        self.system = found
-            .iter()
-            .any(|f| f.system)
-            .then(|| SeriesKey::bare(m("power.system")));
         self.slots = found.into_iter().map(slot).collect();
         if self.slots.is_empty() {
             return Probe::NotPresent;
@@ -474,7 +473,6 @@ impl Collector for Hwmon {
             series.extend(s.max.iter().map(|(_, k)| k.clone()));
         }
         series.extend(self.hottest.iter().cloned());
-        series.extend(self.system.iter().cloned());
         Probe::Supported(series)
     }
 
@@ -492,11 +490,6 @@ impl Collector for Hwmon {
             out.push(&s.key, v);
             if s.cpu_class {
                 hottest = Some(hottest.map_or(v, |h| h.max(v)));
-            }
-            if s.system
-                && let Some(k) = &self.system
-            {
-                out.push(k, v);
             }
             if max_due
                 && let Some((path, key)) = &s.max
@@ -578,8 +571,9 @@ mod tests {
     }
 
     /// linux-tailscale: three temperatures (the tas2770 reads -92.256 °C and is left
-    /// out), one fan, three power sensors plus `power.system`; no CPU-class sensor, so
-    /// no `thermal.hottest`. Current, voltage and the USB-PD chips add nothing.
+    /// out), one fan, two power sensors plus `power.system` (the third hwmon power input);
+    /// no CPU-class sensor, so no `thermal.hottest`. Current, voltage and the USB-PD chips
+    /// add nothing.
     #[test]
     fn asahi_fixture_values() {
         let mut s = Hwmon::with(Part::Sensors, asahi_t0(), fixture_parents());
@@ -614,13 +608,20 @@ mod tests {
         let Probe::Supported(series) = p.probe() else {
             panic!("power probe");
         };
-        assert_eq!(series.len(), 4);
+        let system = bare("power.system");
+        let ac = power("AC Input Power");
+        let rail = power("3.8 V Rail Power");
+        // The SMC's "Total System Power" is `power.system` only, not also a sensor row.
+        assert_eq!(
+            sorted(series),
+            sorted(vec![system.clone(), ac.clone(), rail.clone()])
+        );
         let buf = sample_once(&mut p);
-        assert_eq!(buf.get(&power("Total System Power")), Some(6.131752));
-        assert_eq!(buf.get(&power("AC Input Power")), Some(6.231627));
-        assert_eq!(buf.get(&power("3.8 V Rail Power")), Some(2.552584));
-        assert_eq!(buf.get(&bare("power.system")), Some(6.131752));
-        assert_eq!(buf.values().len(), 4, "curr1 is not power");
+        assert_eq!(buf.get(&system), Some(6.131752));
+        assert_eq!(buf.get(&ac), Some(6.231627));
+        assert_eq!(buf.get(&rail), Some(2.552584));
+        assert_eq!(buf.get(&power("Total System Power")), None);
+        assert_eq!(buf.values().len(), 3, "curr1 is not power");
     }
 
     /// The names linux-tailscale shows: kernel labels as they read, the NVMe's generic
