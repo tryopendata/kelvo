@@ -218,17 +218,19 @@ pub struct IfaceAddrs {
     pub ipv6: Vec<std::net::Ipv6Addr>,
 }
 
+#[cfg(target_os = "linux")]
+pub use linux::ifaddrs::{egress_interface, interface_addresses};
 #[cfg(target_os = "macos")]
 pub use macos::ifaddrs::{egress_interface, interface_addresses};
 
-/// No addresses off macOS until the Linux collectors exist (v4).
-#[cfg(not(target_os = "macos"))]
+/// No addresses on other platforms.
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
 pub fn interface_addresses(_iface: &str) -> IfaceAddrs {
     IfaceAddrs::default()
 }
 
-/// No route lookup off macOS until the Linux collectors exist (v4).
-#[cfg(not(target_os = "macos"))]
+/// No route lookup on other platforms.
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
 pub fn egress_interface() -> Option<String> {
     None
 }

@@ -4,6 +4,15 @@
 
 mod sysroot;
 
+pub mod cpu;
+pub mod memory;
+pub mod processes;
+pub(crate) mod procfs;
+pub mod self_cpu;
+#[cfg(test)]
+pub(crate) mod testdata;
+pub(crate) mod topology;
+
 pub use sysroot::{SysRoot, clk_tck, page_size};
 
 use kelvo_schema::{Entitlement, Module, UnsupportedReason};
@@ -45,11 +54,25 @@ impl Collector for Unsupported {
 }
 
 /// Modules no Linux collector covers yet. Shrinks as collectors land.
-const UNCOVERED: &[Module] = &Module::ALL;
+const UNCOVERED: &[Module] = &[
+    Module::Gpu,
+    Module::Power,
+    Module::Sensors,
+    Module::Network,
+    Module::Disk,
+    Module::Battery,
+    Module::Containers,
+];
 
 pub fn collectors() -> Vec<Box<dyn Collector>> {
     let mut out: Vec<Box<dyn Collector>> = Vec::new();
     // Each collector group pushes here; keep them in probe order.
+    out.extend([
+        Box::new(cpu::Cpu::new()) as Box<dyn Collector>,
+        Box::new(memory::Memory::new()),
+    ]);
+    out.push(Box::new(processes::Processes::new()));
+    out.push(Box::new(self_cpu::SelfCpu::new()));
     if !UNCOVERED.is_empty() {
         out.push(Box::new(Unsupported { modules: UNCOVERED }));
     }

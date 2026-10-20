@@ -12,7 +12,7 @@
 //! per-tick output, one line a minute; for overhead measurements), `--disable a,b` (turn
 //! modules off by name, e.g. `sensors,gpu`; for attributing overhead), `--commit-ms N`
 //! (the store's commit interval; default `kelvo_store::DEFAULT_COMMIT_INTERVAL`). Every
-//! other module is switched on, Disk included.
+//! other module is switched on, Disk included. `--series` prints every measured value.
 //!
 //! Overhead measurement (`make perf`, `scripts/perf.sh`): `--interest processes,detail`
 //! registers the interest a visible dashboard would (no flag: tray-only mode;
@@ -53,6 +53,7 @@ struct Args {
     full: bool,
     json: bool,
     quiet: bool,
+    series: bool,
     disable: Vec<String>,
     interest: Vec<String>,
     perf: bool,
@@ -74,6 +75,7 @@ fn parse_args() -> Result<Args> {
             "--full" => a.full = true,
             "--json" => a.json = true,
             "--quiet" => a.quiet = true,
+            "--series" => a.series = true,
             "--disable" => {
                 let list = it.next().context("--disable a,b")?;
                 a.disable = list.split(',').map(|m| m.trim().to_lowercase()).collect();
@@ -414,6 +416,7 @@ fn main() -> Result<()> {
                 tick_ms = s.interval_ms;
                 eprintln!("status: {s:?}");
             }
+            BusMsg::Processes(p) if args.series => println!("processes {}", p.rows.len()),
             BusMsg::Processes(_) => {}
             BusMsg::Event(e) => eprintln!("event: {e:?}"),
             BusMsg::Frame(f) => {
@@ -433,6 +436,11 @@ fn main() -> Result<()> {
                     println!("{}", serde_json::to_string(&f.snapshot(host, &catalog)?)?);
                 } else if args.full {
                     println!("{:#?}", f.snapshot(host, &catalog)?);
+                } else if args.series {
+                    let measured = f.layout.series.iter().zip(f.values.iter());
+                    for (k, v) in measured.filter(|(_, v)| v.is_finite()) {
+                        println!("{} {k} {v}", f.ts_ms);
+                    }
                 } else if !args.quiet {
                     println!("{} {}", f.ts_ms, summary(&f.snapshot(host, &catalog)?));
                 } else if last_minute.elapsed() >= Duration::from_secs(60) {
