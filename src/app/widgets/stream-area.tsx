@@ -2,6 +2,11 @@ import { splitGaps } from "@core/chart-math";
 import { scaleLinear } from "d3-scale";
 import { area, line } from "d3-shape";
 import { type ReactNode, useId } from "react";
+import {
+  annotationFraction,
+  ChartAnnotation,
+  type ChartAnnotationProps,
+} from "./chart-annotation";
 import { ChartFrame, ChartGrid, ChartSelectionVeil } from "./chart-frame";
 import { GapBands, type GapSpan } from "./gap-band";
 import { type Accent, accentVars, rampColor } from "./lib/accent";
@@ -21,6 +26,15 @@ export interface StreamAreaProps {
     values: (number | null)[];
     /** Ramp step of the accent; step 1 gets the area fill. */
     step: 1 | 2 | 3 | 4;
+    /**
+     * Draw the area under the line (default). `false` is a bare line, as
+     * for per-app lines over a total: no area and no gap-edge dots.
+     */
+    fill?: boolean;
+    /** Line width in px (default 1.5). */
+    weight?: number;
+    /** Opacity of the line and its area (default 1), for focus emphasis. */
+    opacity?: number;
   }[];
   /** Timestamp of the last value (ms epoch). Values are `intervalMs` apart. */
   tEndMs: number;
@@ -52,6 +66,11 @@ export interface StreamAreaProps {
   highlight?: { left: number; width: number } | null;
   /** Drawn over the plot area, sized to it (a brush layer). */
   overlay?: ReactNode;
+  /**
+   * Labelled markers at the top of the plot (power spikes, D-083); ones
+   * outside the window are dropped.
+   */
+  annotations?: readonly ChartAnnotationProps[];
 }
 
 interface Pt {
@@ -62,7 +81,9 @@ interface Pt {
 /**
  * Live area chart. Each series is split at `null` into
  * runs; nothing bridges a gap, and a hollow dot marks each edge that borders
- * one. New samples slide in with a `translateX` on the plot group.
+ * one. A one-point run draws no line (a round cap would make it a stray
+ * dot); its edge dot still marks it. New samples slide in with a
+ * `translateX` on the plot group.
  */
 export function StreamArea({
   series,
@@ -80,6 +101,7 @@ export function StreamArea({
   gaps,
   highlight,
   overlay,
+  annotations,
 }: StreamAreaProps) {
   const uid = useId();
   const n = Math.max(2, ...series.map((s) => s.values.length));
@@ -113,10 +135,14 @@ export function StreamArea({
         y: y(v),
       }))
     );
-    const linePath = runs.map((pts) => lineGen(pts) ?? "").join("");
-    const areaPath = runs.map((pts) => areaGen(pts) ?? "").join("");
+    const filled = s.fill !== false;
+    const lines = runs.filter((pts) => pts.length > 1);
+    const linePath = lines.map((pts) => lineGen(pts) ?? "").join("");
+    const areaPath = filled
+      ? lines.map((pts) => areaGen(pts) ?? "").join("")
+      : "";
     const edges: Pt[] = [];
-    runs.forEach((pts, k) => {
+    (filled ? runs : []).forEach((pts, k) => {
       const first = pts[0];
       const last = pts[pts.length - 1];
       if (k > 0 && first) edges.push(first);
@@ -129,8 +155,9 @@ export function StreamArea({
     const stroke =
       s.step === 1 ? "var(--a-ink)" : rampColor(s.step, "var(--a-ink)");
     const fill = s.step === 1 ? "var(--a)" : rampColor(s.step);
-    return { s, linePath, areaPath, edges, stroke, fill };
+    return { s, filled, linePath, areaPath, edges, stroke, fill };
   });
+  const windowMs = (n - 1) * intervalMs;
 
   return (
     <ChartFrame
@@ -150,31 +177,38 @@ export function StreamArea({
         className="block overflow-hidden"
       >
         <defs>
-          {drawn.map(({ s, fill }) => (
-            <linearGradient
-              key={s.key}
-              id={`${uid}-${s.key}`}
-              x1="0"
-              y1="0"
-              x2="0"
-              y2="1"
-            >
-              <stop offset="0" style={{ stopColor: fill, stopOpacity: 0.4 }} />
-              <stop offset="1" style={{ stopColor: fill, stopOpacity: 0 }} />
-            </linearGradient>
-          ))}
+          {drawn
+            .filter((d) => d.filled)
+            .map(({ s, fill }) => (
+              <linearGradient
+                key={s.key}
+                id={`${uid}-${s.key}`}
+                x1="0"
+                y1="0"
+                x2="0"
+                y2="1"
+              >
+                <stop
+                  offset="0"
+                  style={{ stopColor: fill, stopOpacity: 0.4 }}
+                />
+                <stop offset="1" style={{ stopColor: fill, stopOpacity: 0 }} />
+              </linearGradient>
+            ))}
         </defs>
         <ChartGrid values={gridlines} ceiling={yMax} height={height} />
         <g ref={scrollRef}>
-          {drawn.map(({ s, linePath, areaPath, stroke }) => (
-            <g key={s.key} data-series={s.key}>
-              <path d={areaPath} fill={`url(#${uid}-${s.key})`} />
+          {drawn.map(({ s, filled, linePath, areaPath, stroke }) => (
+            <g key={s.key} data-series={s.key} opacity={s.opacity ?? 1}>
+              {filled && (
+                <path data-area d={areaPath} fill={`url(#${uid}-${s.key})`} />
+              )}
               <path
                 data-line
                 d={linePath}
                 fill="none"
                 style={{ stroke }}
-                strokeWidth={1.5}
+                strokeWidth={s.weight ?? 1.5}
                 strokeLinecap="round"
                 strokeLinejoin="round"
                 vectorEffect="non-scaling-stroke"
@@ -186,7 +220,7 @@ export function StreamArea({
       {gaps && gaps.length > 0 && tEndMs > 0 && (
         <GapBands
           gaps={gaps}
-          rangeFromMs={tEndMs - (n - 1) * intervalMs}
+          rangeFromMs={tEndMs - windowMs}
           rangeToMs={tEndMs}
         />
       )}
@@ -206,6 +240,26 @@ export function StreamArea({
           />
         ))
       )}
+      {annotations?.map((a) => {
+        const f = annotationFraction(a.tsMs, tEndMs, windowMs);
+        if (f === null) return null;
+        // Past the middle the label hangs left of its marker, so it stays
+        // inside the plot.
+        const end = f > 0.5;
+        return (
+          <div
+            key={`${a.tsMs}-${a.label}`}
+            className="absolute top-3"
+            style={
+              end
+                ? { right: `${((1 - f) * 100).toFixed(2)}%` }
+                : { left: `${(f * 100).toFixed(2)}%` }
+            }
+          >
+            <ChartAnnotation {...a} align={end ? "end" : "start"} />
+          </div>
+        );
+      })}
       {ceilingLabel && (
         <span
           aria-hidden

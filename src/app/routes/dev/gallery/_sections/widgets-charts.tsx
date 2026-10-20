@@ -1,12 +1,13 @@
 import { formatTemperature } from "@core/format";
+import { useState } from "react";
 import { BatteryHistoryBars } from "~/widgets/battery-history-bars";
 import { Card } from "~/widgets/card";
 import { ChartAnnotation } from "~/widgets/chart-annotation";
 import { CoreHeatmap, HeatScaleLegend } from "~/widgets/core-heatmap";
 import { GapBand } from "~/widgets/gap-band";
 import { HeatMatrix } from "~/widgets/heat-matrix";
+import { Legend } from "~/widgets/legend";
 import { MirrorBars } from "~/widgets/mirror-bars";
-import { PowerStack } from "~/widgets/power-stack";
 import { StreamArea } from "~/widgets/stream-area";
 import { GalleryItem } from "../_components/gallery-item";
 import {
@@ -17,7 +18,8 @@ import {
   NETWORK_BARS,
   POPOVER_CPU,
   POPOVER_GPU,
-  POWER_STACK,
+  POWER_DRAW_APPS,
+  powerDraw,
   SLEEP_WINDOW,
   THERMAL_ZONES,
 } from "../_lib/chart-samples";
@@ -165,20 +167,11 @@ export function WidgetsChartsSection() {
         </ChartCard>
       </GalleryItem>
 
-      <GalleryItem name="PowerStack · ChartAnnotation" usedIn="Power & Sensors">
-        <ChartCard
-          id="gc-power"
-          title="Power by component, last 10 minutes"
-          accent="power"
-          aside={
-            <span className="figures text-[13px]">
-              10.4 W{" "}
-              <span className="text-[11px] text-muted-foreground">package</span>
-            </span>
-          }
-        >
-          <PowerStack {...POWER_STACK} />
-        </ChartCard>
+      <GalleryItem
+        name="StreamArea · lines over area · ChartAnnotation"
+        usedIn="Power & Sensors"
+      >
+        <PowerDrawSample />
       </GalleryItem>
 
       <GalleryItem name="BatteryHistoryBars" usedIn="Power & Sensors">
@@ -198,5 +191,30 @@ export function WidgetsChartsSection() {
         </div>
       </GalleryItem>
     </div>
+  );
+}
+
+/** The power draw chart: hover or click an app to focus its line. */
+function PowerDrawSample() {
+  const [focused, setFocused] = useState<string | null>(null);
+  const steps = [2, 3, 4, 2, 3] as const;
+  return (
+    <ChartCard id="gc-power" title="Power draw, last 10 minutes" accent="power">
+      <Legend
+        items={[
+          { label: "System", value: "14.8 W", step: 1 },
+          ...POWER_DRAW_APPS.map((name, i) => ({
+            label: name,
+            value: `${(2.6 / (i + 1)).toFixed(1)} W`,
+            step: steps[i] ?? 2,
+            onFocus: () => setFocused(name),
+            onBlur: () => setFocused(null),
+            onClick: () => setFocused(name),
+            pressed: focused === name,
+          })),
+        ]}
+      />
+      <StreamArea {...powerDraw(focused)} />
+    </ChartCard>
   );
 }

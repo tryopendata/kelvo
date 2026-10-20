@@ -100,4 +100,87 @@ describe("StreamArea", () => {
     );
     expect(container.querySelectorAll("[data-gap-edge]")).toHaveLength(0);
   });
+
+  it("draws no line for a one-point run, only its edge dot", () => {
+    const { container } = render(
+      <StreamArea
+        {...props}
+        series={[
+          { key: "total", values: [10, null, 12, null, 13, 18], step: 1 },
+        ]}
+      />
+    );
+    const d = container.querySelector("[data-line]")?.getAttribute("d");
+    // Only the [13, 18] run is a segment; 10 and 12 would be round-capped dots.
+    expect(moveCount(d)).toBe(1);
+    expect(d).not.toMatch(/Z/);
+    expect(container.querySelectorAll("[data-gap-edge]")).toHaveLength(3);
+  });
+
+  it("draws a bare line with no area and no edge dots when fill is false", () => {
+    const { container } = render(
+      <StreamArea
+        {...props}
+        series={[
+          {
+            key: "app",
+            values: [1, 2, null, 3, 4],
+            step: 3,
+            fill: false,
+            weight: 1,
+            opacity: 0.3,
+          },
+        ]}
+      />
+    );
+    const g = container.querySelector('[data-series="app"]');
+    expect(g?.querySelector("[data-area]")).toBeNull();
+    expect(container.querySelector("linearGradient")).toBeNull();
+    expect(container.querySelectorAll("[data-gap-edge]")).toHaveLength(0);
+    expect(g?.getAttribute("opacity")).toBe("0.3");
+    expect(g?.querySelector("[data-line]")?.getAttribute("stroke-width")).toBe(
+      "1"
+    );
+  });
+
+  it("keeps the area, 1.5 px weight and full opacity by default", () => {
+    const { container } = render(<StreamArea {...props} />);
+    const g = container.querySelector('[data-series="total"]');
+    expect(g?.querySelector("[data-area]")).not.toBeNull();
+    expect(g?.getAttribute("opacity")).toBe("1");
+    expect(g?.querySelector("[data-line]")?.getAttribute("stroke-width")).toBe(
+      "1.5"
+    );
+  });
+
+  it("places annotations inside the window and drops ones outside it", () => {
+    // Five values 1 s apart: the window is the last 4 s.
+    const { getByText, queryByText, rerender } = render(
+      <StreamArea
+        {...props}
+        annotations={[{ tsMs: props.tEndMs - 2_000, label: "ANE 1.4 W" }]}
+      />
+    );
+    expect(getByText("ANE 1.4 W").parentElement?.style.left).toBe("50.00%");
+    rerender(
+      <StreamArea
+        {...props}
+        annotations={[{ tsMs: props.tEndMs - 60_000, label: "old" }]}
+      />
+    );
+    expect(queryByText("old")).toBeNull();
+  });
+
+  it("anchors an annotation past the middle by its right edge", () => {
+    const { getByText } = render(
+      <StreamArea
+        {...props}
+        annotations={[{ tsMs: props.tEndMs - 1_000, label: "late" }]}
+      />
+    );
+    const label = getByText("late");
+    expect(label.parentElement?.style.right).toBe("25.00%");
+    expect(label.parentElement?.style.left).toBe("");
+    expect(label.className).toContain("flex-row-reverse");
+  });
 });

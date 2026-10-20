@@ -10,6 +10,11 @@ export interface ChartAnnotationProps {
    * `pill`: a bordered label on the card surface (battery chart).
    */
   variant?: "marker" | "pill";
+  /**
+   * `end` puts the marker after the label, for a box anchored by its right
+   * edge so a label near the plot's right edge doesn't run past it.
+   */
+  align?: "start" | "end";
 }
 
 /**
@@ -20,12 +25,14 @@ export function ChartAnnotation({
   tsMs,
   label,
   variant = "marker",
+  align = "start",
 }: ChartAnnotationProps) {
   return (
     <span
       data-annotation-ts={tsMs}
       className={cn(
         "inline-flex items-center gap-1.5 whitespace-nowrap text-[11px] text-fg-subtle",
+        align === "end" && "flex-row-reverse",
         variant === "pill" &&
           "rounded-mark border border-border bg-card px-1.5 py-0.5"
       )}

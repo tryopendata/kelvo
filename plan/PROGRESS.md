@@ -38,7 +38,7 @@ Settled, don't reopen:
 - Remote is `https://github.com/tryopendata/kelvo.git`.
 
 Known follow-ups (small, not scheduled):
-- CPU power source note ("P cores", "uncalibrated") is on the popover Power card and the Power stack, not yet on the Overview card or the Timeline lane.
+- CPU power source note ("P cores", "uncalibrated") is on the popover Power card and under the Power draw chart, not yet on the Overview card or the Timeline lane.
 - Rows dropped by the frontend ring as out of order are silent (no log or counter); a v4 producer must keep resume rows ahead of newer frames (D-072).
 - `live-selectors.ts` sums network rates across interfaces skipping nulls, so all-null reads 0; the disk card's per-process ranking adds read and write with `?? 0`.
 - Gap band label pill overlaps the x-axis tick row on module charts; a band can take up to a minute to appear after wake.

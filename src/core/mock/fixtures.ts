@@ -363,14 +363,14 @@ export const MOCK_SELF_PID = 2010;
 
 /** The CPU page's "Top processes", plus the Overview's memory and disk figures. */
 export const PROCESSES: LiveProcess[] = [
-  proc(2214, "Xcode", 86.8, 3.8e9, 74, 312, 41.2, 142e6, "me"),
-  proc(0, "kernel_task", 43.4, 1.1e9, 612, 1904, 18.8, 4e6, "root"),
-  proc(391, "WindowServer", 33.6, 0.6e9, 22, 840, 6.1, 1e6, "_windowserver"),
-  proc(1840, "Safari", 25.2, 1.9e9, 41, 226, 9.6, 6e6, "me"),
-  proc(5531, "node", 15.4, 0.84e9, 12, 64, 2.4, 3e6, "me"),
-  proc(1712, "Figma", 12.6, 1.2e9, 38, 118, 7.4, 0.5e6, "me"),
-  proc(988, "com.docker.backend", 9.8, 2.6e9, 29, 402, 3.1, 51e6, "me"),
-  proc(466, "mds_stores", 4.2, 0.12e9, 7, 12, 0.8, 18e6, "root"),
+  proc(2214, "Xcode", 86.8, 3.8e9, 74, 312, 3.2, 142e6, "me"),
+  proc(0, "kernel_task", 43.4, 1.1e9, 612, 1904, 1.9, 4e6, "root"),
+  proc(391, "WindowServer", 33.6, 0.6e9, 22, 840, 0.9, 1e6, "_windowserver"),
+  proc(1840, "Safari", 25.2, 1.9e9, 41, 226, 1.4, 6e6, "me"),
+  proc(5531, "node", 15.4, 0.84e9, 12, 64, 0.6, 3e6, "me"),
+  proc(1712, "Figma", 12.6, 1.2e9, 38, 118, 1.1, 0.5e6, "me"),
+  proc(988, "com.docker.backend", 9.8, 2.6e9, 29, 402, 0.5, 51e6, "me"),
+  proc(466, "mds_stores", 4.2, 0.12e9, 7, 12, 0.2, 18e6, "root"),
 ];
 
 /**

@@ -5,12 +5,12 @@ import PowerRoute from "./route";
 const NOW = 1_800_000_000_000;
 
 describe("Power cards follow the chart window (D-091)", () => {
-  it("titles the power stack and the zone matrix with the saved window", async () => {
+  it("titles the power draw chart and the zone matrix with the saved window", async () => {
     const r = renderWithProviders(<PowerRoute />, {
       transportOptions: { now: () => NOW, chartWindow: "30m" },
     });
     expect(
-      await screen.findByText("Power by component, last 30 minutes")
+      await screen.findByText("Power draw, last 30 minutes")
     ).toBeInTheDocument();
     act(() => r.transport.tick());
     expect(
