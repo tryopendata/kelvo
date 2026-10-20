@@ -1,4 +1,4 @@
-.PHONY: help install dev dev-web build test test-e2e test-fill test-read-perf lint format fix typecheck check rust-fmt rust-check rust-test rust-linux-check rust-linux-test rust-portable-check rust-portable-test appstore-check check-deps deny perf bench bench-perf-mode bench-vs-stats bindings bindings-check e2e-perf hooks clean stub-dist
+.PHONY: help install dev dev-web build test test-e2e test-fill test-read-perf lint format fix typecheck check rust-fmt rust-check rust-test rust-linux-check rust-linux-test rust-portable-check rust-portable-test appstore-check agent-linux agent-linux-tools check-deps deny perf bench bench-perf-mode bench-vs-stats bindings bindings-check e2e-perf hooks clean stub-dist
 .PHONY: agent-config agent-config-check agent-config-test agent-hooks-test architecture-check architecture-test
 
 # All library crates are portable by default. New workspace crates enter this gate
@@ -18,6 +18,7 @@ help:
 	@echo "  make dev           Full app (tauri dev: Vite on :1420 + Rust)"
 	@echo "  make dev-web       Browser only, mock transport"
 	@echo "  make build         Production app bundle"
+	@echo "  make agent-linux   Static Linux agent binaries (aarch64, x86_64 musl) for the app bundle; needs zig and cargo-zigbuild"
 	@echo "  make bindings      Regenerate src/core/generated/ from Rust (tauri-specta)"
 	@echo ""
 	@echo "Quality:"
@@ -144,6 +145,37 @@ rust-linux-check:
 # are incremental and the host's macOS target/ is untouched.
 rust-linux-test:
 	docker run --rm -e HOST_UID="$$(id -u)" -e HOST_GID="$$(id -g)" -e HOME=/tmp -v "$(PWD)":/w -w /w -v kelvo-linux-cargo:/usr/local/cargo -v kelvo-linux-rustup:/usr/local/rustup -e CARGO_TARGET_DIR=/usr/local/cargo/target-linux rust:1.99-bookworm scripts/linux-test-entry.sh cargo test $(LINUX_CRATES)
+
+# The Linux agent (D-115), bundled as app resources and uploaded to hosts by Add host.
+# cargo-zigbuild links the static musl targets from the macOS host with zig, so both
+# build anywhere without a cross toolchain. Versions are pinned: the bundled bytes, and
+# so their compiled digests, should change only when the source does. The aarch64
+# segments must fit 16K and 64K page kernels (Asahi); .cargo/config.toml sets
+# max-page-size and scripts/check-elf-align.py fails the build if a segment is not.
+# Unchanged binaries are not copied, so build.rs (which hashes them) does not rerun.
+ZIG_VERSION := 0.17.0
+CARGO_ZIGBUILD_VERSION := 0.23.4
+AGENT_TARGETS := aarch64-unknown-linux-musl x86_64-unknown-linux-musl
+AGENT_DIR := src-tauri/binaries/agent
+
+# Fails, with an install hint, unless the pinned zig and cargo-zigbuild are on PATH.
+agent-linux-tools:
+	@v="$$(zig version 2>/dev/null)"; if [ "$$v" != "$(ZIG_VERSION)" ]; then \
+		echo "agent-linux: needs zig $(ZIG_VERSION), found $${v:-none}. Install it from https://ziglang.org/download/ (or brew install zig, if Homebrew has $(ZIG_VERSION))." >&2; exit 1; fi
+	@v="$$(cargo-zigbuild --version 2>/dev/null | awk '{print $$2}')"; if [ "$$v" != "$(CARGO_ZIGBUILD_VERSION)" ]; then \
+		echo "agent-linux: needs cargo-zigbuild $(CARGO_ZIGBUILD_VERSION), found $${v:-none}. Install it: cargo install --locked cargo-zigbuild@$(CARGO_ZIGBUILD_VERSION)" >&2; exit 1; fi
+
+agent-linux: agent-linux-tools
+	rustup target add $(AGENT_TARGETS)
+	@mkdir -p $(AGENT_DIR)
+	@set -e; for t in $(AGENT_TARGETS); do \
+		echo "agent-linux: building $$t"; \
+		cargo zigbuild --release --locked -p kelvo-agent --target $$t; \
+		out="$${CARGO_TARGET_DIR:-target}/$$t/release/kelvo-agent"; \
+		cmp -s "$$out" $(AGENT_DIR)/kelvo-agent-$$t || cp "$$out" $(AGENT_DIR)/kelvo-agent-$$t; \
+	done
+	python3 scripts/check-elf-align.py $(foreach t,$(AGENT_TARGETS),$(AGENT_DIR)/kelvo-agent-$(t))
+	@cd $(AGENT_DIR) && shasum -a 256 $(foreach t,$(AGENT_TARGETS),kelvo-agent-$(t))
 
 # Kelvo installs nothing and requires nothing (D-058): every linked library must come
 # with macOS. Checks the debug binary; build it first (bun tauri build --debug).

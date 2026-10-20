@@ -52,6 +52,19 @@ jobs:
           python3 scripts/release-manifest.py "$RELEASE_TAG"
           # Cached compilation can be reused; packaged assets must belong to this tag.
           rm -rf target/release/bundle target/release-assets
+      # The bundled Linux agents (D-115). Versions match ZIG_VERSION and
+      # CARGO_ZIGBUILD_VERSION in the Makefile, which fails on a mismatch, so the release
+      # fails here rather than packaging an app without them.
+      - name: Install zig
+        uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+        with:
+          version: 0.17.0
+      - name: Install cargo-zigbuild
+        run: |
+          pipx install cargo-zigbuild==0.23.4
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Build Linux agents
+        run: make agent-linux
       - name: Check frontend and release manifest
         run: |
           bun run check
@@ -68,6 +81,9 @@ jobs:
         run: |
           codesign --verify --deep --strict target/release/bundle/macos/Kelvo.app
           test -x target/release/bundle/macos/Kelvo.app/Contents/MacOS/kelvo-remote-helper
+          for triple in aarch64-unknown-linux-musl x86_64-unknown-linux-musl; do
+            cmp src-tauri/binaries/agent/kelvo-agent-$triple target/release/bundle/macos/Kelvo.app/Contents/Resources/agent/kelvo-agent-$triple
+          done
           scripts/check-deps.sh target/release/bundle/macos/Kelvo.app/Contents/MacOS/kelvo target/release/bundle/macos/Kelvo.app/Contents/MacOS/kelvo-remote-helper
           python3 scripts/release-manifest.py "$RELEASE_TAG" --stage
           cargo run -p kelvo --example verify_release -- target/release-assets

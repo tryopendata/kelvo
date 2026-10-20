@@ -291,7 +291,7 @@ jobs:
   # ---------------------------------------------------------------------------
   linux:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
@@ -324,6 +324,31 @@ jobs:
       # regressions cheaply without claiming Linux product support.
       - name: Remote helper compile check
         run: cargo check -p kelvo-remote-helper --all-targets
+
+      # The static Linux agents the app bundles (make agent-linux, D-115), built the way
+      # the release builds them. Versions match ZIG_VERSION and CARGO_ZIGBUILD_VERSION in
+      # the Makefile, which fails on a mismatch.
+      - name: Install zig
+        uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+        with:
+          version: 0.17.0
+
+      - name: Install cargo-zigbuild
+        run: |
+          pipx install cargo-zigbuild==0.23.4
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      # Builds both musl targets, checks they are static and that aarch64 segments fit
+      # 16K and 64K page kernels, and prints their digests.
+      - name: Linux agent binaries
+        run: make agent-linux
+
+      - name: Linux agent smoke test
+        run: src-tauri/binaries/agent/kelvo-agent-x86_64-unknown-linux-musl version --json
+
+      # The stdio session and one-shot commands against the musl build of the agent.
+      - name: Linux agent pipe test (musl)
+        run: cargo-zigbuild test --locked -p kelvo-agent --test pipe --target x86_64-unknown-linux-musl
 
       # 30 days of synthetic history through the real store writer, pruned, then
       # measured: fails if 150 series exceed 150 MB, and logs the 250-series size.

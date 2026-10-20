@@ -24,6 +24,8 @@ bench = []
 
 [build-dependencies]
 tauri-build = { version = "2.7.1", features = [] }
+# Digests of the bundled Linux agent binaries (build.rs, remote::agent_bundle).
+sha2 = "0.10.9"
 
 [dependencies]
 kelvo-schema.workspace = true
@@ -57,6 +59,8 @@ tokio = { workspace = true, features = ["sync", "macros", "time", "rt"] }
 uuid = { workspace = true, features = ["v4"] }
 thiserror.workspace = true
 anyhow.workspace = true
+# Re-hashes the bundled Linux agent against the digest build.rs compiled in.
+sha2 = "0.10.9"
 tracing.workspace = true
 tracing-subscriber = { version = "0.3.23", features = ["env-filter", "fmt"] }
 tracing-appender = "0.2.5"

@@ -19,6 +19,12 @@ for bin in "$@"; do
     echo "check-deps: $bin does not exist; build it first (bun tauri build --debug)." >&2
     exit 2
   fi
+  # Only Mach-O binaries link macOS libraries. The bundled Linux agents
+  # (Contents/Resources/agent/) are static ELF, checked by scripts/check-elf-align.py.
+  if ! file -b "$bin" | grep -q '^Mach-O'; then
+    echo "check-deps: $bin is not Mach-O ($(file -b "$bin" | cut -d, -f1)); skipping."
+    continue
+  fi
   # The first line names the binary itself; the rest are its load commands.
   libs="$(otool -L "$bin" | tail -n +2 | awk '{print $1}')"
   if [ -z "$libs" ]; then

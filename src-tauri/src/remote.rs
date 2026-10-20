@@ -172,6 +172,7 @@ fn validate(c: &RemoteHostConfig) -> Result<(), CommandError> {
     Ok(())
 }
 
+mod agent_bundle;
 mod commands;
 mod contracts;
 mod registration;

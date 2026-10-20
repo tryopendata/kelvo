@@ -1,0 +1,5 @@
+# The bundled aarch64 Linux agent (make agent-linux) must load on 16K (Asahi) and 64K
+# page kernels, so its PT_LOAD segments are aligned to 64K. lld (zig's linker) already
+# defaults to that for aarch64; this pins it. scripts/check-elf-align.py verifies it.
+[target.aarch64-unknown-linux-musl]
+rustflags = ["-C", "link-arg=-Wl,-z,max-page-size=65536"]
