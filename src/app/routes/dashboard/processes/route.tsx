@@ -63,7 +63,7 @@ export default function ProcessesRoute() {
     energy: caps.energy,
     disk: caps.diskIo,
   });
-  // A host without compressed memory (Linux, D-115) has no such column.
+  // A host without compressed memory (Linux, D-116) has no such column.
   const compressed = useLayout()?.byMetric.has("mem.compressed") ?? true;
   // Without root, macOS hides other users' processes; Linux does not (D-045).
   const mac = useHostNoun() === "Mac";

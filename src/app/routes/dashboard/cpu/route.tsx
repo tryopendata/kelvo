@@ -35,7 +35,7 @@ export default function CpuRoute() {
             info &&
             counts &&
             (counts.efficiency === 0 ? (
-              // One kind of core (`uniform`, D-115) has no split to name.
+              // One kind of core (`uniform`, D-116) has no split to name.
               <>
                 {info.chip ?? "Unknown chip"} ·{" "}
                 <span className="figures">{counts.performance}</span> cores

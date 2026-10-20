@@ -1,5 +1,5 @@
 #![cfg_attr(test, allow(clippy::too_many_lines))]
-//! `kelvo-agent`: the headless collector for hosts without the app (D-115). `run` owns
+//! `kelvo-agent`: the headless collector for hosts without the app (D-116). `run` owns
 //! the engine and this host's history and serves them on a private socket; `serve
 //! --stdio` bridges an SSH session to it. The other commands are the one-shot steps
 //! the controller runs while installing, checking, updating and removing it.

@@ -47,7 +47,7 @@ export function LiveMachineHeader() {
   const info = host.info;
   const topology = info.cpu_topology;
   const cores = topology.reduce((n, c) => n + c.cores.length, 0);
-  // "4P + 4E"; empty when every core is one kind (`uniform`, D-115).
+  // "4P + 4E"; empty when every core is one kind (`uniform`, D-116).
   const kinds = coresLabel(topology);
 
   const chipParts = [

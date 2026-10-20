@@ -89,7 +89,7 @@ export function OverviewCpuCard({ origin }: CardProps) {
     const top = mhz?.[mhz.length - 1];
     return top === undefined ? null : top * 1e6;
   };
-  // A host whose cores are all one kind (`uniform`, D-115) has one cluster.
+  // A host whose cores are all one kind (`uniform`, D-116) has one cluster.
   const only = !p || !e ? topology[0] : undefined;
   const onlyFreq = useHost((s) =>
     only ? (s.held[`cpu.cluster.freq{cluster=${only.name}}`] ?? null) : null
@@ -240,7 +240,7 @@ export function OverviewPowerCard({ origin }: CardProps) {
     powerSource,
     temperature: fahrenheit ? "F" : "C",
   } as const;
-  // Without a component split or process energy (a Linux agent, D-115) the
+  // Without a component split or process energy (a Linux agent, D-116) the
   // card is built from the system draw and the temperature sensors.
   const props =
     p.components || energy
@@ -321,7 +321,7 @@ export function OverviewDiskCard({ origin }: CardProps) {
     rate: useRateUnits(),
     processes: useProcesses(),
   });
-  // Rows without measured disk rates (`process_disk_io` false, D-115) hold
+  // Rows without measured disk rates (`process_disk_io` false, D-116) hold
   // zeros that must not read as idle processes.
   const diskIo = useProcessColumnCaps().diskIo;
   return (

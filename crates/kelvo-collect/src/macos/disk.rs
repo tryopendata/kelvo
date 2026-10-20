@@ -51,7 +51,7 @@ struct Device {
 /// Independent byte/operation rates and paired completed-request timing rates.
 pub struct DiskIo {
     devices: Vec<Device>,
-    /// The probe's device list for `Capabilities::disk_devices` (D-115).
+    /// The probe's device list for `Capabilities::disk_devices` (D-116).
     inventory: Vec<kelvo_schema::DiskDevice>,
     prev_ns: u64,
     totals: [SeriesKey; 8],

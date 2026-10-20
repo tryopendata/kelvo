@@ -1,7 +1,7 @@
-//! The wire types of the last build before D-115, vendored from the merge base
+//! The wire types of the last build before D-116, vendored from the merge base
 //! (`git show 2b0b7cb:crates/kelvo-proto/src/message.rs` and
 //! `crates/kelvo-schema/src/{host,caps,catalog,compat}.rs`), so a skew test decodes
-//! D-115 fixtures with that build's real decoder instead of a model of it.
+//! D-116 fixtures with that build's real decoder instead of a model of it.
 //!
 //! Every vendored type keeps its fields and serde attributes exactly. Trimmed: the
 //! `specta` derives and attributes (no serde effect), methods the decode does not use,

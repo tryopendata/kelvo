@@ -43,7 +43,7 @@ pub enum RemoteError {
     #[error("remote host identity does not match: {0}")]
     Identity(String),
     /// The host answered with a different id than the one paired. Carries both, so the
-    /// shell can offer to re-pair it as a new host (D-115).
+    /// shell can offer to re-pair it as a new host (D-116).
     #[error(
         "remote host identity does not match: {alias} identified {actual}, expected {expected}"
     )]

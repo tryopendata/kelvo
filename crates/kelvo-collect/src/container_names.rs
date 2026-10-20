@@ -1,5 +1,5 @@
 //! Container names by id, shared between an async refresher and the collectors that run
-//! on the engine's std thread (D-115). The Linux cgroup and process collectors see only
+//! on the engine's std thread (D-116). The Linux cgroup and process collectors see only
 //! container ids (`docker-<id>.scope`); a task with Docker socket access (the agent's)
 //! fills this map, and they read it.
 //!

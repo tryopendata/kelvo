@@ -1,5 +1,5 @@
 /**
- * The `linux` scenario: the mock speaks for a headless Linux agent (D-115),
+ * The `linux` scenario: the mock speaks for a headless Linux agent (D-116),
  * modelled on linux-tailscale, a Mac mini (M1, 2020) running Fedora Asahi
  * Remix 41 Server. Its host facts, capabilities, series and processes are
  * what `kelvo-collect/src/linux/` and `host_info/linux.rs` publish there:

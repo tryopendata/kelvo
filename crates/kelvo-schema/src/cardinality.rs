@@ -1,4 +1,4 @@
-//! Bounds on series a host can create through label values it does not control (D-115):
+//! Bounds on series a host can create through label values it does not control (D-116):
 //! a cap on series per metric, and a length bound on label values such as container names.
 
 use std::borrow::Cow;

@@ -87,7 +87,7 @@ export const sum = (a: number | null, b: number | null) =>
  */
 export function LiveSidebar() {
   const local = useIsLocalHost();
-  // A remote host lists Containers when it reports cgroup groups (D-115).
+  // A remote host lists Containers when it reports cgroup groups (D-116).
   const cgroups = useCgroups();
   const navigate = useNavigate();
   const onNavigate = useCallback((href: string) => navigate(href), [navigate]);

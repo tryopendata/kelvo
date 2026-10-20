@@ -26,7 +26,7 @@ pub enum RemoteCommand {
     /// normal per-user installation. Serialized as the bare path string, the format of
     /// the old `helper_path` field.
     MacHelper(String),
-    /// The headless Linux agent (D-115). `system` selects the root layout; `socket`, when
+    /// The headless Linux agent (D-116). `system` selects the root layout; `socket`, when
     /// set, is the daemon's socket, passed explicitly so the session and the user
     /// manager agree on it whatever the login environment says.
     Agent {

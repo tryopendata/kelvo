@@ -1,4 +1,4 @@
-//! Remote monitoring of other Macs (D-104) and Linux agents (D-115): shell adapters,
+//! Remote monitoring of other Macs (D-104) and Linux agents (D-116): shell adapters,
 //! saved hosts and host-specific history. Transport, protocol state machines and agent
 //! installation live in kelvo-remote.
 use std::collections::BTreeMap;

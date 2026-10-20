@@ -1,5 +1,5 @@
 //! Which block devices the disk I/O collector reports, and their inventory for
-//! `Capabilities::disk_devices` (D-115).
+//! `Capabilities::disk_devices` (D-116).
 //!
 //! A reported disk is a `/sys/block` entry (whole disks only; partitions live under
 //! their disk) that is backed by hardware. Excluded:

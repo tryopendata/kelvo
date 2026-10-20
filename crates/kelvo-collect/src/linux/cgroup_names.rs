@@ -1,4 +1,4 @@
-//! What a cgroup v2 path is (D-115): a system service, a user-manager service, or a
+//! What a cgroup v2 path is (D-116): a system service, a user-manager service, or a
 //! Docker or Podman container. Shared by the cgroup collector, which walks the tree,
 //! and the process collector, which reads `/proc/<pid>/cgroup` once per process.
 //!

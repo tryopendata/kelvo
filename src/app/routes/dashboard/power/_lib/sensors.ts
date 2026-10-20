@@ -3,45 +3,7 @@
  */
 import { MISSING, rpmParts } from "@core/format";
 
-/** Zone rows hold their order this long so rows do not jump every tick. */
-export const ZONE_RESORT_MS = 10_000;
-
-export interface ZoneOrder {
-  /** Sensor keys, hottest first as of `atMs`. */
-  keys: string[];
-  atMs: number;
-}
-
-/**
- * Hottest-first order for the zone table, re-sorted at most every `holdMs`.
- * A zone appearing or disappearing re-sorts at once. Zones with no current
- * value go last. `nowMs` is the live clock (newest frame), not wall time.
- */
-export function nextZoneOrder(
-  prev: ZoneOrder | null,
-  zones: readonly { key: string; now: number | null }[],
-  nowMs: number,
-  holdMs = ZONE_RESORT_MS
-): ZoneOrder {
-  const sameSet =
-    prev !== null &&
-    prev.keys.length === zones.length &&
-    zones.every((z) => prev.keys.includes(z.key));
-  if (prev && sameSet && nowMs - prev.atMs < holdMs && nowMs >= prev.atMs) {
-    return prev;
-  }
-  const keys = [...zones]
-    .sort((a, b) => {
-      if (a.now === null && b.now === null) return a.key < b.key ? -1 : 1;
-      if (a.now === null) return 1;
-      if (b.now === null) return -1;
-      return b.now - a.now || (a.key < b.key ? -1 : 1);
-    })
-    .map((z) => z.key);
-  return { keys, atMs: nowMs };
-}
-
-/** "Zone 01" for the first zone in layout order; stable across re-sorts. */
+/** "Zone 01" for the first zone in layout order. */
 export function zoneName(index: number): string {
   return `Zone ${String(index + 1).padStart(2, "0")}`;
 }

@@ -2,7 +2,7 @@
 //! `cpu.iowait`, `cpu.steal`, `cpu.load{core}`, and `cpu.loadavg{window}` from
 //! `/proc/loadavg` every 5 s.
 //!
-//! Shares of each interval's jiffies (D-115):
+//! Shares of each interval's jiffies (D-116):
 //!
 //! | Series | Fields |
 //! |---|---|

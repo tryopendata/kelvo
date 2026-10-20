@@ -46,7 +46,7 @@ export const selectCpu = (s: S) => ({
   total: held(s, "cpu.total"),
   user: held(s, "cpu.user"),
   system: held(s, "cpu.system"),
-  /** Linux only (D-115): time idle with I/O outstanding. */
+  /** Linux only (D-116): time idle with I/O outstanding. */
   iowait: held(s, "cpu.iowait"),
   pFreqHz: held(s, "cpu.cluster.freq{cluster=P0}"),
   eFreqHz: held(s, "cpu.cluster.freq{cluster=E0}"),
@@ -73,11 +73,11 @@ export const selectMemory = (s: S) => ({
   pressure: held(s, "mem.pressure"),
   pressureLevel: held(s, "mem.pressure_level"),
   swapUsed: held(s, "mem.swap_used"),
-  /** Linux PSI (D-115): share of time some task stalled on memory. */
+  /** Linux PSI (D-116): share of time some task stalled on memory. */
   psiSome: held(s, "mem.psi{stall=some}"),
   /**
    * The layout has the macOS composition (`mem.app`); a Linux agent has
-   * only used, cached and free (D-115).
+   * only used, cached and free (D-116).
    */
   composition: keysOf(s, "mem.app").length > 0,
   /** The layout has macOS memory pressure; a Linux agent reports PSI instead. */
@@ -161,7 +161,7 @@ export const selectSampling = (s: S) => ({
 export const selectSelfCpu = (s: S) => held(s, "self.cpu");
 
 /**
- * The host reports cgroup v2 groups (`Module::Containers`, D-115): a Linux
+ * The host reports cgroup v2 groups (`Module::Containers`, D-116): a Linux
  * agent's series-backed Containers page. False before capabilities arrive.
  */
 export const selectCgroups = (s: S): boolean => {

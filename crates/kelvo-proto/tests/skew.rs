@@ -16,7 +16,7 @@
 // test-only file panic on bad fixtures by design.
 #![allow(clippy::unwrap_used)]
 
-mod pre_d115;
+mod pre_d116;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
@@ -51,7 +51,7 @@ fn caps() -> Capabilities {
         revision: 2,
         process_network: false,
         process_gpu: false,
-        // Absent from the sender: a pre-D-115 peer keeps its columns.
+        // Absent from the sender: a pre-D-116 peer keeps its columns.
         process_energy: true,
         process_wakeups: true,
         process_disk_io: true,
@@ -70,7 +70,7 @@ fn layout() -> WireLayout {
     }
 }
 
-/// The `HostInfo` fields D-092 and D-115 added. v1.0's `hello` has none, which decodes as empty.
+/// The `HostInfo` fields D-092 and D-116 added. v1.0's `hello` has none, which decodes as empty.
 #[derive(Default)]
 struct HostFacts {
     gpu_dvfs_mhz: Vec<u32>,
@@ -866,7 +866,7 @@ fn bucket_stats_by_index() {
     assert_eq!(row.stat(3), None);
 }
 
-/// A Linux agent's `Hello` with every D-115 wire addition: a kernel, uniform cores, the
+/// A Linux agent's `Hello` with every D-116 wire addition: a kernel, uniform cores, the
 /// Containers module, a permission-denied module, no energy or wakeup columns and a disk
 /// inventory.
 fn hello_linux() -> Message {
@@ -937,7 +937,7 @@ fn capabilities_linux() -> Message {
     })
 }
 
-/// D-115's `process_disk_io`: absent from every older sender's capabilities (a Mac, the
+/// D-116's `process_disk_io`: absent from every older sender's capabilities (a Mac, the
 /// first Linux agents), where it reads as true; and a false from a newer agent is
 /// ignored by a build that predates it.
 #[test]
@@ -969,10 +969,10 @@ fn process_disk_io_skew() {
     );
 }
 
-/// D-115, the forward direction: a pre-D-115 peer's `hello` (the v1 fixture) decodes with
+/// D-116, the forward direction: a pre-D-116 peer's `hello` (the v1 fixture) decodes with
 /// no kernel, the energy and wakeup columns present and no disk inventory.
 #[test]
-fn d115_fields_default_for_an_older_peer() {
+fn d116_fields_default_for_an_older_peer() {
     let body = std::fs::read(fixtures_dir().join("hello.cbor")).unwrap();
     let Message::Hello(h) = decode_message(&body).unwrap() else {
         panic!("hello fixture")
@@ -987,14 +987,14 @@ fn d115_fields_default_for_an_older_peer() {
     assert!(c.process_energy && c.process_wakeups);
 }
 
-/// D-115, the old direction: a Linux agent's `hello` and `capabilities_changed` decode
-/// on a build from before D-115, with that build's own types ([`pre_d115`], vendored
+/// D-116, the old direction: a Linux agent's `hello` and `capabilities_changed` decode
+/// on a build from before D-116, with that build's own types ([`pre_d116`], vendored
 /// from the merge base). The new fields are ignored, `uniform` and `permission_denied`
 /// read as `Unknown`, the Containers entry is dropped like any unknown module (D-040),
 /// and everything else is intact.
 #[test]
-fn d115_values_decode_on_a_pre_d115_build() {
-    use pre_d115 as old;
+fn d116_values_decode_on_a_pre_d116_build() {
+    use pre_d116 as old;
 
     let body = std::fs::read(fixtures_dir().join("hello_linux.cbor")).unwrap();
     let old::Message::Hello(hello) = ciborium::from_reader(body.as_slice()).unwrap() else {
@@ -1065,9 +1065,9 @@ fn d115_values_decode_on_a_pre_d115_build() {
 
 fn remote_samples() -> Vec<(&'static str, Message)> {
     vec![
-        // A Linux agent's handshake (D-115).
+        // A Linux agent's handshake (D-116).
         ("hello_linux", hello_linux()),
-        // A non-root agent: no energy, wakeup or disk columns (D-115).
+        // A non-root agent: no energy, wakeup or disk columns (D-116).
         ("capabilities_linux", capabilities_linux()),
         (
             "live_remote",

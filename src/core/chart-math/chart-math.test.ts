@@ -220,8 +220,21 @@ describe("heatmapAlpha", () => {
     expect(heatmapAlpha(-5, 80)).toBeCloseTo(0.06);
   });
 
+  it("maps a vmin-to-vmax scale (20 to 110 °C) onto the same alpha range", () => {
+    expect(heatmapAlpha(20, 110, 20)).toBeCloseTo(0.06);
+    expect(heatmapAlpha(65, 110, 20)).toBeCloseTo(0.505);
+    expect(heatmapAlpha(110, 110, 20)).toBeCloseTo(0.95);
+    expect(heatmapAlpha(10, 110, 20)).toBeCloseTo(0.06);
+    expect(heatmapAlpha(130, 110, 20)).toBeCloseTo(0.95);
+  });
+
+  it("draws the faintest tint for an empty scale", () => {
+    expect(heatmapAlpha(50, 20, 20)).toBeCloseTo(0.06);
+  });
+
   it("returns null for a missing sample, not the faintest tint", () => {
     expect(heatmapAlpha(null, 100)).toBeNull();
+    expect(heatmapAlpha(null, 110, 20)).toBeNull();
     expect(heatmapAlpha(Number.NaN, 100)).toBeNull();
   });
 });

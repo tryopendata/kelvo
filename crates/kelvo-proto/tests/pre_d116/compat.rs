@@ -40,7 +40,7 @@ where
 
 macro_rules! text_enum_deserialize {
     ($ty:ty) => {
-        impl $crate::pre_d115::compat::TextEnum for $ty {
+        impl $crate::pre_d116::compat::TextEnum for $ty {
             const KNOWN: &'static [Self] = &<$ty>::ALL;
             const UNKNOWN: Self = <$ty>::Unknown;
             fn text(self) -> &'static str {
@@ -50,7 +50,7 @@ macro_rules! text_enum_deserialize {
 
         impl<'de> serde::Deserialize<'de> for $ty {
             fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-                $crate::pre_d115::compat::deserialize_text(d)
+                $crate::pre_d116::compat::deserialize_text(d)
             }
         }
     };

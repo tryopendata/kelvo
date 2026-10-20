@@ -22,7 +22,7 @@ import { CgroupTable } from "./cgroup-table";
 const PERIOD_S = METRIC_PERIODS_MS["cgroup.cpu"] / 1000;
 
 /**
- * Containers on a Linux host (D-115): the agent's cgroup v2 services and
+ * Containers on a Linux host (D-116): the agent's cgroup v2 services and
  * containers from their `cgroup.*` series, the top groups with the rest
  * folded into one "others" row pinned last. A container that exited reads
  * as a gap until Rust drops it from the layout.

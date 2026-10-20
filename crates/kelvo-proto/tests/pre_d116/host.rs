@@ -50,7 +50,7 @@ impl OsKind {
     }
 }
 
-crate::pre_d115::compat::text_enum_deserialize!(OsKind);
+crate::pre_d116::compat::text_enum_deserialize!(OsKind);
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ClusterInfo {
@@ -80,4 +80,4 @@ impl CoreKind {
     }
 }
 
-crate::pre_d115::compat::text_enum_deserialize!(CoreKind);
+crate::pre_d116::compat::text_enum_deserialize!(CoreKind);

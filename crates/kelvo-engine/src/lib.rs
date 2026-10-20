@@ -92,7 +92,7 @@ pub use housekeeping::{
 };
 pub use inbox::{Inbox, SleepAck};
 /// Container names for the Linux cgroup and process collectors, and the Docker-backed
-/// refresher the agent runs (D-115).
+/// refresher the agent runs (D-116).
 pub use kelvo_collect::ContainerNames;
 #[cfg(unix)]
 pub use kelvo_collect::NameRefresher;
@@ -126,7 +126,10 @@ pub use source::{
     SourceSink, network_history_enabled,
 };
 pub use ticker::{FakeClock, FakeTicker, ThreadTicker, Ticker, leeway_for};
-pub use usage::{USAGE_BUCKET_MS, UsageApp, UsageByApp, UsageKey, UsageProc, UsageTotal};
+pub use usage::{
+    USAGE_BUCKET_MS, USAGE_KEEP_MS, UsageApp, UsageByApp, UsageKey, UsageProc, UsageSeries,
+    UsageSeriesApp, UsageTotal,
+};
 
 #[cfg(unix)]
 pub mod disk_space;

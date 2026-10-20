@@ -273,7 +273,7 @@ impl ItemMode {
             Module::Cpu => &[Off, Value, Graph, Cores],
             Module::Gpu | Module::Memory | Module::Network => &[Off, Value, Graph],
             Module::Power | Module::Sensors | Module::Disk | Module::Battery => &[Off, Value],
-            // No menu-bar item (D-115).
+            // No menu-bar item (D-116).
             Module::Containers | Module::Unknown => &[],
         }
     }
@@ -667,7 +667,7 @@ impl Settings {
         if self.modules.contains_key(&Module::Sensors) {
             return Err(SettingsError::SensorsEntry);
         }
-        // Containers is a data-only module with no settings entry (D-115).
+        // Containers is a data-only module with no settings entry (D-116).
         if self.modules.contains_key(&Module::Unknown)
             || self.modules.contains_key(&Module::Containers)
         {
@@ -925,7 +925,7 @@ mod tests {
             .insert(Module::Unknown, ModuleSettings { enabled: true });
         assert_eq!(s.validate(), Err(SettingsError::UnknownModule));
 
-        // Containers is data-only (D-115): no settings entry, item or menu-bar value.
+        // Containers is data-only (D-116): no settings entry, item or menu-bar value.
         let mut s = ok.clone();
         s.modules
             .insert(Module::Containers, ModuleSettings { enabled: true });

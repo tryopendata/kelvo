@@ -1390,7 +1390,7 @@ fn process_gpu_capability_follows_the_collectors_probe() {
     assert!(after.revision > before.revision);
 }
 
-/// D-115: process columns and the disk inventory come from Supported collectors and
+/// D-116: process columns and the disk inventory come from Supported collectors and
 /// leave with them; a host without such a collector reports neither.
 #[test]
 fn capability_facts_follow_the_collectors_probe() {

@@ -104,4 +104,4 @@ impl UnsupportedReason {
     }
 }
 
-crate::pre_d115::compat::text_enum_deserialize!(UnsupportedReason);
+crate::pre_d116::compat::text_enum_deserialize!(UnsupportedReason);

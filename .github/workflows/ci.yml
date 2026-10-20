@@ -325,7 +325,7 @@ jobs:
       - name: Remote helper compile check
         run: cargo check -p kelvo-remote-helper --all-targets
 
-      # The static Linux agents the app bundles (make agent-linux, D-115), built the way
+      # The static Linux agents the app bundles (make agent-linux, D-116), built the way
       # the release builds them. Versions match ZIG_VERSION and CARGO_ZIGBUILD_VERSION in
       # the Makefile, which fails on a mismatch.
       - name: Install zig

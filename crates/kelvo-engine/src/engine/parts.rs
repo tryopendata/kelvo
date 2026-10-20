@@ -25,7 +25,7 @@ impl EngineParts {
     }
 
     /// [`EngineParts::platform`] with the container names a refresher fills: the Linux
-    /// agent's Docker task (D-115). Without one, containers show short ids.
+    /// agent's Docker task (D-116). Without one, containers show short ids.
     pub fn platform_with(
         scales: Arc<dyn kelvo_collect::calib::ScaleStore>,
         names: kelvo_collect::ContainerNames,

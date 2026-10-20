@@ -335,7 +335,7 @@ fn over_cap_layout() -> (WireLayout, WireBucket) {
 }
 
 /// The mirror keeps the first 32 series of a capped metric in layout order, with their
-/// own stats, as a local engine would (D-115).
+/// own stats, as a local engine would (D-116).
 #[test]
 fn durable_ingest_caps_series_per_metric() {
     let dir = tempfile::tempdir().unwrap();

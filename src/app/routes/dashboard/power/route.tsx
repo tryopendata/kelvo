@@ -19,11 +19,11 @@ import { useChartWindow } from "~/hooks/use-chart-window";
 import { useHostRecord } from "~/hooks/use-host-record";
 import { useProcessColumnCaps } from "~/hooks/use-process-interest";
 import { useHeld } from "~/hooks/use-ring";
+import { BrushProvider } from "~/stores/brush-store";
 import { useHost } from "~/stores/host-store";
-import { usePowerComponents, usePowerSource } from "~/stores/live-selectors";
-import { PowerStackCard } from "./_components/power-stack-card";
+import { usePowerSource } from "~/stores/live-selectors";
+import { PowerDrawCard } from "./_components/power-draw-card";
 import { RingCards } from "./_components/ring-cards";
-import { SystemPowerCard } from "./_components/system-power-card";
 import { ZonesCard } from "./_components/zones-card";
 
 /** Energy by app over the chart window (D-093, D-099). */
@@ -53,7 +53,9 @@ const ENERGY_TABLE: UsageTableConfig = {
  * instead (plan 4.17); a Mac without a battery has no battery section and
  * its System card reads "From power adapter". Energy by app (D-093) sits
  * under the charts, over the same window. The cards wait for the chart
- * window (D-091), so they appear together.
+ * window (D-091), so they appear together. A range brushed on the power
+ * draw chart scopes its average and peak and the Energy by app table
+ * (D-099); the thermal matrix stays live.
  */
 export default function PowerRoute() {
   const info = useHostRecord()?.info;
@@ -64,9 +66,7 @@ export default function PowerRoute() {
   const unknownChip =
     caps !== null && moduleState(caps, null, "power") === "unknown_chip";
   const windowMs = useChartWindow()?.windowMs ?? null;
-  // A Linux agent (D-115) splits power by no component and attributes no
-  // energy to processes.
-  const components = usePowerComponents();
+  // A Linux agent (D-116) attributes no energy to processes.
   const energy = useProcessColumnCaps().energy;
 
   if (unknownChip) {
@@ -83,33 +83,29 @@ export default function PowerRoute() {
   }
 
   return (
-    <div className="flex flex-col gap-4">
-      <PageHeader
-        title="Power & Sensors"
-        subtitle={<PowerSubtitle />}
-        actions={<WindowControl />}
-      />
-      {windowMs !== null && (
-        <>
-          <RingCards
-            topology={info?.cpu_topology ?? []}
-            hasBattery={hasBattery}
-          />
-          <div className="grid grid-cols-[repeat(auto-fit,minmax(340px,1fr))] gap-4">
+    <BrushProvider>
+      <div className="flex flex-col gap-4">
+        <PageHeader
+          title="Power & Sensors"
+          subtitle={<PowerSubtitle />}
+          actions={<WindowControl />}
+        />
+        {windowMs !== null && (
+          <>
+            <RingCards
+              topology={info?.cpu_topology ?? []}
+              hasBattery={hasBattery}
+            />
+            <PowerDrawCard windowMs={windowMs} />
             <ZonesCard windowMs={windowMs} />
-            {components ? (
-              <PowerStackCard windowMs={windowMs} />
-            ) : (
-              <SystemPowerCard windowMs={windowMs} />
+            {energy && (
+              <UsageAppsCard windowMs={windowMs} config={ENERGY_TABLE} />
             )}
-          </div>
-          {energy && (
-            <UsageAppsCard windowMs={windowMs} config={ENERGY_TABLE} />
-          )}
-          {hasBattery && <BatteryDayCard origin="tl" />}
-        </>
-      )}
-    </div>
+            {hasBattery && <BatteryDayCard origin="tl" />}
+          </>
+        )}
+      </div>
+    </BrushProvider>
   );
 }
 

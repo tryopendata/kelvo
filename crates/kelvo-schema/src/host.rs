@@ -102,7 +102,7 @@ pub struct HostInfo {
     #[serde(default)]
     pub boot_mounts: Vec<String>,
     /// The kernel release (`uname -r`: "6.17.0-400.asahi.fc41.aarch64", or Darwin's
-    /// "25.0.0"). `None` when unknown, and from a peer or record written before D-115.
+    /// "25.0.0"). `None` when unknown, and from a peer or record written before D-116.
     #[serde(default)]
     pub kernel: Option<String>,
 }
@@ -159,7 +159,7 @@ pub enum CoreKind {
     Performance,
     Efficiency,
     /// Every core is the same kind: a host without heterogeneous cores (most Linux
-    /// servers, D-115). The CPU page shows no P/E split. `Unknown` is never produced
+    /// servers, D-116). The CPU page shows no P/E split. `Unknown` is never produced
     /// locally, so a homogeneous host reports this rather than leaving the kind blank.
     Uniform,
     /// A core type this build does not know, from a newer peer (D-040).

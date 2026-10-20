@@ -230,7 +230,7 @@ impl DockerAdapter {
         .await?;
         Ok(!list.is_empty())
     }
-    /// Running containers' names by full id (cgroup labels, D-115), one list request.
+    /// Running containers' names by full id (cgroup labels, D-116), one list request.
     pub async fn running_names(&self) -> Result<HashMap<String, Arc<str>>, DockerError> {
         let _permit = self.permits.try_acquire().map_err(|_| DockerError::Busy)?;
         let list = finite(self.client.list_containers(Some(ListContainersOptions {

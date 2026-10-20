@@ -150,7 +150,7 @@ describe("Disk and Memory pages over a range (D-099)", () => {
     }
   });
 
-  it("lists a remote host's devices from its capabilities, without the local inventory (D-115)", async () => {
+  it("lists a remote host's devices from its capabilities, without the local inventory (D-116)", async () => {
     const transport = createMockTransport({
       now: () => NOW,
       autoTick: false,

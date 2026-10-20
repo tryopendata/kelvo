@@ -1,10 +1,13 @@
+import { formatTemperature } from "@core/format";
+import { useState } from "react";
 import { BatteryHistoryBars } from "~/widgets/battery-history-bars";
 import { Card } from "~/widgets/card";
 import { ChartAnnotation } from "~/widgets/chart-annotation";
-import { CoreHeatmap, HeatScaleLegend } from "~/widgets/core-heatmap";
+import { CoreHeatmap } from "~/widgets/core-heatmap";
 import { GapBand } from "~/widgets/gap-band";
+import { HeatMatrix, HeatScaleLegend } from "~/widgets/heat-matrix";
+import { Legend } from "~/widgets/legend";
 import { MirrorBars } from "~/widgets/mirror-bars";
-import { PowerStack } from "~/widgets/power-stack";
 import { StreamArea } from "~/widgets/stream-area";
 import { GalleryItem } from "../_components/gallery-item";
 import {
@@ -15,8 +18,10 @@ import {
   NETWORK_BARS,
   POPOVER_CPU,
   POPOVER_GPU,
-  POWER_STACK,
+  POWER_DRAW_APPS,
+  powerDraw,
   SLEEP_WINDOW,
+  THERMAL_ZONES,
 } from "../_lib/chart-samples";
 
 function ChartCard({
@@ -140,20 +145,33 @@ export function WidgetsChartsSection() {
         </ChartCard>
       </GalleryItem>
 
-      <GalleryItem name="PowerStack · ChartAnnotation" usedIn="Power & Sensors">
+      <GalleryItem name="HeatMatrix · temperature" usedIn="Power & Sensors">
         <ChartCard
-          id="gc-power"
-          title="Power by component, last 10 minutes"
+          id="gc-zones"
+          title="SoC thermal zones, last 10 minutes"
           accent="power"
           aside={
-            <span className="figures text-[13px]">
-              10.4 W{" "}
-              <span className="text-[11px] text-muted-foreground">package</span>
-            </span>
+            <HeatScaleLegend accent="temp" minLabel="20 °C" maxLabel="110 °C" />
           }
         >
-          <PowerStack {...POWER_STACK} />
+          <HeatMatrix
+            rows={THERMAL_ZONES}
+            scale={{ min: 20, max: 110 }}
+            formatNow={(c) => formatTemperature(c, { compact: true })}
+            labelWidth={44}
+            bucketMs={10_000}
+            windowMs={600_000}
+            accent="temp"
+            ariaLabel="SoC thermal zones, last 10 minutes"
+          />
         </ChartCard>
+      </GalleryItem>
+
+      <GalleryItem
+        name="StreamArea · lines over area · ChartAnnotation"
+        usedIn="Power & Sensors"
+      >
+        <PowerDrawSample />
       </GalleryItem>
 
       <GalleryItem name="BatteryHistoryBars" usedIn="Power & Sensors">
@@ -173,5 +191,31 @@ export function WidgetsChartsSection() {
         </div>
       </GalleryItem>
     </div>
+  );
+}
+
+/** The power draw chart: hover or click an app to focus its line. */
+function PowerDrawSample() {
+  const [focused, setFocused] = useState<string | null>(null);
+  const steps = [2, 3, 4, 2, 3] as const;
+  return (
+    <ChartCard id="gc-power" title="Power draw, last 10 minutes" accent="power">
+      <Legend
+        items={[
+          { label: "System", step: 1 },
+          ...POWER_DRAW_APPS.map((name, i) => ({
+            label: name,
+            value: `${(2.6 / (i + 1)).toFixed(1)} W`,
+            step: steps[i] ?? 2,
+            dashed: i >= 3,
+            onFocus: () => setFocused(name),
+            onBlur: () => setFocused(null),
+            onClick: () => setFocused((f) => (f === name ? null : name)),
+            pressed: focused === name,
+          })),
+        ]}
+      />
+      <StreamArea {...powerDraw(focused)} />
+    </ChartCard>
   );
 }

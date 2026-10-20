@@ -1,6 +1,6 @@
 #![allow(clippy::too_many_lines)] // Integration scenarios keep setup and assertions together.
 //! Layout changes a collector drives at runtime (`series_revision`), cardinality caps on
-//! unbounded labels, and the headless agent's settings (D-115).
+//! unbounded labels, and the headless agent's settings (D-116).
 
 #![allow(clippy::unwrap_used)]
 
@@ -143,7 +143,7 @@ fn cgroup(metric: &'static str, name: &str) -> SeriesKey {
     )
 }
 
-/// `cgroup.*` is capped at 32 series per metric (D-115). The series beyond it are left
+/// `cgroup.*` is capped at 32 series per metric (D-116). The series beyond it are left
 /// out of the layout, keeping the first 32 in the collector's probe order, whatever
 /// their names sort to.
 #[test]

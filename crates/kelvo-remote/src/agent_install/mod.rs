@@ -1,4 +1,4 @@
-//! Installing, updating and removing the headless Linux agent over SSH (D-115). The Mac
+//! Installing, updating and removing the headless Linux agent over SSH (D-116). The Mac
 //! app's path stays in [`crate::install`].
 //!
 //! Every script here reaches the remote as `exec /bin/sh -c '<script>'`
@@ -63,7 +63,7 @@ pub enum AgentInstallError {
         needed_bytes: u64,
     },
     /// A host gets one agent: the other layout, or for root another login's user layout,
-    /// already has one (D-115). `user` names that other login.
+    /// already has one (D-116). `user` names that other login.
     #[error(
         "This host already runs a Kelvo agent installed as {}{} at {binary}; remove it first",
         existing.as_str(),

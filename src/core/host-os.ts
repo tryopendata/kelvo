@@ -1,6 +1,6 @@
 /**
  * Copy that depends on the host's OS (`HostInfo.os`). A Mac reads as it
- * always has; a Linux agent (D-115), or an OS this build does not know, is
+ * always has; a Linux agent (D-116), or an OS this build does not know, is
  * "host" and its own version string.
  */
 import { type ByteUnits, formatBytes, formatMarketingMemory } from "./format";

@@ -1,4 +1,4 @@
-//! Which cgroups keep their own series (D-115). Pure: the cgroup collector feeds it the
+//! Which cgroups keep their own series (D-116). Pure: the cgroup collector feeds it the
 //! groups present on each pass with a score, and wall time; it answers with a membership
 //! that changes at most once a minute, so container churn cannot mint layouts faster.
 //!

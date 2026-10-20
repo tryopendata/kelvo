@@ -37,7 +37,7 @@ use crate::bus::{Bus, BusMsg, EngineStatus, FrameLayout, LiveFrame, Subscriber};
 use crate::engine::hold_ms;
 use crate::netacc::{NetRing, NetSlot};
 use crate::ring::{BackfillSegment, Ring};
-use crate::usage::{UsageByApp, UsageKey, UsageRing};
+use crate::usage::{UsageByApp, UsageKey, UsageRing, UsageSeries};
 
 /// `layout_no` of ring rows read back from the store by [`LiveHub::warm`]. A source
 /// numbers its own layouts from 0 within a run, so this one never collides with them.
@@ -284,6 +284,17 @@ impl LiveHub {
     /// largest `limit` by `by` (D-093, D-099).
     pub fn usage_by_app(&self, from_ms: i64, to_ms: i64, by: UsageKey, limit: usize) -> UsageByApp {
         self.usage().by_app(from_ms, to_ms, by, limit)
+    }
+
+    /// Use per 10 s bucket over `[from_ms, to_ms)` of the apps `usage_by_app` ranks first.
+    pub fn usage_series(
+        &self,
+        from_ms: i64,
+        to_ms: i64,
+        by: UsageKey,
+        limit: usize,
+    ) -> UsageSeries {
+        self.usage().series_by_app(from_ms, to_ms, by, limit)
     }
 
     /// Forgets usage buckets ending after `ts_ms`: the wall clock stepped back (engine).

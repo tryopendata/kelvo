@@ -1,4 +1,4 @@
-//! Where the headless agent lives on a Linux host (D-115), shared by the agent and the
+//! Where the headless agent lives on a Linux host (D-116), shared by the agent and the
 //! controller that installs it. A root SSH login gets the system layout and a systemd
 //! system unit; any other user gets the per-user layout and a user unit.
 //!

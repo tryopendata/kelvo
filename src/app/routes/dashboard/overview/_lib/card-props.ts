@@ -67,7 +67,7 @@ export function cpuCard(input: {
   coreCount: number;
   /**
    * P then E; one cluster on a host whose cores are all one kind (`uniform`,
-   * D-115), whose second bar is then `cpu.iowait`.
+   * D-116), whose second bar is then `cpu.iowait`.
    */
   clusters: [ClusterInput, ClusterInput] | [ClusterInput];
   iowait?: number | null;

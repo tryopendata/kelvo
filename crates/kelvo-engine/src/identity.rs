@@ -25,7 +25,7 @@
 //! new one.
 //!
 //! On Linux the binding is made from `/etc/machine-id` instead ([`linux_binding`],
-//! D-115), and a system agent adds a separate `hw=` line from the firmware's DMI UUID or
+//! D-116), and a system agent adds a separate `hw=` line from the firmware's DMI UUID or
 //! device-tree serial, which catches a hypervisor clone that kept the machine-id. Each
 //! tagged line is compared only when both the file and this run have it, so firmware
 //! that becomes readable or unreadable (a kernel or permission change) never looks like
@@ -238,7 +238,7 @@ fn file_text(id: HostId, lines: &[(String, String)]) -> String {
 }
 
 /// Gives the data directory `dir` a new host id with its `binding`, replacing whatever
-/// `host-id` held (`kelvo-agent reset-identity`, D-115). The next [`open_local`] reads
+/// `host-id` held (`kelvo-agent reset-identity`, D-116). The next [`open_local`] reads
 /// it from the file; registering it demotes the store's old local host to a non-local
 /// one (D-064), so the history recorded under the old id stays, as with a clone.
 pub fn reset(dir: &Path, binding: impl Fn(HostId) -> Option<String>) -> std::io::Result<HostId> {
@@ -588,7 +588,7 @@ mod tests {
         );
     }
 
-    /// D-115: `reset` mints a new id that the next start reads from the file, even
+    /// D-116: `reset` mints a new id that the next start reads from the file, even
     /// though the store still names the old one as its local host.
     #[test]
     fn reset_mints_an_id_the_next_start_keeps() {
@@ -692,7 +692,7 @@ mod tests {
         })
     }
 
-    /// D-115: firmware that becomes unreadable or readable (a kernel, firmware or
+    /// D-116: firmware that becomes unreadable or readable (a kernel, firmware or
     /// permission change) keeps the id, because the `hw=` line is compared only when
     /// both sides have it. The line stays in the file while unreadable.
     #[test]
@@ -785,7 +785,7 @@ mod tests {
         assert_eq!(l.source, IdSource::Cloned);
     }
 
-    /// D-115: a VM cloned with its machine-id gets a new id when the system agent's
+    /// D-116: a VM cloned with its machine-id gets a new id when the system agent's
     /// binding sees the new DMI UUID. A user agent sees only the machine-id, so the copy
     /// keeps its id; without a usable machine-id there is no binding and the file wins.
     #[test]

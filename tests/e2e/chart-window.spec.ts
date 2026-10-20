@@ -28,6 +28,6 @@ test("a window picked on CPU carries to Memory and Power", async ({ page }) => {
     page.getByRole("radio", { name: "30m", exact: true })
   ).toBeChecked();
   await expect(
-    page.getByText("Power by component, last 30 minutes")
+    page.getByRole("heading", { name: "Power draw, last 30 minutes" })
   ).toBeVisible();
 });

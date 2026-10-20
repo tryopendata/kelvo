@@ -19,7 +19,7 @@ pub enum Module {
     Disk,
     Battery,
     /// cgroup v2 groups on a Linux host: services, containers and user sessions
-    /// (`cgroup.*`, D-115). A data and capabilities module only: it has no settings
+    /// (`cgroup.*`, D-116). A data and capabilities module only: it has no settings
     /// entry, no menu-bar item and no module switch, so it is not in
     /// [`crate::settings::SETTINGS_MODULES`] and settings code never offers it. A Mac
     /// never produces it; its local Docker page has its own model (D-103).

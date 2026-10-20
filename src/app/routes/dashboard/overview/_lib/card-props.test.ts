@@ -72,7 +72,7 @@ describe("cpuCard", () => {
     });
   });
 
-  it("gives one cluster of uniform cores a frequency bar and I/O wait (D-115)", () => {
+  it("gives one cluster of uniform cores a frequency bar and I/O wait (D-116)", () => {
     const card = cpuCard({
       total: 3.1,
       user: 2,

@@ -252,7 +252,7 @@ pub struct Engine {
     proc_gpu_span_ms: Option<i64>,
     ticks: u64,
     store_errors: RateLimit,
-    /// Series dropped by a metric's cardinality cap (D-115).
+    /// Series dropped by a metric's cardinality cap (D-116).
     cap_warn: RateLimit,
     detect: Detectors,
     /// This tick's events, reused across ticks.

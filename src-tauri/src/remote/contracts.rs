@@ -49,7 +49,7 @@ pub struct RemoteHostStatus {
     /// list offers "Update agent".
     pub update_available: bool,
     /// The id the host answered with when it is not the paired one. The host list
-    /// offers "Re-pair as a new host" (D-115).
+    /// offers "Re-pair as a new host" (D-116).
     pub identity_changed: Option<String>,
 }
 impl Default for RemoteHostStatus {
@@ -82,7 +82,7 @@ pub struct RemoteHostRecord {
 pub enum RemoteHostKind {
     /// Another Mac, running Kelvo.app (D-104).
     Mac,
-    /// A Linux host, running the headless agent (D-115).
+    /// A Linux host, running the headless agent (D-116).
     Linux,
 }
 
@@ -103,7 +103,7 @@ pub struct RemoteHostPreparation {
 }
 
 /// How the agent runs on a Linux host: root installs a system service, anyone else a
-/// user service (D-115).
+/// user service (D-116).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "snake_case")]
 pub enum RemoteAgentLayout {

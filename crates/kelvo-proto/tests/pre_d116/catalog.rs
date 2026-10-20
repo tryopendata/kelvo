@@ -43,7 +43,7 @@ impl Module {
     }
 }
 
-crate::pre_d115::compat::text_enum_deserialize!(Module);
+crate::pre_d116::compat::text_enum_deserialize!(Module);
 
 pub(crate) fn deserialize_known_modules<'de, D, V>(
     deserializer: D,

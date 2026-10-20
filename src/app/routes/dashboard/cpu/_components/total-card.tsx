@@ -51,7 +51,7 @@ const pct1 = (v: number | null | undefined) =>
 
 /**
  * The strip after the hero. I/O wait, steal and pressure stall are Linux
- * series (D-115), shown when the layout carries them. Idle is what neither
+ * series (D-116), shown when the layout carries them. Idle is what neither
  * the total (user + system + steal) nor I/O wait took.
  */
 function useStripItems(): { total: number | null; items: StatStripItem[] } {

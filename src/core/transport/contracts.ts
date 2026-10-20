@@ -78,6 +78,7 @@ import type {
   UpdateStatus,
   UsageByApp,
   UsageKey,
+  UsageSeries,
   WindowAppearance,
   WindowAppearanceChanged,
 } from "@core/generated/bindings";
@@ -250,6 +251,19 @@ export interface Transport {
     by: UsageKey,
     limit: number
   ): Promise<CommandResult<UsageByApp>>;
+  /**
+   * The apps `queryUsageByApp` ranks first over `[fromMs, toMs)`, the largest
+   * `limit` by `by`, each as one value per 10 s bucket from the same hour of
+   * process samples: `null` where nothing was measured. `remote_host` for a
+   * host other than this Mac; `invalid_argument` past the hour kept.
+   */
+  queryUsageSeries(
+    host: HostId,
+    fromMs: Millis,
+    toMs: Millis,
+    by: UsageKey,
+    limit: number
+  ): Promise<CommandResult<UsageSeries>>;
   /**
    * Unlabelled metrics over `[fromMs, toMs)`, widened to whole buckets and cut
    * at now: each one's average, largest sample and integral over the time

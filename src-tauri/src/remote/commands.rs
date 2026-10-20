@@ -303,7 +303,7 @@ pub(super) fn register_or_restore(
 /// Re-pairs a host that now answers with a different id (a reinstall, a reset
 /// identity, a replaced machine). The answering host is added as a new host with the
 /// same name and routes; the old one is kept, disabled, with its mirrored history
-/// (D-115).
+/// (D-116).
 #[tauri::command]
 #[specta::specta]
 pub async fn repair_remote_host(

@@ -100,7 +100,7 @@ export function useProcessGpu(): boolean {
  * Whether process rows carry energy impact (`process_energy`), idle wakeups
  * (`process_wakeups`) and measured disk rates (`process_disk_io`). A Linux
  * agent has no energy or wakeups, and no disk rates when it cannot read
- * other users' `/proc/<pid>/io` (D-115); its rows hold zeros the columns
+ * other users' `/proc/<pid>/io` (D-116); its rows hold zeros the columns
  * must not show. Each defaults to true, as Rust decodes an older sender, so
  * a Mac's columns show before capabilities arrive.
  */

@@ -1,4 +1,4 @@
-//! RAPL energy counters from the powercap framework (D-115): `power.package` (the sum
+//! RAPL energy counters from the powercap framework (D-116): `power.package` (the sum
 //! over `package-N` zones) and `power.dram` (the sum over `dram` subzones), watts
 //! averaged over the span since the previous sample. Intel and AMD (Zen) both register
 //! as `intel-rapl:*`; the `intel-rapl-mmio:*` duplicate of the package zone is left out.

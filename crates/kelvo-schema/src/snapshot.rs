@@ -505,7 +505,7 @@ impl Snapshot {
                     }
                 }
                 // The catalog never files a metric under Unknown. Containers series
-                // (`cgroup.*`, D-115) have no typed view: the Containers page reads them
+                // (`cgroup.*`, D-116) have no typed view: the Containers page reads them
                 // as series.
                 Module::Containers | Module::Unknown => {}
             }

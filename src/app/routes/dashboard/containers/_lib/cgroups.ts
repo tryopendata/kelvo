@@ -1,5 +1,5 @@
 /**
- * A Linux host's Containers table from its `cgroup.*` series (D-115). Rust
+ * A Linux host's Containers table from its `cgroup.*` series (D-116). Rust
  * decides which groups get a series, folds the rest into `_other` and counts
  * them in `cgroup.other_count`; this only lays the current layout out as
  * rows, sorts and filters them.

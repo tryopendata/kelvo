@@ -14,13 +14,13 @@
 //! - Disk is `read_bytes`/`write_bytes`, the bytes that reached the block layer. Only
 //!   root (or `CAP_SYS_PTRACE`) reads other users' `io`. The probe tries pid 1's, owned
 //!   by root: when that fails, `Capabilities::process_disk_io` is false and the UI hides
-//!   the disk columns, so most rows' unknown rates never show as 0 B/s (D-115). Rows
+//!   the disk columns, so most rows' unknown rates never show as 0 B/s (D-116). Rows
 //!   still carry 0 for an unreadable `io`, since `ProcessSample` has no "unknown" for
 //!   disk; with the capability true that is only a process that exited mid-sample.
 //!   [`Visibility::io_readable`] counts the rows that were measured.
 //! - Energy and idle wakeups have no Linux source; `fill_capabilities` says so and the
 //!   rows carry 0.
-//! - `app` is the unit or container the process runs in (D-115), from
+//! - `app` is the unit or container the process runs in (D-116), from
 //!   `/proc/<pid>/cgroup` read once per process: `nginx.service` for a service (system
 //!   or user manager), `docker:<name>` and `podman:<name>` for containers, named through
 //!   [`ContainerNames`] (else the short id; a name being looked up is waited for).

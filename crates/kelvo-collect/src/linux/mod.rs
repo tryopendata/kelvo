@@ -1,4 +1,4 @@
-//! Linux collectors (D-008, D-115): `/proc`, sysfs, hwmon and cgroups v2, read through a
+//! Linux collectors (D-008, D-116): `/proc`, sysfs, hwmon and cgroups v2, read through a
 //! [`SysRoot`] so every parser runs against captured fixtures in tests. Modules no
 //! collector covers yet probe as `Unsupported` through [`Unsupported`].
 
@@ -75,7 +75,7 @@ impl Collector for Unsupported {
 const UNCOVERED: &[Module] = &[Module::Gpu];
 
 /// Every Linux collector. Container names for the cgroup and process collectors come
-/// from `names` (D-115); an unattached map gives short ids.
+/// from `names` (D-116); an unattached map gives short ids.
 pub fn collectors(names: ContainerNames) -> Vec<Box<dyn Collector>> {
     let mut out: Vec<Box<dyn Collector>> = Vec::new();
     // Each collector group pushes here; keep them in probe order.

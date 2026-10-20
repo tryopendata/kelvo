@@ -147,13 +147,13 @@ rust-linux-check:
 rust-linux-test:
 	docker run --rm -e HOST_UID="$$(id -u)" -e HOST_GID="$$(id -g)" -e HOME=/tmp -v "$(PWD)":/w -w /w -v kelvo-linux-cargo:/usr/local/cargo -v kelvo-linux-rustup:/usr/local/rustup -e CARGO_TARGET_DIR=/usr/local/cargo/target-linux rust:1.99-bookworm scripts/linux-test-entry.sh cargo test $(LINUX_CRATES)
 
-# The Linux agent's install, update and uninstall scripts (D-115) under dash
+# The Linux agent's install, update and uninstall scripts (D-116) under dash
 # (debian:bookworm-slim) and busybox ash, as root and as a user, with stub systemd.
 # `cargo test` runs the same lifecycle under this machine's /bin/sh.
 remote-scripts-test:
 	cargo test -p kelvo-remote --lib agent_install::tests -- --ignored
 
-# The Linux agent (D-115), bundled as app resources and uploaded to hosts by Add host.
+# The Linux agent (D-116), bundled as app resources and uploaded to hosts by Add host.
 # cargo-zigbuild links the static musl targets from the macOS host with zig, so both
 # build anywhere without a cross toolchain. Versions are pinned: the bundled bytes, and
 # so their compiled digests, should change only when the source does. The aarch64

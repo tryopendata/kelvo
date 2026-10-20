@@ -27,7 +27,7 @@ export default function ContainersRoute() {
   const local = useIsLocalHost();
   const cgroups = useCgroups();
   // A remote Linux host's page reads its cgroup series; the local Docker
-  // page keeps its own model (D-115).
+  // page keeps its own model (D-116).
   if (!local && cgroups) return <CgroupContainers />;
   return (
     <DockerLocalOnly>

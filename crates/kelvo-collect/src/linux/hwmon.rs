@@ -1,4 +1,4 @@
-//! hwmon and thermal-zone sensors (D-115): `thermal.sensor{name}`, `thermal.hottest`,
+//! hwmon and thermal-zone sensors (D-116): `thermal.sensor{name}`, `thermal.hottest`,
 //! `fan.rpm{fan}`/`fan.max{fan}` ([`Hwmon::sensors`], Sensors module) and
 //! `power.sensor{name}`/`power.system` ([`Hwmon::power`], Power module). Two collectors
 //! over one scan, so a host with temperatures but no power sensors reports Power as not

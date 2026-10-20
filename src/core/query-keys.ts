@@ -77,6 +77,25 @@ export const historyKeys = {
       fromMs,
       toMs,
     ] as const,
+  /**
+   * The top `limit` apps by `by` over `[fromMs, toMs)`, per 10 s bucket.
+   * In the history family for the same reason as `usageByApp`.
+   */
+  usageSeries: (
+    hostId: HostId,
+    by: UsageKey,
+    limit: number,
+    fromMs: number,
+    toMs: number
+  ) =>
+    [
+      ...historyKeys.host(hostId),
+      "usage-series",
+      by,
+      limit,
+      fromMs,
+      toMs,
+    ] as const,
   /** Average, peak and integral of unlabelled series over `[fromMs, toMs)`. */
   seriesStats: (
     hostId: HostId,

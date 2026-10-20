@@ -4,6 +4,7 @@ import {
   accentVars,
   type RampStep,
   rampBackground,
+  rampColor,
 } from "./lib/accent";
 
 /** A ramp step, the empty track (a "free" remainder), or no swatch at all. */
@@ -11,9 +12,12 @@ export type SwatchStep = RampStep | "track" | "none";
 
 export interface LegendItem {
   label: string;
-  value: string;
+  /** Absent: the label alone, as for a series whose figure sits elsewhere. */
+  value?: string;
   step: SwatchStep;
   color?: string | undefined;
+  /** Striped swatch for a dashed line (StreamArea `dash`). */
+  dashed?: boolean;
   onFocus?: () => void;
   onBlur?: () => void;
   onClick?: () => void;
@@ -31,15 +35,20 @@ export interface LegendProps {
   columns?: "inline" | 1 | 2;
 }
 
-/** The 8 px legend key: a ramp swatch, the track, or an empty slot. */
+/**
+ * The 8 px legend key: a ramp swatch, the track, or an empty slot. `dashed`
+ * stripes a ramp step across, the key for a dashed line.
+ */
 export function Swatch({
   step,
   size = 8,
   color,
+  dashed = false,
 }: {
   step: SwatchStep;
   size?: 7 | 8;
   color?: string | undefined;
+  dashed?: boolean | undefined;
 }) {
   const dim = size === 8 ? "size-2" : "size-[7px]";
   if (step === "none" && !color)
@@ -47,6 +56,7 @@ export function Swatch({
   return (
     <span
       aria-hidden
+      data-dashed={dashed || undefined}
       className={cn(
         dim,
         "shrink-0 rounded-mark",
@@ -58,10 +68,17 @@ export function Swatch({
           ? { background: color }
           : step === "track"
             ? undefined
-            : { background: rampBackground(step === "none" ? 1 : step) }
+            : { background: swatchBackground(step, dashed) }
       }
     />
   );
+}
+
+function swatchBackground(step: RampStep | "none", dashed: boolean): string {
+  if (dashed && typeof step === "number") {
+    return `repeating-linear-gradient(90deg, ${rampColor(step)} 0 3px, transparent 3px 5px)`;
+  }
+  return rampBackground(step === "none" ? 1 : step);
 }
 
 /** Swatch, label and value rows. */
@@ -87,15 +104,27 @@ export function Legend({ items, accent, columns = "inline" }: LegendProps) {
                 onClick={item.onClick}
                 className="inline-flex items-center gap-1.5 rounded-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
-                <Swatch step={item.step} color={item.color} />
+                <Swatch
+                  step={item.step}
+                  color={item.color}
+                  dashed={item.dashed}
+                />
                 {item.label}
-                <span className="figures text-foreground">{item.value}</span>
+                {item.value !== undefined && (
+                  <span className="figures text-foreground">{item.value}</span>
+                )}
               </button>
             ) : (
               <>
-                <Swatch step={item.step} color={item.color} />
+                <Swatch
+                  step={item.step}
+                  color={item.color}
+                  dashed={item.dashed}
+                />
                 {item.label}
-                <span className="figures text-foreground">{item.value}</span>
+                {item.value !== undefined && (
+                  <span className="figures text-foreground">{item.value}</span>
+                )}
               </>
             )}
           </li>
@@ -114,11 +143,13 @@ export function Legend({ items, accent, columns = "inline" }: LegendProps) {
     >
       {items.map((item) => (
         <li key={item.label} className="flex items-center gap-1.5">
-          <Swatch step={item.step} color={item.color} />
+          <Swatch step={item.step} color={item.color} dashed={item.dashed} />
           <span className="flex-1 font-normal text-fg-subtle">
             {item.label}
           </span>
-          <span className="figures">{item.value}</span>
+          {item.value !== undefined && (
+            <span className="figures">{item.value}</span>
+          )}
         </li>
       ))}
     </ul>

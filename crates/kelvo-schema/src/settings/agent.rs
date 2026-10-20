@@ -1,4 +1,4 @@
-//! Settings for the headless Linux agent (D-115), which has no menu bar, no windows and
+//! Settings for the headless Linux agent (D-116), which has no menu bar, no windows and
 //! no onboarding.
 
 use super::{BarSettings, ItemSettings, MenuBarSettings, ReadoutSettings, Settings};

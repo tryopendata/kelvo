@@ -101,7 +101,7 @@ impl Engine {
             })
             .cloned()
             .collect();
-        // Cap the metrics whose labels are unbounded (D-115) in probe order: the series a
+        // Cap the metrics whose labels are unbounded (D-116) in probe order: the series a
         // collector listed first stay.
         let over = self.catalog.over_cap(&series);
         if let Some(&first) = over.first() {
@@ -300,7 +300,7 @@ impl Engine {
             s.collector.cadence() == Cadence::OnDemand(Interest::GpuProcesses)
                 && matches!(s.probe, Some(Probe::Supported(_)))
         });
-        // Process columns and the disk inventory (D-115), from Supported collectors only.
+        // Process columns and the disk inventory (D-116), from Supported collectors only.
         let mut facts = Capabilities {
             process_energy: false,
             process_wakeups: false,

@@ -82,7 +82,7 @@ export function RingCards({
   );
 
   const sys = at("power.system");
-  // A Linux agent (D-115) has no SoC CPU and GPU groups, fan mode or package.
+  // A Linux agent (D-116) has no SoC CPU and GPU groups, fan mode or package.
   const has = (metric: string) => layout?.byMetric.has(metric) ?? !layout;
   const fromAdapter =
     !hasBattery || source === "adapter" || source === "charging";

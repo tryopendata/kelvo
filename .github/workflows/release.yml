@@ -52,7 +52,7 @@ jobs:
           python3 scripts/release-manifest.py "$RELEASE_TAG"
           # Cached compilation can be reused; packaged assets must belong to this tag.
           rm -rf target/release/bundle target/release-assets
-      # The bundled Linux agents (D-115). Versions match ZIG_VERSION and
+      # The bundled Linux agents (D-116). Versions match ZIG_VERSION and
       # CARGO_ZIGBUILD_VERSION in the Makefile, which fails on a mismatch, so the release
       # fails here rather than packaging an app without them.
       - name: Install zig

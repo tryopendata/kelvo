@@ -5,13 +5,13 @@ import {
 } from "@core/mock/docker";
 import type { BatteryHistoryBarsProps } from "~/widgets/battery-history-bars";
 import type { CoreHeatmapProps } from "~/widgets/core-heatmap";
+import type { HeatMatrixRow } from "~/widgets/heat-matrix";
 import {
   PERCENT_GRID,
   PERCENT_Y_TICKS,
   windowTicks,
 } from "~/widgets/lib/chart-labels";
 import type { MirrorBarsProps } from "~/widgets/mirror-bars";
-import type { PowerStackProps } from "~/widgets/power-stack";
 import type { StreamAreaProps } from "~/widgets/stream-area";
 
 /*
@@ -189,38 +189,98 @@ export const CORE_HEATMAP: CoreHeatmapProps = {
   ariaLabel: "Per-core load, last 10 minutes",
 };
 
-// Power by component, 120 samples over 10 minutes.
-const N = 120;
-const cpuW = setLast(
-  series(N, 5, 6.4, 2.2, { lo: 0, bumps: [[70, 5, 6]] }),
-  6.4
-);
-const gpuW = setLast(series(N, 7, 3.1, 1.2, { lo: 0 }), 3.1);
-const aneW = setLast(
-  series(N, 9, 0, 0, { lo: 0, bumps: [[41, 1.4, 4]] }).map((v) =>
-    v < 0.05 ? 0 : v
-  ),
-  0
-);
-const dramW = setLast(series(N, 11, 0.9, 0.2, { lo: 0 }), 0.9);
+// Power & Sensors: SoC thermal zones, 60 columns of 10 s in °C. Zone 03
+// warms through a build in the middle of the window; the first four columns
+// are before app start.
+const zoneR = rng(91);
+const ZONE_NOW = [52, 49, 61, 47, 55, 50, 58, 46, 53, 48];
+const ZONE_SENSORS = [
+  "PMU tdie1",
+  "PMU tdie2",
+  "PMU tdie3",
+  "PMU tdie4",
+  "PMU tdie5",
+  "PMU tdie6",
+  "PMU2 tdie1",
+  "PMU2 tdie2",
+  "PMU2 tdie3",
+  "PMU2 tdie4",
+];
+export const THERMAL_ZONES: HeatMatrixRow[] = ZONE_NOW.map((cur, k) => {
+  const buckets: (number | null)[] = [];
+  for (let i = 0; i < 60; i++) {
+    const t = 59 - i;
+    let x = cur + (zoneR() - 0.5) * 6 + (t > 20 && t < 40 ? 22 - k : 0);
+    if (i === 59) x = cur;
+    buckets.push(i < 4 ? null : Math.round(x * 10) / 10);
+  }
+  return {
+    id: ZONE_SENSORS[k] as string,
+    label: `Zone ${String(k + 1).padStart(2, "0")}`,
+    title: ZONE_SENSORS[k] as string,
+    now: cur,
+    buckets,
+  };
+});
 
-export const POWER_STACK: PowerStackProps = {
-  series: [
-    { key: "cpu", values: cpuW },
-    { key: "gpu", values: gpuW },
-    { key: "ane", values: aneW },
-    { key: "dram", values: dramW },
-  ],
-  intervalMs: 5000,
-  tEndMs: NOW_MS,
-  yMax: 20,
-  annotations: [
-    {
-      tsMs: NOW_MS - (N - 1 - 41) * 5000,
-      label: "ANE 1.4 W · Photos face analysis",
-    },
-  ],
-};
+// Power draw: system with the top apps as lines, 120 samples over 10 minutes.
+const N = 120;
+const systemW = setLast(
+  series(N, 5, 14.8, 3, { lo: 2, bumps: [[70, 6, 6]] }),
+  14.8
+);
+/** Apps hold one value per 10 s bucket (two 5 s slots); the first minute is unsampled. */
+const appW = (seed: number, base: number, noise: number, bumps: Bump[] = []) =>
+  series(N / 2, seed, base, noise, { lo: 0.05, bumps }).flatMap((v, i) =>
+    i < 6 ? [null, null] : [v, v]
+  );
+const APPS: [name: string, values: (number | null)[]][] = [
+  ["Google Chrome", appW(21, 2.6, 1.2, [[35, 3, 3]])],
+  ["Xcode", appW(23, 1.4, 0.8)],
+  ["WindowServer", appW(25, 0.9, 0.3)],
+  ["Slack", appW(27, 0.4, 0.2)],
+  ["Music", appW(29, 0.2, 0.1)],
+];
+const APP_STEPS = [2, 3, 4, 2, 3] as const;
+
+export const POWER_DRAW_APPS = APPS.map(([name]) => name);
+
+/** `focused` is an app name: that line at 2 px, the other apps dimmed. */
+export function powerDraw(focused: string | null): StreamAreaProps {
+  return {
+    series: [
+      { key: "system", values: systemW, step: 1, weight: 2 },
+      ...APPS.map(([name, values], i) => ({
+        key: name,
+        values,
+        step: APP_STEPS[i] ?? 2,
+        dash: i >= 3,
+        fill: false,
+        edges: false,
+        weight: focused === name ? 2 : 1,
+        opacity: focused === null || focused === name ? 1 : 0.3,
+      })),
+    ],
+    tEndMs: NOW_MS,
+    intervalMs: 5000,
+    yMax: 30,
+    accent: "power",
+    height: 220,
+    ariaLabel: "System power with the top apps, last 10 minutes",
+    gridlines: [15, 30],
+    yTicks: [
+      { value: 30, label: "30W" },
+      { value: 15, label: "15" },
+    ],
+    xTicks: windowTicks(600_000, 5),
+    annotations: [
+      {
+        tsMs: NOW_MS - (N - 1 - 70) * 5000,
+        label: "Package 21 W · Xcode build",
+      },
+    ],
+  };
+}
 
 // Battery, 24 hours starting at 23:00 yesterday.
 const LEVELS = [

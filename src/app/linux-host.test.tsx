@@ -14,7 +14,7 @@ import { HostStoreProvider } from "~/stores/host-store";
 
 const NOW = 1_800_000_000_000;
 
-/** A route on a Linux host (the `linux` mock, D-115) after one live frame. */
+/** A route on a Linux host (the `linux` mock, D-116) after one live frame. */
 async function linux(ui: ReactElement, heading: string, route = "/") {
   const r = renderWithProviders(ui, {
     route,
@@ -32,7 +32,7 @@ async function mac(ui: ReactElement, heading: string) {
   return r;
 }
 
-describe("a Linux host (D-115)", () => {
+describe("a Linux host (D-116)", () => {
   it("heads the Overview with its distribution and kernel, not macOS", async () => {
     await linux(<OverviewRoute />, "Overview");
     const header = await screen.findByRole("region", { name: "This host" });
@@ -80,20 +80,21 @@ describe("a Linux host (D-115)", () => {
     expect(screen.getByText("Cached files")).toBeVisible();
   });
 
-  it("lists temperature sensors and system power in place of SoC zones and the component stack", async () => {
+  it("lists temperature sensors and power rails in place of SoC zones and the components", async () => {
     await linux(<PowerRoute />, "Power & Sensors");
     expect(
-      await screen.findByRole("heading", { name: "Temperature sensors" })
+      await screen.findByRole("heading", { name: /^Temperature sensors, last/ })
     ).toBeVisible();
     expect(screen.getByText("NAND Flash Temperature")).toBeVisible();
     expect(
-      screen.getByRole("heading", { name: /^System power, last/ })
-    ).toBeVisible();
+      screen.getByRole("heading", { name: /^Power draw, last/ })
+    ).toBeInTheDocument();
     expect(screen.getByText("AC Input Power")).toBeVisible();
     expect(screen.queryByRole("heading", { name: "CPU" })).toBeNull();
     expect(screen.queryByRole("heading", { name: "GPU" })).toBeNull();
-    expect(screen.queryByText(/^Power by component/)).toBeNull();
+    expect(screen.queryByText("ANE")).toBeNull();
     expect(screen.queryByText(/as macOS estimates it/)).toBeNull();
+    expect(screen.queryByText(/^Energy by app/)).toBeNull();
   });
 
   it("offers only the process columns the host measures", async () => {
@@ -167,7 +168,7 @@ function rowOf(table: HTMLElement, name: string): HTMLElement {
   return row;
 }
 
-describe("Containers on a Linux host (D-115)", () => {
+describe("Containers on a Linux host (D-116)", () => {
   it("lists cgroup groups by CPU with the memory limit when there is one", async () => {
     const { table } = await remoteContainers();
     const rows = within(table).getAllByRole("row").slice(1);

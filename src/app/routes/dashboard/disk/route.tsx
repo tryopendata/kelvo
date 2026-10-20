@@ -337,9 +337,9 @@ function DiskActivity({
 const NO_DEVICES: readonly DiskDevice[] = [];
 
 /**
- * A remote host's devices come with its capabilities (D-115): the local
+ * A remote host's devices come with its capabilities (D-116): the local
  * device inventory command only describes this Mac. A host from before
- * D-115 lists none, and its page shows all devices as it always has.
+ * D-116 lists none, and its page shows all devices as it always has.
  */
 function useRemoteDevices(remote: boolean) {
   const devices = useHost((s) =>

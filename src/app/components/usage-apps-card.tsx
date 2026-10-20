@@ -96,7 +96,7 @@ export function UsageAppsCard(props: {
   viewControl?: ReactNode;
 }) {
   const local = useIsLocalHost();
-  // A Linux agent keeps no per-app history to open elsewhere (D-115).
+  // A Linux agent keeps no per-app history to open elsewhere (D-116).
   const mac = useHostNoun() === "Mac";
   return local ? (
     <LocalUsageAppsCard {...props} />

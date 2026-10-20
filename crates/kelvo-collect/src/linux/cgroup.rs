@@ -1,4 +1,4 @@
-//! cgroup v2 units and containers (D-115): `cgroup.{cpu,mem,mem_max,io_read,io_write,
+//! cgroup v2 units and containers (D-116): `cgroup.{cpu,mem,mem_max,io_read,io_write,
 //! mem_psi}{kind,name}` and `cgroup.other_count`, every 5 s.
 //!
 //! [`cgroup_walk`](super::cgroup_walk) finds the groups: system services, Docker and

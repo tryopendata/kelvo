@@ -1,4 +1,4 @@
-//! Battery from `/sys/class/power_supply` (D-115): only supplies with `type` Battery and
+//! Battery from `/sys/class/power_supply` (D-116): only supplies with `type` Battery and
 //! a `scope` other than Device (a wireless mouse's battery is a Device), and `present`
 //! not 0. The first by name is reported (`BAT0`); a second pack is not summed yet.
 //! Sampled at most every 10 s; health, cycles and capacities at most every 60 s, as on

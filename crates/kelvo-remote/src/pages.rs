@@ -138,7 +138,7 @@ pub fn page_from_wire(p: SyncPage, kinds: SyncKinds) -> Result<CursorPage, Mirro
     })
 }
 
-/// Drops each layout's series beyond their metric's cardinality cap (D-115), and their
+/// Drops each layout's series beyond their metric's cardinality cap (D-116), and their
 /// `(min, max, avg)` stats from every row in that layout, keeping the first series in
 /// layout order as a local engine would. A remote host on an older build, or one that
 /// does not cap, then cannot grow a mirror past what a local history holds. Input over

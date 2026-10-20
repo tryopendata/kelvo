@@ -1,11 +1,14 @@
-//! `query_usage_by_app` (D-093, D-099): the engine's per-app use
+//! `query_usage_by_app` and `query_usage_series` (D-093, D-099): the engine's per-app use
 //! over a range, with what the Quit actions need and what the host measured beyond
 //! Kelvo's processes. Which process an app row's Quit acts on is decided here, so every
 //! view that offers it agrees.
 
 use kelvo_engine::{UsageApp, UsageProc};
+use kelvo_schema::JsSafeInt;
 use kelvo_store::{MetricStats, RangeStats};
+use serde::Serialize;
 
+use crate::error::CommandError;
 use crate::ipc::{
     AppUsage, MetricStat, ProcessUsage, SeriesStats, UsageByApp, UsageKey, UsageOther, UsageTotal,
 };
@@ -104,6 +107,82 @@ pub fn usage_by_app(
         other,
         apps: e.apps.into_iter().map(app).collect(),
     }
+}
+
+/// One app's line in a `query_usage_series` answer.
+#[derive(Clone, Debug, PartialEq, Serialize, specta::Type)]
+pub struct AppUsageSeries {
+    pub name: String,
+    /// The key's rate over the range's covered time, in the values' unit.
+    pub avg: f64,
+    /// One per 10 s bucket from `from_ms`: `null` where no process sample covered the
+    /// bucket (not measured, not zero use; for GPU, where GPU was not measured), 0 where
+    /// one did and the app used none of the key.
+    pub values: Vec<Option<f32>>,
+}
+
+/// `query_usage_series`: the apps `query_usage_by_app` ranks first, bucket by bucket,
+/// from the same last hour of process samples kept in memory. Values are rates over
+/// each bucket's covered time: `energy` watts, `cpu` percent of one core, `gpu` percent
+/// of the GPU, `disk` bytes read plus written per second, `memory` average footprint in
+/// bytes. Your processes only: energy is macOS's CPU estimate, so the apps add up to
+/// less than the system's draw.
+#[derive(Clone, Debug, PartialEq, Serialize, specta::Type)]
+pub struct UsageSeries {
+    /// The first bucket's start: the request widened to whole 10 s buckets.
+    #[specta(type = JsSafeInt)]
+    pub from_ms: i64,
+    #[specta(type = JsSafeInt)]
+    pub bucket_ms: i64,
+    /// As in `UsageByApp`: buckets before it read `null`.
+    #[specta(type = Option<JsSafeInt>)]
+    pub since_ms: Option<i64>,
+    #[specta(type = Option<JsSafeInt>)]
+    pub complete_to_ms: Option<i64>,
+    /// The newest process sample: no time after it is counted yet.
+    #[specta(type = Option<JsSafeInt>)]
+    pub latest_ms: Option<i64>,
+    /// The largest `limit` by the requested key, largest first.
+    pub apps: Vec<AppUsageSeries>,
+}
+
+/// The `query_usage_series` answer.
+pub fn usage_series(e: kelvo_engine::UsageSeries) -> UsageSeries {
+    UsageSeries {
+        from_ms: e.from_ms,
+        bucket_ms: e.bucket_ms,
+        since_ms: e.since_ms,
+        complete_to_ms: e.complete_to_ms,
+        latest_ms: e.latest_ms,
+        apps: e
+            .apps
+            .into_iter()
+            .map(|a| AppUsageSeries {
+                name: a.name.to_string(),
+                avg: a.avg,
+                values: a.values,
+            })
+            .collect(),
+    }
+}
+
+/// `query_usage_series`'s range check: `invalid_argument` when `to_ms` is before
+/// `from_ms` or the range is longer than the samples are kept.
+pub fn check_series_range(from_ms: i64, to_ms: i64) -> Result<(), CommandError> {
+    if to_ms < from_ms {
+        return Err(CommandError::InvalidArgument {
+            message: format!("to_ms {to_ms} is before from_ms {from_ms}"),
+        });
+    }
+    if to_ms - from_ms > kelvo_engine::USAGE_KEEP_MS {
+        return Err(CommandError::InvalidArgument {
+            message: format!(
+                "the range is longer than the {} ms of samples kept",
+                kelvo_engine::USAGE_KEEP_MS
+            ),
+        });
+    }
+    Ok(())
 }
 
 /// Where the remainder's host series are read: the covered part of the usage range,
@@ -372,5 +451,20 @@ mod tests {
         assert_eq!(remainder_range(&e), Some((25_000, 60_000, 57_000)));
         let never = kelvo_engine::UsageByApp { covered_ms: 0, ..e };
         assert_eq!(remainder_range(&never), None);
+    }
+
+    #[test]
+    fn the_series_range_must_be_ordered_and_within_what_is_kept() {
+        let keep = kelvo_engine::USAGE_KEEP_MS;
+        assert!(matches!(
+            check_series_range(10_000, 0),
+            Err(CommandError::InvalidArgument { .. })
+        ));
+        assert!(check_series_range(0, 0).is_ok());
+        assert!(check_series_range(0, keep).is_ok());
+        assert!(matches!(
+            check_series_range(0, keep + 1),
+            Err(CommandError::InvalidArgument { .. })
+        ));
     }
 }

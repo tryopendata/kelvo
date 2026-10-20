@@ -15,7 +15,7 @@ pub struct Mirror {
     budget: u32,
     recent: Mutex<Vec<kelvo_store::BucketRow>>,
     epoch: Mutex<MirrorEpoch>,
-    /// For the cardinality caps on ingest (D-115).
+    /// For the cardinality caps on ingest (D-116).
     catalog: Catalog,
     /// A page had series over a cap; warned once per mirror.
     cap_warned: AtomicBool,
@@ -223,7 +223,7 @@ impl Mirror {
     }
 
     /// Applies the cardinality caps to a remote page or snapshot before anything is
-    /// stored (D-115).
+    /// stored (D-116).
     fn cap(&self, layouts: &mut [WireLayout], rows: &mut [WireBucket]) {
         let dropped = crate::pages::cap_layouts(&self.catalog, layouts, rows);
         if dropped > 0 && !self.cap_warned.swap(true, Ordering::Relaxed) {

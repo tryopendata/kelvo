@@ -1,6 +1,6 @@
 /**
  * Overview card props for a host without the macOS-only series a Linux agent
- * leaves out (D-115): no memory composition or pressure, no power split by
+ * leaves out (D-116): no memory composition or pressure, no power split by
  * component, no per-process energy and no SoC hottest zone. Each starts from
  * the Mac card and replaces the parts that would otherwise read "—".
  */

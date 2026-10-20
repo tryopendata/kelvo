@@ -1,4 +1,4 @@
-//! The Linux path of Add host (D-115): prepare, install, connect, update and recover.
+//! The Linux path of Add host (D-116): prepare, install, connect, update and recover.
 //!
 //! Recovery never touches an agent that was there before setup started: a failed
 //! update is rolled back by [`agent_install::update`] itself, and only an agent this

@@ -11,7 +11,7 @@ use tokio::signal::unix::{SignalKind, signal};
 
 use crate::host::AgentHost;
 
-/// The binding that ties a host id to this machine (D-115). Linux binds to
+/// The binding that ties a host id to this machine (D-116). Linux binds to
 /// `/etc/machine-id`, plus the firmware id for the system agent; macOS uses the
 /// hardware UUID as the app does.
 pub fn binding(system: bool) -> impl Fn(HostId) -> Option<String> {

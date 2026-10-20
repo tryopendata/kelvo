@@ -1,5 +1,5 @@
 //! Pressure stall information from `/proc/pressure/{cpu,memory,io}`: `cpu.psi`,
-//! `mem.psi` and `disk.psi`, each `{stall=some|full}`, every 5 s (D-115).
+//! `mem.psi` and `disk.psi`, each `{stall=some|full}`, every 5 s (D-116).
 //!
 //! Each file has a `some` line and, for memory and io (and cpu since Linux 5.13), a
 //! `full` line, each ending in `total=<µs>`: the cumulative time some (or all non-idle)

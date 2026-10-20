@@ -334,6 +334,33 @@ pub async fn query_usage_by_app(
     .await
 }
 
+/// The apps `query_usage_by_app` ranks first over `[from_ms, to_ms)` by `by`, the
+/// largest `limit`, each as one value per 10 s bucket (D-099). `remote_host` for a host
+/// other than this Mac; `invalid_argument` when `to_ms` is before `from_ms` or the range
+/// is longer than the hour the samples are kept.
+#[tauri::command]
+#[specta::specta]
+pub async fn query_usage_series(
+    app: AppHandle,
+    host: HostId,
+    from_ms: Millis,
+    to_ms: Millis,
+    by: UsageKey,
+    limit: u32,
+) -> Result<crate::usage::UsageSeries, CommandError> {
+    crate::usage::check_series_range(from_ms.0, to_ms.0)?;
+    blocking(app, move |state| {
+        let entry = state.local_host(host)?;
+        Ok(crate::usage::usage_series(entry.usage_series(
+            from_ms.0,
+            to_ms.0,
+            by,
+            usize::try_from(limit).unwrap_or(usize::MAX),
+        )))
+    })
+    .await
+}
+
 /// Unlabelled metrics over `[from_ms, to_ms)`, widened to whole buckets and cut at now,
 /// from their rollups through now: each one's span-weighted average, largest sample and
 /// integral over the measured time (gaps that apply to its module left out). With

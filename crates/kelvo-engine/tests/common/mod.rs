@@ -79,7 +79,7 @@ pub struct FakeState {
     /// Reported as the primary interface on the next sample only, as the network
     /// collector does on probe and its link-rate cadence.
     pub primary_iface: Option<kelvo_collect::PrimaryIface>,
-    /// Reported through `fill_capabilities` while Supported (D-115).
+    /// Reported through `fill_capabilities` while Supported (D-116).
     pub disk_devices: Vec<kelvo_schema::DiskDevice>,
     pub process_columns: bool,
 }

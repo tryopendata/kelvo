@@ -376,7 +376,7 @@ impl LinuxProbe {
         self.target().map(drop)
     }
 
-    /// A host gets one agent (D-115): none in the other layout, and for root none in
+    /// A host gets one agent (D-116): none in the other layout, and for root none in
     /// another login's user layout either.
     fn validate_one_agent(&self) -> Result<()> {
         let conflict =

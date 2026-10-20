@@ -90,7 +90,7 @@ On the CPU page almost everything is cyan, so the CTA must be recognizable by sh
 The Power accent is `#fbbf24`, the temperature series is `#f59e0b`, and opendata's warning color is also `#f59e0b`. On the Power & Sensors page a warning state would be indistinguishable from ordinary data. The rules:
 
 - Warning and critical are never conveyed by color alone. Each carries its icon and its state word.
-- Temperatures are never colored by value. There is no green-to-red ramp on zones or rings; a hot zone is the top row of a table sorted hottest first (Power & Sensors), with its number.
+- Temperatures are never colored by value. There is no green-to-red ramp on zones or rings; a hot zone reads as a stronger tint of `--color-temp` in the thermal zone matrix (Power & Sensors, fixed 20 to 110 °C), with its number.
 - Warnings render as a chip in the page header or card header, not by recoloring the data marks.
 - Critical uses red, which does not collide with any module accent.
 
@@ -309,7 +309,7 @@ From opendata's `frontend-design-slop` skill, applied to Kelvo.
 | Overview, light | same, light | same | v1.0 |
 | Timeline | `/dashboard/timeline` | `PageHeader`, `SegmentedControl`, `RangeNav`, `TimelineLanes`, `TimelineLane`, `Crosshair`, `CrosshairTooltip`, `GapBand`, `AnnotationRow`, `CalendarHeatmap`, `ExportButton` | v1.0 1h and 24h with sleep bands; v1.1 7d, 30d, heatmap, Export CSV; v1.2 event annotations |
 | CPU page | `/dashboard/cpu` | `PageHeader`, `SegmentedControl`, `StatStrip`, `StreamArea` (large), `ClusterFreqRing`, `CoreHeatmap`, `ResidencyBar`, `ProcessTable` | v1.0 |
-| Power & Sensors page | `/dashboard/power`; battery section reused at `/dashboard/battery` | `RingStatCard`, `ZoneTable`, `PowerStack`, `ChartAnnotation`, `BatteryHistoryBars`, `StatStrip` | v1.0 |
+| Power & Sensors page | `/dashboard/power`; battery section reused at `/dashboard/battery` | `RingStatCard`, `StatStrip`, `StreamArea` (system line with per-app lines), `HeatMatrix`, `ChartAnnotation`, `BatteryHistoryBars` | v1.0 |
 | Widget composer | `/dashboard/widgets` | `ComposerTabs`, `WidgetInspector`, `WidgetLibrary`, `LibraryTile`, `ComposerPreview`, `DropIndicator`, `DragGhost`, `SegmentedControl`, `Switch` | v2.0 popover tab; v2.1 desktop widget tabs |
 | Desktop widgets | `board-<displayId>` window, route `/board/:display` | `BoardCanvas`, `WidgetFrame`, `SnapGuides`, `ResizeHandles`, `SizeReadout`, `EditPill`, widget components (`CoreHeatmap`, `MirrorBars`, `RingGauge`, `StackBar`) | v2.1 |
 | Onboarding | `onboarding` window, route `/onboarding` | `OnboardingShell`, `ModuleToggleList`, `TrayStyleOption`, `TrayPreview`, `ChipStatus`, `Checkbox` | v1.0 (combined and values options); v1.1 adds the graph-per-module option |
@@ -344,16 +344,15 @@ Components under `src/app/widgets/` are render-only. They take plain props and c
 | `RingStatCard` | Ring plus title, description and one key/value | yes | `{ title; description; ring: RingGaugeProps; kv: { label; value } }` |
 | `InlineBar` | Label, value, horizontal bar | yes | `{ label; value: string; fraction: number; accent; rampStep?: 1..4 }` |
 | `StackBar` | Composition bar with legend | yes | `{ segments: { key; label; value: string; fraction; step: 1..4 \| 'hatch' }[]; accent; showLegend }` |
-| `Legend` | Swatch, label, value rows | yes | `{ items: { label; value: string; step: 1..4 \| 'hatch' }[]; accent; columns: 1 \| 2 }` |
+| `Legend` | Swatch, label, value rows | yes | `{ items: { label; value?: string; step: 1..4 \| 'hatch'; dashed?; onFocus?; onBlur?; onClick?; pressed? }[]; accent; columns: 1 \| 2 }` |
 | `StatGrid` | Two or three tabular KPI cells with field labels | yes | `{ items: { label; value: string; unit?: string }[] }` |
 | `StatStrip` | Page-level KPI strip above a chart | yes | `{ hero?: { value; unit }; items: { label; value; muted?: boolean; swatch?: step }[] }` |
-| `StreamArea` | Live area or line chart, scrolls with translateX | yes | `{ series: { values: (number \| null)[]; step: 1..4 }[]; tEndMs: number; intervalMs: number; yMax: number \| 'auto'; accent; height; ariaLabel }` |
+| `StreamArea` | Live area or line chart, scrolls with translateX | yes | `{ series: { key; values: (number \| null)[]; step: 1..4; fill?; edges?; dash?; weight?; opacity? }[]; annotations?; tEndMs: number; intervalMs: number; yMax: number \| 'auto'; accent; height; ariaLabel }` |
 | `MirrorBars` | Up bars above a baseline, down below | yes | `{ up: (number \| null)[]; down: (number \| null)[]; intervalMs; accent; ariaLabel }` |
 | `CoreTiles` | Per-core load tiles grouped by cluster | yes | `{ clusters: { name: string; freqGhz: number; cores: { id: string; load: number }[] }[] }` |
-| `CoreHeatmap` | Per-core load over time, one row per core | yes | `{ cores: { id; cluster: 'P' \| 'E'; now: number; buckets: (number \| null)[] }[]; bucketMs: number; windowMs: number }` |
+| `HeatMatrix` | Metric over time, one row per series, one cell per bucket; tint scales over a fixed domain | no (`formatNow` is a function) | `{ rows: { id; label; group?; title?; now: number \| null; buckets: (number \| null)[] }[]; scale: { min; max }; formatNow: (v: number) => string; labelWidth?; bucketMs; windowMs; endMs?: number \| null; gaps?: GapSpan[]; accent; ariaLabel }` |
+| `CoreHeatmap` | Per-core load over time, one row per core (CPU wrapper over `HeatMatrix`) | yes | `{ cores: { id; cluster: 'P' \| 'E'; now: number; buckets: (number \| null)[] }[]; bucketMs: number; windowMs: number }` |
 | `ResidencyBar` | Cluster frequency residency as a stacked bar plus table | yes | `{ cluster; activePct; states: { label: string; pct: number }[] }` |
-| `ZoneTable` | Sensor table, hottest first, with bar and 10-minute range | no | `{ rows: { name; key; now: number; min10: number; max10: number }[]; extras: { label; value: number }[]; unit: 'C' \| 'F' }` |
-| `PowerStack` | Stacked power area by component, last 10 minutes | yes | `{ series: { key: 'cpu' \| 'gpu' \| 'ane' \| 'dram'; values: (number \| null)[] }[]; intervalMs; annotations: ChartAnnotation[] }` |
 | `BatteryHistoryBars` | Hourly charge bars with charging marks | yes | `{ hours: { tsMs: number; charge: number \| null; charging: boolean }[]; annotations: ChartAnnotation[] }` |
 | `ChartAnnotation` | Labelled marker line inside a chart | yes | `{ tsMs; label }` |
 | `ProcessList` | Compact top-5: initial chip, name, value | yes | `{ rows: { initial; name; value: string }[] }` |

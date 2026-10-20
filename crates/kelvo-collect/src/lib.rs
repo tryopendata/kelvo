@@ -474,7 +474,7 @@ pub trait Collector: Send + 'static {
     fn release(&mut self) {}
     /// While probed Supported, sets the capability facts this collector owns beyond its
     /// series: `process_energy`/`process_wakeups`/`process_disk_io`, `disk_devices`
-    /// (D-115). Default: none.
+    /// (D-116). Default: none.
     fn fill_capabilities(&self, _caps: &mut kelvo_schema::Capabilities) {}
 }
 
@@ -569,7 +569,7 @@ pub fn platform_collectors(scales: Arc<dyn calib::ScaleStore>) -> Vec<Box<dyn Co
 }
 
 /// [`platform_collectors`] with the container names a refresher fills (the Linux
-/// agent's Docker task, D-115). Unused on macOS.
+/// agent's Docker task, D-116). Unused on macOS.
 pub fn platform_collectors_with(
     scales: Arc<dyn calib::ScaleStore>,
     names: ContainerNames,

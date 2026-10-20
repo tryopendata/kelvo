@@ -263,7 +263,7 @@ test.describe("performance gate", () => {
           page.getByRole("radio", { name: "1h", exact: true })
         ).toBeChecked();
         await expect(
-          page.getByText("Power by component, last hour")
+          page.getByRole("heading", { name: "Power draw, last hour" })
         ).toBeVisible();
       }
     );

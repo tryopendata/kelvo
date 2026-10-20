@@ -101,7 +101,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             commands::list_disk_io_devices,
             commands::query_processes_at,
             commands::query_network_by_app,
-            commands::query_usage_by_app,
+            commands::query_usage_by_app, commands::query_usage_series,
             commands::query_series_stats,
             commands::get_network_addresses,
             commands::get_public_ip,
@@ -155,6 +155,8 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
         .constant("PERFORMANCE_VISIBLE_MS", kelvo_engine::PERFORMANCE_VISIBLE_MS)
         .constant("NET_BUCKET_MS", kelvo_engine::NET_BUCKET_MS)
         .constant("USAGE_BUCKET_MS", kelvo_engine::USAGE_BUCKET_MS)
+        // The longest range `query_usage_series` answers.
+        .constant("USAGE_KEEP_MS", kelvo_engine::USAGE_KEEP_MS)
         .constant("HEADER_BYTES_PER_PACKET", kelvo_engine::HEADER_BYTES_PER_PACKET)
         .constant("CLAMP_SLACK_BYTES", kelvo_engine::CLAMP_SLACK_BYTES)
         .constant("MAX_NET_SPAN_MS", history::MAX_NET_SPAN_MS)

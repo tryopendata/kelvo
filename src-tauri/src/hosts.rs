@@ -126,6 +126,16 @@ impl HostEntry {
         self.live.usage_by_app(from_ms, to_ms, by, limit)
     }
 
+    pub fn usage_series(
+        &self,
+        from_ms: i64,
+        to_ms: i64,
+        by: kelvo_engine::UsageKey,
+        limit: usize,
+    ) -> kelvo_engine::UsageSeries {
+        self.live.usage_series(from_ms, to_ms, by, limit)
+    }
+
     /// The interface carrying the default route, as the engine last reported it.
     pub fn primary_iface(&self) -> Option<String> {
         self.live

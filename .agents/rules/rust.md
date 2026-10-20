@@ -49,7 +49,7 @@ can proceed autonomously within their agreed scope.
   checkout/reset and persisted/recent history query merging.
 - `kelvo-remote` owns SSH/session orchestration and `Mirror` storage synchronization;
   `kelvo-remote-helper` is the bundled stdio-to-local-socket bridge, not a collector agent.
-- `kelvo-agent` is the headless collector for hosts without the app (D-115): the engine,
+- `kelvo-agent` is the headless collector for hosts without the app (D-116): the engine,
   its own history and the metrics socket, plus the one-shot commands the controller runs
   over SSH. Install paths and unit text live in `kelvo_remote::agent_layout`, shared
   with the controller.

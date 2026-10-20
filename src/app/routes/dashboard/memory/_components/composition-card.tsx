@@ -29,7 +29,7 @@ type Segment = Parameters<typeof StackBar>[0]["segments"][number];
 
 /**
  * The bar's segments in the layout. A Mac splits used memory into app, wired
- * and compressed; a Linux agent (D-115) reports used, cached and free, which
+ * and compressed; a Linux agent (D-116) reports used, cached and free, which
  * add up to MemTotal.
  */
 function segmentsFor(

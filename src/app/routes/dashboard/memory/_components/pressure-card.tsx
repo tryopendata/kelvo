@@ -23,7 +23,7 @@ const PRESSURE = ["mem.pressure"];
 const PSI = ["mem.psi{stall=some}", "mem.psi{stall=full}"];
 
 /**
- * A Linux agent reports pressure stall information (`mem.psi`, D-115) in
+ * A Linux agent reports pressure stall information (`mem.psi`, D-116) in
  * place of macOS memory pressure: the share of time some, and all, tasks
  * waited on memory.
  */

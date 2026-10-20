@@ -135,20 +135,20 @@ use Unit as U;
 const P: bool = true; // persisted
 const R: bool = false; // ring buffer only
 /// The labels of every `cgroup.*` series: `kind` is service, docker, podman, user or
-/// other; `name` the unit or container name (D-115).
+/// other; `name` the unit or container name (D-116).
 const CG: &[&str] = &["kind", "name"];
 
 /// The v1 metric catalog (v1-local-monitor.md 6.1).
 pub static CATALOG: &[MetricDef] = &[
     // CPU. `cpu.total` is all non-idle time: on Linux every `/proc/stat` field except
-    // idle and iowait, the macOS meaning (D-115).
+    // idle and iowait, the macOS meaning (D-116).
     def("cpu.total", M::Cpu, U::Percent, Mean, &[], P),
     def("cpu.user", M::Cpu, U::Percent, Mean, &[], P),
     def("cpu.system", M::Cpu, U::Percent, Mean, &[], P),
-    // Linux only (D-115): idle time waiting on I/O, and time a hypervisor took.
+    // Linux only (D-116): idle time waiting on I/O, and time a hypervisor took.
     def("cpu.iowait", M::Cpu, U::Percent, Mean, &[], P),
     def("cpu.steal", M::Cpu, U::Percent, Mean, &[], P),
-    // Pressure stall information, Linux only (D-115): the share of the span some
+    // Pressure stall information, Linux only (D-116): the share of the span some
     // (`stall=some`) or all (`stall=full`) tasks were stalled, from deltas of the PSI
     // `total` counter, never its averages. The memory and disk pairs follow.
     def("cpu.psi", M::Cpu, U::Percent, Mean, &["stall"], P).every(5),
@@ -206,7 +206,7 @@ pub static CATALOG: &[MetricDef] = &[
     // window closes (D-065). The UI labels the value with it; treat unknown values as 1.
     def("power.cpu_source", M::Power, U::Enum, Gauge, &[], R),
     // A board power sensor by name, watts only (hwmon `power*_input`; current and
-    // voltage inputs are not power). Names follow `thermal.sensor` (D-115).
+    // voltage inputs are not power). Names follow `thermal.sensor` (D-116).
     def("power.sensor", M::Power, U::Watts, Gauge, &["name"], P).every(5),
     // Sensors. Temperatures are read every 5 ticks (D-055): the HID and SMC reads are
     // the engine's largest kernel cost, and die temperatures move over seconds.
@@ -221,13 +221,13 @@ pub static CATALOG: &[MetricDef] = &[
     .every(5),
     def("thermal.cpu", M::Sensors, U::Celsius, Gauge, &[], P).every(5),
     def("thermal.gpu", M::Sensors, U::Celsius, Gauge, &[], P).every(5),
-    // From CPU/SoC-class sensors only; absent where there are none (D-115).
+    // From CPU/SoC-class sensors only; absent where there are none (D-116).
     def("thermal.hottest", M::Sensors, U::Celsius, Gauge, &[], P).every(5),
     // On Linux `name` is the hwmon kernel label ("NAND Flash Temperature"), or
     // `<chip>/<label>` when the label is generic (`Composite`) or another chip has it,
     // and `<chip>/tempN` without one; thermal zones are `zone/<type>`. A chip name that
     // repeats is qualified by its parent device (`nvme0`, an i2c address), never by
-    // enumeration order, so a name survives a reboot (D-115).
+    // enumeration order, so a name survives a reboot (D-116).
     def(
         "thermal.sensor",
         M::Sensors,
@@ -394,7 +394,7 @@ pub static CATALOG: &[MetricDef] = &[
     // Signed: negative while discharging.
     def("battery.power", M::Battery, U::Watts, Gauge, &[], P).every(10),
     def("battery.temp", M::Battery, U::Celsius, Gauge, &[], P).every(10),
-    // Containers: cgroup v2 groups on a Linux host (D-115). The top 32 by CPU plus
+    // Containers: cgroup v2 groups on a Linux host (D-116). The top 32 by CPU plus
     // memory keep their own series; the rest fold into `{kind=other,name=_other}`, and
     // `cgroup.other_count` says how many groups that is. CPU is percent of one core,
     // like a process row; `mem_psi` is the `some` share of `memory.pressure`.
@@ -658,7 +658,7 @@ mod tests {
         assert_eq!(ring_only, want);
     }
 
-    /// D-115: only the container groups are capped, all at 32, and they are all filed
+    /// D-116: only the container groups are capped, all at 32, and they are all filed
     /// under Containers.
     #[test]
     fn cgroup_metrics_are_capped_containers() {

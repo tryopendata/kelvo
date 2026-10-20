@@ -1,4 +1,4 @@
-//! Docker container names for the cgroup and process collectors (D-115). The collectors
+//! Docker container names for the cgroup and process collectors (D-116). The collectors
 //! run on the engine's std thread and see only container ids; this task lists the
 //! running containers through the read-only Docker adapter and fills the shared map
 //! they read.

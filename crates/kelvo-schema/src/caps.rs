@@ -32,7 +32,7 @@ pub struct Capabilities {
     #[serde(default)]
     pub process_gpu: bool,
     /// Process rows carry energy impact (`energy`, `energy_j`). A Mac's libproc reports
-    /// it; a Linux host does not (D-115). When false the UI hides the energy columns.
+    /// it; a Linux host does not (D-116). When false the UI hides the energy columns.
     /// Defaults to true when a sender does not know it, so an older remote Mac keeps
     /// its columns.
     #[serde(default = "default_true")]
@@ -48,8 +48,8 @@ pub struct Capabilities {
     #[serde(default = "default_true")]
     pub process_disk_io: bool,
     /// The block devices the `disk.*{dev}` series are labelled with, for the Disk page's
-    /// device list on any host (D-115). Empty when unknown, and from a sender before
-    /// D-115.
+    /// device list on any host (D-116). Empty when unknown, and from a sender before
+    /// D-116.
     #[serde(default)]
     pub disk_devices: Vec<DiskDevice>,
 }
@@ -162,7 +162,7 @@ pub enum UnsupportedReason {
     /// The API is there but reports no such hardware.
     NoHardware,
     /// The hardware is there but this process may not read it: RAPL energy files are
-    /// root-only on Linux, and the agent may run unprivileged (D-115).
+    /// root-only on Linux, and the agent may run unprivileged (D-116).
     PermissionDenied,
     /// A reason this build does not know (D-040). The UI shows a generic
     /// "not available".
@@ -261,7 +261,7 @@ mod tests {
         );
     }
 
-    /// D-115: a sender that predates the process column flags (an older Mac) keeps its
+    /// D-116: a sender that predates the process column flags (an older Mac) keeps its
     /// energy and wakeup columns, and one that predates `disk_devices` lists none.
     #[test]
     fn missing_process_columns_default_to_present() {

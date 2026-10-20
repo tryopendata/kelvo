@@ -796,9 +796,9 @@ App foundation
 - [x] TanStack Query client
 - [x] Memory router keyed by window label: `popover`, `dashboard/*`, `onboarding`
 - [x] shadcn primitives: Button, Switch, Select, ToggleGroup, Tooltip, Dialog, Checkbox, ScrollArea, Table, ContextMenu, Sonner (toast)
-- [x] Render-only components under `src/app/widgets/` with JSON-serializable props as specified in design-system.md (plain numbers, strings, booleans, `(number | null)[]`, ms timestamps; no `Date`, `Map`, typed arrays): Card, MetricCard, ModuleCard, RingGauge, ClusterFreqRing, RingStatCard, InlineBar, StackBar, Legend, StatGrid, StatStrip, StreamArea, MirrorBars, CoreTiles, CoreHeatmap, ResidencyBar, PowerStack, BatteryHistoryBars, ChartAnnotation, ProcessList, InitialChip, GapBand, StatusPill
+- [x] Render-only components under `src/app/widgets/` with JSON-serializable props as specified in design-system.md (plain numbers, strings, booleans, `(number | null)[]`, ms timestamps; no `Date`, `Map`, typed arrays): Card, MetricCard, ModuleCard, RingGauge, ClusterFreqRing, RingStatCard, InlineBar, StackBar, Legend, StatGrid, StatStrip, StreamArea, MirrorBars, CoreTiles, CoreHeatmap, HeatMatrix (takes a `formatNow` function, so not JSON-serializable), ResidencyBar, BatteryHistoryBars, ChartAnnotation, ProcessList, InitialChip, GapBand, StatusPill
 - [x] A Vitest test per widget that `JSON.parse(JSON.stringify(props))` renders identically to the original props (infra 10)
-- [x] App components outside `widgets/`: CardGrid, ZoneTable, ProcessTable (virtualized), InterfaceTable, VolumeTable, SegmentedControl, Sidebar, MachineHeader, PopoverHeader, PopoverFooter, TrayPreview, TrayStyleOption, ModuleToggleList, SettingsRow, CollectingOverlay, UnsupportedNotice
+- [x] App components outside `widgets/`: CardGrid, ProcessTable (virtualized), InterfaceTable, VolumeTable, SegmentedControl, Sidebar, MachineHeader, PopoverHeader, PopoverFooter, TrayPreview, TrayStyleOption, ModuleToggleList, SettingsRow, CollectingOverlay, UnsupportedNotice
 - [x] Dev-only `/dev/gallery` route rendering every component with mock props in both themes
 - [x] Playwright: screenshot every route and the gallery in light and dark with the mock transport; axe contrast check; fail on any `--color-muted-foreground` text below 4.5:1
 
@@ -841,8 +841,8 @@ CPU page (4.7)
 
 Power & Sensors page (4.10)
 - [x] Four ring cards with fan and battery variants (fan mode 0/1 = Automatic/Manual is unverified)
-- [x] SoC thermal zones table with throttled re-sort and footer sensors
-- [x] Power by component stacked chart over 10 minutes (mostly broken on macOS 27 where CPU, ANE and DRAM are gaps, D-043; no annotations until v1.2)
+- [x] SoC thermal zones as a matrix over the chart window (shared `HeatMatrix`) with footer sensors
+- [x] Power draw chart: `power.system` with the top 5 apps by CPU energy as lines (D-115); component watts in the stat strip. Replaces the component stack, which collapsed into dots on macOS 27 (D-043)
 - [x] Battery last 24 hours from `tier_1m`
 
 GPU, Memory, Network, Disk, Battery, Processes pages (4.8, 4.9, 4.11 to 4.14; no mocks)

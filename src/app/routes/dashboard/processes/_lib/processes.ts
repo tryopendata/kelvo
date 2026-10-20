@@ -27,7 +27,7 @@ export interface ColumnCaps {
   network: boolean;
   /** `process_gpu` (D-085). */
   gpu: boolean;
-  /** `process_energy`; false on a Linux agent (D-115). */
+  /** `process_energy`; false on a Linux agent (D-116). */
   energy: boolean;
   /** `process_disk_io`; false on a Linux host without readable I/O counters. */
   disk: boolean;

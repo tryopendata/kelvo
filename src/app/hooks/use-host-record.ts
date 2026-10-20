@@ -28,7 +28,7 @@ export function useGpuMaxMhz(): number | null {
   return dvfs.length === 0 ? null : Math.max(...dvfs);
 }
 
-/** "Mac", or "host" for a Linux agent (D-115): "Processes on this host". */
+/** "Mac", or "host" for a Linux agent (D-116): "Processes on this host". */
 export function useHostNoun(): "Mac" | "host" {
   return hostNoun(useHostRecord()?.info.os);
 }

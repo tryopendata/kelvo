@@ -6,16 +6,16 @@ import PowerRoute from "./route";
 const NOW = 1_800_000_000_000;
 
 describe("Power cards follow the chart window (D-091)", () => {
-  it("titles the power stack and heads the zone range with the saved window", async () => {
+  it("titles the power draw chart and the zone matrix with the saved window", async () => {
     const r = renderWithProviders(<PowerRoute />, {
       transportOptions: { now: () => NOW, chartWindow: "30m" },
     });
     expect(
-      await screen.findByText("Power by component, last 30 minutes")
+      await screen.findByText("Power draw, last 30 minutes")
     ).toBeInTheDocument();
     act(() => r.transport.tick());
     expect(
-      await screen.findByRole("columnheader", { name: "30m" })
+      await screen.findByText("SoC thermal zones, last 30 minutes")
     ).toBeInTheDocument();
   });
 });
@@ -26,8 +26,8 @@ describe("Power page at 1 Hz", () => {
   // Calling the route as a function runs its hooks in the spy, so the spy
   // renders exactly when the page does.
   it.each<[string, ScenarioName[], string]>([
-    ["a Mac", ["default"], "Power by component, last hour"],
-    ["a Linux host", ["linux"], "System power, last hour"],
+    ["a Mac", ["default"], "SoC thermal zones, last hour"],
+    ["a Linux host", ["linux"], "Temperature sensors, last hour"],
   ])(
     "does not re-render the page on a tick on %s",
     async (_, scenarios, title) => {

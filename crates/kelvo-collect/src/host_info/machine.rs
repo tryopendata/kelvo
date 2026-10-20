@@ -1,4 +1,4 @@
-//! The machine identifiers a Linux host's id is bound to (D-071, D-115): systemd's
+//! The machine identifiers a Linux host's id is bound to (D-071, D-116): systemd's
 //! `/etc/machine-id`, plus the firmware's DMI `product_uuid` or the device-tree serial
 //! when a system agent asks for them. The engine hashes them (`kelvo_engine::identity`);
 //! this module only reads and validates.

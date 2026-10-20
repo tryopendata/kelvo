@@ -9,6 +9,7 @@ export function nativeHistory(): Pick<
   | "queryProcessesAt"
   | "queryNetworkByApp"
   | "queryUsageByApp"
+  | "queryUsageSeries"
   | "querySeriesStats"
   | "getNetworkAddresses"
   | "getPublicIp"
@@ -26,6 +27,8 @@ export function nativeHistory(): Pick<
       commands.queryNetworkByApp(host, fromMs, toMs),
     queryUsageByApp: (host, fromMs, toMs, by, limit) =>
       commands.queryUsageByApp(host, fromMs, toMs, by, limit),
+    queryUsageSeries: (host, fromMs, toMs, by, limit) =>
+      commands.queryUsageSeries(host, fromMs, toMs, by, limit),
     querySeriesStats: (host, metrics, fromMs, toMs) =>
       commands.querySeriesStats(host, metrics, fromMs, toMs),
     getNetworkAddresses: (host) => commands.getNetworkAddresses(host),
