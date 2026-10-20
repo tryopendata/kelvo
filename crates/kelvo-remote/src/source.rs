@@ -265,13 +265,25 @@ async fn run(source: Arc<RemoteSource>, sink: SourceSink) {
             delay = 1;
         }
         let jitter = (kelvo_engine::wall_ms().unsigned_abs() % 250) as u64;
-        tokio::select! {_=tokio::time::sleep(Duration::from_millis(delay*1000+jitter))=>{},_=control.changed()=>{}}
+        let before = control.borrow_and_update().clone();
+        tokio::select! {
+            _ = tokio::time::sleep(Duration::from_millis(delay * 1000 + jitter)) => {}
+            _ = control.wait_for(|now| ends_backoff(&before, now)) => {}
+        }
         delay = (delay * 2).min(60);
     }
     status.connected = false;
     status.retrying = false;
     status.catching_up = false;
     (source.on_status)(status);
+}
+/// Stopping, sleep, a retry or a network change ends the wait before a redial. Interest
+/// changes as the user moves around the app do not, so a host that is down keeps backing off.
+fn ends_backoff(before: &ControlState, now: &ControlState) -> bool {
+    now.stop
+        || now.asleep != before.asleep
+        || now.retry != before.retry
+        || now.network != before.network
 }
 async fn session_loop(
     source: &Arc<RemoteSource>,
@@ -306,7 +318,7 @@ async fn session_loop(
     timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let (promotion_tx, mut promotion_rx) = tokio::sync::mpsc::channel(1);
     let mut state = Session {
-        layouts: HashMap::new(),
+        layout: None,
         summary_layout: None,
         source_timeline: None,
         timeline: source.next_timeline.fetch_add(1, Ordering::Relaxed),
@@ -368,7 +380,9 @@ enum SessionAction {
     Replace(Box<SshSession>),
 }
 struct Session<'a> {
-    layouts: HashMap<u32, Arc<FrameLayout>>,
+    /// The source's current layout, by its number. The source defines a layout just
+    /// before its first frame, so frames only ever name the newest one.
+    layout: Option<(u32, Arc<FrameLayout>)>,
     summary_layout: Option<Arc<FrameLayout>>,
     source_timeline: Option<u32>,
     timeline: u32,
@@ -553,10 +567,14 @@ impl Session<'_> {
             incoming.ok_or_else(|| RemoteError::Transport("remote stream closed".into()))??;
         match message {
             Message::LayoutDef(layout) => {
-                if layout.series.len() > 8192 || self.layouts.len() >= 1024 {
+                if layout.series.len() > 8192 {
                     return Err(RemoteError::Protocol("layout cardinality exceeded".into()));
                 }
-                if self.layouts.contains_key(&layout.layout_no) {
+                if self
+                    .layout
+                    .as_ref()
+                    .is_some_and(|(no, _)| *no == layout.layout_no)
+                {
                     return Err(RemoteError::Protocol(
                         "layout number reused in session".into(),
                     ));
@@ -566,15 +584,16 @@ impl Session<'_> {
                     layout_no: self.source.next_layout.fetch_add(1, Ordering::Relaxed),
                     series: layout.series.into(),
                 });
-                self.layouts.insert(remote_no, layout.clone());
+                self.layout = Some((remote_no, layout.clone()));
                 self.sink.live.publish(BusMsg::Layout(layout));
             }
             Message::Live(frame) => {
                 let layout = self
-                    .layouts
-                    .get(&frame.layout_no)
-                    .ok_or_else(|| RemoteError::Protocol("unknown layout".into()))?
-                    .clone();
+                    .layout
+                    .as_ref()
+                    .filter(|(no, _)| *no == frame.layout_no)
+                    .map(|(_, layout)| layout.clone())
+                    .ok_or_else(|| RemoteError::Protocol("unknown layout".into()))?;
                 let n = layout.series.len();
                 if frame.values.len() != n
                     || frame.held.len() != n
@@ -1012,7 +1031,7 @@ mod tests {
         writer: &'a mut std::pin::Pin<Box<dyn tokio::io::AsyncWrite + Send>>,
     ) -> Session<'a> {
         Session {
-            layouts: HashMap::new(),
+            layout: None,
             summary_layout: None,
             source_timeline: None,
             timeline: 1,
@@ -1190,6 +1209,68 @@ mod tests {
             let error = session.incoming(Some(Ok(reply))).await.err().unwrap();
             assert!(matches!(error, RemoteError::Transport(_)));
             assert!(error.retryable());
+        }
+    }
+    #[test]
+    fn only_lifecycle_changes_cut_a_reconnect_backoff_short() {
+        let before = ControlState::default();
+        let mut interest = before.clone();
+        interest.interest.detail = true;
+        interest.interest.gpu_processes = true;
+        interest.interest.process_period_ms = Some(1000);
+        assert!(
+            !ends_backoff(&before, &interest),
+            "navigating keeps the backoff"
+        );
+        for change in [
+            |s: &mut ControlState| s.stop = true,
+            |s: &mut ControlState| s.asleep = true,
+            |s: &mut ControlState| s.retry += 1,
+            |s: &mut ControlState| s.network += 1,
+        ] {
+            let mut now = before.clone();
+            change(&mut now);
+            assert!(ends_backoff(&before, &now));
+        }
+    }
+    /// Container series come and go on a Linux host, so its layout changes many times
+    /// in one long session; each change replaces the last instead of accumulating.
+    #[tokio::test(start_paused = true)]
+    async fn a_long_session_survives_any_number_of_layout_changes() {
+        let source = fixture_source(None);
+        let sink = SourceSink {
+            live: Default::default(),
+            store: None,
+        };
+        let mut control = source.control.subscribe();
+        let mut status = ConnectionStatus::default();
+        let mut writer: std::pin::Pin<Box<dyn tokio::io::AsyncWrite + Send>> =
+            Box::pin(tokio::io::sink());
+        let mut session = fixture_session(&source, &sink, &mut control, &mut status, &mut writer);
+        for no in 0..1100u32 {
+            let layout = Message::LayoutDef(WireLayout {
+                layout_no: no,
+                series: vec![kelvo_schema::SeriesKey::bare(
+                    kelvo_schema::MetricId::from_static("cpu.total"),
+                )],
+            });
+            let frame = Message::Live(kelvo_proto::LiveFrame {
+                ts_ms: 1_000 * i64::from(no + 1),
+                layout_no: no,
+                values: vec![1.0],
+                held: vec![1.0],
+                interval_ms: 1000,
+                timeline: 0,
+                holds: vec![2500],
+            });
+            for message in [layout, frame] {
+                let action = session.incoming(Some(Ok(message))).await;
+                assert!(
+                    matches!(action, Ok(SessionAction::Continue)),
+                    "layout {no}: {:?}",
+                    action.err()
+                );
+            }
         }
     }
     /// While no window watched the host the ring held summary frames only; the first

@@ -144,6 +144,9 @@ impl AgentLayout {
     /// environment is not the SSH session's (`XDG_*` set in a shell profile never reach
     /// it), so the paths the controller computed from the session are baked in rather
     /// than left for the daemon to derive again.
+    ///
+    /// Both restart a crashed agent every 5 s with no start limit: the controller keeps
+    /// retrying a host whose agent is not running, so systemd must not give up first.
     pub fn unit_text(self, paths: &AgentPaths) -> String {
         let exec = unit_quote(&paths.binary.to_string_lossy());
         let data = unit_quote(&paths.data_dir.to_string_lossy());
@@ -152,6 +155,7 @@ impl AgentLayout {
             Self::System => format!(
                 "[Unit]\n\
                  Description=Kelvo agent\n\
+                 StartLimitIntervalSec=0\n\
                  \n\
                  [Service]\n\
                  ExecStart={exec} run --system\n\
@@ -167,6 +171,7 @@ impl AgentLayout {
                  IOSchedulingPriority=7\n\
                  MemoryMax=96M\n\
                  Restart=on-failure\n\
+                 RestartSec=5s\n\
                  \n\
                  [Install]\n\
                  WantedBy=multi-user.target\n"
@@ -174,6 +179,7 @@ impl AgentLayout {
             Self::User => format!(
                 "[Unit]\n\
                  Description=Kelvo agent\n\
+                 StartLimitIntervalSec=0\n\
                  \n\
                  [Service]\n\
                  ExecStart={exec} run --data-dir {data} --socket {socket}\n\
@@ -183,6 +189,7 @@ impl AgentLayout {
                  IOSchedulingPriority=7\n\
                  MemoryMax=96M\n\
                  Restart=on-failure\n\
+                 RestartSec=5s\n\
                  \n\
                  [Install]\n\
                  WantedBy=default.target\n"
@@ -308,12 +315,12 @@ mod tests {
         let text = AgentLayout::System.unit_text(&paths);
         assert_eq!(
             text,
-            "[Unit]\nDescription=Kelvo agent\n\n[Service]\n\
+            "[Unit]\nDescription=Kelvo agent\nStartLimitIntervalSec=0\n\n[Service]\n\
              ExecStart=/usr/local/bin/kelvo-agent run --system\n\
              StateDirectory=kelvo-agent\nRuntimeDirectory=kelvo-agent\nRuntimeDirectoryMode=0700\n\
              ProtectSystem=strict\nProtectHome=yes\nPrivateTmp=yes\nNoNewPrivileges=yes\n\
              Nice=10\nIOSchedulingClass=best-effort\nIOSchedulingPriority=7\n\
-             MemoryMax=96M\nRestart=on-failure\n\n[Install]\nWantedBy=multi-user.target\n"
+             MemoryMax=96M\nRestart=on-failure\nRestartSec=5s\n\n[Install]\nWantedBy=multi-user.target\n"
         );
     }
 
@@ -323,6 +330,8 @@ mod tests {
             .paths(&env("/home/a", "", "/run/user/1000", ""))
             .unwrap();
         let text = AgentLayout::User.unit_text(&paths);
+        assert!(text.contains("[Unit]\nDescription=Kelvo agent\nStartLimitIntervalSec=0\n"));
+        assert!(text.contains("Restart=on-failure\nRestartSec=5s\n"));
         // The session's paths are baked in: the user manager may not share its XDG_*.
         assert!(text.contains(
             "ExecStart=/home/a/.local/bin/kelvo-agent run \

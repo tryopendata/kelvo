@@ -297,11 +297,10 @@ fn stderr_error(
     detail: String,
     outcome: &std::result::Result<Result<Message>, tokio::time::error::Elapsed>,
 ) -> RemoteError {
-    if detail.contains("Permission denied")
-        || detail.contains("Host key verification failed")
-        || detail.contains("REMOTE HOST IDENTIFICATION")
-    {
-        RemoteError::Authentication(format!("{alias}: {detail}"))
+    // SSH's own failures read the same at setup and on every later connection.
+    let ssh = crate::install::setup_ssh_error(format!("{alias}: {detail}"));
+    if !matches!(ssh, RemoteError::Transport(_)) {
+        ssh
     } else if detail
         .lines()
         .any(|line| line.trim() == crate::AGENT_NOT_RUNNING)
@@ -318,15 +317,15 @@ fn handshake_failure(
     outcome: &std::result::Result<Result<Message>, tokio::time::error::Elapsed>,
 ) -> &'static str {
     match outcome {
-        Err(_) => "The other Mac did not answer in time.",
+        Err(_) => "The hostdid not answer in time.",
         Ok(Err(RemoteError::Io(error))) if error.kind() == std::io::ErrorKind::UnexpectedEof => {
-            "The connection closed before Kelvo could start on the other Mac."
+            "The connection closed before Kelvo could start on the host."
         }
         Ok(Err(RemoteError::Io(_))) => {
-            "The connection failed while Kelvo was starting on the other Mac."
+            "The connection failed while Kelvo was starting on the host."
         }
-        Ok(Err(_)) => "The other Mac sent an invalid Kelvo greeting.",
-        Ok(Ok(_)) => "The other Mac did not send a Kelvo greeting.",
+        Ok(Err(_)) => "The hostsent an invalid Kelvo greeting.",
+        Ok(Ok(_)) => "The hostdid not send a Kelvo greeting.",
     }
 }
 
@@ -396,30 +395,30 @@ mod tests {
         .await;
         assert_eq!(
             handshake_failure(&timeout),
-            "The other Mac did not answer in time."
+            "The hostdid not answer in time."
         );
         let eof = Ok(Err(RemoteError::Io(
             std::io::ErrorKind::UnexpectedEof.into(),
         )));
         assert_eq!(
             handshake_failure(&eof),
-            "The connection closed before Kelvo could start on the other Mac."
+            "The connection closed before Kelvo could start on the host."
         );
         let io = Ok(Err(RemoteError::Io(
             std::io::ErrorKind::ConnectionReset.into(),
         )));
         assert_eq!(
             handshake_failure(&io),
-            "The connection failed while Kelvo was starting on the other Mac."
+            "The connection failed while Kelvo was starting on the host."
         );
         let invalid = Ok(Err(RemoteError::Protocol("bad frame".into())));
         assert_eq!(
             handshake_failure(&invalid),
-            "The other Mac sent an invalid Kelvo greeting."
+            "The hostsent an invalid Kelvo greeting."
         );
         assert_eq!(
             handshake_failure(&Ok(Ok(Message::Unknown))),
-            "The other Mac did not send a Kelvo greeting."
+            "The hostdid not send a Kelvo greeting."
         );
     }
     #[test]
@@ -443,6 +442,27 @@ mod tests {
         assert!(matches!(
             stderr_error("server", String::new(), &eof),
             RemoteError::Transport(text) if text.contains("closed before")
+        ));
+    }
+    /// A changed host key found on a later connection gets the host-key advice the
+    /// setup flow gives, not "could not sign in".
+    #[test]
+    fn ssh_failures_classify_as_they_do_at_setup() {
+        let eof = Ok(Err(RemoteError::Io(
+            std::io::ErrorKind::UnexpectedEof.into(),
+        )));
+        let changed = "@@@ WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED! @@@\nHost key verification failed.";
+        assert!(matches!(
+            stderr_error("server", changed.into(), &eof),
+            RemoteError::HostKey(text) if text.starts_with("server: ")
+        ));
+        assert!(matches!(
+            stderr_error(
+                "server",
+                "user@server: Permission denied (publickey).".into(),
+                &eof
+            ),
+            RemoteError::Authentication(_)
         ));
     }
     #[tokio::test]
