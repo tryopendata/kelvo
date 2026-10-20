@@ -348,19 +348,7 @@ pub async fn query_usage_series(
     by: UsageKey,
     limit: u32,
 ) -> Result<crate::usage::UsageSeries, CommandError> {
-    if to_ms.0 < from_ms.0 {
-        return Err(CommandError::InvalidArgument {
-            message: format!("to_ms {} is before from_ms {}", to_ms.0, from_ms.0),
-        });
-    }
-    if to_ms.0 - from_ms.0 > kelvo_engine::USAGE_KEEP_MS {
-        return Err(CommandError::InvalidArgument {
-            message: format!(
-                "the range is longer than the {} ms of samples kept",
-                kelvo_engine::USAGE_KEEP_MS
-            ),
-        });
-    }
+    crate::usage::check_series_range(from_ms.0, to_ms.0)?;
     blocking(app, move |state| {
         let entry = state.local_host(host)?;
         Ok(crate::usage::usage_series(entry.usage_series(

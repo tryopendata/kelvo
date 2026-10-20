@@ -1,4 +1,4 @@
-import { type TimeRange, windowRange } from "@core/brush";
+import { windowRange } from "@core/brush";
 import { resampleBuckets, type SlotGrid } from "@core/chart-math";
 import { useMemo } from "react";
 import { useIsLocalHost } from "~/hooks/use-is-local-host";
@@ -32,12 +32,9 @@ export type AppLines =
  * power chart's slot grid. The window ends where the open 10 s bucket
  * starts, so the read moves every 10 s; the previous answer stands in
  * meanwhile. The answer is laid on the grid by time, so a held answer
- * still lines up. Also returns the range read, for figures over the same span.
+ * still lines up.
  */
-export function useAppLines(
-  windowMs: number,
-  grid: SlotGrid
-): { lines: AppLines; range: TimeRange | null } {
+export function useAppLines(windowMs: number, grid: SlotGrid): AppLines {
   const local = useIsLocalHost();
   const edge = useOpenEdge();
   const range = useMemo(
@@ -74,5 +71,5 @@ export function useAppLines(
   else if (!data) lines = { kind: "loading" };
   else if (apps.every((a) => a.avg === null)) lines = { kind: "empty" };
   else lines = { kind: "ok", apps };
-  return { lines, range };
+  return lines;
 }

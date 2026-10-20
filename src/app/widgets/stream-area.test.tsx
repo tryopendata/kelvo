@@ -117,7 +117,7 @@ describe("StreamArea", () => {
     expect(container.querySelectorAll("[data-gap-edge]")).toHaveLength(3);
   });
 
-  it("draws a bare line with no area and no edge dots when fill is false", () => {
+  it("draws a bare line with no area and no edge dots, as for app lines", () => {
     const { container } = render(
       <StreamArea
         {...props}
@@ -127,6 +127,7 @@ describe("StreamArea", () => {
             values: [1, 2, null, 3, 4],
             step: 3,
             fill: false,
+            edges: false,
             weight: 1,
             opacity: 0.3,
           },
@@ -141,6 +142,46 @@ describe("StreamArea", () => {
     expect(g?.querySelector("[data-line]")?.getAttribute("stroke-width")).toBe(
       "1"
     );
+  });
+
+  it("keeps gap-edge dots on a bare line unless edges is false", () => {
+    const bare = (edges: boolean) => (
+      <StreamArea
+        {...props}
+        series={[
+          {
+            key: "system",
+            values: [1, null, 2, 3],
+            step: 1,
+            fill: false,
+            edges,
+          },
+        ]}
+      />
+    );
+    const { container, rerender } = render(bare(true));
+    expect(container.querySelector("[data-area]")).toBeNull();
+    expect(container.querySelectorAll("[data-gap-edge]")).toHaveLength(2);
+    rerender(bare(false));
+    expect(container.querySelectorAll("[data-gap-edge]")).toHaveLength(0);
+  });
+
+  it("dashes a line with dash and leaves others solid", () => {
+    const { container } = render(
+      <StreamArea
+        {...props}
+        series={[
+          { key: "a", values: [1, 2, 3], step: 2 },
+          { key: "b", values: [3, 2, 1], step: 2, dash: true },
+        ]}
+      />
+    );
+    const dash = (key: string) =>
+      container
+        .querySelector(`[data-series="${key}"] [data-line]`)
+        ?.getAttribute("stroke-dasharray");
+    expect(dash("a")).toBeNull();
+    expect(dash("b")).toBe("3 2");
   });
 
   it("keeps the area, 1.5 px weight and full opacity by default", () => {
@@ -169,6 +210,23 @@ describe("StreamArea", () => {
       />
     );
     expect(queryByText("old")).toBeNull();
+  });
+
+  it("drops an annotation too close to a newer one, keeping the newer", () => {
+    // The window is the last 4 s: 0.25 s apart is 0.0625 of it.
+    const { getByText, queryByText } = render(
+      <StreamArea
+        {...props}
+        annotations={[
+          { tsMs: props.tEndMs - 2_250, label: "older" },
+          { tsMs: props.tEndMs - 2_000, label: "newer" },
+          { tsMs: props.tEndMs - 3_000, label: "apart" },
+        ]}
+      />
+    );
+    expect(getByText("newer")).toBeInTheDocument();
+    expect(queryByText("older")).toBeNull();
+    expect(getByText("apart")).toBeInTheDocument();
   });
 
   it("anchors an annotation past the middle by its right edge", () => {

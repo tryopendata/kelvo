@@ -52,9 +52,9 @@ describe("PowerDrawCard CPU power note (D-054, D-065)", () => {
 });
 
 describe("PowerDrawCard system line", () => {
-  // Regression: the old stack drew ANE and DRAM once they were measured at
-  // all, and broke wherever they were missing; with macOS 27's PMP-only
-  // emission (D-043) that left isolated round-capped dots.
+  // Guards against putting the sparse PMP components (ANE, DRAM, package;
+  // D-043) back on the chart: the line drawn is `power.system` alone. The
+  // stack's broken one-point runs are covered by StreamArea's own test.
   it("stays one continuous line while ANE and DRAM are mostly gaps", async () => {
     let clock = NOW;
     const { container, transport } = await renderCard([], () => clock);
@@ -93,6 +93,11 @@ describe("PowerDrawCard app lines (D-093)", () => {
         "1"
       );
     }
+    // Steps repeat after three apps; the repeats are dashed.
+    const dashes = [...apps].map((g) =>
+      g.querySelector("[data-line]")?.getAttribute("stroke-dasharray")
+    );
+    expect(dashes).toEqual([null, null, null, "3 2", "3 2"]);
     const first = apps[0]?.getAttribute("data-series")?.slice(4) ?? "";
     await user.click(screen.getByRole("button", { name: new RegExp(first) }));
     await waitFor(() =>
@@ -108,6 +113,50 @@ describe("PowerDrawCard app lines (D-093)", () => {
     for (const g of others) expect(g.getAttribute("opacity")).toBe("0.3");
     // The system line keeps its emphasis.
     expect(line(container, "power.system")?.getAttribute("opacity")).toBe("1");
+  });
+
+  it("says so, and draws the system line only, when the apps fail to load", async () => {
+    const transport = createMockTransport({ now: () => NOW, autoTick: false });
+    transport.queryUsageSeries = async () => ({
+      status: "error",
+      error: { kind: "invalid_argument", message: "boom" },
+    });
+    const { container } = renderWithProviders(
+      <PowerDrawCard windowMs={900_000} />,
+      { transport }
+    );
+    act(() => transport.tick());
+    expect(
+      await screen.findByText("Couldn't load per-app power.")
+    ).toBeInTheDocument();
+    expect(container.querySelector('[data-series^="app:"]')).toBeNull();
+    expect(line(container, "power.system")).not.toBeNull();
+  });
+
+  it("says per-app power comes later when no app was sampled yet", async () => {
+    const transport = createMockTransport({ now: () => NOW, autoTick: false });
+    transport.queryUsageSeries = async (_host, fromMs) => ({
+      status: "ok",
+      data: {
+        from_ms: fromMs,
+        bucket_ms: 10_000,
+        since_ms: null,
+        complete_to_ms: null,
+        latest_ms: null,
+        apps: [],
+      },
+    });
+    const { container } = renderWithProviders(
+      <PowerDrawCard windowMs={900_000} />,
+      { transport }
+    );
+    act(() => transport.tick());
+    expect(
+      await screen.findByText(
+        "Per-app power appears after Kelvo has sampled processes for a while."
+      )
+    ).toBeInTheDocument();
+    expect(container.querySelector('[data-series^="app:"]')).toBeNull();
   });
 
   it("shows the system line only, with a note, on a remote host", async () => {

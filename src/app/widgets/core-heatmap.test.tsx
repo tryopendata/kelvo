@@ -1,11 +1,8 @@
 import { MISSING } from "@core/format";
 import { render } from "@testing-library/react";
 import { expectJsonRoundTrip } from "@tests/widget-json";
-import {
-  CoreHeatmap,
-  type CoreHeatmapProps,
-  HeatScaleLegend,
-} from "./core-heatmap";
+import { CoreHeatmap, type CoreHeatmapProps } from "./core-heatmap";
+import { HeatScaleLegend } from "./heat-matrix";
 
 const props: CoreHeatmapProps = {
   cores: [

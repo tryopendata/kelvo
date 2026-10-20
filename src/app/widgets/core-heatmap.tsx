@@ -2,8 +2,6 @@ import type { GapSpan } from "./gap-band";
 import { HeatMatrix } from "./heat-matrix";
 import type { Accent } from "./lib/accent";
 
-export { HeatScaleLegend } from "./heat-matrix";
-
 export interface CoreHeatmapProps {
   /** One row per core, P cores first. `buckets` are oldest first; `null` is no samples. */
   cores: {

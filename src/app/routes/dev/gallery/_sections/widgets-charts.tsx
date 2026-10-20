@@ -3,9 +3,9 @@ import { useState } from "react";
 import { BatteryHistoryBars } from "~/widgets/battery-history-bars";
 import { Card } from "~/widgets/card";
 import { ChartAnnotation } from "~/widgets/chart-annotation";
-import { CoreHeatmap, HeatScaleLegend } from "~/widgets/core-heatmap";
+import { CoreHeatmap } from "~/widgets/core-heatmap";
 import { GapBand } from "~/widgets/gap-band";
-import { HeatMatrix } from "~/widgets/heat-matrix";
+import { HeatMatrix, HeatScaleLegend } from "~/widgets/heat-matrix";
 import { Legend } from "~/widgets/legend";
 import { MirrorBars } from "~/widgets/mirror-bars";
 import { StreamArea } from "~/widgets/stream-area";
@@ -202,14 +202,15 @@ function PowerDrawSample() {
     <ChartCard id="gc-power" title="Power draw, last 10 minutes" accent="power">
       <Legend
         items={[
-          { label: "System", value: "14.8 W", step: 1 },
+          { label: "System", step: 1 },
           ...POWER_DRAW_APPS.map((name, i) => ({
             label: name,
             value: `${(2.6 / (i + 1)).toFixed(1)} W`,
             step: steps[i] ?? 2,
+            dashed: i >= 3,
             onFocus: () => setFocused(name),
             onBlur: () => setFocused(null),
-            onClick: () => setFocused(name),
+            onClick: () => setFocused((f) => (f === name ? null : name)),
             pressed: focused === name,
           })),
         ]}

@@ -7,7 +7,6 @@ import { SectionCard } from "~/components/section-card";
 import { useGapBands } from "~/hooks/use-gap-bands";
 import { useHeld, useLayout, useRingBuckets } from "~/hooks/use-ring";
 import { useUnits } from "~/hooks/use-units";
-import { cn } from "~/lib/utils";
 import { useHost } from "~/stores/host-store";
 import { HeatMatrix, HeatScaleLegend } from "~/widgets/heat-matrix";
 import { sensorLabel, zoneName } from "../_lib/sensors";
@@ -25,13 +24,7 @@ function labelValue(key: string): string {
  * jump; the hottest zones read from the right column. Temperatures are
  * never colored by value: intensity on the single temperature hue.
  */
-export function ZonesCard({
-  windowMs: windowProp,
-  className,
-}: {
-  windowMs: number;
-  className?: string;
-}) {
+export function ZonesCard({ windowMs: windowProp }: { windowMs: number }) {
   // Deferred for the same reason as CoreLoadCard: a window change remounts
   // every cell, which React can then split across frames.
   const windowMs = useDeferredValue(windowProp);
@@ -52,9 +45,14 @@ export function ZonesCard({
   );
   const span = `last ${windowWords(windowMs)}`;
   const temp = (c: number) => formatTemperature(c, { units });
-  // The matrix is one image, so the row tooltips' sensor names go here too.
-  const sensorNames = zoneKeys
-    .map((k, i) => `${zoneName(i)}: ${labelValue(k)}`)
+  const compact = (c: number | null) =>
+    formatTemperature(c, { units, compact: true });
+  // The matrix is one image, so the row tooltips' sensor names and the
+  // right column's readings go here too.
+  const zoneReadings = zoneKeys
+    .map(
+      (k, i) => `${zoneName(i)} (${labelValue(k)}) ${compact(now[k] ?? null)}`
+    )
     .join(", ");
 
   return (
@@ -71,7 +69,7 @@ export function ZonesCard({
       }
       headerAlign="center"
       compactHeader
-      className={cn("col-span-2 gap-3", className)}
+      className="gap-3"
     >
       <p className="-mt-1 font-normal text-[12px] text-muted-foreground">
         Apple doesn't document which zone sits over which core, so zones keep
@@ -87,13 +85,13 @@ export function ZonesCard({
           buckets: values[k] ?? [],
         }))}
         scale={TEMP_SCALE}
-        formatNow={(c) => formatTemperature(c, { units, compact: true })}
+        formatNow={compact}
         labelWidth={44}
         bucketMs={bucketMs}
         windowMs={windowMs}
         endMs={endMs}
         accent="temp"
-        ariaLabel={`SoC thermal zones, ${span}, ${bucketMs / 1000} second columns. ${sensorNames}`}
+        ariaLabel={`SoC thermal zones, ${span}, ${bucketMs / 1000} second columns. ${zoneReadings}`}
       />
       <OtherSensors
         units={units}

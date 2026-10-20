@@ -15,7 +15,6 @@ import { useEvents } from "~/hooks/use-events";
 import { useGapBands } from "~/hooks/use-gap-bands";
 import { useNiceCeiling } from "~/hooks/use-nice-ceiling";
 import { useHeld } from "~/hooks/use-ring";
-import { useSeriesStats } from "~/hooks/use-series-stats";
 import { useWindowSeries } from "~/hooks/use-window-series";
 import { DASHBOARD_CHART_HEIGHT } from "~/widgets/chart-frame";
 import { Legend, type LegendItem } from "~/widgets/legend";
@@ -37,10 +36,16 @@ const COMPONENTS = [
 ] as const;
 const HELD = [SYSTEM, ...COMPONENTS.map((c) => c.metric), "power.cpu_source"];
 const CHART = [SYSTEM];
-const STATS = [SYSTEM];
 const HEIGHT = DASHBOARD_CHART_HEIGHT;
-/** App lines cycle the lighter ramp steps; legend focus tells them apart. */
+/**
+ * App lines cycle the lighter ramp steps; the second time round they are
+ * dashed, so no two lines look the same. Legend focus tells them apart too.
+ */
 const APP_STEPS = [2, 3, 4, 2, 3] as const;
+const appStyle = (i: number) => ({
+  step: APP_STEPS[i % APP_STEPS.length] ?? 2,
+  dashed: i >= 3,
+});
 /** Over the window or the selection (D-099): `power.system` averaged and its peak. */
 const TOTALS: readonly RangeTotal[] = [
   { metric: SYSTEM, label: "Avg", format: (s) => formatWatts(s.avg) },
@@ -66,13 +71,11 @@ export function PowerDrawCard({ windowMs }: { windowMs: number }) {
   const values = series.values[SYSTEM] ?? [];
   const brush = useAreaBrush(series, HEIGHT);
   const gaps = useGapBands("power");
-  const { lines, range } = useAppLines(windowMs, {
+  const lines = useAppLines(windowMs, {
     tEndMs: series.tEndMs,
     intervalMs: series.intervalMs,
     length: values.length,
   });
-  const stats = useSeriesStats(STATS, range, { keepPrevious: true });
-  const systemAvg = stats.data?.metrics.find((m) => m.metric === SYSTEM)?.avg;
   const annotations = useSpikeAnnotations(windowMs);
   const [pinned, setPinned] = useState<string | null>(null);
   const [hovered, setHovered] = useState<string | null>(null);
@@ -91,12 +94,13 @@ export function PowerDrawCard({ windowMs }: { windowMs: number }) {
   const span = `last ${windowWords(windowMs)}`;
   const cpuNote = cpuPowerNote(v["power.cpu_source"] ?? null);
 
+  // System's figures are in the strip and the range totals; no value here.
   const legend: LegendItem[] = [
-    { label: "System", value: formatWatts(systemAvg), step: 1 },
+    { label: "System", step: 1 },
     ...apps.map((a, i) => ({
       label: a.name,
       value: formatWattsFine(a.avg),
-      step: APP_STEPS[i % APP_STEPS.length] ?? 2,
+      ...appStyle(i),
       onFocus: () => setHovered(a.name),
       onBlur: () => setHovered(null),
       onClick: () => setPinned((p) => (p === a.name ? null : a.name)),
@@ -106,12 +110,7 @@ export function PowerDrawCard({ windowMs }: { windowMs: number }) {
 
   return (
     <div {...brushScopeProps} className="contents">
-      <SectionCard
-        accent="power"
-        title={`Power draw, ${span}`}
-        hiddenTitle
-        className="col-span-2"
-      >
+      <SectionCard accent="power" title={`Power draw, ${span}`} hiddenTitle>
         <div className="flex flex-wrap items-end justify-between gap-x-7 gap-y-3">
           <StatStrip
             hero={{ label: "System", value: formatWatts(system) }}
@@ -179,8 +178,10 @@ function chartSeries(
     ...apps.map((a, i) => ({
       key: `app:${a.name}`,
       values: a.values,
-      step: APP_STEPS[i % APP_STEPS.length] ?? 2,
+      step: appStyle(i).step,
+      dash: appStyle(i).dashed,
       fill: false,
+      edges: false,
       weight: focused === a.name ? 2 : 1,
       opacity: focused === null || focused === a.name ? 1 : 0.3,
     })),

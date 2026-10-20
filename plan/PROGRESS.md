@@ -82,6 +82,14 @@ Status values: Not started, In progress, Blocked (say on what), Done (with the v
 
 ## Log
 
+### 2026-10-20 (Power page: thermal matrix, power draw chart, per-app lines)
+
+The Power page moves closer to the CPU page. SoC thermal zones render with a shared `HeatMatrix` (the per-core matrix generalized: row groups, a fixed scale, a value formatter; `CoreHeatmap` is now its CPU wrapper) on the 20 to 110 °C domain in `--color-temp`, rows in layout order; `ZoneTable` and the hottest-first resort are gone. "Power by component" was broken on the M3 Max: the stack drew any component measured once in the window and nulled every slot where one was missing, and on macOS 27 ANE, DRAM and package are emitted only when the PMP counters move (D-043), so it collapsed into isolated dots. It is replaced by a full-width power draw card laid out like the CPU total card: `power.system` (measured every tick) as the main line, the top 5 apps by CPU energy as lines from the usage ring through the new `query_usage_series` (D-115), the component watts in the stat strip, Avg/Peak and a brush that the Energy by app table follows. `StreamArea` gained per-series fill, weight, opacity, dash and edges, drops one-point runs from its paths and carries the power-spike annotations (right-anchored past mid-plot, overlapping ones dropped). Mock per-process energy now sits under mock system draw.
+
+Verified: `bun run check` (1,190 tests), `bun run test:e2e` (430 passed, 10 skipped), the engine and shell usage tests (new series and range-check tests revert-verified), `make rust-check`, `make architecture-check`, the agent-config/hooks/appstore targets. `cargo test --workspace` fails the engine perf gates' process-collector allocations per tick on this machine (1,664 processes running); unchanged `main` fails the same three gates worse in the same sitting (2.4 against 1.0 to 1.7), and a `kelvo-store` test that failed under the parallel workspace run passes alone. Screenshots: Power at 15m and 1h, light and dark, against the CPU page and the gallery entries.
+
+Left in place against the CPU page: the matrix label column is 44 px for "Zone 10"; the zones card keeps its explanatory sentence and the other-sensors footer; the power chart's y axis is the autoscaled two-tick `ceilingAxis`; a legend row and a footnote explain the app lines; app lines step at 10 s and dash from the fourth app on (one accent hue per card). Not checked in the running app on real hardware: the continuous system line and app lines over an hour on the M3 Max.
+
 ### 2026-10-19 (Disk space report: map UX pass)
 
 - The treemap shows two levels: folders with room become frames with a name row and their own largest entries, and a frame whose folder is 90% one subfolder previews that subfolder ("Users › riley"). Rust adds `SpaceNode.children` (24-entry previews, up to three levels), mirrored in the mock.

@@ -8,6 +8,7 @@ use kelvo_schema::JsSafeInt;
 use kelvo_store::{MetricStats, RangeStats};
 use serde::Serialize;
 
+use crate::error::CommandError;
 use crate::ipc::{
     AppUsage, MetricStat, ProcessUsage, SeriesStats, UsageByApp, UsageKey, UsageOther, UsageTotal,
 };
@@ -163,6 +164,25 @@ pub fn usage_series(e: kelvo_engine::UsageSeries) -> UsageSeries {
             })
             .collect(),
     }
+}
+
+/// `query_usage_series`'s range check: `invalid_argument` when `to_ms` is before
+/// `from_ms` or the range is longer than the samples are kept.
+pub fn check_series_range(from_ms: i64, to_ms: i64) -> Result<(), CommandError> {
+    if to_ms < from_ms {
+        return Err(CommandError::InvalidArgument {
+            message: format!("to_ms {to_ms} is before from_ms {from_ms}"),
+        });
+    }
+    if to_ms - from_ms > kelvo_engine::USAGE_KEEP_MS {
+        return Err(CommandError::InvalidArgument {
+            message: format!(
+                "the range is longer than the {} ms of samples kept",
+                kelvo_engine::USAGE_KEEP_MS
+            ),
+        });
+    }
+    Ok(())
 }
 
 /// Where the remainder's host series are read: the covered part of the usage range,
@@ -431,5 +451,20 @@ mod tests {
         assert_eq!(remainder_range(&e), Some((25_000, 60_000, 57_000)));
         let never = kelvo_engine::UsageByApp { covered_ms: 0, ..e };
         assert_eq!(remainder_range(&never), None);
+    }
+
+    #[test]
+    fn the_series_range_must_be_ordered_and_within_what_is_kept() {
+        let keep = kelvo_engine::USAGE_KEEP_MS;
+        assert!(matches!(
+            check_series_range(10_000, 0),
+            Err(CommandError::InvalidArgument { .. })
+        ));
+        assert!(check_series_range(0, 0).is_ok());
+        assert!(check_series_range(0, keep).is_ok());
+        assert!(matches!(
+            check_series_range(0, keep + 1),
+            Err(CommandError::InvalidArgument { .. })
+        ));
     }
 }

@@ -7,7 +7,8 @@ import { SectionCard } from "~/components/section-card";
 import { useGapBands } from "~/hooks/use-gap-bands";
 import { useHeld, useRingBuckets } from "~/hooks/use-ring";
 import { useHost } from "~/stores/host-store";
-import { CoreHeatmap, HeatScaleLegend } from "~/widgets/core-heatmap";
+import { CoreHeatmap } from "~/widgets/core-heatmap";
+import { HeatScaleLegend } from "~/widgets/heat-matrix";
 import type { ClusterView } from "../_lib/clusters";
 
 /**

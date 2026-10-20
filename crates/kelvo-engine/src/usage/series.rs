@@ -154,6 +154,34 @@ mod tests {
     }
 
     #[test]
+    fn series_leaves_a_bucket_without_gpu_empty_for_gpu() {
+        let mut ring = UsageRing::default();
+        let mut g = busy(1, "Game", 10.0, 10.0);
+        g.gpu_pct = Some(40.0);
+        ring.push(T0 + 10_000, &[g]);
+        // Processes sampled but GPU not: covered for CPU, unmeasured for GPU.
+        ring.push(T0 + 20_000, &[busy(1, "Game", 10.0, 10.0)]);
+        let s = ring.series_by_app(T0, T0 + 20_000, UsageKey::Gpu, 5);
+        let gpu = &s.apps[0].values;
+        assert_eq!(gpu.len(), 2);
+        assert!(gpu[0].is_some_and(|v| (v - 40.0).abs() < 1e-3));
+        assert_eq!(gpu[1], None, "GPU unmeasured, not 0%");
+        let cpu = ring.series_by_app(T0, T0 + 20_000, UsageKey::Cpu, 5);
+        assert!(cpu.apps[0].values.iter().all(Option::is_some));
+    }
+
+    #[test]
+    fn series_widens_an_unaligned_range_past_the_ring() {
+        let mut ring = UsageRing::default();
+        ring.push(T0 + 10_000, &[proc(1, "a", Some("A"), true, 20.0)]);
+        ring.push(T0 + 20_000, &[proc(1, "a", Some("A"), true, 30.0)]);
+        // Mid-bucket start, end three buckets past the newest one.
+        let s = ring.series_by_app(T0 + 5_000, T0 + 45_000, UsageKey::Energy, 5);
+        assert_eq!(s.from_ms, T0);
+        assert_eq!(s.apps[0].values, [Some(2.0), Some(3.0), None, None, None]);
+    }
+
+    #[test]
     fn series_spreads_a_sample_over_the_buckets_it_covers() {
         let mut ring = UsageRing::default();
         // 10 J over [T0 + 5 s, T0 + 15 s): half in each bucket, 1 W in both.

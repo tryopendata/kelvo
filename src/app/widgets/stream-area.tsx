@@ -14,6 +14,8 @@ import { useTickScroll } from "./lib/use-tick-scroll";
 
 /** Width of the drawing in viewBox units; the SVG stretches to its box. */
 const VB_W = 1000;
+/** Annotations closer than this fraction of the width would overlap. */
+const MIN_ANNOTATION_GAP = 0.1;
 
 /**
  * Contract for the live area/line chart (design-system.md inventory). The
@@ -28,9 +30,13 @@ export interface StreamAreaProps {
     step: 1 | 2 | 3 | 4;
     /**
      * Draw the area under the line (default). `false` is a bare line, as
-     * for per-app lines over a total: no area and no gap-edge dots.
+     * for per-app lines over a total.
      */
     fill?: boolean;
+    /** Hollow dots on the edges that border a gap (default true). */
+    edges?: boolean;
+    /** A dashed line, to tell apart two lines on the same ramp step. */
+    dash?: boolean;
     /** Line width in px (default 1.5). */
     weight?: number;
     /** Opacity of the line and its area (default 1), for focus emphasis. */
@@ -142,7 +148,7 @@ export function StreamArea({
       ? lines.map((pts) => areaGen(pts) ?? "").join("")
       : "";
     const edges: Pt[] = [];
-    (filled ? runs : []).forEach((pts, k) => {
+    (s.edges !== false ? runs : []).forEach((pts, k) => {
       const first = pts[0];
       const last = pts[pts.length - 1];
       if (k > 0 && first) edges.push(first);
@@ -209,6 +215,7 @@ export function StreamArea({
                 fill="none"
                 style={{ stroke }}
                 strokeWidth={s.weight ?? 1.5}
+                strokeDasharray={s.dash ? "3 2" : undefined}
                 strokeLinecap="round"
                 strokeLinejoin="round"
                 vectorEffect="non-scaling-stroke"
@@ -240,9 +247,7 @@ export function StreamArea({
           />
         ))
       )}
-      {annotations?.map((a) => {
-        const f = annotationFraction(a.tsMs, tEndMs, windowMs);
-        if (f === null) return null;
+      {placeAnnotations(annotations, tEndMs, windowMs).map(({ a, f }) => {
         // Past the middle the label hangs left of its marker, so it stays
         // inside the plot.
         const end = f > 0.5;
@@ -279,4 +284,25 @@ export function StreamArea({
       {overlay}
     </ChartFrame>
   );
+}
+
+/**
+ * Annotations inside the window with their fractions, newest first. One
+ * closer than `MIN_ANNOTATION_GAP` to a newer one is dropped, so labels of
+ * spikes close together don't overlap.
+ */
+function placeAnnotations(
+  annotations: readonly ChartAnnotationProps[] | undefined,
+  tEndMs: number,
+  windowMs: number
+): { a: ChartAnnotationProps; f: number }[] {
+  const placed: { a: ChartAnnotationProps; f: number }[] = [];
+  const newest = [...(annotations ?? [])].sort((p, q) => q.tsMs - p.tsMs);
+  for (const a of newest) {
+    const f = annotationFraction(a.tsMs, tEndMs, windowMs);
+    if (f === null) continue;
+    if (placed.some((p) => Math.abs(p.f - f) < MIN_ANNOTATION_GAP)) continue;
+    placed.push({ a, f });
+  }
+  return placed;
 }
