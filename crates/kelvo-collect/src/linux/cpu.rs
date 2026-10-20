@@ -14,8 +14,9 @@
 //!
 //! The denominator is all eight fields. Per-core loads use the same busy set and their
 //! labels come from [`super::topology`], so they match `HostInfo::cpu_topology`.
-//! Counters are `u64` and should only grow; a field that went backwards (a kernel
-//! accounting quirk, CPU hotplug) leaves that line without a value for the tick.
+//! Counters are `u64`. idle and iowait may go backwards (documented in `proc(5)`), so
+//! their deltas saturate at 0; a busy field or the total that went backwards (CPU
+//! hotplug, an accounting reset) leaves that line without a value for the tick.
 
 use std::path::PathBuf;
 
@@ -35,6 +36,7 @@ type Jiffies = [u64; 8];
 const USER: usize = 0;
 const NICE: usize = 1;
 const SYSTEM: usize = 2;
+const IDLE: usize = 3;
 const IOWAIT: usize = 4;
 const IRQ: usize = 5;
 const SOFTIRQ: usize = 6;
@@ -81,12 +83,22 @@ struct Shares {
     steal: f32,
 }
 
-/// The shares between two readings; `None` when a counter went backwards or no time
-/// passed.
+/// The shares between two readings. The kernel documents that iowait, and idle on
+/// NO_HZ kernels, can go backwards (the time moves between the two as a CPU's I/O
+/// completes), so those deltas saturate at 0. `None` when a busy field or the total
+/// went backwards (CPU hotplug, an accounting reset), or no time passed.
 fn shares(prev: &Jiffies, cur: &Jiffies) -> Option<Shares> {
+    let sum = |j: &Jiffies| j.iter().try_fold(0u64, |a, &b| a.checked_add(b));
+    if sum(cur)? < sum(prev)? {
+        return None;
+    }
     let mut d = [0u64; 8];
-    for ((d, p), c) in d.iter_mut().zip(prev).zip(cur) {
-        *d = c.checked_sub(*p)?;
+    for (i, ((d, p), c)) in d.iter_mut().zip(prev).zip(cur).enumerate() {
+        *d = match c.checked_sub(*p) {
+            Some(delta) => delta,
+            None if i == IDLE || i == IOWAIT => 0,
+            None => return None,
+        };
     }
     let all: u64 = d.iter().sum();
     if all == 0 {
@@ -358,17 +370,55 @@ mod tests {
     }
 
     #[test]
-    fn a_counter_that_went_backwards_gives_no_value() {
+    fn a_busy_counter_that_went_backwards_gives_no_value() {
         let prev = [100, 0, 100, 1000, 50, 0, 0, 0];
         let mut cur = [110, 0, 110, 1080, 50, 0, 0, 0];
         assert!(shares(&prev, &cur).is_some());
-        cur[IOWAIT] = 49;
-        assert_eq!(shares(&prev, &cur), None);
-        // Wrapped to a small number: also a regression, not a huge delta.
-        cur[IOWAIT] = 50;
+        // Wrapped to a small number: a regression, not a huge delta.
         cur[USER] = 3;
         assert_eq!(shares(&prev, &cur), None);
+        for field in [NICE, SYSTEM, IRQ, SOFTIRQ, STEAL] {
+            let mut cur = [110, 5, 110, 1080, 50, 5, 5, 5];
+            let base = [100, 5, 100, 1000, 50, 5, 5, 5];
+            cur[field] = base[field] - 1;
+            assert_eq!(shares(&base, &cur), None, "field {field}");
+        }
+        // The total went backwards even though only idle did.
+        let cur = [101, 0, 101, 900, 50, 0, 0, 0];
+        assert_eq!(shares(&prev, &cur), None, "total decreased");
         assert_eq!(shares(&prev, &prev), None, "no time passed");
+    }
+
+    /// proc(5): iowait (and idle on NO_HZ) can decrease. A few jiffies back is
+    /// saturated at 0, and the aggregate and per-core shares still come out.
+    #[test]
+    fn iowait_going_backwards_still_gives_values() {
+        let dir = testdata::tree(&[]);
+        let x86 = testdata::x86();
+        for f in ["proc/stat", "sys/devices/system/cpu/online", "proc/loadavg"] {
+            testdata::write(&dir, f, &x86.read(&format!("/{f}")).unwrap());
+        }
+        let mut c = Cpu::at(SysRoot::at(dir.path()));
+        assert!(matches!(c.probe(), Probe::Supported(_)));
+        let mut buf = SampleBuf::new();
+        c.sample(&tick(0), &mut buf).unwrap();
+        // Aggregate: +100 user, +800 idle, iowait 300 -> 297. cpu2: +100 user, +300
+        // idle, iowait 75 -> 72. cpu0: +100 user, +100 idle, idle and iowait unchanged.
+        testdata::write(
+            &dir,
+            "proc/stat",
+            "cpu  4100 100 2000 80800 297 50 50 500 0 0\n\
+             cpu0 1100 25 500 20100 75 12 13 125 0 0\n\
+             cpu1 1000 25 500 20000 75 13 12 125 0 0\n\
+             cpu2 1100 25 500 20300 72 12 13 125 0 0\n\
+             cpu3 1000 25 500 20000 75 13 12 125 0 0\n",
+        );
+        buf.clear();
+        c.sample(&tick(1), &mut buf).unwrap();
+        close(buf.get(&c.total), 100.0 * 100.0 / 900.0);
+        close(buf.get(&c.iowait), 0.0);
+        close(buf.get(&core("C2")), 100.0 * 100.0 / 400.0);
+        close(buf.get(&core("C0")), 50.0);
     }
 
     #[test]

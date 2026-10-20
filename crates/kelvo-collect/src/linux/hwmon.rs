@@ -12,15 +12,24 @@
 //! - `power<N>_input` (µW), or `power<N>_average` when the chip has no `_input` for that
 //!   channel (older amdgpu). `curr*` and `in*` are current and voltage, never power.
 //!
-//! A temperature or power sensor is named by its kernel label alone ("NAND Flash
-//! Temperature", "Total System Power"), as the macOS names read. It is qualified as
-//! `<chip>/<label>` when the label names no part ([`generic_label`]: `Composite`,
-//! `Sensor 2`, amdgpu's `edge`) or when another chip on the host carries the same label;
-//! without a label it is `<chip>/temp<N>`. A chip name that more than one hwmon directory
-//! carries is qualified by its parent device (`nvme@nvme0`, `jc42@1-0018`), which
-//! survives a reboot where the `hwmon<N>` number does not. Anything still over the label
-//! cap is bounded by [`bound_label_value`]. Fans are labelled `0`, `1`, ... (hwmon `fan1` is
-//! `0`), the macOS scheme, when one chip carries every fan; otherwise `<chip>/<N-1>`.
+//! Names depend only on the chip's class and the channel, never on which other chips
+//! are present, so a second NVMe drive or a late-loading driver renames nothing:
+//! - On a singleton platform chip ([`singleton_chip`]: the Apple SMC, `coretemp`,
+//!   `k10temp`, `zenpower`, `acpitz`, device-tree `*_thermal`), a temperature or power
+//!   sensor is its kernel label alone ("NAND Flash Temperature", "Total System Power"),
+//!   as the macOS names read; `<chip>/<label>` when the label names no part
+//!   ([`generic_label`]: `Composite`, `Sensor 2`, amdgpu's `edge`).
+//! - Every other chip can repeat or hotplug (NVMe, `drivetemp`, GPUs, `jc42`, `spd5118`,
+//!   anything unknown), so it is always `<chip>@<parent device>/<label>`
+//!   (`nvme@nvme0/Composite`, `jc42@1-0018/temp1`). The parent survives a reboot where
+//!   the `hwmon<N>` number does not.
+//! - Without a label, `<chip>/temp<N>` (qualified the same way).
+//! - Fans are always `<chip>/<N-1>` (hwmon `fan1` is 0), the same qualification.
+//!
+//! Anything still over the label cap is bounded by [`bound_label_value`]. A channel
+//! whose reading is implausible at probe still takes part in naming, so it never hands
+//! its name to another channel; it joins the series set when a rescan finds it
+//! plausible.
 //!
 //! Thermal zones (`/sys/class/thermal/thermal_zone*`) add `thermal.sensor{name =
 //! "zone/<type>"}`, `zone/<type>@<N>` when a type repeats (zone numbers have no better
@@ -116,11 +125,8 @@ fn thermal_name(s: &str) -> bool {
 #[derive(Clone, Debug, PartialEq)]
 pub(super) struct Found {
     pub(super) kind: Kind,
-    /// The label value: `name` for temperatures and power, `fan` for fans. Qualified by
-    /// the chip until [`unqualify`] runs.
+    /// The label value: `name` for temperatures and power, `fan` for fans.
     pub(super) label: String,
-    /// The kernel label, when it can stand alone ([`unqualify`]).
-    bare: Option<String>,
     input: PathBuf,
     /// `fan<N>_max`, when it reads.
     max: Option<PathBuf>,
@@ -167,37 +173,64 @@ fn channel(file: &str) -> Option<(Kind, u32, &str)> {
 }
 
 /// Every plausible sensor on the host, sorted by kind and label.
+///
+/// Names come from the chip and channel alone, never from what else is present, so a
+/// second drive or a late driver renames nothing. They are decided over every readable
+/// channel before the plausibility filter, so a bad read at probe cannot hand a
+/// channel's name to another (the dedup below keeps the first channel of a label).
 pub(super) fn scan(root: &SysRoot, parent: &ParentDevice) -> Vec<Found> {
-    let mut chips: Vec<(String, String)> = list(&root.path("/sys/class/hwmon"))
-        .into_iter()
-        .filter(|d| d.starts_with("hwmon"))
-        .filter_map(|d| Some((root.read_trimmed(&format!("/sys/class/hwmon/{d}/name"))?, d)))
-        .collect();
-    chips.sort();
     let mut out = Vec::new();
-    for (chip, dir) in &chips {
-        let id = if chips.iter().filter(|(c, _)| c == chip).count() > 1 {
-            // No parent (never seen) falls back to the directory: distinct, if unstable.
-            let dev = parent(root, dir).unwrap_or_else(|| dir.clone());
-            format!("{chip}@{dev}")
-        } else {
-            chip.clone()
+    for dir in list(&root.path("/sys/class/hwmon")) {
+        if !dir.starts_with("hwmon") {
+            continue;
+        }
+        let Some(chip) = root.read_trimmed(&format!("/sys/class/hwmon/{dir}/name")) else {
+            continue;
         };
-        chip_sensors(root, chip, &id, dir, &mut out);
+        let id = chip_id(root, parent, &chip, &dir);
+        chip_sensors(root, &chip, &id, &dir, &mut out);
     }
-    fan_labels(&mut out);
-    unqualify(&mut out);
     zones(root, &mut out);
-    for f in &mut out {
+    for (f, _) in &mut out {
         f.label = bound_label_value(&f.label).into_owned();
     }
-    out.sort_by(|a, b| (a.kind, &a.label).cmp(&(b.kind, &b.label)));
-    // Two channels of one chip with the same label: keep the first, one series per key.
-    out.dedup_by(|b, a| a.kind == b.kind && a.label == b.label);
-    out
+    out.sort_by(|(a, _), (b, _)| (a.kind, &a.label).cmp(&(b.kind, &b.label)));
+    // Two channels with the same name: keep the first, one series per key.
+    out.dedup_by(|(b, _), (a, _)| a.kind == b.kind && a.label == b.label);
+    out.into_iter()
+        .filter_map(|(f, plausible)| plausible.then_some(f))
+        .collect()
 }
 
-fn chip_sensors(root: &SysRoot, chip: &str, id: &str, dir: &str, out: &mut Vec<Found>) {
+/// Platform chips a host has at most one of, which never hotplug: their sensors keep
+/// the bare kernel label. `macsmc_hwmon` is the Apple SMC (Asahi), the rest CPU/SoC die
+/// sensors, ACPI's thermal zone and device-tree thermal zones (`cpu_thermal`,
+/// `soc_thermal`, `gpu_thermal`).
+fn singleton_chip(chip: &str) -> bool {
+    matches!(
+        chip,
+        "macsmc_hwmon" | "macsmc" | "coretemp" | "k10temp" | "zenpower" | "acpitz" | "x86_pkg_temp"
+    ) || chip.ends_with("_thermal")
+        || thermal_name(chip)
+}
+
+/// What a chip's sensors are qualified by: the bare chip for a [`singleton_chip`], else
+/// `<chip>@<parent device>` (`nvme@nvme0`, `jc42@1-0018`, `amdgpu@0000:03:00.0`), for
+/// chips that can repeat or arrive later (NVMe, `drivetemp`, GPUs, DIMM sensors, and
+/// anything unknown). The parent survives a reboot where the `hwmon<N>` number does not;
+/// without one (never seen live) the chip alone.
+fn chip_id(root: &SysRoot, parent: &ParentDevice, chip: &str, dir: &str) -> String {
+    if singleton_chip(chip) {
+        return chip.to_owned();
+    }
+    match parent(root, dir) {
+        Some(dev) => format!("{chip}@{dev}"),
+        None => chip.to_owned(),
+    }
+}
+
+/// Appends each readable channel of one chip, with whether its reading is plausible.
+fn chip_sensors(root: &SysRoot, chip: &str, id: &str, dir: &str, out: &mut Vec<(Found, bool)>) {
     let base = root.path(&format!("/sys/class/hwmon/{dir}"));
     let files = list(&base);
     for file in &files {
@@ -210,30 +243,37 @@ fn chip_sensors(root: &SysRoot, chip: &str, id: &str, dir: &str, out: &mut Vec<F
             continue;
         }
         let input = base.join(file);
-        if read(kind, &input).is_none() {
+        let Some(raw) = read_i64_at(&input) else {
             continue;
-        }
+        };
+        let plausible = kind.plausible(kind.convert(raw));
         let prefix = file.split('_').next().unwrap_or_default();
         let kernel = root.read_trimmed(&format!("/sys/class/hwmon/{dir}/{prefix}_label"));
-        let label = kernel.as_deref().unwrap_or(prefix);
-        let system = kind == Kind::Power && is_system_power(chip, label);
+        let system =
+            kind == Kind::Power && kernel.as_deref().is_some_and(|l| is_system_power(chip, l));
         let (label, max) = if kind == Kind::Fan {
+            // `<chip>/<N-1>` (hwmon `fan1` is 0, the macOS scheme): fan labels are
+            // mostly just "Fan".
             let max = base.join(format!("fan{n}_max"));
             let max = read(kind, &max).filter(|m| *m > 0.0).map(|_| max);
             (format!("{id}/{}", n.saturating_sub(1)), max)
         } else {
-            (format!("{id}/{label}"), None)
+            let label = match kernel {
+                Some(l) if singleton_chip(chip) && !generic_label(&l) => l,
+                Some(l) => format!("{id}/{l}"),
+                None => format!("{id}/{prefix}"),
+            };
+            (label, None)
         };
-        let bare = kernel.filter(|l| kind != Kind::Fan && !generic_label(l));
-        out.push(Found {
+        let found = Found {
             kind,
             system,
             cpu_class: kind == Kind::Temp && cpu_class_chip(chip),
             label,
-            bare,
             input,
             max,
-        });
+        };
+        out.push((found, plausible));
     }
 }
 
@@ -246,50 +286,12 @@ fn is_system_power(chip: &str, label: &str) -> bool {
 
 /// Labels that say which reading of a device this is but not which device: NVMe's
 /// `Composite` and `Sensor <N>`, amdgpu's `edge`, `junction` and `mem`. Kept with their
-/// chip.
+/// chip even on a [`singleton_chip`].
 fn generic_label(label: &str) -> bool {
     matches!(label, "Composite" | "edge" | "junction" | "mem") || label.starts_with("Sensor ")
 }
 
-/// Drops the chip from a sensor whose kernel label no other chip on the host carries for
-/// the same kind. Two channels of one chip with one label share a qualified name and
-/// count once; the later dedup keeps the first.
-fn unqualify(out: &mut [Found]) {
-    let shared = |f: &Found, b: &str| {
-        out.iter()
-            .any(|o| o.kind == f.kind && o.bare.as_deref() == Some(b) && o.label != f.label)
-    };
-    let bare: Vec<Option<String>> = out
-        .iter()
-        .map(|f| f.bare.clone().filter(|b| !shared(f, b)))
-        .collect();
-    for (f, b) in out.iter_mut().zip(bare) {
-        if let Some(b) = b {
-            f.label = b;
-        }
-    }
-}
-
-/// Fans carry `<chip>/<N-1>`; when they all share one chip, the bare `<N-1>`.
-fn fan_labels(out: &mut [Found]) {
-    let chip = |f: &Found| f.label.rsplit_once('/').map(|(c, _)| c.to_owned());
-    let mut chips: Vec<String> = out
-        .iter()
-        .filter(|f| f.kind == Kind::Fan)
-        .filter_map(chip)
-        .collect();
-    chips.dedup();
-    if chips.len() != 1 {
-        return;
-    }
-    for f in out.iter_mut().filter(|f| f.kind == Kind::Fan) {
-        if let Some((_, n)) = f.label.rsplit_once('/') {
-            f.label = n.to_owned();
-        }
-    }
-}
-
-fn zones(root: &SysRoot, out: &mut Vec<Found>) {
+fn zones(root: &SysRoot, out: &mut Vec<(Found, bool)>) {
     let base = root.path("/sys/class/thermal");
     let mut found: Vec<(u32, String)> = list(&base)
         .into_iter()
@@ -303,11 +305,11 @@ fn zones(root: &SysRoot, out: &mut Vec<Found>) {
     found.sort();
     for (n, ty) in &found {
         let input = base.join(format!("thermal_zone{n}/temp"));
-        if read(Kind::Temp, &input).is_none() {
+        let Some(raw) = read_i64_at(&input) else {
             continue;
-        }
+        };
         let repeats = found.iter().filter(|(_, t)| t == ty).count() > 1;
-        out.push(Found {
+        let zone = Found {
             kind: Kind::Temp,
             label: if repeats {
                 format!("zone/{ty}@{n}")
@@ -316,10 +318,10 @@ fn zones(root: &SysRoot, out: &mut Vec<Found>) {
             },
             input,
             max: None,
-            bare: None,
             cpu_class: cpu_class_zone(ty),
             system: false,
-        });
+        };
+        out.push((zone, Kind::Temp.plausible(Kind::Temp.convert(raw))));
     }
 }
 
@@ -582,9 +584,9 @@ mod tests {
         };
         let nand = temp("NAND Flash Temperature");
         let wifi = temp("WiFi/BT Module Temp");
-        let nvme = temp("nvme/Composite");
-        let rpm = key("fan.rpm", "fan", "0");
-        let max = key("fan.max", "fan", "0");
+        let nvme = temp("nvme@nvme0/Composite");
+        let rpm = key("fan.rpm", "fan", "macsmc_hwmon/0");
+        let max = key("fan.max", "fan", "macsmc_hwmon/0");
         assert_eq!(
             sorted(series),
             sorted(vec![
@@ -624,8 +626,8 @@ mod tests {
         assert_eq!(buf.values().len(), 3, "curr1 is not power");
     }
 
-    /// The names linux-tailscale shows: kernel labels as they read, the NVMe's generic
-    /// `Composite` with its chip.
+    /// The names linux-tailscale shows: the SMC's kernel labels as they read, the NVMe
+    /// drive under its chip and parent device, the SMC fan under its chip.
     #[test]
     fn fixture_names_are_kernel_labels() {
         let found = scan(&asahi_t0(), &fixture_parents());
@@ -635,8 +637,8 @@ mod tests {
             [
                 (Kind::Temp, "NAND Flash Temperature"),
                 (Kind::Temp, "WiFi/BT Module Temp"),
-                (Kind::Temp, "nvme/Composite"),
-                (Kind::Fan, "0"),
+                (Kind::Temp, "nvme@nvme0/Composite"),
+                (Kind::Fan, "macsmc_hwmon/0"),
                 (Kind::Power, "3.8 V Rail Power"),
                 (Kind::Power, "AC Input Power"),
                 (Kind::Power, "Total System Power"),
@@ -644,40 +646,52 @@ mod tests {
         );
     }
 
-    /// A label is qualified by its chip when it is generic, when another chip carries
-    /// it, or when it is missing; one chip repeating its own label stays bare. A label
-    /// over the cap is still bounded.
+    /// The names of every channel `scan` reports, by kind.
+    fn names(root: &SysRoot, parent: &ParentDevice) -> Vec<(Kind, String)> {
+        scan(root, parent)
+            .into_iter()
+            .map(|f| (f.kind, f.label))
+            .collect()
+    }
+
+    /// Every hwmon directory's parent is `p<N>` for `hwmon<N>`, as stable as a real device link.
+    fn dev_parents() -> ParentDevice {
+        Box::new(|_, d| Some(format!("p{}", d.trim_start_matches("hwmon"))))
+    }
+
+    /// Qualification follows the chip's class. A singleton platform chip keeps bare
+    /// kernel labels (prefixed only when generic or missing); every other chip is
+    /// `<chip>@<parent>/...`, and a label over the cap is still bounded.
     #[test]
-    fn labels_qualified_only_when_ambiguous() {
+    fn names_follow_the_chip_class() {
         let dir = tree(&[]);
         let long = "Southbridge Platform Controller Hub Temperature";
         chip(
             &dir,
             "hwmon0",
-            "nct6775",
+            "k10temp",
             &[
                 ("temp1_input", "40000"),
-                ("temp1_label", "CPUTIN"),
+                ("temp1_label", "Tctl"),
                 ("temp2_input", "41000"),
-                ("temp2_label", "SYSTIN"),
+                ("temp2_label", "Tccd1"),
                 ("temp3_input", "42000"),
-                ("temp3_label", "AUXTIN"),
+                ("temp3_label", long),
                 ("temp4_input", "43000"),
-                ("temp4_label", "AUXTIN"),
+                ("temp4_label", "Sensor 4"),
                 ("temp5_input", "44000"),
-                ("temp5_label", long),
-                ("power1_input", "5000000"),
-                ("power1_label", "SYSTIN"),
             ],
         );
         chip(
             &dir,
             "hwmon1",
-            "it8792",
+            "nct6775",
             &[
                 ("temp1_input", "50000"),
                 ("temp1_label", "SYSTIN"),
                 ("temp2_input", "51000"),
+                ("power1_input", "5000000"),
+                ("power1_label", "SYSTIN"),
             ],
         );
         chip(
@@ -689,27 +703,109 @@ mod tests {
         chip(
             &dir,
             "hwmon3",
-            "nvme",
-            &[("temp2_input", "45000"), ("temp2_label", "Sensor 1")],
+            "macsmc_hwmon",
+            &[("temp1_input", "45000"), ("temp1_label", "Composite")],
         );
-        let found = scan(&SysRoot::at(dir.path()), &no_parents());
-        let labels: Vec<(Kind, &str)> = found.iter().map(|f| (f.kind, f.label.as_str())).collect();
+        let got = names(&SysRoot::at(dir.path()), &dev_parents());
         let bounded = bound_label_value(long);
         assert!(bounded.len() <= kelvo_schema::LABEL_VALUE_MAX);
-        let mut want = vec![
-            (Kind::Temp, "AUXTIN"),
-            (Kind::Temp, "CPUTIN"),
+        let mut want: Vec<(Kind, String)> = [
+            (Kind::Temp, "Tctl"),
+            (Kind::Temp, "Tccd1"),
             (Kind::Temp, &*bounded),
-            (Kind::Temp, "amdgpu/edge"),
-            (Kind::Temp, "it8792/SYSTIN"),
-            (Kind::Temp, "it8792/temp2"),
-            (Kind::Temp, "nct6775/SYSTIN"),
-            (Kind::Temp, "nvme/Sensor 1"),
-            // Another kind's label does not count as a repeat.
-            (Kind::Power, "SYSTIN"),
-        ];
+            (Kind::Temp, "k10temp/Sensor 4"),
+            (Kind::Temp, "k10temp/temp5"),
+            (Kind::Temp, "nct6775@p1/SYSTIN"),
+            (Kind::Temp, "nct6775@p1/temp2"),
+            (Kind::Temp, "amdgpu@p2/edge"),
+            (Kind::Temp, "macsmc_hwmon/Composite"),
+            (Kind::Power, "nct6775@p1/SYSTIN"),
+        ]
+        .into_iter()
+        .map(|(k, l)| (k, l.to_owned()))
+        .collect();
         want.sort();
-        assert_eq!(labels, want);
+        assert_eq!(got, want);
+    }
+
+    /// A second NVMe drive, a late-loading GPU driver, a DIMM sensor and a second fan
+    /// chip arriving rename nothing that was already there, and fans keep their chip
+    /// whether it is the only fan chip or not.
+    #[test]
+    fn new_chips_rename_nothing() {
+        let dir = tree(&[]);
+        let root = SysRoot::at(dir.path());
+        let composite = |t| [("temp1_input", t), ("temp1_label", "Composite")];
+        chip(&dir, "hwmon0", "nvme", &composite("40000"));
+        chip(
+            &dir,
+            "hwmon1",
+            "coretemp",
+            &[("temp1_input", "50000"), ("temp1_label", "Package id 0")],
+        );
+        chip(&dir, "hwmon2", "nct6775", &[("fan1_input", "900")]);
+        let before = names(&root, &dev_parents());
+        assert_eq!(
+            before,
+            [
+                (Kind::Temp, "Package id 0".to_owned()),
+                (Kind::Temp, "nvme@p0/Composite".to_owned()),
+                (Kind::Fan, "nct6775@p2/0".to_owned()),
+            ]
+        );
+        chip(&dir, "hwmon3", "nvme", &composite("41000"));
+        chip(
+            &dir,
+            "hwmon4",
+            "amdgpu",
+            &[("temp1_input", "60000"), ("fan1_input", "1200")],
+        );
+        chip(&dir, "hwmon5", "jc42", &[("temp1_input", "35000")]);
+        chip(
+            &dir,
+            "hwmon6",
+            "spd5118",
+            &[("temp1_input", "36000"), ("temp1_label", "Package id 0")],
+        );
+        let after = names(&root, &dev_parents());
+        for name in &before {
+            assert!(after.contains(name), "{name:?} renamed: {after:?}");
+        }
+        assert!(after.contains(&(Kind::Temp, "nvme@p3/Composite".to_owned())));
+        assert!(after.contains(&(Kind::Fan, "amdgpu@p4/0".to_owned())));
+        assert!(after.contains(&(Kind::Temp, "spd5118@p6/Package id 0".to_owned())));
+    }
+
+    /// A bad read at probe drops only that channel from the series set: it keeps its
+    /// name, so a later channel of the same chip with the same label does not take it,
+    /// and no other chip's name moves.
+    #[test]
+    fn an_implausible_read_at_probe_changes_no_name() {
+        let dir = tree(&[]);
+        let root = SysRoot::at(dir.path());
+        let files = |first: &'static str| {
+            [
+                ("temp1_input", first),
+                ("temp1_label", "Composite"),
+                ("temp2_input", "41000"),
+                ("temp2_label", "Composite"),
+            ]
+        };
+        chip(&dir, "hwmon0", "nvme", &files("40000"));
+        chip(&dir, "hwmon1", "nvme", &files("42000"));
+        let input = |f: &Found| f.input.clone();
+        let good: Vec<_> = scan(&root, &dev_parents())
+            .iter()
+            .map(|f| (f.label.clone(), input(f)))
+            .collect();
+        assert_eq!(good.len(), 2);
+        chip(&dir, "hwmon0", "nvme", &files("0"));
+        let glitch: Vec<_> = scan(&root, &dev_parents())
+            .iter()
+            .map(|f| (f.label.clone(), input(f)))
+            .collect();
+        // hwmon0's name is not handed to its temp2, and hwmon1 is untouched.
+        assert_eq!(glitch, good[1..]);
     }
 
     fn chip(dir: &tempfile::TempDir, hwmon: &str, name: &str, files: &[(&str, &str)]) {

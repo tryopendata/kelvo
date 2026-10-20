@@ -15,9 +15,10 @@
 //! one difference from the macOS totals, which sum every reported interface (macOS
 //! reports no tunnels).
 //!
-//! Counters are 64-bit in the kernel, but some drivers keep 32-bit ones: a decrease
-//! from a value below 2^32 is a 32-bit wrap, any other decrease a reset (no rate that
-//! sample). Rates above about 400 Gbit/s are dropped as counter glitches.
+//! The sysfs statistics are 64-bit (`rtnl_link_stats64`) on 64-bit kernels, so every
+//! decrease is a reset, such as `tailscale0` restarting: no rate that sample, and the
+//! next one is measured from the new value. Rates above about 400 Gbit/s are dropped as
+//! counter glitches.
 //!
 //! `net.link_rate` is the `speed` attribute (Mb/s), at most every 60 s; absent when it
 //! is unreadable or `-1` (tunnels, Wi-Fi, a link that is down).
@@ -95,15 +96,11 @@ pub(super) fn scan(root: &SysRoot, link: &DeviceLink) -> Vec<Iface> {
     out
 }
 
-/// Counter delta with 32-bit wrap handling; `None` means a reset.
+/// Counter delta; `None` for any decrease, which is a reset (the interface was
+/// recreated or its driver reloaded), so that sample has no rate and the next one
+/// starts from the new value.
 fn counter_delta(prev: u64, cur: u64) -> Option<u64> {
-    if cur >= prev {
-        Some(cur - prev)
-    } else if prev <= u64::from(u32::MAX) {
-        Some(cur + (1u64 << 32) - prev)
-    } else {
-        None
-    }
+    cur.checked_sub(prev)
 }
 
 /// rx bytes, tx bytes, rx packets, tx packets.
@@ -595,11 +592,46 @@ mod tests {
     }
 
     #[test]
-    fn counter_wraps_at_32_bits_and_resets_otherwise() {
+    fn any_decrease_is_a_reset() {
         assert_eq!(counter_delta(100, 150), Some(50));
-        assert_eq!(counter_delta(u64::from(u32::MAX) - 9, 5), Some(15));
+        assert_eq!(counter_delta(u64::from(u32::MAX) - 9, 5), None);
         assert_eq!(counter_delta(1 << 40, 5), None);
         assert_eq!(since(&[1 << 40, 0, 0, 0], &[5, 0, 0, 0]), None);
+    }
+
+    /// A tunnel restarting (tailscale0) zeroes its counters from a small value. That is
+    /// a gap for one sample, not a ~4.29 GB spike, and the next sample is measured from
+    /// the new baseline.
+    #[test]
+    fn an_interface_reset_gaps_and_rebaselines() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = SysRoot::at(dir.path());
+        let set = |rx: u64| {
+            let base = "/sys/class/net/eth0";
+            std::fs::create_dir_all(root.path(&format!("{base}/statistics"))).unwrap();
+            std::fs::write(root.path(&format!("{base}/type")), "1\n").unwrap();
+            for (s, v) in STATS.iter().zip([rx, rx, rx, rx]) {
+                std::fs::write(root.path(&format!("{base}/statistics/{s}")), v.to_string())
+                    .unwrap();
+            }
+        };
+        set(50_000);
+        let link: DeviceLink = Box::new(|_, i| i == "eth0");
+        let mut c = Network::with(root.clone(), link);
+        c.probe();
+        let mut buf = SampleBuf::new();
+        c.sample(&tick(0, 1), &mut buf).unwrap();
+        set(1_000);
+        buf.clear();
+        c.sample(&tick(1, 2), &mut buf).unwrap();
+        assert_eq!(get(&buf, "net.rx{iface=eth0}"), None);
+        assert_eq!(get(&buf, "net.rx_total"), None);
+        assert!(buf.iface_net().is_none());
+        set(4_000);
+        buf.clear();
+        c.sample(&tick(2, 3), &mut buf).unwrap();
+        assert_eq!(get(&buf, "net.rx{iface=eth0}"), Some(3_000.));
+        assert_eq!(buf.iface_net().unwrap().rx_bytes, 3_000);
     }
 
     #[test]

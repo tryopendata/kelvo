@@ -179,11 +179,14 @@ function sensors(add: Add) {
   for (const [name, v] of [
     ["NAND Flash Temperature", 40],
     ["WiFi/BT Module Temp", 42],
-    ["nvme/Composite", 38],
+    ["nvme@nvme0/Composite", 38],
   ] as const)
     add("sensors", "thermal.sensor", { name }, v, { noise: 0.5, cadence: 5 });
-  add("sensors", "fan.rpm", { fan: "0" }, 1702, { noise: 20, cadence: 2 });
-  add("sensors", "fan.max", { fan: "0" }, 4499, { cadence: 60 });
+  add("sensors", "fan.rpm", { fan: "macsmc_hwmon/0" }, 1702, {
+    noise: 20,
+    cadence: 2,
+  });
+  add("sensors", "fan.max", { fan: "macsmc_hwmon/0" }, 4499, { cadence: 60 });
 }
 
 function network(add: Add, total: Total) {
