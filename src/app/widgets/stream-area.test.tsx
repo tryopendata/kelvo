@@ -229,6 +229,62 @@ describe("StreamArea", () => {
     expect(getByText("apart")).toBeInTheDocument();
   });
 
+  it("drops labels that would meet, by the side each hangs on", () => {
+    // Window 4 s. 0.12 apart on one side, and 0.2 apart facing each other
+    // across the middle: both pairs overlap at about a quarter plot wide.
+    const { getByText, queryByText } = render(
+      <StreamArea
+        {...props}
+        annotations={[
+          { tsMs: props.tEndMs - 4_000, label: "left old" },
+          { tsMs: props.tEndMs - 3_520, label: "left new" },
+          { tsMs: props.tEndMs - 2_200, label: "facing old" },
+          { tsMs: props.tEndMs - 1_400, label: "facing new" },
+        ]}
+      />
+    );
+    expect(getByText("facing new")).toBeInTheDocument();
+    expect(queryByText("facing old")).toBeNull();
+    expect(getByText("left new")).toBeInTheDocument();
+    expect(queryByText("left old")).toBeNull();
+  });
+
+  it("moves the dash pattern with the data as the window scrolls", () => {
+    const original = globalThis.ResizeObserver;
+    globalThis.ResizeObserver = class {
+      constructor(private cb: ResizeObserverCallback) {}
+      observe() {
+        this.cb(
+          [{ contentRect: { width: 401 } } as ResizeObserverEntry],
+          this as unknown as ResizeObserver
+        );
+      }
+      unobserve() {}
+      disconnect() {}
+    } as unknown as typeof ResizeObserver;
+    try {
+      // 401 px over 3 values: 200.5 px per slot, so each tick moves the
+      // pattern 0.5 px along its 5 px period.
+      const dashed = (tEndMs: number) => (
+        <StreamArea
+          {...props}
+          tEndMs={tEndMs}
+          series={[{ key: "b", values: [3, 2, 1], step: 2, dash: true }]}
+        />
+      );
+      const { container, rerender } = render(dashed(1_000));
+      const offset = () =>
+        container
+          .querySelector('[data-series="b"] [data-line]')
+          ?.getAttribute("stroke-dashoffset");
+      expect(offset()).toBe("0.50");
+      rerender(dashed(2_000));
+      expect(offset()).toBe("1.00");
+    } finally {
+      globalThis.ResizeObserver = original;
+    }
+  });
+
   it("anchors an annotation past the middle by its right edge", () => {
     const { getByText } = render(
       <StreamArea

@@ -1,7 +1,13 @@
 import { splitGaps } from "@core/chart-math";
 import { scaleLinear } from "d3-scale";
 import { area, line } from "d3-shape";
-import { type ReactNode, useId } from "react";
+import {
+  type ReactNode,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import {
   annotationFraction,
   ChartAnnotation,
@@ -15,7 +21,14 @@ import { useTickScroll } from "./lib/use-tick-scroll";
 /** Width of the drawing in viewBox units; the SVG stretches to its box. */
 const VB_W = 1000;
 /** Annotations closer than this fraction of the width would overlap. */
-const MIN_ANNOTATION_GAP = 0.1;
+/**
+ * Width a spike label is taken to cover, as a fraction of the plot
+ * ("ANE 1.4 W · Photos face analysis" is about 170 px on a ~900 px plot).
+ */
+const ANNOTATION_SPAN = 0.25;
+/** The dash pattern's length in screen px ("3 2"). */
+const DASH = [3, 2] as const;
+const DASH_PERIOD = DASH[0] + DASH[1];
 
 /**
  * Contract for the live area/line chart (design-system.md inventory). The
@@ -131,6 +144,14 @@ export function StreamArea({
     intervalMs,
     `${step.toFixed(2)}px`
   );
+  const [svgRef, widthPx] = useWidth<SVGSVGElement>();
+  // Dashes are in screen px from the path's start, which stays at the left
+  // edge while the data moves a slot left each tick. Offsetting the pattern
+  // by the slots scrolled so far keeps the dashes on the data.
+  const dashOffset =
+    widthPx > 0 && intervalMs > 0
+      ? (Math.round(tEndMs / intervalMs) * (widthPx / (n - 1))) % DASH_PERIOD
+      : 0;
 
   const drawn = series.map((s) => {
     // Right-align: the last value sits at "now" even when the series is short.
@@ -174,6 +195,7 @@ export function StreamArea({
       style={accentVars(accent)}
     >
       <svg
+        ref={svgRef}
         viewBox={`0 0 ${VB_W} ${height}`}
         preserveAspectRatio="none"
         width="100%"
@@ -215,7 +237,8 @@ export function StreamArea({
                 fill="none"
                 style={{ stroke }}
                 strokeWidth={s.weight ?? 1.5}
-                strokeDasharray={s.dash ? "3 2" : undefined}
+                strokeDasharray={s.dash ? DASH.join(" ") : undefined}
+                strokeDashoffset={s.dash ? dashOffset.toFixed(2) : undefined}
                 strokeLinecap="round"
                 strokeLinejoin="round"
                 vectorEffect="non-scaling-stroke"
@@ -287,9 +310,9 @@ export function StreamArea({
 }
 
 /**
- * Annotations inside the window with their fractions, newest first. One
- * closer than `MIN_ANNOTATION_GAP` to a newer one is dropped, so labels of
- * spikes close together don't overlap.
+ * Annotations inside the window with their fractions, newest first. A label
+ * hangs right of its marker in the left half and left of it past the middle;
+ * one whose span (`ANNOTATION_SPAN`) would overlap a newer label's is dropped.
  */
 function placeAnnotations(
   annotations: readonly ChartAnnotationProps[] | undefined,
@@ -301,8 +324,37 @@ function placeAnnotations(
   for (const a of newest) {
     const f = annotationFraction(a.tsMs, tEndMs, windowMs);
     if (f === null) continue;
-    if (placed.some((p) => Math.abs(p.f - f) < MIN_ANNOTATION_GAP)) continue;
+    const [lo, hi] = labelSpan(f);
+    if (
+      placed.some((p) => {
+        const [plo, phi] = labelSpan(p.f);
+        return lo < phi && plo < hi;
+      })
+    ) {
+      continue;
+    }
     placed.push({ a, f });
   }
   return placed;
+}
+
+/** The plot fractions a label at `f` covers, by the side it hangs on. */
+function labelSpan(f: number): [number, number] {
+  return f > 0.5 ? [f - ANNOTATION_SPAN, f] : [f, f + ANNOTATION_SPAN];
+}
+
+/** The element's rendered width in px, 0 until measured. */
+function useWidth<T extends Element>() {
+  const ref = useRef<T>(null);
+  const [width, setWidth] = useState(0);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(([entry]) => {
+      if (entry) setWidth(entry.contentRect.width);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  return [ref, width] as const;
 }

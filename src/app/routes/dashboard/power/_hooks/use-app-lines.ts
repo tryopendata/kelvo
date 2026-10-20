@@ -69,7 +69,7 @@ export function useAppLines(windowMs: number, grid: SlotGrid): AppLines {
   if (!local) lines = { kind: "remote" };
   else if (q.isError) lines = { kind: "error" };
   else if (!data) lines = { kind: "loading" };
-  else if (apps.every((a) => a.avg === null)) lines = { kind: "empty" };
+  else if (apps.length === 0) lines = { kind: "empty" };
   else lines = { kind: "ok", apps };
   return lines;
 }

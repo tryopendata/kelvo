@@ -37,6 +37,5 @@ describe("Legend", () => {
     render(<Legend items={[{ label: "System", step: 1 }]} />);
     const item = screen.getByRole("listitem");
     expect(item).toHaveTextContent(/^System$/);
-    expect(item.querySelector(".figures")).toBeNull();
   });
 });

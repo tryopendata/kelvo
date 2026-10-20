@@ -344,10 +344,10 @@ Components under `src/app/widgets/` are render-only. They take plain props and c
 | `RingStatCard` | Ring plus title, description and one key/value | yes | `{ title; description; ring: RingGaugeProps; kv: { label; value } }` |
 | `InlineBar` | Label, value, horizontal bar | yes | `{ label; value: string; fraction: number; accent; rampStep?: 1..4 }` |
 | `StackBar` | Composition bar with legend | yes | `{ segments: { key; label; value: string; fraction; step: 1..4 \| 'hatch' }[]; accent; showLegend }` |
-| `Legend` | Swatch, label, value rows | yes | `{ items: { label; value: string; step: 1..4 \| 'hatch' }[]; accent; columns: 1 \| 2 }` |
+| `Legend` | Swatch, label, value rows | yes | `{ items: { label; value?: string; step: 1..4 \| 'hatch'; dashed?; onFocus?; onBlur?; onClick?; pressed? }[]; accent; columns: 1 \| 2 }` |
 | `StatGrid` | Two or three tabular KPI cells with field labels | yes | `{ items: { label; value: string; unit?: string }[] }` |
 | `StatStrip` | Page-level KPI strip above a chart | yes | `{ hero?: { value; unit }; items: { label; value; muted?: boolean; swatch?: step }[] }` |
-| `StreamArea` | Live area or line chart, scrolls with translateX | yes | `{ series: { values: (number \| null)[]; step: 1..4; fill?; weight?; opacity? }[]; annotations?; tEndMs: number; intervalMs: number; yMax: number \| 'auto'; accent; height; ariaLabel }` |
+| `StreamArea` | Live area or line chart, scrolls with translateX | yes | `{ series: { key; values: (number \| null)[]; step: 1..4; fill?; edges?; dash?; weight?; opacity? }[]; annotations?; tEndMs: number; intervalMs: number; yMax: number \| 'auto'; accent; height; ariaLabel }` |
 | `MirrorBars` | Up bars above a baseline, down below | yes | `{ up: (number \| null)[]; down: (number \| null)[]; intervalMs; accent; ariaLabel }` |
 | `CoreTiles` | Per-core load tiles grouped by cluster | yes | `{ clusters: { name: string; freqGhz: number; cores: { id: string; load: number }[] }[] }` |
 | `HeatMatrix` | Metric over time, one row per series, one cell per bucket; tint scales over a fixed domain | no (`formatNow` is a function) | `{ rows: { id; label; group?; title?; now: number \| null; buckets: (number \| null)[] }[]; scale: { min; max }; formatNow: (v: number) => string; labelWidth?; bucketMs; windowMs; endMs?: number \| null; gaps?: GapSpan[]; accent; ariaLabel }` |
