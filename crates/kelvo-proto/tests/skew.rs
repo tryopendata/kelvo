@@ -52,6 +52,7 @@ fn caps() -> Capabilities {
         // Absent from the sender: a pre-D-115 peer keeps its columns.
         process_energy: true,
         process_wakeups: true,
+        process_disk_io: true,
         disk_devices: Vec::new(),
     }
 }
@@ -908,6 +909,8 @@ fn hello_linux() -> Message {
             process_gpu: false,
             process_energy: false,
             process_wakeups: false,
+            // The fixture predates the field, so it decodes as the default.
+            process_disk_io: true,
             disk_devices: vec![DiskDevice {
                 dev: "nvme0n1".into(),
                 name: "APPLE SSD AP0512Q".into(),
@@ -917,6 +920,51 @@ fn hello_linux() -> Message {
         },
         features: BTreeSet::from(["rows.buckets".to_string(), "rows.gaps".to_string()]),
     }))
+}
+
+fn capabilities_linux() -> Message {
+    Message::CapabilitiesChanged(Capabilities {
+        modules: BTreeMap::from([(Module::Cpu, ModuleCap::Available { series: 12 })]),
+        revision: 4,
+        process_network: false,
+        process_gpu: false,
+        process_energy: false,
+        process_wakeups: false,
+        process_disk_io: false,
+        disk_devices: Vec::new(),
+    })
+}
+
+/// D-115's `process_disk_io`: absent from every older sender's capabilities (a Mac, the
+/// first Linux agents), where it reads as true; and a false from a newer agent is
+/// ignored by a build that predates it.
+#[test]
+fn process_disk_io_skew() {
+    for name in ["hello", "capabilities_changed", "hello_linux"] {
+        let body = std::fs::read(fixtures_dir().join(format!("{name}.cbor"))).unwrap();
+        let caps = match decode_message(&body).unwrap() {
+            Message::Hello(h) => h.capabilities,
+            Message::CapabilitiesChanged(c) => c,
+            other => panic!("{name}: {other:?}"),
+        };
+        assert!(caps.process_disk_io, "{name}");
+    }
+    #[derive(serde::Deserialize)]
+    struct PreCaps {
+        revision: u64,
+        process_energy: bool,
+    }
+    #[derive(serde::Deserialize)]
+    struct Envelope {
+        t: String,
+        c: PreCaps,
+    }
+    let body = std::fs::read(fixtures_dir().join("capabilities_linux.cbor")).unwrap();
+    let old: Envelope = ciborium::from_reader(body.as_slice()).unwrap();
+    assert_eq!(
+        (old.t.as_str(), old.c.revision, old.c.process_energy),
+        ("CapabilitiesChanged", 4, false)
+    );
 }
 
 /// D-115, the forward direction: a pre-D-115 peer's `hello` (the v1 fixture) decodes with
@@ -1028,6 +1076,8 @@ fn remote_samples() -> Vec<(&'static str, Message)> {
     vec![
         // A Linux agent's handshake (D-115).
         ("hello_linux", hello_linux()),
+        // A non-root agent: no energy, wakeup or disk columns (D-115).
+        ("capabilities_linux", capabilities_linux()),
         (
             "live_remote",
             Message::Live(LiveFrame {

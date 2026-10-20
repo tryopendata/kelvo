@@ -96,6 +96,7 @@ fn expected_caps() -> Capabilities {
         // Absent from the sender: a pre-D-115 peer keeps its columns.
         process_energy: true,
         process_wakeups: true,
+        process_disk_io: true,
         disk_devices: Vec::new(),
     }
 }

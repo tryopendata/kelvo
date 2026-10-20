@@ -1412,7 +1412,7 @@ fn capability_facts_follow_the_collectors_probe() {
     let mut h = Harness::new("cap-facts", vec![disk, procs], &settings_all_on());
     let before = h.ctl.capabilities();
     assert_eq!(before.disk_devices, vec![device]);
-    assert!(before.process_energy && before.process_wakeups);
+    assert!(before.process_energy && before.process_wakeups && before.process_disk_io);
 
     dh.set_probe(Some(kelvo_collect::Probe::NotPresent));
     h.ctl.reprobe(&[Module::Disk]);

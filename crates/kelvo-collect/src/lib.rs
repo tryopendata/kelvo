@@ -469,7 +469,8 @@ pub trait Collector: Send + 'static {
     /// nothing to free.
     fn release(&mut self) {}
     /// While probed Supported, sets the capability facts this collector owns beyond its
-    /// series: `process_energy`/`process_wakeups`, `disk_devices` (D-115). Default: none.
+    /// series: `process_energy`/`process_wakeups`/`process_disk_io`, `disk_devices`
+    /// (D-115). Default: none.
     fn fill_capabilities(&self, _caps: &mut kelvo_schema::Capabilities) {}
 }
 

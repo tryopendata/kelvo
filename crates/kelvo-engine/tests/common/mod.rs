@@ -165,6 +165,7 @@ impl Collector for FakeCollector {
         if s.process_columns {
             caps.process_energy = true;
             caps.process_wakeups = true;
+            caps.process_disk_io = true;
         }
     }
     fn sample(&mut self, tick: &Tick, out: &mut SampleBuf) -> Result<(), CollectError> {

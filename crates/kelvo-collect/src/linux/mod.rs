@@ -15,9 +15,11 @@ pub mod rapl;
 mod sysroot;
 
 pub mod cpu;
+pub mod cpufreq;
 pub mod memory;
 pub mod processes;
 pub(crate) mod procfs;
+pub mod psi;
 pub mod self_cpu;
 #[cfg(test)]
 pub(crate) mod testdata;
@@ -77,6 +79,8 @@ pub fn collectors() -> Vec<Box<dyn Collector>> {
     out.push(Box::new(fs::Filesystems::new()));
     out.push(Box::new(net::Network::new()));
     out.push(Box::new(processes::Processes::new()));
+    out.push(Box::new(cpufreq::CpuFreq::new()));
+    out.push(Box::new(psi::Psi::new()));
     out.push(Box::new(self_cpu::SelfCpu::new()));
     out.push(Box::new(hwmon::Hwmon::sensors()));
     out.push(Box::new(hwmon::Hwmon::power()));

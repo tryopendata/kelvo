@@ -12,9 +12,12 @@
 //!
 //! - Memory is the resident set, `stat` field 24 times the page size (`VmRSS`).
 //! - Disk is `read_bytes`/`write_bytes`, the bytes that reached the block layer. Only
-//!   root reads other users' `io`. A row whose `io` is unreadable reports 0 B/s, since
-//!   `ProcessSample` has no "unknown" for disk; [`Visibility::io_readable`] counts the
-//!   rows that were measured.
+//!   root (or `CAP_SYS_PTRACE`) reads other users' `io`. The probe tries pid 1's, owned
+//!   by root: when that fails, `Capabilities::process_disk_io` is false and the UI hides
+//!   the disk columns, so most rows' unknown rates never show as 0 B/s (D-115). Rows
+//!   still carry 0 for an unreadable `io`, since `ProcessSample` has no "unknown" for
+//!   disk; with the capability true that is only a process that exited mid-sample.
+//!   [`Visibility::io_readable`] counts the rows that were measured.
 //! - Energy and idle wakeups have no Linux source; `fill_capabilities` says so and the
 //!   rows carry 0.
 //! - `app` is `None` until cgroup grouping (D-115) lands.
@@ -144,6 +147,8 @@ pub struct Processes {
     seen: HashMap<(i32, u64), Known>,
     users: HashMap<u32, Arc<str>>,
     visibility: Visibility,
+    /// The probe could read another user's `io` (pid 1's).
+    disk_io: bool,
 }
 
 impl Default for Processes {
@@ -174,6 +179,7 @@ impl Processes {
             seen: HashMap::new(),
             users: HashMap::new(),
             visibility: Visibility::default(),
+            disk_io: false,
         }
     }
 
@@ -325,6 +331,7 @@ impl Collector for Processes {
             .ok()
             .and_then(|s| word(&s, "btime"));
         let listed = self.dir.as_ref().is_some_and(|d| d.list(&mut self.pids));
+        self.disk_io = self.read_pid(1, "io").is_ok() && parse_io(&self.buf).is_some();
         match btime {
             Some(btime) if listed => {
                 self.btime_us = i64::try_from(btime).unwrap_or(0).saturating_mul(1_000_000);
@@ -342,6 +349,7 @@ impl Collector for Processes {
         caps.process_wakeups = false;
         caps.process_network = false;
         caps.process_gpu = false;
+        caps.process_disk_io = self.disk_io;
     }
 
     fn sample(&mut self, tick: &Tick, out: &mut SampleBuf) -> Result<(), CollectError> {
@@ -574,11 +582,37 @@ mod tests {
         let mut caps = kelvo_schema::Capabilities {
             process_energy: true,
             process_wakeups: true,
+            process_disk_io: true,
             ..Default::default()
         };
         p.fill_capabilities(&mut caps);
         assert!(!caps.process_energy && !caps.process_wakeups);
         assert!(!caps.process_network && !caps.process_gpu);
+        assert!(!caps.process_disk_io, "not probed: nothing read");
+    }
+
+    /// Disk columns only when the probe could read another user's `io`: pid 1's.
+    #[test]
+    fn disk_io_capability_follows_pid_1() {
+        let caps = |p: &Processes| {
+            let mut caps = kelvo_schema::Capabilities::default();
+            p.fill_capabilities(&mut caps);
+            caps.process_disk_io
+        };
+        let dir = host();
+        let mut p = Processes::at(SysRoot::at(dir.path()), 4096, 100);
+        assert!(matches!(p.probe(), Probe::Supported(_)));
+        assert!(caps(&p));
+
+        // Unreadable (a non-root agent gets EACCES; here the file is gone).
+        std::fs::remove_file(dir.path().join("proc/1/io")).unwrap();
+        assert!(matches!(p.probe(), Probe::Supported(_)));
+        assert!(!caps(&p));
+
+        // Readable but not the shape `io` has.
+        testdata::write(&dir, "proc/1/io", "rchar: 1\n");
+        p.probe();
+        assert!(!caps(&p));
     }
 
     #[test]

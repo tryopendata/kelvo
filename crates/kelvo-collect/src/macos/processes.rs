@@ -252,9 +252,11 @@ impl Collector for Processes {
     }
 
     fn fill_capabilities(&self, caps: &mut kelvo_schema::Capabilities) {
-        // libproc's rusage carries energy and idle wakeups for every readable row.
+        // libproc's rusage carries energy, idle wakeups and disk bytes for every
+        // readable row.
         caps.process_energy = true;
         caps.process_wakeups = true;
+        caps.process_disk_io = true;
     }
 
     fn sample(&mut self, tick: &Tick, out: &mut SampleBuf) -> Result<(), CollectError> {

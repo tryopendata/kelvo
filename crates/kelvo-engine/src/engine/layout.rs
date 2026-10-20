@@ -304,6 +304,7 @@ impl Engine {
         let mut facts = Capabilities {
             process_energy: false,
             process_wakeups: false,
+            process_disk_io: false,
             ..Capabilities::default()
         };
         for slot in &self.slots {
@@ -317,6 +318,7 @@ impl Engine {
             || caps.process_gpu != process_gpu
             || caps.process_energy != facts.process_energy
             || caps.process_wakeups != facts.process_wakeups
+            || caps.process_disk_io != facts.process_disk_io
             || caps.disk_devices != facts.disk_devices
         {
             let next = Arc::new(Capabilities {
@@ -326,6 +328,7 @@ impl Engine {
                 process_gpu,
                 process_energy: facts.process_energy,
                 process_wakeups: facts.process_wakeups,
+                process_disk_io: facts.process_disk_io,
                 disk_devices: facts.disk_devices,
             });
             *caps = Arc::clone(&next);

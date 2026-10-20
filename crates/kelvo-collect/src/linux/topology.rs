@@ -44,8 +44,10 @@ fn online_cpus(root: &SysRoot) -> Vec<usize> {
     cpus
 }
 
-/// cpufreq policies: their CPUs (online only) and DVFS table in MHz, ascending.
-fn policies(root: &SysRoot, online: &[usize]) -> Vec<(Vec<usize>, Vec<u32>)> {
+/// cpufreq policies with at least one online CPU, in policy order: the policy's sysfs
+/// directory (`/sys/devices/system/cpu/cpufreq/policyN`, rooted like [`SysRoot::read`]
+/// takes it) and its online CPUs.
+pub fn policy_dirs(root: &SysRoot, online: &[usize]) -> Vec<(String, Vec<usize>)> {
     let Ok(dir) = std::fs::read_dir(root.path(&format!("{CPU}/cpufreq"))) else {
         return Vec::new();
     };
@@ -65,9 +67,16 @@ fn policies(root: &SysRoot, online: &[usize]) -> Vec<(Vec<usize>, Vec<u32>)> {
                 .into_iter()
                 .filter(|c| online.contains(c))
                 .collect();
-            if cpus.is_empty() {
-                return None;
-            }
+            (!cpus.is_empty()).then_some((base, cpus))
+        })
+        .collect()
+}
+
+/// cpufreq policies: their CPUs (online only) and DVFS table in MHz, ascending.
+fn policies(root: &SysRoot, online: &[usize]) -> Vec<(Vec<usize>, Vec<u32>)> {
+    policy_dirs(root, online)
+        .into_iter()
+        .map(|(base, cpus)| {
             let mut mhz: Vec<u32> = root
                 .read_trimmed(&format!("{base}/scaling_available_frequencies"))
                 .unwrap_or_default()
@@ -78,7 +87,7 @@ fn policies(root: &SysRoot, online: &[usize]) -> Vec<(Vec<usize>, Vec<u32>)> {
                 .collect();
             mhz.sort_unstable();
             mhz.dedup();
-            Some((cpus, mhz))
+            (cpus, mhz)
         })
         .collect()
 }

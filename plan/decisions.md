@@ -3577,7 +3577,9 @@ Wire additions, all defaulted and D-040-safe, with old/new skew fixtures in kelv
 `UnsupportedReason::PermissionDenied`; `Module::Containers`, a capabilities and data module
 only, outside `SETTINGS_MODULES`, the menu bar and settings UI;
 `Capabilities.process_energy`/`process_wakeups`, defaulting to true so older Macs keep
-their columns;
+their columns; `Capabilities.process_disk_io`, the same default, false when the agent's
+probe cannot read pid 1's `/proc/<pid>/io` (not root), so unreadable rows never show as
+0 B/s;
 `Capabilities.disk_devices` (`dev`, `name`, `internal`, `default`), filled by the probing
 collector on every host. `Message::Hello` is boxed in Rust; the encoding is unchanged.
 

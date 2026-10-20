@@ -41,6 +41,12 @@ pub struct Capabilities {
     /// default as [`Capabilities::process_energy`].
     #[serde(default = "default_true")]
     pub process_wakeups: bool,
+    /// Process rows carry measured disk rates (`disk_read_bps`, `disk_write_bps`). False
+    /// on a Linux agent that cannot read other users' `/proc/<pid>/io` (not root), whose
+    /// rows would show 0 B/s for what it could not see; the UI hides the disk columns
+    /// then. Same default as [`Capabilities::process_energy`].
+    #[serde(default = "default_true")]
+    pub process_disk_io: bool,
     /// The block devices the `disk.*{dev}` series are labelled with, for the Disk page's
     /// device list on any host (D-115). Empty when unknown, and from a sender before
     /// D-115.
@@ -226,6 +232,7 @@ mod tests {
             process_gpu: false,
             process_energy: true,
             process_wakeups: false,
+            process_disk_io: true,
             disk_devices: vec![DiskDevice {
                 dev: "disk3".into(),
                 name: "APPLE SSD".into(),
@@ -239,7 +246,7 @@ mod tests {
     fn json_shape() {
         assert_eq!(
             serde_json::to_string(&sample()).unwrap(),
-            r#"{"modules":{"cpu":{"available":{"series":16}},"sensors":{"unsupported":"unknown_chip"},"battery":"not_present"},"revision":3,"process_network":false,"process_gpu":false,"process_energy":true,"process_wakeups":false,"disk_devices":[{"dev":"disk3","name":"APPLE SSD","internal":true,"default":true}]}"#
+            r#"{"modules":{"cpu":{"available":{"series":16}},"sensors":{"unsupported":"unknown_chip"},"battery":"not_present"},"revision":3,"process_network":false,"process_gpu":false,"process_energy":true,"process_wakeups":false,"process_disk_io":true,"disk_devices":[{"dev":"disk3","name":"APPLE SSD","internal":true,"default":true}]}"#
         );
     }
 
@@ -260,7 +267,7 @@ mod tests {
     fn missing_process_columns_default_to_present() {
         let old = r#"{"modules":{},"revision":1,"process_network":true,"process_gpu":true}"#;
         let c: Capabilities = serde_json::from_str(old).unwrap();
-        assert!(c.process_energy && c.process_wakeups);
+        assert!(c.process_energy && c.process_wakeups && c.process_disk_io);
         assert!(c.disk_devices.is_empty());
     }
 

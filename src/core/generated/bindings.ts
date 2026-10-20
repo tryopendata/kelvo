@@ -477,6 +477,13 @@ export type Capabilities = {
 	 */
 	process_wakeups?: boolean,
 	/**
+	 *  Process rows carry measured disk rates (`disk_read_bps`, `disk_write_bps`). False
+	 *  on a Linux agent that cannot read other users' `/proc/<pid>/io` (not root), whose
+	 *  rows would show 0 B/s for what it could not see; the UI hides the disk columns
+	 *  then. Same default as [`Capabilities::process_energy`].
+	 */
+	process_disk_io?: boolean,
+	/**
 	 *  The block devices the `disk.*{dev}` series are labelled with, for the Disk page's
 	 *  device list on any host (D-115). Empty when unknown, and from a sender before
 	 *  D-115.
