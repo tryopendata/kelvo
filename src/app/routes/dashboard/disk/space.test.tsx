@@ -1,7 +1,7 @@
-import type { HostRecord } from "@core/generated/bindings";
 import { MOCK_SCAN_MS } from "@core/mock/disk-space";
-import type { ScenarioName } from "@core/mock/fixtures";
+import { MOCK_HOST_ID, type ScenarioName } from "@core/mock/fixtures";
 import { createMockTransport } from "@core/mock-transport";
+import { hostKeys } from "@core/query-keys";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import { renderWithProviders } from "@tests/test-utils";
 import { Profiler, useState } from "react";
@@ -259,36 +259,6 @@ describe("Disk › Space outside a local scan", () => {
     expect(screen.queryByRole("button", { name: "Analyze space" })).toBeNull();
   });
 
-  it("offers This Mac when a remote host is selected", async () => {
-    const transport = createMockTransport({
-      scenarios: ["multi-host"],
-      autoTick: false,
-    });
-    const hosts = await transport.listHosts();
-    const remote = hosts.find((h) => !h.is_local) as HostRecord;
-    function Harness() {
-      const [selected, select] = useState(remote.id);
-      return (
-        <HostSelectionContext value={{ hosts, selected, select }}>
-          <HostStoreProvider hostId={selected}>
-            <DiskRoute />
-          </HostStoreProvider>
-        </HostSelectionContext>
-      );
-    }
-    const r = renderWithProviders(<Harness />, {
-      transport,
-      route: "/?view=space",
-    });
-    expect(
-      await screen.findByText("Space reports are available for This Mac only.")
-    ).toBeVisible();
-    await r.user.click(screen.getByRole("button", { name: "Show This Mac" }));
-    expect(
-      await screen.findByRole("region", { name: "Volumes to scan" })
-    ).toBeVisible();
-  });
-
   it("does not re-render a finished report on the 1 Hz tick", async () => {
     let commits = 0;
     let t = 1_700_000_000_000;
@@ -312,5 +282,205 @@ describe("Disk › Space outside a local scan", () => {
       for (let i = 0; i < 3; i++) transport.tick();
     });
     expect(commits).toBe(before);
+  });
+});
+
+/** Disk › Space on the `linux-host` peer, linux-tailscale (D-117). */
+function remoteSetup() {
+  let t = 1_700_000_000_000;
+  const transport = createMockTransport({
+    now: () => t,
+    autoTick: false,
+    scenarios: ["linux-host"],
+  });
+  const result = renderWithProviders(
+    <HostStoreProvider hostId="remote-linux">
+      <DiskRoute />
+    </HostStoreProvider>,
+    { transport, route: "/?view=space" }
+  );
+  return {
+    ...result,
+    advance: (ms: number) => {
+      t += ms;
+    },
+  };
+}
+
+describe("Disk › Space on a remote Linux host (D-117)", () => {
+  it("scans the host's mounts and copies its paths, with no Reveal in Finder", async () => {
+    const r = remoteSetup();
+    const volumes = await screen.findByRole("region", {
+      name: "Volumes to scan",
+    });
+    for (const mount of ["/", "/boot", "/boot/efi"])
+      expect(
+        within(volumes).getByRole("button", { name: `Scan ${mount}` })
+      ).toBeEnabled();
+    // Nothing on Linux is protected the way macOS protects folders.
+    expect(screen.queryByText(/Protected locations/)).toBeNull();
+    expect(screen.queryByText(/macOS/)).toBeNull();
+    await r.user.click(screen.getByRole("button", { name: "Scan /" }));
+    await screen.findByText(/Scanning · about/);
+    r.advance(MOCK_SCAN_MS);
+    await screen.findByRole("button", { name: "Scan again" }, POLL);
+    expect(screen.getByText("/ · 141 GB of 155 GB used")).toBeVisible();
+    expect(
+      screen.getByText(
+        /no file accounts for: snapshots and filesystem metadata\./
+      )
+    ).toBeVisible();
+    const path = () => screen.getByRole("navigation", { name: "Folder path" });
+    act(() => row(/^var, /).focus());
+    await r.user.keyboard("{Enter}");
+    await waitFor(() => expect(path()).toHaveTextContent(/\/var$/));
+    expect(screen.queryByRole("button", { name: /in Finder$/ })).toBeNull();
+    await r.user.click(
+      within(row(/^lib, /)).getByRole("button", {
+        name: "Copy the path of lib",
+      })
+    );
+    await waitFor(async () =>
+      expect(await navigator.clipboard.readText()).toBe("/var/lib")
+    );
+    // The host's scan is its own: this Mac's stays idle.
+    const local = await r.transport.diskSpaceStatus(MOCK_HOST_ID);
+    expect(local.status === "ok" && local.data.phase).toBe("idle");
+  });
+
+  it("says when the host's Kelvo is too old to answer", async () => {
+    const transport = createMockTransport({
+      autoTick: false,
+      scenarios: ["linux-host"],
+    });
+    const old = {
+      status: "error",
+      error: {
+        kind: "remote_incompatible",
+        message: "this host's Kelvo is too old to answer; update it",
+      },
+    } as const;
+    transport.diskSpaceVolumes = async () => old;
+    transport.diskSpaceStatus = async () => old;
+    renderWithProviders(
+      <HostStoreProvider hostId="remote-linux">
+        <DiskRoute />
+      </HostStoreProvider>,
+      { transport, route: "/?view=space" }
+    );
+    expect(
+      await screen.findByText(
+        "This host's Kelvo is too old to share space reports. Update Kelvo on it, then try again."
+      )
+    ).toBeVisible();
+    expect(
+      screen.queryByRole("region", { name: "Volumes to scan" })
+    ).toBeNull();
+  });
+
+  it("says when the host is not connected", async () => {
+    const transport = createMockTransport({
+      autoTick: false,
+      scenarios: ["linux-host"],
+    });
+    const [linux] = await transport.listRemoteHosts();
+    if (!linux) throw new Error("no remote host");
+    await transport.updateRemoteHost({ ...linux.config, enabled: false });
+    renderWithProviders(
+      <HostStoreProvider hostId="remote-linux">
+        <DiskRoute />
+      </HostStoreProvider>,
+      { transport, route: "/?view=space" }
+    );
+    expect(
+      await screen.findByText(
+        "This host isn't connected, so its space reports can't be read now."
+      )
+    ).toBeVisible();
+  });
+
+  it("says the report was dropped when the connection to the host ended", async () => {
+    const r = remoteSetup();
+    await r.user.click(await screen.findByRole("button", { name: "Scan /" }));
+    r.advance(MOCK_SCAN_MS);
+    await screen.findByRole("button", { name: "Scan again" }, POLL);
+    const [linux] = await r.transport.listRemoteHosts();
+    if (!linux) throw new Error("no remote host");
+    // The session ends: the host drops its report, and the view hears of
+    // the connection change on its next read of the host list.
+    const reconnect = async (enabled: boolean) => {
+      await r.transport.updateRemoteHost({ ...linux.config, enabled });
+      await act(() =>
+        r.queryClient.invalidateQueries({ queryKey: hostKeys.remote() })
+      );
+    };
+    await reconnect(false);
+    expect(
+      await screen.findByText(
+        "This host isn't connected, so its space reports can't be read now."
+      )
+    ).toBeVisible();
+    await reconnect(true);
+    expect(
+      await screen.findByText(
+        "The report was dropped when the connection to linux-tailscale ended."
+      )
+    ).toBeVisible();
+    expect(
+      screen.getByRole("region", { name: "Volumes to scan" })
+    ).toBeVisible();
+  });
+
+  it("says the report was dropped when a folder of it no longer loads", async () => {
+    const r = remoteSetup();
+    await r.user.click(await screen.findByRole("button", { name: "Scan /" }));
+    r.advance(MOCK_SCAN_MS);
+    await screen.findByRole("button", { name: "Scan again" }, POLL);
+    // A reconnect too quick for the host list to show it.
+    const [linux] = await r.transport.listRemoteHosts();
+    if (!linux) throw new Error("no remote host");
+    await r.transport.updateRemoteHost({ ...linux.config, enabled: false });
+    await r.transport.updateRemoteHost({ ...linux.config, enabled: true });
+    act(() => row(/^var, /).focus());
+    await r.user.keyboard("{Enter}");
+    expect(
+      await screen.findByText(
+        "The report was dropped when the connection to linux-tailscale ended."
+      )
+    ).toBeVisible();
+    expect(screen.queryByText(/Couldn't load this folder/)).toBeNull();
+  });
+
+  it("starts over on the other host's own volumes when switching hosts", async () => {
+    const transport = createMockTransport({
+      scenarios: ["linux-host"],
+      autoTick: false,
+    });
+    const hosts = await transport.listHosts();
+    function Harness() {
+      const [selected, select] = useState<string>("remote-linux");
+      return (
+        <HostSelectionContext value={{ hosts, selected, select }}>
+          <HostStoreProvider hostId={selected}>
+            <DiskRoute />
+          </HostStoreProvider>
+          <button type="button" onClick={() => select(MOCK_HOST_ID)}>
+            This Mac
+          </button>
+        </HostSelectionContext>
+      );
+    }
+    const r = renderWithProviders(<Harness />, {
+      transport,
+      route: "/?view=space",
+    });
+    expect(
+      await screen.findByRole("button", { name: "Scan /boot" })
+    ).toBeVisible();
+    await r.user.click(screen.getByRole("button", { name: "This Mac" }));
+    expect(
+      await screen.findByRole("button", { name: "Scan Macintosh HD" })
+    ).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Scan /boot" })).toBeNull();
   });
 });

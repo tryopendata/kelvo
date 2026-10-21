@@ -86,7 +86,10 @@ function render(answer: (fromMs: number, toMs: number) => UsageByApp | null) {
     return data === null
       ? {
           status: "error",
-          error: { kind: "remote_host", host: "other" },
+          error: {
+            kind: "remote_unreachable",
+            message: "the host is not connected",
+          },
         }
       : { status: "ok", data };
   };
@@ -237,11 +240,11 @@ describe("UsageAppsCard (D-093, D-099)", () => {
     ).toHaveTextContent("so these figures cover");
   });
 
-  it("explains a host whose use is not kept here", async () => {
+  it("says when the host it describes isn't connected", async () => {
     render(() => null);
     expect(
       await screen.findByText(
-        "Use by app is only kept on the Mac it describes."
+        "This host isn't connected, so its use by app can't be read now."
       )
     ).toBeVisible();
   });

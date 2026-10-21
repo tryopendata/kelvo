@@ -324,7 +324,7 @@ function DiskActivity({
             rows={volumeRows(vols, held, mounts)}
             units="GB"
             action={
-              local && onAnalyze
+              onAnalyze
                 ? (row) => <AnalyzeLink vol={row.id} onAnalyze={onAnalyze} />
                 : undefined
             }

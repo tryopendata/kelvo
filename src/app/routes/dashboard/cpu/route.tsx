@@ -82,7 +82,7 @@ function cpuTable(coreCount: number | null): UsageTableConfig {
 
 function CpuFootnote({ coreCount }: { coreCount: number | null }) {
   const navigate = useNavigate();
-  const os = useHostNoun() === "Mac" ? "macOS" : "system";
+  const mac = useHostNoun() === "Mac";
   return (
     <>
       Average % of one core over the sampled time
@@ -92,8 +92,11 @@ function CpuFootnote({ coreCount }: { coreCount: number | null }) {
           <span className="figures">{coreCount * 100}%</span>
         </>
       )}
-      . System and other is the rest of the CPU total: other users&apos; and{" "}
-      {os} processes, and ones that ran for less than a sample.{" "}
+      . System and other is the rest of the CPU total:{" "}
+      {mac
+        ? "other users' and macOS processes"
+        : "kernel work, processes the agent can't read"}
+      , and ones that ran for less than a sample.{" "}
       <button
         type="button"
         onClick={() => navigate("/dashboard/processes")}

@@ -141,6 +141,59 @@ describe("a Linux host (D-116)", () => {
   });
 });
 
+describe("Use by app on a remote Linux host (D-117)", () => {
+  it("lists its apps from the host's last hour, with Linux footnotes and no Quit", async () => {
+    const transport = createMockTransport({
+      now: () => NOW,
+      autoTick: false,
+      chartWindow: "5m",
+      scenarios: ["linux-host"],
+    });
+    renderWithProviders(
+      <HostStoreProvider hostId="remote-linux">
+        <MemoryRoute />
+      </HostStoreProvider>,
+      { transport, route: "/dashboard/memory" }
+    );
+    const table = await screen.findByRole("table", { name: "Memory by app" });
+    // Every user's processes: postgres runs as its own user.
+    await waitFor(() =>
+      expect(within(table).getByText("postgres")).toBeVisible()
+    );
+    expect(table).toHaveTextContent("Resident memory (RSS), as top and ps");
+    expect(table).not.toHaveTextContent("Activity Monitor");
+    expect(table).not.toHaveTextContent("macOS");
+    expect(within(table).queryByRole("button", { name: /^Quit / })).toBeNull();
+    expect(within(table).queryByRole("checkbox")).toBeNull();
+    expect(
+      transport.calls.some(
+        (c) =>
+          c.command === "query_usage_by_app" && c.args[0] === "remote-linux"
+      )
+    ).toBe(true);
+  });
+
+  it("names kernel work, not macOS, in the CPU remainder", async () => {
+    const transport = createMockTransport({
+      now: () => NOW,
+      autoTick: false,
+      chartWindow: "5m",
+      scenarios: ["linux-host"],
+    });
+    renderWithProviders(
+      <HostStoreProvider hostId="remote-linux">
+        <CpuRoute />
+      </HostStoreProvider>,
+      { transport, route: "/dashboard/cpu" }
+    );
+    const table = await screen.findByRole("table", { name: "CPU by app" });
+    expect(table).toHaveTextContent(
+      "System and other is the rest of the CPU total: kernel work, processes the agent can't read"
+    );
+    expect(table).not.toHaveTextContent("macOS");
+  });
+});
+
 /** The Containers route on the `linux-host` peer after its backfill. */
 async function remoteContainers() {
   const transport = createMockTransport({

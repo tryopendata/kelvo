@@ -386,6 +386,7 @@ pub(super) mod tests {
         let disks = [disk("vda", 100, Some(true))];
         let mount = |dev, source: &str| Mount {
             dev,
+            root: "/".into(),
             point: "/".into(),
             fstype: "ext4".into(),
             source: source.into(),

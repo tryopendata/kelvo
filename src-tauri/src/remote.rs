@@ -121,6 +121,17 @@ impl RemoteManager {
             .and_then(|s| s.clock().now_ms())
             .unwrap_or_else(kelvo_engine::wall_ms)
     }
+    /// The remote host's source, to ask it queries (D-117).
+    pub fn source(&self, host: HostId) -> Result<Arc<RemoteSource>, CommandError> {
+        self.sources
+            .lock_ok()
+            .get(&host)
+            .cloned()
+            .ok_or(CommandError::UnknownHost { host })
+    }
+    pub fn sources(&self) -> Vec<Arc<RemoteSource>> {
+        self.sources.lock_ok().values().cloned().collect()
+    }
     pub fn controller_battery_changed(&self, on_battery: bool) {
         for source in self.sources.lock_ok().values() {
             source.set_controller_on_battery(on_battery);
@@ -145,6 +156,9 @@ impl From<kelvo_remote::RemoteError> for CommandError {
                 Self::RemoteIdentity { message }
             }
             RemoteError::AgentNotRunning(_) => Self::RemoteAgentNotRunning { message },
+            RemoteError::Busy(_) => Self::RemoteBusy { message },
+            RemoteError::Unsupported(_) => Self::RemoteUnsupported { message },
+            RemoteError::Refused(_) => Self::Internal { message },
             RemoteError::Transport(_)
             | RemoteError::Io(_)
             | RemoteError::Codec(_)

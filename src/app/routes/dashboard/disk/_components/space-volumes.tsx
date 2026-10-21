@@ -7,9 +7,9 @@ import { VolumeTable } from "~/components/volume-table";
 import { useUnits } from "~/hooks/use-units";
 
 /**
- * The Space view before a report (plan "First impression"): the volumes this
- * Mac can scan, each with Scan, and the protected locations a scan skips
- * unless the user includes them.
+ * The Space view before a report (plan "First impression"): the volumes the
+ * host can scan, each with Scan, and the protected locations a scan skips
+ * unless the user includes them (a Mac's; a Linux host has none).
  */
 export function SpaceVolumes({
   volumes,
@@ -44,8 +44,9 @@ export function SpaceVolumes({
     >
       <p className="max-w-2xl text-[12px] text-muted-foreground">
         A space report measures every file on a volume and shows what uses the
-        space. Kelvo reads file sizes only and changes nothing. Folders macOS
-        protects are skipped unless you include them.
+        space. Kelvo reads file sizes only and changes nothing.
+        {protectedOnes.length > 0 &&
+          " Folders macOS protects are skipped unless you include them."}
       </p>
       <section
         aria-label="Volumes to scan"

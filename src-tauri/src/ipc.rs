@@ -17,7 +17,8 @@ use crate::process_signal::SignalRefusal;
 /// Engine types the webview takes as they are: process views (`set_process_interest`)
 /// and the usage sort key (`query_usage_by_app`). They stay in the engine, which a
 /// headless agent shares (D-100).
-pub use kelvo_engine::{ProcessSort, ProcessView, UsageKey};
+pub use kelvo_engine::{ProcessSort, ProcessView};
+pub use kelvo_schema::usage::UsageKey;
 
 /// A millisecond epoch timestamp passed as a plain JS `number` (D-039).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, specta::Type)]

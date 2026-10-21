@@ -347,33 +347,44 @@ export interface Transport {
   /** What this build can do (D-065); fixed for the app run. */
   getEdition(): Promise<Edition>;
 
-  /** Volumes this Mac can scan for a space report (local only). */
-  diskSpaceVolumes(): Promise<CommandResult<SpaceVolume[]>>;
+  /**
+   * Volumes a host can scan for a space report. A remote host answers over
+   * its session (D-117): `remote_incompatible` when it is too old to,
+   * `remote_unreachable` when it is not connected.
+   */
+  diskSpaceVolumes(host: HostId): Promise<CommandResult<SpaceVolume[]>>;
   /**
    * Starts scanning a volume; `include` lists protected locations (by key)
-   * the user chose to enter. Fails while another scan runs.
+   * the user chose to enter. Fails while another scan runs on that host.
    */
   diskSpaceStart(
+    host: HostId,
     volume: string,
     include: string[]
   ): Promise<CommandResult<SpaceScanStatus>>;
-  /** Progress of the running scan, or how the last one ended. */
-  diskSpaceStatus(): Promise<SpaceScanStatus>;
-  diskSpaceCancel(): Promise<void>;
-  /** The finished report, kept while the dashboard window exists. */
-  diskSpaceReport(): Promise<SpaceReport | null>;
+  /** Progress of the host's running scan, or how the last one ended. */
+  diskSpaceStatus(host: HostId): Promise<CommandResult<SpaceScanStatus>>;
+  diskSpaceCancel(host: HostId): Promise<CommandResult<null>>;
+  /** The host's finished report, kept while the dashboard window exists. */
+  diskSpaceReport(host: HostId): Promise<CommandResult<SpaceReport | null>>;
   /** A folder's breakdown (`node: null` is the volume root), during or after a scan. */
   diskSpaceSubtree(
+    host: HostId,
     report: number,
     node: number | null
   ): Promise<CommandResult<SpaceSubtree>>;
-  diskSpaceLargestFiles(report: number): Promise<CommandResult<SpaceFile[]>>;
+  diskSpaceLargestFiles(
+    host: HostId,
+    report: number
+  ): Promise<CommandResult<SpaceFile[]>>;
+  /** Shows an entry of this Mac's report in Finder (local only). */
   diskSpaceReveal(
     report: number,
     target: SpaceTarget
   ): Promise<CommandResult<null>>;
-  /** An entry's path as Finder shows it ("/Users/…" on the boot volume). */
+  /** An entry's path as the host shows it ("/Users/…" on a Mac's boot volume). */
   diskSpacePath(
+    host: HostId,
     report: number,
     target: SpaceTarget
   ): Promise<CommandResult<string>>;

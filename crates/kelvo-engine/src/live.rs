@@ -37,7 +37,8 @@ use crate::bus::{Bus, BusMsg, EngineStatus, FrameLayout, LiveFrame, Subscriber};
 use crate::engine::hold_ms;
 use crate::netacc::{NetRing, NetSlot};
 use crate::ring::{BackfillSegment, Ring};
-use crate::usage::{UsageByApp, UsageKey, UsageRing, UsageSeries};
+use crate::usage::{UsageRing, UsageSeries};
+use kelvo_schema::usage::{UsageByApp, UsageKey};
 
 /// `layout_no` of ring rows read back from the store by [`LiveHub::warm`]. A source
 /// numbers its own layouts from 0 within a run, so this one never collides with them.

@@ -113,6 +113,7 @@ See [README](README.md) for the roadmap and [architecture.md](architecture.md) f
 | D-112 | Native size/complexity limits and executable dependency boundaries | Accepted |
 | D-115 | Per-app usage series over the in-memory usage ring | Accepted |
 | D-116 | Linux agent: a headless collector, its identity binding and the wire additions it needs | Accepted |
+| D-117 | Remote queries: one request/reply call on the session, for per-app usage and space reports | Accepted |
 
 ---
 
@@ -3638,3 +3639,63 @@ Two container models coexist: the local Docker page keeps its own clock and hist
 later decision.
 
 Revisit for a non-root agent, a non-systemd init, or a third platform.
+
+## D-117: Remote queries: one request/reply call on the session
+
+Status: Accepted. Date: 2026-10-20. Amends D-114 ("local only", "off the wire") and
+D-100 (`UsageKey` stays in the engine). The user asked to brush a spike on a Linux host
+and see which apps caused it, and to explore a remote host's disk space.
+
+Both are answers the controller asks the host for on demand, which the session had no
+general way to do: `RecentRequest` and `SyncRequest` are one-off pairs matched by local
+flags. The session gains one call, `Message::Request { id, query }` answered by exactly
+one `Message::Reply { id, answer }`, offered as the `query.v1` feature. `Query` and
+`Answer` are adjacently tagged enums with an `Unknown` fallback, so a query kind the host
+does not know is answered `Answer::Error { code: Unsupported }` instead of breaking the
+session, and a new kind needs no new feature. Any query or answer that does not decode
+becomes `Unknown`, not only an unknown kind: the id sits outside it, so a body a newer
+peer changed (an added enum value) fails that one call, never the session. The client keeps a table of pending calls
+by id, fails them all when the session ends, and times each out on the caller's side.
+The host answers each request off the session loop (blocking work on the blocking pool),
+so a slow answer never holds back live frames, and encodes the reply there too. Queries
+that change state (`SpaceStart`, `SpaceCancel`, `SpaceClear`) are answered one at a time
+in the order they came; reads run concurrently. A host with too many queries in flight
+answers `Busy`, and the controller reports a call it timed out on as busy, not as
+disconnected. `RecentRequest` and `SyncRequest` stay as they are.
+
+Queries: `UsageByApp` (the host's in-memory usage ring, D-093 and D-099: the last hour,
+which a Linux agent fills from its 30 s idle process samples whether or not anyone
+watches), and the space report calls `SpaceVolumes`, `SpaceStart`, `SpaceStatus`,
+`SpaceCancel`, `SpaceReport`, `SpaceSubtree`, `SpaceLargestFiles` and `SpacePath`, which
+map one to one onto the host's `SpaceService` and keep its polling model. The answer
+types are `kelvo-schema` data: the space DTOs already were, and `UsageKey` and the usage
+result (`UsageByApp`, `UsageApp`, `UsageProc`, `UsageTotal`) move there from the engine,
+with names as `String`, so the engine's answer is the wire's. The shell's view type keeps
+adding what only the controller knows (the "System and other" remainder from the
+mirror, quit targets). These types are now wire vocabulary: fields and variants are
+added, never renamed. The usage types give every field a serde default; the space types
+add later fields as `Option` instead, since a serde default would make the field
+optional in the webview's bindings.
+
+Space on a remote host: Reveal in Finder is local only; Copy path copies the host's path.
+A scan a session started is cancelled, and its report dropped, when that session ends, so
+a disconnected controller never leaves a walk running or a tree held on the host;
+`SpaceClear` does the same when the controller's dashboard closes. The session's end
+reaches the host's provider only after its in-flight answers finish, so a `SpaceStart`
+that completes after the connection dropped is released too. Only the session that
+started a scan may cancel or clear it; another controller's cancel is refused.
+
+A remote scan never enters privacy-protected locations: the host ignores `include` and
+answers `SpaceVolumes` with no protected entries. On a Mac host the scan runs with the
+app's own privacy grants (Full Disk Access), and a remote user, whose SSH session macOS
+does not grant them, must not read through it. The Mac app answers space queries only in
+editions that scan locally (not the App Store build). The
+Mac app answers remote sessions from its own `SpaceService`, separate from its dashboard's,
+so a remote scan never replaces or clears the local user's report. Linux
+volumes come from `/proc/self/mountinfo` (local block filesystems, one entry per device),
+sized by `statvfs`, walked with the portable lister. The system unit's `ProtectHome=yes`
+becomes `read-only`, so a scan sees `/home` and `/root`. Paths cross only the user's own
+SSH session to their own controller; they are still never logged above debug.
+
+Revisit with request cancellation (a call the caller gave up on still runs to the end on
+the host) or a query whose answer outgrows one frame.

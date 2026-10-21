@@ -1,4 +1,5 @@
 import type { CommandError } from "@core/generated/bindings";
+import { CommandFailure } from "./transport/query";
 
 export function remoteErrorText(error: CommandError): string {
   if ("message" in error) return error.message;
@@ -11,6 +12,27 @@ export function remoteErrorText(error: CommandError): string {
       return "History is unavailable.";
     case "store_too_new":
       return "This history was saved by a newer Kelvo version.";
+  }
+}
+
+/**
+ * Why a remote host did not answer an on-demand query (D-117), such as a
+ * space report or use by app: `what` names the data ("space reports").
+ * `null` for any other failure, which the caller words itself.
+ */
+export function remoteQueryText(error: unknown, what: string): string | null {
+  if (!(error instanceof CommandFailure)) return null;
+  switch (error.error.kind) {
+    case "remote_incompatible":
+      return `This host's Kelvo is too old to share ${what}. Update Kelvo on it, then try again.`;
+    case "remote_unreachable":
+      return `This host isn't connected, so its ${what} can't be read now.`;
+    case "remote_busy":
+      return `This host is busy or slow to answer, so its ${what} can't be read now. Try again in a moment.`;
+    case "remote_unsupported":
+      return `This host doesn't offer ${what}.`;
+    default:
+      return null;
   }
 }
 

@@ -9,6 +9,7 @@ import { ChevronRight } from "lucide-react";
 import { type ReactNode, useCallback, useState } from "react";
 import { SectionCard } from "~/components/section-card";
 import { SegmentedControl } from "~/components/segmented-control";
+import { useIsLocalHost } from "~/hooks/use-is-local-host";
 import { cn } from "~/lib/utils";
 import {
   useSpaceItemActions,
@@ -55,7 +56,9 @@ export function SpaceReportView({
   const [hovered, setHovered] = useState<string | null>(null);
   const subtree = useSpaceSubtree(reportId, folder, scanning);
   const largest = useSpaceLargest(reportId, tab === "largest" && !scanning);
-  const actions = useSpaceItemActions(reportId);
+  // Reveal in Finder is this Mac's; a remote host's paths can only be copied.
+  const local = useIsLocalHost();
+  const actions = useSpaceItemActions(reportId, local);
   const data = subtree.data;
   const open = useCallback((node: SpaceNode) => {
     if (!canOpen(node)) return;

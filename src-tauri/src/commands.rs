@@ -279,8 +279,9 @@ pub async fn query_network_by_app(
 /// keeps in memory: the largest `limit` by `by`. A range reaching further back is
 /// answered for the part inside that hour, and `since_ms` says where counting started.
 /// `other` is what the host's own series measured beyond them over the covered part.
-/// `remote_host` for a host other than this Mac; `invalid_argument` when `to_ms` is
-/// before `from_ms`.
+/// A remote host answers from its own hub (D-117); its processes have no Quit.
+/// `remote_incompatible` for a remote host too old to answer, `remote_busy` for one too
+/// busy or slow to answer now; `invalid_argument` when `to_ms` is before `from_ms`.
 #[tauri::command]
 #[specta::specta]
 pub async fn query_usage_by_app(
@@ -296,15 +297,27 @@ pub async fn query_usage_by_app(
             message: format!("to_ms {} is before from_ms {}", to_ms.0, from_ms.0),
         });
     }
+    let remote = {
+        let state = app.state::<AppState>();
+        if host == state.local {
+            None
+        } else {
+            let source = state.remotes.source(host)?;
+            Some(source.usage_by_app(from_ms.0, to_ms.0, by, limit).await?)
+        }
+    };
     blocking(app, move |state| {
-        let entry = state.local_host(host)?;
+        let entry = state.host(host)?;
         let record = entry.record();
-        let usage = entry.usage_by_app(
-            from_ms.0,
-            to_ms.0,
-            by,
-            usize::try_from(limit).unwrap_or(usize::MAX),
-        );
+        let local = remote.is_none();
+        let usage = remote.unwrap_or_else(|| {
+            entry.usage_by_app(
+                from_ms.0,
+                to_ms.0,
+                by,
+                usize::try_from(limit).unwrap_or(usize::MAX),
+            )
+        });
         let metrics = [
             crate::usage::CPU_TOTAL,
             crate::usage::GPU_UTIL,
@@ -315,21 +328,25 @@ pub async fn query_usage_by_app(
         // The remainder is best effort: without a readable series there is none.
         let stats = crate::usage::remainder_range(&usage).and_then(|(from, to, cut)| {
             let recent_start = recent_from(from);
-            let now_ms = kelvo_engine::wall_ms().min(cut);
+            let now_ms = state.host_now(host).min(cut);
             state
-                .history
+                .history_for(host)
+                .ok()?
                 .series_stats(host, &metrics, from, to, now_ms, || {
-                    entry.recent_rows(host, recent_start, to)
+                    state.recent_rows(host, recent_start, to)
                 })
                 .ok()
         });
         let cores = record.info.cpu_topology.iter().map(|c| c.cores.len()).sum();
-        Ok(crate::usage::usage_by_app(
-            usage,
-            stats.as_ref(),
-            cores,
-            crate::process_signal::refusals(),
-        ))
+        let refusals = local.then(crate::process_signal::refusals);
+        let mut answer =
+            crate::usage::usage_by_app(usage, stats.as_ref(), cores, |pid, start, name| {
+                refusals.as_ref().and_then(|r| r(pid, start, name))
+            });
+        if !local {
+            answer.apps.iter_mut().for_each(|a| a.quit_pid = None);
+        }
+        Ok(answer)
     })
     .await
 }

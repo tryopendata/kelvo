@@ -26,6 +26,12 @@ pub enum CommandError {
     /// The other Mac could not be reached, or the connection broke.
     #[error("{message}")]
     RemoteUnreachable { message: String },
+    /// A connected host is too busy or slow to answer a query now; retry shortly.
+    #[error("{message}")]
+    RemoteBusy { message: String },
+    /// A connected, current host does not offer what was asked (its edition or setup).
+    #[error("{message}")]
+    RemoteUnsupported { message: String },
     /// The Linux host has too little free space for the agent's history budget plus the
     /// low-disk reserve.
     #[error("{message}")]

@@ -23,11 +23,11 @@ export const commands = {
 	dockerStorageExecute: (token: string, confirmVolumes: boolean) => typedError<DockerStorageOperation, CommandError>(__TAURI_INVOKE("docker_storage_execute", { token, confirmVolumes })),
 	dockerStorageOperation: (operationId: string) => typedError<DockerStorageOperation, CommandError>(__TAURI_INVOKE("docker_storage_operation", { operationId })),
 	dockerContainerAction: (engineId: string, containerId: string, action: DockerContainerAction) => typedError<DockerStorageOperation, CommandError>(__TAURI_INVOKE("docker_container_action", { engineId, containerId, action })),
-	diskSpaceVolumes: () => typedError<SpaceVolume[], CommandError>(__TAURI_INVOKE("disk_space_volumes")),
-	diskSpaceStart: (volume: string, include: string[]) => typedError<SpaceScanStatus, CommandError>(__TAURI_INVOKE("disk_space_start", { volume, include })),
-	diskSpaceStatus: () => __TAURI_INVOKE<SpaceScanStatus>("disk_space_status"),
-	diskSpaceCancel: () => __TAURI_INVOKE<void>("disk_space_cancel"),
-	diskSpaceReport: () => __TAURI_INVOKE<{
+	diskSpaceVolumes: (host: HostId) => typedError<SpaceVolume[], CommandError>(__TAURI_INVOKE("disk_space_volumes", { host })),
+	diskSpaceStart: (host: HostId, volume: string, include: string[]) => typedError<SpaceScanStatus, CommandError>(__TAURI_INVOKE("disk_space_start", { host, volume, include })),
+	diskSpaceStatus: (host: HostId) => typedError<SpaceScanStatus, CommandError>(__TAURI_INVOKE("disk_space_status", { host })),
+	diskSpaceCancel: (host: HostId) => typedError<null, CommandError>(__TAURI_INVOKE("disk_space_cancel", { host })),
+	diskSpaceReport: (host: HostId) => typedError<{
 	id: number,
 	volume: SpaceVolume,
 	finished_ms: number | null,
@@ -50,13 +50,16 @@ export const commands = {
 	skipped: string[],
 	/**  The tree hit its retention cap: deep breakdowns are folded, totals are complete. */
 	truncated: boolean,
-} | null>("disk_space_report"),
-	diskSpaceSubtree: (report: number, node: number | null) => typedError<SpaceSubtree, CommandError>(__TAURI_INVOKE("disk_space_subtree", { report, node })),
-	diskSpaceLargestFiles: (report: number) => typedError<SpaceFile[], CommandError>(__TAURI_INVOKE("disk_space_largest_files", { report })),
-	/**  Shows an entry of a report in Finder. Paths come from the report, never the webview. */
+} | null, CommandError>(__TAURI_INVOKE("disk_space_report", { host })),
+	diskSpaceSubtree: (host: HostId, report: number, node: number | null) => typedError<SpaceSubtree, CommandError>(__TAURI_INVOKE("disk_space_subtree", { host, report, node })),
+	diskSpaceLargestFiles: (host: HostId, report: number) => typedError<SpaceFile[], CommandError>(__TAURI_INVOKE("disk_space_largest_files", { host, report })),
+	/**
+	 *  Shows an entry of this Mac's report in Finder. Paths come from the report, never the
+	 *  webview.
+	 */
 	diskSpaceReveal: (report: number, target: SpaceTarget) => typedError<null, CommandError>(__TAURI_INVOKE("disk_space_reveal", { report, target })),
-	/**  The path of an entry of a report, as Finder shows it, for Copy path. */
-	diskSpacePath: (report: number, target: SpaceTarget) => typedError<string, CommandError>(__TAURI_INVOKE("disk_space_path", { report, target })),
+	/**  The path of an entry of a report, as the host shows it, for Copy path. */
+	diskSpacePath: (host: HostId, report: number, target: SpaceTarget) => typedError<string, CommandError>(__TAURI_INVOKE("disk_space_path", { host, report, target })),
 	/**  Every host, the local one first. */
 	listHosts: () => __TAURI_INVOKE<HostRecord[]>("list_hosts"),
 	listRemoteHosts: () => __TAURI_INVOKE<RemoteHostRecord[]>("list_remote_hosts"),
@@ -180,8 +183,9 @@ export const commands = {
 	 *  keeps in memory: the largest `limit` by `by`. A range reaching further back is
 	 *  answered for the part inside that hour, and `since_ms` says where counting started.
 	 *  `other` is what the host's own series measured beyond them over the covered part.
-	 *  `remote_host` for a host other than this Mac; `invalid_argument` when `to_ms` is
-	 *  before `from_ms`.
+	 *  A remote host answers from its own hub (D-117); its processes have no Quit.
+	 *  `remote_incompatible` for a remote host too old to answer, `remote_busy` for one too
+	 *  busy or slow to answer now; `invalid_argument` when `to_ms` is before `from_ms`.
 	 */
 	queryUsageByApp: (host: HostId, fromMs: Millis, toMs: Millis, by: UsageKey, limit: number) => typedError<UsageByApp, CommandError>(__TAURI_INVOKE("query_usage_by_app", { host, fromMs, toMs, by, limit })),
 	/**
@@ -571,6 +575,10 @@ export type CommandError = { kind: "update"; message: string } |
 { kind: "remote_identity"; message: string } |
 /**  The other Mac could not be reached, or the connection broke. */
 { kind: "remote_unreachable"; message: string } |
+/**  A connected host is too busy or slow to answer a query now; retry shortly. */
+{ kind: "remote_busy"; message: string } |
+/**  A connected, current host does not offer what was asked (its edition or setup). */
+{ kind: "remote_unsupported"; message: string } |
 /**
  *  The Linux host has too little free space for the agent's history budget plus the
  *  low-disk reserve.
@@ -2593,17 +2601,17 @@ export type SpaceSubtree = {
 	total_bytes: number | null,
 };
 
-/**  What `disk_space_reveal` shows in Finder. */
+/**  An entry of a finished report: a folder in its tree or one of its largest files. */
 export type SpaceTarget = { kind: "node"; id: number } | { kind: "largest_file"; index: number };
 
-/**  A volume the user can scan, as Finder shows it. */
+/**  A volume the user can scan. */
 export type SpaceVolume = {
 	/**  The browsable mount point ("/" for the boot volume). Used as the volume's id. */
 	mount: string,
-	/**  Finder's name ("Macintosh HD"). */
+	/**  Display name: Finder's on macOS ("Macintosh HD"), the mount point on Linux. */
 	name: string,
 	is_boot: boolean,
-	/**  Used space Finder reports for the volume (its APFS container for APFS volumes). */
+	/**  Used space as the system reports it (the APFS container's for APFS volumes). */
 	used_bytes: number | null,
 	total_bytes: number | null,
 	/**  Locations macOS protects with privacy prompts. Skipped unless included by key. */

@@ -8,40 +8,20 @@ import type {
   SpaceScanStatus,
   SpaceSubtree,
   SpaceTarget,
-  SpaceVolume,
 } from "@core/generated/bindings";
-import type { CommandResult, Transport } from "@core/transport";
+import type { CommandResult } from "@core/transport";
+import type { MockTransport } from "./contracts";
 import {
-  BOOT_PROTECTED,
-  BOOT_SIBLINGS,
-  BOOT_TOTAL,
-  BOOT_TREE,
-  BOOT_UNATTRIBUTED,
-  EXTERNAL_TOTAL,
-  EXTERNAL_TREE,
-  EXTERNAL_UNATTRIBUTED,
-  type SpaceSpec,
-  UNREADABLE,
-} from "./disk-space-fixture";
-import { build, crumbs, type Node, nodes, sum } from "./disk-space-tree";
+  routeDiskSpace,
+  type SpaceMethods,
+  type SpaceRemotes,
+} from "./disk-space-hosts";
+import { build, crumbs, type Node, nodes } from "./disk-space-tree";
+import { type MockVolume, mockVolumes } from "./disk-space-volumes";
 import type { ScenarioName } from "./fixtures";
-
-type Methods = Pick<
-  Transport,
-  | "diskSpaceVolumes"
-  | "diskSpaceStart"
-  | "diskSpaceStatus"
-  | "diskSpaceCancel"
-  | "diskSpaceReport"
-  | "diskSpaceSubtree"
-  | "diskSpaceLargestFiles"
-  | "diskSpaceReveal"
-  | "diskSpacePath"
->;
 
 /** How long a mock scan takes, start to finish. */
 export const MOCK_SCAN_MS = 8000;
-const HOME = "Users/riley";
 const MAX_CHILDREN = 120;
 /** Rust's `SPACE_PREVIEW`: entries in a folder entry's preview. */
 const SPACE_PREVIEW = 24;
@@ -54,12 +34,9 @@ const fail = (message: string): CommandResult<never> => ({
   error: { kind: "disk_space", message } satisfies CommandError,
 });
 
-interface Plan {
-  volume: SpaceVolume;
-  tree: SpaceSpec;
+interface Plan extends MockVolume {
   skipped: string[];
   skip: Set<string>;
-  siblings: readonly { label: string; bytes: number }[];
   /** Fraction of the scan at which the volume disappears, if it does. */
   ejectAt: number | null;
 }
@@ -323,8 +300,8 @@ class Scan {
       files_bytes: files,
       volumes_bytes: this.plan.siblings.reduce((a, s) => a + s.bytes, 0),
       other_bytes: this.other(1),
-      unreadable: this.plan.volume.is_boot ? 312 : 0,
-      unreadable_paths: this.plan.volume.is_boot ? [...UNREADABLE] : [],
+      unreadable: this.plan.unreadable.count,
+      unreadable_paths: [...this.plan.unreadable.paths],
       skipped: this.plan.skipped,
       truncated: false,
     };
@@ -352,34 +329,15 @@ function synthetic(
   };
 }
 
-function volumes(scenarios: readonly ScenarioName[]): SpaceVolume[] {
-  const siblings = BOOT_SIBLINGS.reduce((a, s) => a + s.bytes, 0);
-  const boot: SpaceVolume = {
-    mount: "/",
-    name: "Macintosh HD",
-    is_boot: true,
-    used_bytes: sum(BOOT_TREE, new Set()) + siblings + BOOT_UNATTRIBUTED,
-    total_bytes: BOOT_TOTAL,
-    protected: BOOT_PROTECTED.map(([rel, label]) => ({
-      key: `${HOME}/${rel}`,
-      label,
-    })),
-  };
-  const external: SpaceVolume = {
-    mount: "/Volumes/SanDisk Extreme",
-    name: "SanDisk Extreme",
-    is_boot: false,
-    used_bytes: sum(EXTERNAL_TREE, new Set()) + EXTERNAL_UNATTRIBUTED,
-    total_bytes: EXTERNAL_TOTAL,
-    protected: [],
-  };
-  return scenarios.includes("disk-space-boot-only") ? [boot] : [boot, external];
-}
-
+/**
+ * This host's space reports, one scan at a time; a remote host's calls go
+ * to its own peer (D-117), so each host keeps its own scan and report.
+ */
 export function createMockDiskSpace(
   scenarios: readonly ScenarioName[],
-  now: () => number
-): Methods {
+  now: () => number,
+  remotes: SpaceRemotes = new Map()
+): SpaceMethods & Pick<MockTransport, "endSpaceSession"> {
   const appstore = scenarios.includes("appstore");
   let nextId = 0;
   let running: Scan | null = null;
@@ -397,89 +355,103 @@ export function createMockDiskSpace(
   const find = (id: number) =>
     [running, report].find((s) => s !== null && s.id === id) ?? null;
   const gone = fail("this report is no longer available; scan again");
+  const idle: SpaceScanStatus = {
+    phase: "idle",
+    report_id: null,
+    volume: null,
+    elapsed_ms: 0,
+    items: 0,
+    measured_bytes: 0,
+    used_bytes: 0,
+    current: null,
+    error: null,
+  };
+  const status = (): SpaceScanStatus => {
+    settle();
+    const scan = running ?? ended ?? report;
+    if (!scan) return idle;
+    if (scan === ended)
+      return {
+        ...idle,
+        phase: scan.phase,
+        volume: scan.plan.volume.mount,
+        error: scan.error,
+      };
+    return scan.status(now());
+  };
+  const routed = routeDiskSpace(
+    {
+      diskSpaceVolumes: async () =>
+        appstore
+          ? unavailable()
+          : ok(mockVolumes(scenarios).map((v) => v.volume)),
+      diskSpaceStart: async (_host, mount, include) => {
+        if (appstore) return unavailable();
+        settle();
+        if (running) return fail("a scan is already running");
+        const spec = mockVolumes(scenarios).find(
+          (v) => v.volume.mount === mount
+        );
+        if (!spec) return fail(`${mount} is not a volume Kelvo can scan`);
+        const skipped = spec.volume.protected.filter(
+          (p) => !include.includes(p.key)
+        );
+        running = new Scan(
+          ++nextId,
+          {
+            ...spec,
+            skipped: skipped.map((p) => p.label),
+            skip: new Set(skipped.map((p) => p.key)),
+            ejectAt:
+              !spec.volume.is_boot && scenarios.includes("disk-space-eject")
+                ? 0.4
+                : null,
+          },
+          now()
+        );
+        ended = null;
+        return ok(running.status(now()));
+      },
+      diskSpaceStatus: async () => ok(status()),
+      diskSpaceCancel: async () => {
+        settle();
+        running?.end("cancelled", now());
+        settle();
+        return ok(null);
+      },
+      diskSpaceReport: async () => {
+        settle();
+        return ok(report?.report() ?? null);
+      },
+      diskSpaceSubtree: async (_host, id, node) => {
+        settle();
+        const tree = find(id)?.subtree(node, now());
+        return tree ? ok(tree) : gone;
+      },
+      diskSpaceLargestFiles: async (_host, id) => {
+        settle();
+        const scan = find(id);
+        return scan ? ok(scan.largest(now())) : gone;
+      },
+      diskSpaceReveal: async (id, target) => {
+        settle();
+        return find(id)?.path(target, now()) ? ok(null) : gone;
+      },
+      diskSpacePath: async (_host, id, target) => {
+        settle();
+        const path = find(id)?.path(target, now());
+        return path ? ok(path) : gone;
+      },
+    },
+    remotes
+  );
   return {
-    diskSpaceVolumes: async () =>
-      appstore ? unavailable() : ok(volumes(scenarios)),
-    diskSpaceStart: async (mount, include) => {
-      if (appstore) return unavailable();
-      settle();
-      if (running) return fail("a scan is already running");
-      const volume = volumes(scenarios).find((v) => v.mount === mount);
-      if (!volume) return fail(`${mount} is not a volume Kelvo can scan`);
-      const skipped = volume.protected.filter((p) => !include.includes(p.key));
-      running = new Scan(
-        ++nextId,
-        {
-          volume,
-          tree: volume.is_boot ? BOOT_TREE : EXTERNAL_TREE,
-          skipped: skipped.map((p) => p.label),
-          skip: new Set(skipped.map((p) => p.key)),
-          siblings: volume.is_boot ? BOOT_SIBLINGS : [],
-          ejectAt:
-            !volume.is_boot && scenarios.includes("disk-space-eject")
-              ? 0.4
-              : null,
-        },
-        now()
-      );
-      ended = null;
-      return ok(running.status(now()));
-    },
-    diskSpaceStatus: async () => {
-      settle();
-      const scan = running ?? ended ?? report;
-      if (!scan)
-        return {
-          phase: "idle",
-          report_id: null,
-          volume: null,
-          elapsed_ms: 0,
-          items: 0,
-          measured_bytes: 0,
-          used_bytes: 0,
-          current: null,
-          error: null,
-        };
-      if (scan === ended)
-        return {
-          ...scan.status(now()),
-          report_id: null,
-          elapsed_ms: 0,
-          items: 0,
-          measured_bytes: 0,
-          used_bytes: 0,
-          current: null,
-          error: scan.error,
-        };
-      return scan.status(now());
-    },
-    diskSpaceCancel: async () => {
-      settle();
+    ...routed,
+    endSpaceSession: () => {
       running?.end("cancelled", now());
-      settle();
-    },
-    diskSpaceReport: async () => {
-      settle();
-      return report?.report() ?? null;
-    },
-    diskSpaceSubtree: async (id, node) => {
-      settle();
-      const tree = find(id)?.subtree(node, now());
-      return tree ? ok(tree) : gone;
-    },
-    diskSpaceLargestFiles: async (id) => {
-      settle();
-      const scan = find(id);
-      return scan ? ok(scan.largest(now())) : gone;
-    },
-    diskSpaceReveal: async (id, target) => {
-      settle();
-      return find(id)?.path(target, now()) ? ok(null) : gone;
-    },
-    diskSpacePath: async (id, target) => {
-      settle();
-      const path = find(id)?.path(target, now());
-      return path ? ok(path) : gone;
+      running = null;
+      report = null;
+      ended = null;
     },
   };
 }

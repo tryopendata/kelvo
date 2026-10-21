@@ -229,9 +229,18 @@ describe("Disk and Memory pages over a range (D-099)", () => {
           )
       ).toBe(true)
     );
+    // The brushed range's processes come from the host's own last hour (D-117).
+    await vi.waitFor(() =>
+      expect(
+        transport.calls.some(
+          (c) => c.command === "query_usage_by_app" && c.args[0] === remote
+        )
+      ).toBe(true)
+    );
     expect(
-      screen.getByText("Process accounting is available on the monitored Mac.")
+      await screen.findByRole("table", { name: /^Disk processes · / })
     ).toBeVisible();
+    expect(screen.queryByRole("button", { name: /^Quit / })).toBeNull();
   });
 
   it("reports a selected totals failure while leaving the chart and brush usable", async () => {

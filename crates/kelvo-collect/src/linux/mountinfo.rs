@@ -7,6 +7,9 @@ pub(super) struct Mount {
     /// `st_dev` of the filesystem. btrfs (and other multi-device filesystems) report an
     /// anonymous major 0 shared by every subvolume mount.
     pub(super) dev: (u32, u32),
+    /// The directory of the filesystem mounted here (`/` for its top, a btrfs subvolume
+    /// like `/home`, or a bind mount's source folder).
+    pub(super) root: String,
     /// Where it is mounted, with the kernel's octal escapes (`\040`) undone.
     pub(super) point: String,
     pub(super) fstype: String,
@@ -28,13 +31,14 @@ fn parse_line(line: &str) -> Option<Mount> {
     let _parent = it.next()?;
     let (major, minor) = it.next()?.split_once(':')?;
     let dev = (major.parse().ok()?, minor.parse().ok()?);
-    let _root = it.next()?;
+    let root = unescape(it.next()?);
     let point = unescape(it.next()?);
     it.find(|f| *f == "-")?;
     let fstype = it.next()?.to_owned();
     let source = unescape(it.next()?);
     Some(Mount {
         dev,
+        root,
         point,
         fstype,
         source,
@@ -82,6 +86,7 @@ mod tests {
             m[0],
             Mount {
                 dev: (0, 41),
+                root: "/root".into(),
                 point: "/".into(),
                 fstype: "btrfs".into(),
                 source: "/dev/nvme0n1p6".into(),

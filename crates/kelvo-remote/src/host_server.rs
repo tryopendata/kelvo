@@ -2,10 +2,13 @@
 //! and the headless agent both serve over their metrics socket. [`ServedHost`] is the
 //! per-host data it reads; history comes from that host's [`HistoryStore`].
 use crate::ServerProvider;
+use crate::host_queries::SpaceAccess;
 use crate::server::status_to_wire;
+use kelvo_engine::disk_space::SpaceService;
 use kelvo_engine::{HistoryStore, LiveHub};
 use kelvo_proto::{
-    Hello, Message, RemoteInterest, SourceStatus, SyncRequest, WireBucket, WireLayout,
+    Answer, Hello, Message, Query, RemoteInterest, SourceStatus, SyncRequest, WireBucket,
+    WireLayout,
 };
 use kelvo_schema::{Capabilities, HostRecord, SyncKinds, Tier};
 use std::collections::HashMap;
@@ -58,11 +61,28 @@ impl InterestSet {
 pub struct HostServer<H> {
     host: Arc<H>,
     history: Arc<HistoryStore>,
+    space: Option<SpaceAccess>,
 }
 
 impl<H: ServedHost> HostServer<H> {
     pub fn new(host: Arc<H>, history: Arc<HistoryStore>) -> Self {
-        Self { host, history }
+        Self {
+            host,
+            history,
+            space: None,
+        }
+    }
+    /// Answers space report queries from `service` (D-117); without it they are
+    /// unsupported.
+    pub fn with_space(mut self, service: Arc<SpaceService>) -> Self {
+        self.space = Some(SpaceAccess::new(service));
+        self
+    }
+    pub(crate) fn host(&self) -> &H {
+        &self.host
+    }
+    pub(crate) fn space(&self) -> Option<&SpaceAccess> {
+        self.space.as_ref()
     }
 }
 
@@ -134,6 +154,12 @@ impl<H: ServedHost> ServerProvider for HostServer<H> {
     fn set_interest(&self, session: u64, interest: RemoteInterest) {
         self.host.set_remote_interest(session, interest);
     }
+    fn answer(&self, session: u64, query: Query) -> Answer {
+        self.answer_query(session, query)
+    }
+    fn end_session(&self, session: u64) {
+        self.release_queries(session);
+    }
     fn sync(&self, req: &SyncRequest, kinds: SyncKinds) -> Result<Message, String> {
         let host = self.host.record().id;
         let mut max = req.max_rows.clamp(1, 2000);
@@ -169,6 +195,7 @@ impl<H: ServedHost> ServerProvider for HostServer<H> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use kelvo_schema::disk_space::SpacePhase;
     use kelvo_schema::lock::LockExt;
     use kelvo_schema::{HostId, HostInfo, OsKind};
     use std::sync::Mutex;
@@ -265,6 +292,94 @@ mod tests {
         assert_eq!(server.hello().db_instance_uuid, Uuid::nil());
         assert!(!server.status().history_available);
         assert!(server.sync(&request(), SyncKinds::ALL).is_err());
+    }
+
+    fn unsupported(answer: &Answer) -> bool {
+        matches!(
+            answer,
+            Answer::Error {
+                code: kelvo_proto::ErrorCode::Unsupported,
+                ..
+            }
+        )
+    }
+
+    /// Per-app use comes from the host's ring; space queries need a space service.
+    #[test]
+    fn answers_usage_and_space_only_with_a_service() {
+        let history = Arc::new(HistoryStore::unavailable());
+        let bare = HostServer::new(host(), history.clone());
+        let usage = Query::UsageByApp {
+            from_ms: 0,
+            to_ms: i64::MAX,
+            by: kelvo_schema::usage::UsageKey::Cpu,
+            limit: 10,
+        };
+        assert!(matches!(
+            bare.answer(1, usage.clone()),
+            Answer::UsageByApp(_)
+        ));
+        assert!(unsupported(&bare.answer(1, Query::SpaceVolumes)));
+        assert!(unsupported(&bare.answer(1, Query::Unknown)));
+
+        let served = HostServer::new(host(), history).with_space(Arc::new(SpaceService::new()));
+        assert!(matches!(
+            served.answer(1, Query::SpaceVolumes),
+            Answer::SpaceVolumes(_)
+        ));
+        assert!(matches!(
+            served.answer(
+                1,
+                Query::SpaceSubtree {
+                    report: 9,
+                    node: None
+                }
+            ),
+            Answer::Error {
+                code: kelvo_proto::ErrorCode::Internal,
+                ..
+            }
+        ));
+        assert!(unsupported(&served.answer(1, Query::Unknown)));
+    }
+
+    /// A scan belongs to the session that started it: another session ending or clearing
+    /// leaves it running, its own session ending or clearing cancels it and drops the
+    /// report.
+    #[test]
+    fn ending_the_owning_session_stops_its_scan() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("file.bin"), [1u8; 4096]).unwrap();
+        let service = Arc::new(SpaceService::folder(dir.path().to_path_buf()));
+        let server = HostServer::new(host(), Arc::new(HistoryStore::unavailable()))
+            .with_space(service.clone());
+        let volume = service.volumes().remove(0).mount;
+        let start = || Query::SpaceStart {
+            volume: volume.clone(),
+            include: Vec::new(),
+        };
+        let Answer::SpaceStatus(started) = server.answer(1, start()) else {
+            panic!("expected a status")
+        };
+        // Another session's end, clear or cancel leaves session 1's scan, running or done.
+        server.end_session(2);
+        assert!(matches!(server.answer(3, Query::SpaceClear), Answer::Done));
+        assert!(matches!(
+            server.answer(3, Query::SpaceCancel),
+            Answer::Error { .. }
+        ));
+        let kept = service.status();
+        assert_ne!(kept.phase, SpacePhase::Idle);
+        assert_ne!(kept.phase, SpacePhase::Cancelled);
+        assert_eq!(kept.report_id, started.report_id);
+        server.end_session(1);
+        assert_eq!(service.status().phase, SpacePhase::Idle);
+        assert!(service.report().is_none());
+
+        // Its dashboard closing clears it the same way.
+        assert!(matches!(server.answer(4, start()), Answer::SpaceStatus(_)));
+        server.answer(4, Query::SpaceClear);
+        assert_eq!(service.status().phase, SpacePhase::Idle);
     }
 
     #[test]

@@ -2,8 +2,10 @@
 //! Persistent, direct SSH sessions. No network listener, collector, or Tauri dependency.
 pub mod agent_install;
 pub mod agent_layout;
+mod calls;
 mod clock;
 mod codec;
+mod host_queries;
 mod host_server;
 pub mod install;
 mod mirror;
@@ -60,6 +62,15 @@ pub enum RemoteError {
     AgentNotRunning(String),
     #[error("invalid remote message: {0}")]
     Protocol(String),
+    /// A query (D-117) the host is too busy or slow to answer now. Retryable.
+    #[error("{0}")]
+    Busy(String),
+    /// A current host that does not answer this query (D-117): not offered there.
+    #[error("{0}")]
+    Unsupported(String),
+    /// The host's own refusal of a query (D-117), worded for the user.
+    #[error("{0}")]
+    Refused(String),
     #[error("{0}")]
     Io(#[from] std::io::Error),
     #[error("{0}")]
@@ -75,6 +86,8 @@ impl RemoteError {
                 | Self::Identity(_)
                 | Self::IdentityMismatch { .. }
                 | Self::Protocol(_)
+                | Self::Unsupported(_)
+                | Self::Refused(_)
         )
     }
 }

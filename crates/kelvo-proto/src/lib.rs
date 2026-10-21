@@ -20,17 +20,19 @@
 mod codec;
 mod handshake;
 mod message;
+mod query;
 
 pub use codec::{
     CodecError, KNOWN_MESSAGE_TAGS, MAX_FRAME_LEN, decode_message, encode_frame, encode_message,
     read_frame, write_frame,
 };
-pub use handshake::{HandshakeError, Negotiated, Offer, local_features, negotiate};
+pub use handshake::{HandshakeError, Negotiated, Offer, QUERY_FEATURE, local_features, negotiate};
 pub use message::{
     ErrorCode, Hello, HelloAck, HostSummary, LayoutMismatch, LiveFrame, LiveProcesses, LiveTier,
     Message, RemoteInterest, SourceStatus, SyncPage, SyncRequest, WireBucket, WireEvent, WireGap,
     WireLayout, WireProcess,
 };
+pub use query::{Answer, Query};
 
 /// The protocol version this build speaks.
 pub const PROTO_VERSION: u16 = 1;

@@ -83,6 +83,13 @@ Status values: Not started, In progress, Blocked (say on what), Done (with the v
 
 ## Log
 
+### 2026-10-20 (Remote use by app and disk space reports, D-117 frontend)
+
+- Use by app tables (CPU, Memory, Disk by app and the Disk process list over a brushed range) now load for remote hosts from the host's in-memory hour; Quit and row selection stay this Mac's only (local host and edition). Footnotes follow the host: on Linux, Memory is resident memory (RSS), the CPU remainder is kernel work and processes the agent can't read, and Disk counts the processes the agent can read. Power draw app lines (`query_usage_series`) stay local only.
+- Disk › Space works on remote hosts: every space command takes the host, query keys include it, and the view resets per host. A Linux host lists its mounts by mount point with no protected-folder options; Other reads "filesystem metadata" instead of APFS; Copy path copies the host's path and Reveal in Finder is hidden. `remote_incompatible` and `remote_unreachable` read as sentences in the view; `remote_incompatible` is no longer retried. Activity's Analyze space link appears on remote hosts too.
+- Mock: space calls route to each remote host's peer (per-host scans, `remote_unreachable` while disconnected), the `linux` peer scans `/`, `/boot` and `/boot/efi`, and remote `query_usage_by_app` answers from the peer with Quit dropped; the Linux peer counts every user's processes.
+- Verified: Vitest 1,233 passed, typecheck, lint, `tests/e2e/disk-space.spec.ts`; new tests revert-checked against the old gates. Screenshots compared with the local Mac's Space view.
+
 ### 2026-10-20 (Remote live charts show the history collected while disconnected)
 
 - A remote host's 5 min to 1 h charts started at the moment a window opened, although the agent kept collecting and the mirror had synced the hour. The charts draw from the host's live ring, and while no window watches a remote host the ring holds summary frames, which measure nothing. Now the first recent snapshot of live detail refills the ring from the mirror (durable rows plus that snapshot, `Mirror::ring_history`), keeping measured rows and replacing only the summary spans (`LiveHub::refill`, `Ring::refill`); live detail starting also syncs first, so the snapshot meets the durable rows. The refilled ring is on a new timeline, and a window stream that sees a frame on a new timeline resends the ring's rows on it (also the D-064 clock-step path), which the window takes in place of what it held. No wire change; the refilled hour is at 10 s resolution, like the local warm-up at launch (D-097).

@@ -112,6 +112,10 @@ impl ServerProvider for Fixture {
     // Collection-interest aggregation belongs to the shell and is covered there.
     // The fixture injects deterministic collector samples directly into the real hub.
     fn set_interest(&self, _session: u64, _interest: RemoteInterest) {}
+    fn answer(&self, _session: u64, _query: kelvo_proto::Query) -> kelvo_proto::Answer {
+        kelvo_proto::Answer::Done
+    }
+    fn end_session(&self, _session: u64) {}
     fn sync(&self, request: &SyncRequest, kinds: SyncKinds) -> Result<Message, String> {
         self.store
             .reader()

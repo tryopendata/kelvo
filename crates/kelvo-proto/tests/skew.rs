@@ -23,10 +23,11 @@ use std::path::PathBuf;
 
 use ciborium::Value;
 use kelvo_proto::{
-    ErrorCode, Hello, HelloAck, HostSummary, KNOWN_MESSAGE_TAGS, LiveFrame, LiveProcesses,
-    LiveTier, Message, SyncPage, SyncRequest, WireBucket, WireEvent, WireGap, WireLayout,
+    Answer, ErrorCode, Hello, HelloAck, HostSummary, KNOWN_MESSAGE_TAGS, LiveFrame, LiveProcesses,
+    LiveTier, Message, Query, SyncPage, SyncRequest, WireBucket, WireEvent, WireGap, WireLayout,
     WireProcess, decode_message, encode_frame, encode_message, read_frame, write_frame,
 };
+use kelvo_schema::usage::{UsageApp, UsageByApp, UsageKey, UsageProc, UsageTotal};
 use kelvo_schema::{
     Capabilities, Catalog, ClusterInfo, CoreKind, Cursor, DiskDevice, FrameView, GapReason, HostId,
     HostIdentity, HostInfo, Module, ModuleCap, OsKind, SeriesKey, Snapshot, Tier,
@@ -493,6 +494,8 @@ fn known_tag_list_matches_the_enum() {
         | Message::Truncated { .. }
         | Message::HostSummary(_)
         | Message::Error { .. }
+        | Message::Request { .. }
+        | Message::Reply { .. }
         | Message::Unknown => (),
     };
     assert_eq!(tags, known);
@@ -1116,5 +1119,146 @@ fn remote_samples() -> Vec<(&'static str, Message)> {
                 rows: vec![],
             },
         ),
+        // Remote queries (D-117).
+        (
+            "request_usage",
+            Message::Request {
+                id: 7,
+                query: Query::UsageByApp {
+                    from_ms: 1000,
+                    to_ms: 61_000,
+                    by: UsageKey::Memory,
+                    limit: 200,
+                },
+            },
+        ),
+        (
+            "reply_usage",
+            Message::Reply {
+                id: 7,
+                answer: Answer::UsageByApp(UsageByApp {
+                    from_ms: 0,
+                    to_ms: 70_000,
+                    since_ms: Some(0),
+                    complete_to_ms: Some(60_000),
+                    latest_ms: Some(65_000),
+                    covered_ms: 60_000,
+                    gpu_covered_ms: 0,
+                    total: UsageTotal {
+                        cpu_avg_pct: 40.0,
+                        ..Default::default()
+                    },
+                    apps: vec![UsageApp {
+                        name: "docker:postgres".into(),
+                        cpu_avg_pct: 25.0,
+                        mem_peak_b: 512 << 20,
+                        mem_avg_b: 400 << 20,
+                        processes: vec![UsageProc {
+                            pid: 42,
+                            start_time_us: 1_790_000_000_000_000,
+                            name: "postgres".into(),
+                            cpu_avg_pct: 25.0,
+                            mem_peak_b: 512 << 20,
+                            running: true,
+                            ..Default::default()
+                        }],
+                        ..Default::default()
+                    }],
+                }),
+            },
+        ),
+        (
+            "request_space_subtree",
+            Message::Request {
+                id: 8,
+                query: Query::SpaceSubtree {
+                    report: 3,
+                    node: Some(12),
+                },
+            },
+        ),
+        (
+            "reply_error",
+            Message::Reply {
+                id: 8,
+                answer: Answer::Error {
+                    code: ErrorCode::Unsupported,
+                    message: "not answered by this host".into(),
+                },
+            },
+        ),
     ]
+}
+
+/// A query or answer kind from a newer peer decodes as `Unknown` whatever its content,
+/// and so does a known kind whose body does not decode (a newer peer's added enum value),
+/// so the host can answer `Unsupported` and the session goes on.
+#[test]
+fn unknown_query_kinds_decode_as_unknown() {
+    let request = |q: Value| {
+        Value::Map(vec![
+            (Value::Text("id".into()), Value::Integer(1.into())),
+            (Value::Text("query".into()), q),
+        ])
+    };
+    let kind = |tag: &str, a: Value| {
+        Value::Map(vec![
+            (Value::Text("q".into()), Value::Text(tag.into())),
+            (Value::Text("a".into()), a),
+        ])
+    };
+    let args = Value::Map(vec![(Value::Text("path".into()), Value::Text("/".into()))]);
+    assert_eq!(
+        decode_message(&tagged("Request", Some(request(kind("FileTree", args))))).unwrap(),
+        Message::Request {
+            id: 1,
+            query: Query::Unknown
+        }
+    );
+    let broken = kind("SpaceSubtree", Value::Text("not a struct".into()));
+    assert_eq!(
+        decode_message(&tagged("Request", Some(request(broken)))).unwrap(),
+        Message::Request {
+            id: 1,
+            query: Query::Unknown
+        }
+    );
+
+    let reply = Value::Map(vec![
+        (Value::Text("id".into()), Value::Integer(1.into())),
+        (
+            Value::Text("answer".into()),
+            Value::Map(vec![
+                (Value::Text("a".into()), Value::Text("FileTree".into())),
+                (Value::Text("v".into()), Value::Array(vec![])),
+            ]),
+        ),
+    ]);
+    assert_eq!(
+        decode_message(&tagged("Reply", Some(reply))).unwrap(),
+        Message::Reply {
+            id: 1,
+            answer: Answer::Unknown
+        }
+    );
+    // A newer host's added enum value inside a known answer fails only that answer.
+    let mut status = Value::serialized(&Answer::SpaceReport(None)).unwrap();
+    if let Value::Map(fields) = &mut status {
+        fields[0].1 = Value::Text("SpaceStatus".into());
+        fields[1].1 = Value::Map(vec![(
+            Value::Text("phase".into()),
+            Value::Text("paused".into()),
+        )]);
+    }
+    let reply = Value::Map(vec![
+        (Value::Text("id".into()), Value::Integer(2.into())),
+        (Value::Text("answer".into()), status),
+    ]);
+    assert_eq!(
+        decode_message(&tagged("Reply", Some(reply))).unwrap(),
+        Message::Reply {
+            id: 2,
+            answer: Answer::Unknown
+        }
+    );
 }

@@ -18,6 +18,8 @@ const PERMANENT_ERRORS = new Set([
   "store_too_new",
   "invalid_argument",
   "invalid_settings",
+  // A remote host too old to answer a query (D-117) stays too old.
+  "remote_incompatible",
 ]);
 
 /**

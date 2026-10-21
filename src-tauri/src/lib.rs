@@ -282,7 +282,7 @@ pub fn run() {
                     state.live.window_closed(window.label());
                     state.docker_streams.window_closed(&state, window.label());
                     if window.label() == windows::DASHBOARD {
-                        state.disk_space.clear();
+                        disk_space::dashboard_closed(&state);
                     }
                 }
             }

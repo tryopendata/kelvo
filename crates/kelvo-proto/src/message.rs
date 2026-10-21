@@ -72,6 +72,19 @@ pub enum Message {
         message: String,
     },
 
+    /// A query the controller asks the host (D-117), sent only when both offered
+    /// `query.v1`. The host answers each with exactly one `Reply` carrying its `id`.
+    Request {
+        id: u32,
+        #[serde(deserialize_with = "crate::query::lenient")]
+        query: crate::Query,
+    },
+    Reply {
+        id: u32,
+        #[serde(deserialize_with = "crate::query::lenient")]
+        answer: crate::Answer,
+    },
+
     /// A newer peer sent a message type this build does not know: log and skip.
     #[serde(other)]
     Unknown,
@@ -304,6 +317,10 @@ pub enum ErrorCode {
     Malformed,
     /// The sender failed internally.
     Internal,
+    /// The receiver does not answer this kind of query (D-117).
+    Unsupported,
+    /// The receiver has too many queries in flight; retry shortly (D-117).
+    Busy,
     /// A code this build does not know, from a newer peer (D-040). The message text still
     /// says what went wrong.
     #[serde(other)]

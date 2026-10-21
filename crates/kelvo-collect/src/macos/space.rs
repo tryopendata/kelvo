@@ -356,6 +356,7 @@ pub fn plan(mount: &str, include: &[String]) -> Result<ScanPlan, ScanError> {
         used_bytes: target.used,
         siblings,
         skip,
+        devices: Vec::new(),
         skipped,
         root,
         volume,
@@ -493,6 +494,7 @@ mod tests {
             volume: vol,
             root: root.clone(),
             skip: HashSet::new(),
+            devices: Vec::new(),
             skipped: Vec::new(),
             siblings: Vec::new(),
             // As the boot volume would: KELVO_SPACE_USED in bytes sets the merge floor.

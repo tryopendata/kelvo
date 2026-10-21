@@ -24,6 +24,7 @@ fn plan(root: &Path, used: u64) -> ScanPlan {
         volume: volume(),
         root: root.to_path_buf(),
         skip: HashSet::new(),
+        devices: Vec::new(),
         skipped: Vec::new(),
         siblings: vec![Sibling {
             label: "macOS system".into(),
@@ -37,13 +38,9 @@ fn plan(root: &Path, used: u64) -> ScanPlan {
 
 fn run(plan: ScanPlan) -> Arc<Scan> {
     let (tx, rx) = mpsc::channel();
-    let scan = Scan::start(
-        plan,
-        || StdLister,
-        move || {
-            let _ = tx.send(());
-        },
-    )
+    let scan = Scan::start(plan, StdLister::default, move || {
+        let _ = tx.send(());
+    })
     .unwrap();
     rx.recv_timeout(Duration::from_secs(30)).unwrap();
     scan
@@ -94,13 +91,7 @@ fn walks_the_tree_and_matches_allocated_sizes() {
         .iter()
         .map(|c| (c.name.as_str(), c.kind))
         .collect();
-    assert_eq!(
-        names[0],
-        (
-            "Other: snapshots, APFS metadata, unreadable and skipped folders",
-            SpaceKind::Other
-        )
-    );
+    assert_eq!(names[0], (super::OTHER_NAME, SpaceKind::Other));
     assert!(names.contains(&("Users", SpaceKind::Folder)));
     assert!(names.contains(&("macOS system", SpaceKind::Volume)));
     let sum: f64 = top.children.iter().map(|c| c.bytes).sum();
@@ -183,6 +174,9 @@ fn unsafe_is_root() -> bool {
 #[test]
 fn largest_files_and_reveal_paths() {
     let (_dir, root) = fixture();
+    // Library's own file: its fixture file is hard-linked from Users/me, and whichever
+    // copy a worker counts first wins, which can leave Library empty.
+    write(&root.join("Library/prefs.bin"), 64 << 10);
     let mut p = plan(&root, 100 << 20);
     p.firmlinked.push("Users".into());
     let scan = run(p);
@@ -216,13 +210,9 @@ fn cancel_stops_the_walk() {
         write(&dir.path().join(format!("d{i}/e/f/g.txt")), 10);
     }
     let (tx, rx) = mpsc::channel();
-    let scan = Scan::start(
-        plan(dir.path(), 1 << 30),
-        || StdLister,
-        move || {
-            let _ = tx.send(());
-        },
-    )
+    let scan = Scan::start(plan(dir.path(), 1 << 30), StdLister::default, move || {
+        let _ = tx.send(());
+    })
     .unwrap();
     scan.cancel();
     rx.recv_timeout(Duration::from_secs(30)).unwrap();

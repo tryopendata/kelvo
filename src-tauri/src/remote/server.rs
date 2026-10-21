@@ -1,5 +1,6 @@
 //! Tauri adapters for local metrics/control servers and their lifecycle.
 use super::*;
+use kelvo_engine::disk_space::SpaceService;
 pub fn start(app: &AppHandle) -> anyhow::Result<()> {
     let state = app.state::<AppState>();
     let path = saved_path(app)?;
@@ -137,7 +138,13 @@ pub fn refresh_metrics(app: &AppHandle, enabled: bool) {
         return;
     };
     let Ok(dir) = data_dir(app) else { return };
-    let provider = Arc::new(HostServer::new(entry, state.history.store()));
+    // Remote sessions get their own space service, apart from the dashboard's (D-117),
+    // in editions that scan at all.
+    let mut server = HostServer::new(entry, state.history.store());
+    if crate::disk_space::available() {
+        server = server.with_space(Arc::new(SpaceService::new()));
+    }
+    let provider = Arc::new(server);
     let path = SocketPaths::new(dir).metrics;
     let (tx, mut desired) = tokio::sync::watch::channel(enabled);
     *setting = Some(tx);

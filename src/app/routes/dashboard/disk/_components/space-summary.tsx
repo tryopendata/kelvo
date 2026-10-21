@@ -2,6 +2,7 @@ import { bytesParts, formatBytes, formatSpan } from "@core/format";
 import type { SpaceReport, SpaceScanStatus } from "@core/generated/bindings";
 import { ChevronRight } from "lucide-react";
 import { Button } from "~/components/ui/button";
+import { useHostNoun } from "~/hooks/use-host-record";
 import { useNow } from "~/hooks/use-now";
 import { MeterTrack } from "~/widgets/meter-track";
 import { StatStrip } from "~/widgets/stat-strip";
@@ -120,7 +121,8 @@ export function SpaceSummary({
 
 /** What Other holds, and the folders behind it. */
 function SpaceNotes({ report }: { report: SpaceReport }) {
-  const parts = ["snapshots", "APFS metadata"];
+  const mac = useHostNoun() === "Mac";
+  const parts = ["snapshots", mac ? "APFS metadata" : "filesystem metadata"];
   if (report.skipped.length > 0)
     parts.push(
       report.skipped.length === 1

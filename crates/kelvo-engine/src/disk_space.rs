@@ -38,6 +38,8 @@ struct Inner {
 #[derive(Default)]
 pub struct SpaceService {
     inner: Mutex<Inner>,
+    /// Set by [`SpaceService::folder`]: the one folder this service offers as a volume.
+    folder: Option<PathBuf>,
 }
 
 fn now_ms() -> f64 {
@@ -51,13 +53,30 @@ impl SpaceService {
         Self::default()
     }
 
-    /// Volumes Finder shows on this Mac.
+    /// A service whose only volume is `root`, scanned as a volume of its own: for tests
+    /// of callers outside this crate, so they never walk the host's disks.
+    pub fn folder(root: PathBuf) -> Self {
+        Self {
+            folder: Some(root),
+            ..Self::default()
+        }
+    }
+
+    /// Volumes the host can scan: what Finder shows on a Mac, local filesystems on Linux.
     pub fn volumes(&self) -> Vec<SpaceVolume> {
-        platform::volumes()
+        match &self.folder {
+            Some(root) => vec![folder_volume(root)],
+            None => platform::volumes(),
+        }
     }
 
     pub fn start(&self, mount: &str, include: &[String]) -> Result<SpaceScanStatus, SpaceError> {
-        self.start_plan(platform::plan(mount, include)?)
+        let plan = match &self.folder {
+            Some(root) if folder_volume(root).mount == mount => folder_plan(root),
+            Some(_) => return Err(ScanError::UnknownVolume(mount.to_owned()).into()),
+            None => platform::plan(mount, include)?,
+        };
+        self.start_plan(plan)
     }
 
     fn start_plan(&self, plan: ScanPlan) -> Result<SpaceScanStatus, SpaceError> {
@@ -206,6 +225,32 @@ fn status_of(inner: &Inner) -> SpaceScanStatus {
     inner.report.as_ref().map_or(idle, from)
 }
 
+fn folder_volume(root: &std::path::Path) -> SpaceVolume {
+    let mount = root.to_string_lossy().into_owned();
+    SpaceVolume {
+        name: mount.clone(),
+        mount,
+        is_boot: false,
+        used_bytes: 0.0,
+        total_bytes: 0.0,
+        protected: Vec::new(),
+    }
+}
+
+fn folder_plan(root: &std::path::Path) -> ScanPlan {
+    ScanPlan {
+        volume: folder_volume(root),
+        root: root.to_path_buf(),
+        skip: Default::default(),
+        devices: Vec::new(),
+        skipped: Vec::new(),
+        siblings: Vec::new(),
+        used_bytes: 0,
+        firmlinked: Vec::new(),
+        threads: 1,
+    }
+}
+
 #[cfg(target_os = "macos")]
 mod platform {
     use super::*;
@@ -222,7 +267,29 @@ mod platform {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
+mod platform {
+    use super::*;
+    use kelvo_collect::disk_space::StdLister;
+    use kelvo_collect::linux::space;
+
+    pub fn volumes() -> Vec<SpaceVolume> {
+        space::volumes()
+    }
+    pub fn plan(mount: &str, include: &[String]) -> Result<ScanPlan, ScanError> {
+        space::plan(mount, include)
+    }
+    /// Enters the btrfs subvolumes mounted below the root (`linux::space`).
+    pub fn start(plan: ScanPlan) -> Result<Arc<Scan>, ScanError> {
+        let devices = plan.devices.clone();
+        let lister = move || StdLister {
+            devices: devices.clone(),
+        };
+        Scan::start(plan, lister, || {})
+    }
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
 mod platform {
     use super::*;
     use kelvo_collect::disk_space::StdLister;
@@ -234,7 +301,7 @@ mod platform {
         Err(ScanError::UnknownVolume(mount.to_owned()))
     }
     pub fn start(plan: ScanPlan) -> Result<Arc<Scan>, ScanError> {
-        Scan::start(plan, || StdLister, || {})
+        Scan::start(plan, StdLister::default, || {})
     }
 }
 
@@ -256,6 +323,7 @@ mod tests {
             },
             root: root.to_path_buf(),
             skip: HashSet::new(),
+            devices: Vec::new(),
             skipped: Vec::new(),
             siblings: Vec::new(),
             used_bytes: 1 << 30,

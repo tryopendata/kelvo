@@ -65,6 +65,12 @@ export interface MockTransport extends Transport {
    */
   stepClock(deltaMs: number): void;
   /**
+   * The host's side of a controller's session ending (D-117): its space
+   * scan stops and its report goes. A remote host's peer gets this when the
+   * remote leaves `connected`.
+   */
+  endSpaceSession(): void;
+  /**
    * The window is shown (`true`) or hidden, as Rust hears it: hidden, no
    * frames go out; shown, each channel gets the span it missed (D-066).
    */

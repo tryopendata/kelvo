@@ -44,16 +44,23 @@ export default function MemoryRoute() {
         { label: "Peak", format: (u) => fmt(u.mem_peak_bytes), ranked: true },
         { label: "Avg while running", format: (u) => fmt(u.mem_avg_bytes) },
       ],
-      footnote: (
+      footnote: mac ? (
         <>
           Footprint, as Activity Monitor's Memory column counts it. An app's
           peak is its processes summed at one sample, so the processes under it
           can add up to more. The average is over the time the app was running.
           Other users' and macOS processes aren't listed.
         </>
+      ) : (
+        <>
+          Resident memory (RSS), as top and ps count it: pages a process shares
+          count for each process using them. An app's peak is its processes
+          summed at one sample, so the processes under it can add up to more.
+          The average is over the time the app was running.
+        </>
       ),
     };
-  }, [bytes]);
+  }, [bytes, mac]);
 
   return (
     <BrushProvider>

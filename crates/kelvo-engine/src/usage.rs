@@ -32,8 +32,8 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 
 use kelvo_collect::ProcessSample;
+use kelvo_schema::usage::{UsageApp, UsageByApp, UsageKey, UsageProc, UsageTotal};
 use kelvo_schema::{Tier, ceil_to, floor_to};
-use serde::{Deserialize, Serialize};
 
 mod series;
 
@@ -83,24 +83,6 @@ const PROC_FLOOR: Floor = Floor {
     watts: 1e-5,
     mem_bytes: 32 << 20,
 };
-
-// Also what [`UsageRing::by_app`] sorts by. The doc comment is the webview's, since the
-// shell takes this over IPC as it is (D-100).
-/// What `query_usage_by_app` sorts apps by (D-099).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
-#[serde(rename_all = "snake_case")]
-pub enum UsageKey {
-    /// Average CPU.
-    Cpu,
-    /// Average GPU.
-    Gpu,
-    /// Peak footprint.
-    Memory,
-    /// Bytes read plus written.
-    Disk,
-    /// Joules.
-    Energy,
-}
 
 /// Amounts used over a span (or, in a floor check, per second of it).
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -255,81 +237,6 @@ struct Proc {
 struct App {
     name: Arc<str>,
     last_bucket: i64,
-}
-
-/// One process's use over a range.
-#[derive(Clone, Debug, PartialEq)]
-pub struct UsageProc {
-    pub pid: i32,
-    pub start_time_us: i64,
-    pub name: Arc<str>,
-    /// Average percent of one core over the range's covered time.
-    pub cpu_avg_pct: f64,
-    /// Average percent of the GPU over the time GPU was measured; `None` when it never was.
-    pub gpu_avg_pct: Option<f64>,
-    pub mem_peak_b: u64,
-    pub read_b: f64,
-    pub write_b: f64,
-    pub energy_j: f64,
-    pub avg_w: f64,
-    /// Listed by the newest batch: still running as of then.
-    pub running: bool,
-    /// Its app bundle's main executable.
-    pub app_main: bool,
-}
-
-/// One app's use over a range.
-#[derive(Clone, Debug, PartialEq)]
-pub struct UsageApp {
-    /// The app identity (D-089), or the process name when none was resolved.
-    pub name: Arc<str>,
-    pub cpu_avg_pct: f64,
-    pub gpu_avg_pct: Option<f64>,
-    /// Largest footprint of its processes summed at one sample.
-    pub mem_peak_b: u64,
-    /// Average footprint while it was running.
-    pub mem_avg_b: u64,
-    pub read_b: f64,
-    pub write_b: f64,
-    pub energy_j: f64,
-    pub avg_w: f64,
-    /// Kept processes, ordered like the apps.
-    pub processes: Vec<UsageProc>,
-}
-
-/// Every process's use over a range, before any floor.
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct UsageTotal {
-    pub cpu_avg_pct: f64,
-    pub gpu_avg_pct: Option<f64>,
-    pub read_b: f64,
-    pub write_b: f64,
-    pub energy_j: f64,
-    pub avg_w: f64,
-}
-
-/// Per-app use over a range ([`UsageRing::by_app`]).
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct UsageByApp {
-    /// The range the sums cover: the request widened to whole buckets.
-    pub from_ms: i64,
-    pub to_ms: i64,
-    /// When the ring started counting, `None` before any batch. A range starting earlier
-    /// was only measured from here.
-    pub since_ms: Option<i64>,
-    /// Buckets ending at or before this are final: the next sample's interval starts
-    /// at the newest one, so it charges only later time. `None` before any batch.
-    pub complete_to_ms: Option<i64>,
-    /// The newest batch: no process time after it is counted yet.
-    pub latest_ms: Option<i64>,
-    /// Time inside the range a process sample covered, ms. Averages divide by this; 0
-    /// means nothing was measured, not zero use.
-    pub covered_ms: i64,
-    /// The part of `covered_ms` whose samples measured GPU.
-    pub gpu_covered_ms: i64,
-    pub total: UsageTotal,
-    /// The largest `limit` by the requested key, largest first.
-    pub apps: Vec<UsageApp>,
 }
 
 #[derive(Default)]
@@ -754,7 +661,7 @@ impl UsageRing {
             a.processes.push(UsageProc {
                 pid: p.pid,
                 start_time_us: p.start_time_us,
-                name: Arc::clone(&p.name),
+                name: p.name.to_string(),
                 cpu_avg_pct: cpu_pct(used),
                 gpu_avg_pct: gpu_pct(used),
                 mem_peak_b: u64::from(*peak) * 1_024,
@@ -848,7 +755,7 @@ fn app_entry<'a>(
     id: u32,
     gpu_avg_pct: Option<f64>,
 ) -> Option<&'a mut UsageApp> {
-    let name = Arc::clone(&names.get(&id)?.name);
+    let name = names.get(&id)?.name.to_string();
     Some(apps.entry(id).or_insert_with(|| UsageApp {
         name,
         cpu_avg_pct: 0.0,
@@ -1039,7 +946,7 @@ mod tests {
             ring.push(T0 + i * 10_000, &[busy(2, "Other", 1.0, 10.0)]);
         }
         let r = ring.by_app(T0, T0 + 60_000, UsageKey::Memory, 5);
-        assert_eq!(r.apps[0].name.as_ref(), "Big");
+        assert_eq!(r.apps[0].name, "Big");
         assert_eq!(r.apps[0].mem_avg_b, 1_024 * MIB);
         assert!(!r.apps[0].processes[0].running);
     }

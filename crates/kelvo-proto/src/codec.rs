@@ -71,6 +71,8 @@ pub const KNOWN_MESSAGE_TAGS: &[&str] = &[
     "Truncated",
     "HostSummary",
     "Error",
+    "Request",
+    "Reply",
 ];
 
 /// Reads only the `t` field of a message body, skipping the content.

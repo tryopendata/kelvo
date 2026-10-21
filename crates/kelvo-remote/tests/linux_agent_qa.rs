@@ -268,6 +268,225 @@ async fn live_ring_refills_from_history_on_a_real_host() {
     assert!(widest <= 20_000, "a hole of {widest} ms");
 }
 
+/// Updates the agent already installed to `KELVO_QA_AGENT` through the app's update path
+/// (history kept, unit rewritten), as the controller's "Update agent" does:
+///
+/// ```sh
+/// KELVO_QA_ALIAS=linux-tailscale \
+/// KELVO_QA_AGENT=src-tauri/binaries/agent/kelvo-agent-aarch64-unknown-linux-musl \
+///   cargo test -p kelvo-remote --test linux_agent_qa update_the -- --ignored --nocapture
+/// ```
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "updates the agent installed on a real host; see the test docs"]
+async fn update_the_installed_agent() {
+    let alias = std::env::var("KELVO_QA_ALIAS").unwrap_or_else(|_| "linux-tailscale".into());
+    let bytes = std::fs::read(std::env::var("KELVO_QA_AGENT").unwrap()).unwrap();
+    let sha: String = Sha256::digest(&bytes)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+    let probe = agent_install::probe_linux(&alias).await.unwrap();
+    assert!(probe.existing().is_some(), "install the agent first");
+    let before = rows(&alias).await;
+    let status = agent_install::update(&alias, &probe, &bytes, &sha)
+        .await
+        .unwrap();
+    println!("updated: {status:?}");
+    assert!(status.running);
+    assert!(rows(&alias).await >= before, "history kept");
+    sh(
+        &alias,
+        "grep Protect /etc/systemd/system/kelvo-agent.service",
+    )
+    .await;
+}
+
+/// Remote queries (D-117) against an agent already installed: per-app use over the last
+/// ten minutes, then a space scan of `/` explored the way the dashboard does, then
+/// cleared. Prints the agent's memory before and after; the scan's report is dropped at
+/// the end.
+///
+/// ```sh
+/// KELVO_QA_ALIAS=linux-tailscale \
+///   cargo test -p kelvo-remote --test linux_agent_qa queries -- --ignored --nocapture
+/// ```
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "connects to an agent installed on a real host; see the test docs"]
+async fn queries_answer_on_a_real_host() {
+    use kelvo_engine::{LiveHub, Source as _, SourceSink};
+    use kelvo_proto::{Answer, Query};
+    use kelvo_schema::disk_space::SpacePhase;
+    use std::sync::Arc;
+
+    let alias = std::env::var("KELVO_QA_ALIAS").unwrap_or_else(|_| "linux-tailscale".into());
+    let probe = agent_install::probe_linux(&alias).await.unwrap();
+    assert!(probe.existing().is_some(), "install the agent first");
+    let config = EndpointConfig {
+        lan: Some(alias.clone()),
+        tailscale: None,
+        command: probe.target().unwrap().remote_command(),
+    };
+    let local = HostId(uuid::Uuid::new_v4());
+    let session = kelvo_remote::connect(&config, local, None).await.unwrap();
+    let record = kelvo_schema::HostRecord::from_identity(session.hello.host.clone(), false);
+    session.close().await;
+    let source = kelvo_remote::RemoteSource::new(record, local, config, Arc::new(|_| {}), None);
+    let mut handle = source
+        .clone()
+        .start(SourceSink {
+            live: LiveHub::default(),
+            store: None,
+        })
+        .unwrap();
+    let wait = Duration::from_secs(20);
+    let call = |query: Query| {
+        let source = source.clone();
+        async move {
+            for _ in 0..30 {
+                match source.call(query.clone(), wait).await {
+                    Err(RemoteError::Transport(m)) if m.contains("not connected") => {
+                        tokio::time::sleep(Duration::from_secs(1)).await;
+                    }
+                    other => return other.unwrap(),
+                }
+            }
+            panic!("never connected")
+        }
+    };
+    let memory = || {
+        sh(
+            &alias,
+            "systemctl show kelvo-agent -p MemoryCurrent -p MemoryPeak",
+        )
+    };
+
+    let now = kelvo_engine::wall_ms();
+    let Answer::UsageByApp(usage) = call(Query::UsageByApp {
+        from_ms: now - 600_000,
+        to_ms: now,
+        by: kelvo_schema::usage::UsageKey::Memory,
+        limit: 5,
+    })
+    .await
+    else {
+        panic!("expected usage")
+    };
+    println!(
+        "usage: covered {} s since {:?}",
+        usage.covered_ms / 1000,
+        usage.since_ms
+    );
+    for app in &usage.apps {
+        println!(
+            "  {:<24} mem avg {:>6} MB  cpu {:>5.1}%",
+            app.name,
+            app.mem_avg_b / 1_000_000,
+            app.cpu_avg_pct
+        );
+    }
+    assert!(usage.covered_ms > 0 && !usage.apps.is_empty());
+
+    let Answer::SpaceVolumes(volumes) = call(Query::SpaceVolumes).await else {
+        panic!("expected volumes")
+    };
+    for v in &volumes {
+        println!(
+            "volume {:<24} used {:>6.1} of {:>6.1} GB",
+            v.mount,
+            v.used_bytes / 1e9,
+            v.total_bytes / 1e9
+        );
+    }
+    assert_eq!(volumes.first().map(|v| v.mount.as_str()), Some("/"));
+    memory().await;
+
+    let started = std::time::Instant::now();
+    let start = Query::SpaceStart {
+        volume: "/".into(),
+        include: Vec::new(),
+    };
+    assert!(matches!(call(start).await, Answer::SpaceStatus(_)));
+    let mut anon_peak = 0u64;
+    let status = loop {
+        let Answer::SpaceStatus(status) = call(Query::SpaceStatus).await else {
+            panic!("expected a status")
+        };
+        let anon = run_remote(
+            &alias,
+            "grep '^anon ' /sys/fs/cgroup/system.slice/kelvo-agent.service/memory.stat",
+        )
+        .await
+        .unwrap_or_default();
+        let anon = anon.split_whitespace().nth(1).and_then(|n| n.parse().ok());
+        anon_peak = anon_peak.max(anon.unwrap_or(0));
+        if status.phase != SpacePhase::Scanning || started.elapsed() > Duration::from_secs(900) {
+            break status;
+        }
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    };
+    println!(
+        "scan: {:?} in {:.0} s, {} items, {:.1} GB measured",
+        status.phase,
+        started.elapsed().as_secs_f64(),
+        status.items,
+        status.measured_bytes / 1e9
+    );
+    println!(
+        "agent anonymous memory peak during the scan: {} MB",
+        anon_peak / 1_000_000
+    );
+    memory().await;
+    assert_eq!(status.phase, SpacePhase::Done);
+    // Shared extents (snapshots) must not count the same space many times over.
+    assert!(
+        status.measured_bytes <= status.used_bytes * 1.15,
+        "measured {} of {} used",
+        status.measured_bytes,
+        status.used_bytes
+    );
+    let report_id = status.report_id.unwrap();
+    let Answer::SpaceReport(Some(report)) = call(Query::SpaceReport).await else {
+        panic!("expected the report")
+    };
+    println!(
+        "report: {} unreadable, skipped {:?}",
+        report.unreadable, report.skipped
+    );
+    let Answer::SpaceSubtree(root) = call(Query::SpaceSubtree {
+        report: report_id,
+        node: None,
+    })
+    .await
+    else {
+        panic!("expected the root")
+    };
+    for child in root.children.iter().take(8) {
+        println!("  {:<24} {:>6.1} GB", child.name, child.bytes / 1e9);
+    }
+    let names: Vec<&str> = root.children.iter().map(|c| c.name.as_str()).collect();
+    assert!(
+        names.contains(&"home") && names.contains(&"var"),
+        "{names:?}"
+    );
+    assert!(
+        !names.contains(&"proc") && !names.contains(&"boot"),
+        "{names:?}"
+    );
+    let Answer::SpaceFiles(files) = call(Query::SpaceLargestFiles { report: report_id }).await
+    else {
+        panic!("expected files")
+    };
+    assert!(!files.is_empty());
+
+    assert!(matches!(call(Query::SpaceClear).await, Answer::Done));
+    let Answer::SpaceStatus(after) = call(Query::SpaceStatus).await else {
+        panic!("expected a status")
+    };
+    assert_eq!(after.phase, SpacePhase::Idle);
+    handle.stop();
+    memory().await;
+}
+
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "installs the agent on a real host; see the module docs"]
 async fn linux_agent_lifecycle_on_a_real_host() {

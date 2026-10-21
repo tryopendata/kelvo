@@ -23,7 +23,7 @@ import type { MockQueries } from "./queries";
 import type { MockRing } from "./ring";
 import type { MockSettings } from "./settings";
 import type { MockStore } from "./store";
-import { mockUsageByApp } from "./usage";
+import { EXITED, LINUX_EXITED, mockUsageByApp } from "./usage";
 import { mockUsageSeries } from "./usage-series";
 export class MockUsageQueries {
   constructor(
@@ -115,11 +115,14 @@ export class MockUsageQueries {
             this.queries.historyPage
           )
         : null;
+    const linux = this.ring.flags.linux;
     const byApp = mockUsageByApp({
       processes: gpu
         ? withGpuPct(this.processes.processRows())
         : this.processes.processRows(),
-      user: MOCK_USER,
+      // A Linux agent running as root reads every user's processes (D-116).
+      user: linux ? null : MOCK_USER,
+      exited: linux ? LINUX_EXITED : EXITED,
       fromMs,
       toMs,
       sinceMs,

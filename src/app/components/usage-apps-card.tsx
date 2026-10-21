@@ -7,7 +7,7 @@ import type {
   UsageKey,
 } from "@core/generated/bindings";
 import { targetKey } from "@core/process-selection";
-import { CommandFailure } from "@core/transport";
+import { remoteQueryText } from "@core/remote-errors";
 import {
   gpuShortfall,
   processCount,
@@ -90,26 +90,7 @@ export interface UsageTableConfig {
  * individual processes selectable too. After the apps come "Other apps" and
  * "System and other", so additive columns add up to the host's figure.
  */
-export function UsageAppsCard(props: {
-  windowMs: number;
-  config: UsageTableConfig;
-  viewControl?: ReactNode;
-}) {
-  const local = useIsLocalHost();
-  // A Linux agent keeps no per-app history to open elsewhere (D-116).
-  const mac = useHostNoun() === "Mac";
-  return local ? (
-    <LocalUsageAppsCard {...props} />
-  ) : (
-    <p className="text-[12px] text-muted-foreground">
-      {mac
-        ? "Historical use by app is available on the monitored Mac."
-        : "Historical use by app isn't kept for this host."}
-    </p>
-  );
-}
-
-function LocalUsageAppsCard({
+export function UsageAppsCard({
   windowMs,
   config,
   viewControl,
@@ -121,8 +102,11 @@ function LocalUsageAppsCard({
   const { selection, range, keepPrevious } = useRangeScope(windowMs);
   const q = useUsageByApp(range, config.by, { keepPrevious });
   const [query, setQuery] = useState("");
-  // The App Store edition has no Quit or Force Quit (D-065).
-  const canSignal = useEdition()?.process_signal === true;
+  // The App Store edition has no Quit or Force Quit (D-065), and a remote
+  // host's processes are never signalled from here (D-117).
+  const local = useIsLocalHost();
+  const edition = useEdition();
+  const canSignal = local && edition?.process_signal === true;
   const data = heldFor(q, windowMs);
   const shown: TimeRange | null = data
     ? { fromMs: data.from_ms, toMs: data.to_ms }
@@ -132,10 +116,7 @@ function LocalUsageAppsCard({
   if (q.isError) {
     body = (
       <AppsNote>
-        {q.error instanceof CommandFailure &&
-        q.error.error.kind === "remote_host"
-          ? "Use by app is only kept on the Mac it describes."
-          : "Couldn't load use by app."}
+        {remoteQueryText(q.error, "use by app") ?? "Couldn't load use by app."}
       </AppsNote>
     );
   } else if (!data) {
@@ -215,6 +196,7 @@ function UsageBody({
   const searching = query.trim() !== "";
   const shown = showAll || searching ? rows : rows.slice(0, COLLAPSED_APPS);
   const coverage = usageCoverage(data);
+  const noun = useHostNoun();
   const share = usageWhole(data, by) !== null;
   const span =
     2 + config.columns.length + (share ? 1 : 0) + (canSignal ? 1 : 0);
@@ -248,8 +230,8 @@ function UsageBody({
         <AppsNote>
           Processes were sampled for{" "}
           <span className="figures">{formatSpan(coverage.coveredMs)}</span> of{" "}
-          <span className="figures">{formatSpan(coverage.spanMs)}</span> (the
-          Mac slept or sampling paused). Averages are over the sampled time.
+          <span className="figures">{formatSpan(coverage.spanMs)}</span> (the{" "}
+          {noun} slept or sampling paused). Averages are over the sampled time.
         </AppsNote>
       )}
       {by === "gpu" && <GpuShortfallNote data={data} />}

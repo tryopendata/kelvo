@@ -24,6 +24,7 @@ import {
   TableHeader,
   TableRow,
 } from "~/components/ui/table";
+import { useHostNoun } from "~/hooks/use-host-record";
 import { cn } from "~/lib/utils";
 import { MeterTrack } from "~/widgets/meter-track";
 import {
@@ -36,7 +37,8 @@ import {
 } from "../_lib/space";
 
 export interface SpaceItemActions {
-  reveal: (target: SpaceTarget) => void;
+  /** Show in Finder; `null` on a remote host, whose files this Mac can't show. */
+  reveal: ((target: SpaceTarget) => void) | null;
   copyPath: (target: SpaceTarget) => void;
 }
 
@@ -78,6 +80,8 @@ export const SpaceTable = memo(function SpaceTable({
   onUp: () => void;
   actions: SpaceItemActions;
 }) {
+  // Other names the host's filesystem: APFS on a Mac.
+  const mac = useHostNoun() === "Mac";
   return (
     <Table aria-label="Folder contents">
       <TableHeader>
@@ -125,6 +129,7 @@ export const SpaceTable = memo(function SpaceTable({
             onHover={onHover}
             onOpen={onOpen}
             actions={actions}
+            mac={mac}
           />
         ))}
       </TableBody>
@@ -139,6 +144,7 @@ const NodeRow = memo(function NodeRow({
   onHover,
   onOpen,
   actions,
+  mac,
 }: {
   node: SpaceNode;
   total: number;
@@ -146,6 +152,7 @@ const NodeRow = memo(function NodeRow({
   onHover: (key: string | null) => void;
   onOpen: (node: SpaceNode) => void;
   actions: SpaceItemActions;
+  mac: boolean;
 }) {
   const key = spaceKey(node);
   const pending = node.kind === "folder" && !node.done;
@@ -170,7 +177,7 @@ const NodeRow = memo(function NodeRow({
         if (opens) onOpen(node);
       }}
     >
-      <NameCell node={node} />
+      <NameCell node={node} mac={mac} />
       <TableCell
         className={cn(
           "figures whitespace-nowrap text-right",
@@ -203,11 +210,11 @@ const NodeRow = memo(function NodeRow({
 
 const COUNTED = new Set(["folder", "smaller"]);
 
-function NameCell({ node }: { node: SpaceNode }) {
+function NameCell({ node, mac }: { node: SpaceNode; mac: boolean }) {
   const real = node.kind === "folder" || node.kind === "file";
   const note =
     node.kind === "other"
-      ? "Snapshots, APFS metadata, unreadable and skipped folders"
+      ? `Snapshots, ${mac ? "APFS" : "filesystem"} metadata, unreadable and skipped folders`
       : real
         ? null
         : kindLabel(node.kind, node);
@@ -266,22 +273,25 @@ function RowActions({
   target: SpaceTarget;
   actions: SpaceItemActions;
 }) {
+  const { reveal } = actions;
   const button =
     "grid size-6 place-items-center rounded-control text-fg-subtle opacity-0 outline-none hover:bg-selected hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring group-hover:opacity-100 group-focus-within:opacity-100";
   return (
     <div className="flex justify-end gap-0.5">
-      <button
-        type="button"
-        className={button}
-        aria-label={`Show ${name} in Finder`}
-        title="Show in Finder"
-        onClick={(e) => {
-          e.stopPropagation();
-          actions.reveal(target);
-        }}
-      >
-        <FolderSearch aria-hidden className="size-3.5" />
-      </button>
+      {reveal && (
+        <button
+          type="button"
+          className={button}
+          aria-label={`Show ${name} in Finder`}
+          title="Show in Finder"
+          onClick={(e) => {
+            e.stopPropagation();
+            reveal(target);
+          }}
+        >
+          <FolderSearch aria-hidden className="size-3.5" />
+        </button>
+      )}
       <button
         type="button"
         className={button}
@@ -309,15 +319,18 @@ function ItemMenu({
   actions: SpaceItemActions;
   children: ReactNode;
 }) {
+  const { reveal } = actions;
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
       <ContextMenuContent className="w-64">
         <ContextMenuLabel className="truncate">{name}</ContextMenuLabel>
         <ContextMenuSeparator />
-        <ContextMenuItem onSelect={() => actions.reveal(target)}>
-          Show in Finder
-        </ContextMenuItem>
+        {reveal && (
+          <ContextMenuItem onSelect={() => reveal(target)}>
+            Show in Finder
+          </ContextMenuItem>
+        )}
         <ContextMenuItem onSelect={() => actions.copyPath(target)}>
           Copy path
         </ContextMenuItem>

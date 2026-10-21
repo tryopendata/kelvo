@@ -16,12 +16,15 @@ pub async fn read<R: AsyncRead + Unpin>(reader: &mut R) -> Result<Message> {
     Ok(kelvo_proto::decode_message(&body)?)
 }
 pub async fn write<W: AsyncWrite + Unpin>(writer: &mut W, message: &Message) -> Result<()> {
-    let bytes = kelvo_proto::encode_frame(message)?;
+    write_frame(writer, &kelvo_proto::encode_frame(message)?).await
+}
+/// Writes a frame already encoded with `kelvo_proto::encode_frame`.
+pub async fn write_frame<W: AsyncWrite + Unpin>(writer: &mut W, bytes: &[u8]) -> Result<()> {
     if bytes.len() > MAX_WIRE_BYTES + 4 {
         return Err(RemoteError::Protocol("outbound frame too large".into()));
     }
     tokio::time::timeout(std::time::Duration::from_secs(10), async {
-        writer.write_all(&bytes).await?;
+        writer.write_all(bytes).await?;
         writer.flush().await
     })
     .await

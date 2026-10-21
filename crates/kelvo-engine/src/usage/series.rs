@@ -53,7 +53,7 @@ impl UsageRing {
         let (ids, names): (Vec<u32>, Vec<Arc<str>>) = ranked
             .apps
             .into_iter()
-            .filter_map(|a| Some((*self.app_ids.get(&a.name)?, a.name)))
+            .filter_map(|a| Some((*self.app_ids.get(a.name.as_str())?, Arc::from(a.name))))
             .unzip();
         let n = usize::try_from((to - from) / USAGE_BUCKET_MS).unwrap_or(0);
         let mut values = vec![vec![None; n]; ids.len()];

@@ -3,8 +3,8 @@
 //! Kelvo's processes. Which process an app row's Quit acts on is decided here, so every
 //! view that offers it agrees.
 
-use kelvo_engine::{UsageApp, UsageProc};
 use kelvo_schema::JsSafeInt;
+use kelvo_schema::usage::{UsageApp, UsageProc};
 use kelvo_store::{MetricStats, RangeStats};
 use serde::Serialize;
 
@@ -49,7 +49,7 @@ fn refusal_of(
 /// covered part of the range (`None` with history unreadable), `cores` the host's CPU
 /// cores.
 pub fn usage_by_app(
-    e: kelvo_engine::UsageByApp,
+    e: kelvo_schema::usage::UsageByApp,
     stats: Option<&RangeStats>,
     cores: usize,
     refusal: impl Fn(i32, i64, &str) -> Option<SignalRefusal>,
@@ -188,7 +188,7 @@ pub fn check_series_range(from_ms: i64, to_ms: i64) -> Result<(), CommandError> 
 /// Where the remainder's host series are read: the covered part of the usage range,
 /// `(from, to, cut)`. `cut` is the newest process sample, where the apps' sums stop, so
 /// the host series are cut there too rather than at now.
-pub fn remainder_range(e: &kelvo_engine::UsageByApp) -> Option<(i64, i64, i64)> {
+pub fn remainder_range(e: &kelvo_schema::usage::UsageByApp) -> Option<(i64, i64, i64)> {
     let from = e.since_ms?.max(e.from_ms);
     let cut = e.latest_ms?;
     (e.covered_ms > 0 && from < e.to_ms).then_some((from, e.to_ms, cut))
@@ -196,7 +196,11 @@ pub fn remainder_range(e: &kelvo_engine::UsageByApp) -> Option<(i64, i64, i64)> 
 
 /// The host's series less the apps' totals, clamped at 0. Averages are compared with
 /// averages, each over its own measured time; bytes with bytes over the same range.
-fn other(e: &kelvo_engine::UsageByApp, stats: Option<&RangeStats>, cores: usize) -> UsageOther {
+fn other(
+    e: &kelvo_schema::usage::UsageByApp,
+    stats: Option<&RangeStats>,
+    cores: usize,
+) -> UsageOther {
     let stat = |m: &str| -> Option<&MetricStats> {
         stats?
             .metrics
@@ -267,7 +271,7 @@ pub fn series_stats(s: RangeStats) -> SeriesStats {
 
 #[cfg(test)]
 mod tests {
-    use kelvo_engine::UsageTotal as EngineTotal;
+    use kelvo_schema::usage::UsageTotal as EngineTotal;
 
     use super::*;
 
@@ -275,7 +279,7 @@ mod tests {
         UsageProc {
             pid,
             start_time_us: 1,
-            name: format!("p{pid}").into(),
+            name: format!("p{pid}"),
             cpu_avg_pct: 0.0,
             gpu_avg_pct: None,
             mem_peak_b: 0,
@@ -319,7 +323,7 @@ mod tests {
         proc.start_time_us = 123;
         proc.read_b = 600.;
         proc.write_b = 300.;
-        let input = kelvo_engine::UsageByApp {
+        let input = kelvo_schema::usage::UsageByApp {
             from_ms: 0,
             to_ms: 60_000,
             covered_ms: 3_000,
@@ -337,7 +341,7 @@ mod tests {
             (Some(200.), Some(100.), Some(300.))
         );
         let out = usage_by_app(
-            kelvo_engine::UsageByApp {
+            kelvo_schema::usage::UsageByApp {
                 covered_ms: 0,
                 ..input
             },
@@ -364,7 +368,7 @@ mod tests {
 
     #[test]
     fn exited_processes_carry_no_refusal() {
-        let e = kelvo_engine::UsageByApp {
+        let e = kelvo_schema::usage::UsageByApp {
             from_ms: 0,
             to_ms: 10_000,
             since_ms: Some(0),
@@ -377,7 +381,7 @@ mod tests {
                 "WindowServer",
                 vec![p(1, true, false), p(2, false, false)],
             )],
-            ..kelvo_engine::UsageByApp::default()
+            ..kelvo_schema::usage::UsageByApp::default()
         };
         let out = usage_by_app(e, None, 8, |_, _, _| Some(SignalRefusal::WindowServer));
         let procs = &out.apps[0].processes;
@@ -389,7 +393,7 @@ mod tests {
 
     #[test]
     fn the_remainder_is_the_host_less_the_apps_clamped() {
-        let e = kelvo_engine::UsageByApp {
+        let e = kelvo_schema::usage::UsageByApp {
             from_ms: 0,
             to_ms: 60_000,
             since_ms: Some(0),
@@ -402,7 +406,7 @@ mod tests {
                 write_b: 9_000.0,
                 ..EngineTotal::default()
             },
-            ..kelvo_engine::UsageByApp::default()
+            ..kelvo_schema::usage::UsageByApp::default()
         };
         let stats = RangeStats {
             from_ms: 0,
@@ -426,7 +430,7 @@ mod tests {
 
         // Nothing covered, or no host series: no remainder rather than a wrong one.
         let none = other(
-            &kelvo_engine::UsageByApp {
+            &kelvo_schema::usage::UsageByApp {
                 covered_ms: 0,
                 ..e.clone()
             },
@@ -439,17 +443,17 @@ mod tests {
 
     #[test]
     fn the_remainder_reads_only_the_covered_part() {
-        let e = kelvo_engine::UsageByApp {
+        let e = kelvo_schema::usage::UsageByApp {
             from_ms: 0,
             to_ms: 60_000,
             since_ms: Some(25_000),
             latest_ms: Some(57_000),
             covered_ms: 32_000,
-            ..kelvo_engine::UsageByApp::default()
+            ..kelvo_schema::usage::UsageByApp::default()
         };
         // Cut where the apps' sums stop, not at now.
         assert_eq!(remainder_range(&e), Some((25_000, 60_000, 57_000)));
-        let never = kelvo_engine::UsageByApp { covered_ms: 0, ..e };
+        let never = kelvo_schema::usage::UsageByApp { covered_ms: 0, ..e };
         assert_eq!(remainder_range(&never), None);
     }
 

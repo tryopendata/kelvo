@@ -14,16 +14,19 @@ export function nativeDiskSpace(): Pick<
   | "diskSpacePath"
 > {
   return {
-    diskSpaceVolumes: () => commands.diskSpaceVolumes(),
-    diskSpaceStart: (volume, include) =>
-      commands.diskSpaceStart(volume, include),
-    diskSpaceStatus: () => commands.diskSpaceStatus(),
-    diskSpaceCancel: () => commands.diskSpaceCancel(),
-    diskSpaceReport: () => commands.diskSpaceReport(),
-    diskSpaceSubtree: (report, node) => commands.diskSpaceSubtree(report, node),
-    diskSpaceLargestFiles: (report) => commands.diskSpaceLargestFiles(report),
+    diskSpaceVolumes: (host) => commands.diskSpaceVolumes(host),
+    diskSpaceStart: (host, volume, include) =>
+      commands.diskSpaceStart(host, volume, include),
+    diskSpaceStatus: (host) => commands.diskSpaceStatus(host),
+    diskSpaceCancel: (host) => commands.diskSpaceCancel(host),
+    diskSpaceReport: (host) => commands.diskSpaceReport(host),
+    diskSpaceSubtree: (host, report, node) =>
+      commands.diskSpaceSubtree(host, report, node),
+    diskSpaceLargestFiles: (host, report) =>
+      commands.diskSpaceLargestFiles(host, report),
     diskSpaceReveal: (report, target) =>
       commands.diskSpaceReveal(report, target),
-    diskSpacePath: (report, target) => commands.diskSpacePath(report, target),
+    diskSpacePath: (host, report, target) =>
+      commands.diskSpacePath(host, report, target),
   };
 }

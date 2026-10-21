@@ -27,6 +27,13 @@ mod tests;
 /// their folder's smaller items, wherever they are.
 pub const MIN_KEEP_DIVISOR: u64 = 1_000_000;
 
+/// What a finished root's remainder holds, as the platform's filesystem has it.
+#[cfg(target_os = "macos")]
+pub const OTHER_NAME: &str = "Other: snapshots, APFS metadata, unreadable and skipped folders";
+#[cfg(not(target_os = "macos"))]
+pub const OTHER_NAME: &str =
+    "Other: snapshots, subvolumes, filesystem metadata, unreadable and skipped folders";
+
 /// Another volume sharing the scanned volume's container, shown as one entry.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Sibling {
@@ -42,6 +49,9 @@ pub struct ScanPlan {
     pub root: PathBuf,
     /// Root-relative paths not entered.
     pub skip: HashSet<PathBuf>,
+    /// Devices the walk enters besides the root's: on Linux, the btrfs subvolumes
+    /// mounted below it (`linux::space`). A folder on any other device is not entered.
+    pub devices: Vec<u64>,
     /// Labels of the skipped locations, for the report.
     pub skipped: Vec<String>,
     pub siblings: Vec<Sibling>,
@@ -182,11 +192,7 @@ impl Scan {
             if node.done
                 && let Some(other) = self.other_bytes(node.bytes)
             {
-                children.push(synthetic(
-                    "Other: snapshots, APFS metadata, unreadable and skipped folders",
-                    SpaceKind::Other,
-                    other as f64,
-                ));
+                children.push(synthetic(OTHER_NAME, SpaceKind::Other, other as f64));
             }
             children.sort_by(|a, b| b.bytes.total_cmp(&a.bytes));
             folder.bytes = total;

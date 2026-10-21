@@ -57,6 +57,7 @@ mod module;
 mod series;
 pub mod settings;
 mod snapshot;
+pub mod usage;
 
 pub use alert::{AlertRule, Cmp, Condition, ThermalState};
 pub use caps::{Capabilities, DiskDevice, Entitlement, ModuleCap, UnsupportedReason};

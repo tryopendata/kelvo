@@ -1,6 +1,6 @@
 import type { LiveProcess, SeriesStats } from "@core/generated/bindings";
 import { describe, expect, it } from "vitest";
-import { mockUsageByApp } from "./usage";
+import { EXITED, mockUsageByApp } from "./usage";
 
 const MIB = 1024 * 1024;
 
@@ -47,6 +47,7 @@ function stats(metrics: [string, number][]): SeriesStats {
 
 const base = {
   user: "me",
+  exited: EXITED,
   fromMs: 0,
   toMs: 60_000,
   sinceMs: 0,

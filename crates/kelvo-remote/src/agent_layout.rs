@@ -163,7 +163,7 @@ impl AgentLayout {
                  RuntimeDirectory=kelvo-agent\n\
                  RuntimeDirectoryMode=0700\n\
                  ProtectSystem=strict\n\
-                 ProtectHome=yes\n\
+                 ProtectHome=read-only\n\
                  PrivateTmp=yes\n\
                  NoNewPrivileges=yes\n\
                  Nice=10\n\
@@ -318,7 +318,7 @@ mod tests {
             "[Unit]\nDescription=Kelvo agent\nStartLimitIntervalSec=0\n\n[Service]\n\
              ExecStart=/usr/local/bin/kelvo-agent run --system\n\
              StateDirectory=kelvo-agent\nRuntimeDirectory=kelvo-agent\nRuntimeDirectoryMode=0700\n\
-             ProtectSystem=strict\nProtectHome=yes\nPrivateTmp=yes\nNoNewPrivileges=yes\n\
+             ProtectSystem=strict\nProtectHome=read-only\nPrivateTmp=yes\nNoNewPrivileges=yes\n\
              Nice=10\nIOSchedulingClass=best-effort\nIOSchedulingPriority=7\n\
              MemoryMax=96M\nRestart=on-failure\nRestartSec=5s\n\n[Install]\nWantedBy=multi-user.target\n"
         );

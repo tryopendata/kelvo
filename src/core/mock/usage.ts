@@ -45,6 +45,12 @@ export const EXITED: readonly [
   ["Xcode", "ibtoold", 6188, 0.6, 35, 180, 0],
 ];
 
+/** The same on a Linux host: a build that ran and finished, no energy. */
+export const LINUX_EXITED: typeof EXITED = [
+  ["cc1plus", "cc1plus", 6120, 0, 180, 420, 12e6],
+  ["make", "make", 6104, 0, 4, 12, 0],
+];
+
 const MIB = 1024 * 1024;
 
 /** The engine's floors (`usage.rs`), on rates over the span. */
@@ -119,6 +125,7 @@ interface Row {
 export function mockUsageByApp({
   processes,
   user,
+  exited,
   fromMs,
   toMs,
   sinceMs,
@@ -130,8 +137,10 @@ export function mockUsageByApp({
   cores,
 }: {
   processes: readonly LiveProcess[];
-  /** Only this user's processes are readable (D-045). */
-  user: string;
+  /** Only this user's processes are readable (D-045); `null`: every user's. */
+  user: string | null;
+  /** Processes that exited during the span (`EXITED`). */
+  exited: typeof EXITED;
   fromMs: number;
   toMs: number;
   /** When the mock started counting. */
@@ -202,7 +211,7 @@ export function mockUsageByApp({
     });
   };
   for (const p of processes) {
-    if (p.user !== user) continue;
+    if (user !== null && p.user !== user) continue;
     const app = APP_OF[p.name] ?? p.name;
     add(app, app === p.name, 1, {
       pid: p.pid,
@@ -218,7 +227,7 @@ export function mockUsageByApp({
       refusal: p.refusal,
     });
   }
-  for (const [app, name, pid, watts, cpu, mib, writeBps] of EXITED) {
+  for (const [app, name, pid, watts, cpu, mib, writeBps] of exited) {
     add(app, false, 1 / 3, {
       pid,
       start_time_us: 1_759_500_000_000_000 + pid * 1_000_000,

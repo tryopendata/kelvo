@@ -3,6 +3,7 @@ import { formatBytes, formatRate, formatSpan } from "@core/format";
 import type { LiveProcess, ProcessUsage } from "@core/generated/bindings";
 import { FULL_TABLE } from "@core/process-interest";
 import { targetKey } from "@core/process-selection";
+import { remoteQueryText } from "@core/remote-errors";
 import { type ReactNode, useMemo, useState } from "react";
 import { Link, useLocation } from "react-router";
 import { AppsNote, AppsShell } from "~/components/app-table";
@@ -65,7 +66,7 @@ export function historicalDiskProcesses(
     );
 }
 
-const APP_CONFIG: UsageTableConfig = {
+const appConfig = (mac: boolean): UsageTableConfig => ({
   by: "disk",
   noun: "Disk",
   accent: "disk",
@@ -78,12 +79,13 @@ const APP_CONFIG: UsageTableConfig = {
       ranked: true,
     },
   ],
-  footnote:
-    "Bytes requested by this user's processes across all devices. Caches and filesystem work mean these figures differ from device traffic.",
-};
+  footnote: `Bytes requested by ${mac ? "this user's processes" : "the processes the agent can read (every user's when it runs as root)"} across all devices. Caches and filesystem work mean these figures differ from device traffic.`,
+});
 
 export function DiskProcesses({ windowMs }: { windowMs: number }) {
   const [apps, setApps] = useState(false);
+  const mac = useHostNoun() === "Mac";
+  const config = useMemo(() => appConfig(mac), [mac]);
   const viewControl = (
     <Button variant="ghost" size="sm" onClick={() => setApps(!apps)}>
       {apps ? "By process" : "By app"}
@@ -92,7 +94,7 @@ export function DiskProcesses({ windowMs }: { windowMs: number }) {
   return apps ? (
     <UsageAppsCard
       windowMs={windowMs}
-      config={APP_CONFIG}
+      config={config}
       viewControl={viewControl}
     />
   ) : (
@@ -111,8 +113,10 @@ function DiskProcessList({
   const range = useBrushRange();
   const local = useIsLocalHost();
   const noun = useHostNoun();
-  const canSignal = useEdition()?.process_signal === true;
-  useProcessInterest(local && range === null ? FULL_TABLE : null);
+  // Quit is this Mac's only; a remote host's processes are listed (D-117).
+  const edition = useEdition();
+  const canSignal = local && edition?.process_signal === true;
+  useProcessInterest(range === null ? FULL_TABLE : null);
   const live = useProcessRows();
   const history = useUsageByApp(range, "disk");
   const [query, setQuery] = useState("");
@@ -151,14 +155,11 @@ function DiskProcessList({
           </>
         }
       >
-        {!local ? (
+        {history.isError && range ? (
           <AppsNote>
-            {noun === "Mac"
-              ? "Process accounting is available on the monitored Mac."
-              : "Process I/O history isn't kept for this host."}
+            {remoteQueryText(history.error, "process I/O") ??
+              "Couldn't load process I/O for this range."}
           </AppsNote>
-        ) : history.isError && range ? (
-          <AppsNote>Couldn't load process I/O for this range.</AppsNote>
         ) : (
           <>
             {range && history.data && history.data.covered_ms > 0 && (

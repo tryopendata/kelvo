@@ -275,6 +275,12 @@ pub enum Message {
     SyncPage(SyncPage),
     Truncated { tier: Tier, earliest_ts_ms: i64, epoch: Uuid },
 
+    // On-demand calls, feature "query.v1" (D-117): one Reply per Request, matched by id.
+    // A Query/Answer that does not decode is Unknown, answered Error { code: Unsupported };
+    // a host with too many in flight answers Error { code: Busy }.
+    Request { id: u32, query: Query },      // per-app usage, space report calls
+    Reply { id: u32, answer: Answer },
+
     // Reserved in v1, first used in v4 by the fleet view
     HostSummary(HostSummary),
 

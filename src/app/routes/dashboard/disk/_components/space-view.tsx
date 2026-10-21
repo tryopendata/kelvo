@@ -1,12 +1,13 @@
 import { formatBytes } from "@core/format";
 import type { SpaceVolume } from "@core/generated/bindings";
+import { remoteQueryText } from "@core/remote-errors";
 import type { ComponentProps, ReactNode } from "react";
 import { useState } from "react";
 import { PageHeader } from "~/components/page-header";
-import { Button } from "~/components/ui/button";
-import { useIsLocalHost } from "~/hooks/use-is-local-host";
-import { useHostSelection } from "~/lib/host-selection";
+import { useHostNoun } from "~/hooks/use-host-record";
+import { useHostId } from "~/stores/host-store";
 import {
+  useSpaceDropped,
   useSpaceReport,
   useSpaceScan,
   useSpaceStatus,
@@ -19,24 +20,15 @@ import { SpaceVolumes } from "./space-volumes";
 /**
  * Disk › Space (plan/disk-space-report.md): pick a volume, scan it, and read
  * what uses it. `vol` is the volume in the URL; without one, the volume list.
+ * A remote host scans its own volumes over its session (D-117); each host
+ * keeps its own scan, so switching hosts starts this view over.
  */
-export function SpaceView({
-  vol,
-  onVol,
-  switcher,
-}: {
+export function SpaceView(props: {
   vol: string | null;
   onVol: (mount: string | null) => void;
   switcher: ReactNode;
 }) {
-  const local = useIsLocalHost();
-  if (!local)
-    return (
-      <SpaceShell subtitle="This Mac only" switcher={switcher}>
-        <SpaceLocalOnly />
-      </SpaceShell>
-    );
-  return <LocalSpace vol={vol} onVol={onVol} switcher={switcher} />;
+  return <HostSpace key={useHostId()} {...props} />;
 }
 
 function SpaceShell({
@@ -56,24 +48,7 @@ function SpaceShell({
   );
 }
 
-function SpaceLocalOnly() {
-  const selection = useHostSelection();
-  const localHost = selection?.hosts.find((host) => host.is_local);
-  return (
-    <div className="flex flex-col items-start gap-3">
-      <p className="text-[13px] text-muted-foreground">
-        Space reports are available for This Mac only.
-      </p>
-      {localHost && (
-        <Button onClick={() => selection?.select(localHost.id)}>
-          Show This Mac
-        </Button>
-      )}
-    </div>
-  );
-}
-
-function LocalSpace({
+function HostSpace({
   vol,
   onVol,
   switcher,
@@ -90,6 +65,7 @@ function LocalSpace({
     scanning ? null : (status.data?.report_id ?? null)
   );
   const scan = useSpaceScan();
+  const dropped = useSpaceDropped(status.data);
   const [include, setInclude] = useState<ReadonlySet<string>>(new Set());
   const kept = report.data ?? null;
   const { screen, ended } = spaceScreen(status.data, kept, vol);
@@ -103,7 +79,10 @@ function LocalSpace({
     <SpaceShell subtitle={volumeSubtitle(volume)} switcher={switcher}>
       <SpaceMessage
         error={scan.error}
-        ended={ended}
+        // A host that stops answering mid-scan keeps its last status on
+        // screen; the volume list says why on its own.
+        lost={screen.mode === "volumes" ? null : status.error}
+        ended={ended ?? dropped}
         kept={screen.mode === "report"}
       />
       {screen.mode === "volumes" ? (
@@ -147,17 +126,21 @@ function volumeSubtitle(volume: SpaceVolume | undefined): string {
 
 function SpaceMessage({
   error,
+  lost,
   ended,
   kept,
 }: {
   error: string | null;
+  /** Why the scan's status stopped coming, if it did. */
+  lost: Error | null;
   ended: string | null;
   kept: boolean;
 }) {
-  if (error)
+  const alert = error ?? (lost && remoteQueryText(lost, "space reports"));
+  if (alert)
     return (
       <p role="alert" className="text-[12px] text-destructive">
-        {error}
+        {alert}
       </p>
     );
   if (!ended) return null;
@@ -175,6 +158,7 @@ function VolumeList({
 }: {
   query: ReturnType<typeof useSpaceVolumes>;
 } & Omit<ComponentProps<typeof SpaceVolumes>, "volumes">) {
+  const noun = useHostNoun();
   if (query.data) return <SpaceVolumes volumes={query.data} {...props} />;
   return (
     <p role="status" className="text-[12px] text-muted-foreground">
@@ -182,7 +166,8 @@ function VolumeList({
         ? "Loading volumes…"
         : query.error.message.includes("edition")
           ? "Space reports are not available in this edition."
-          : "Couldn't list the volumes on this Mac."}
+          : (remoteQueryText(query.error, "space reports") ??
+            `Couldn't list the volumes on this ${noun}.`)}
     </p>
   );
 }

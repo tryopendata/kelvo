@@ -28,6 +28,10 @@ pub trait ServerProvider: Send + Sync + 'static {
     fn status(&self) -> SourceStatus {
         status_to_wire(&self.live().status(), false)
     }
+    /// Answers one remote query (D-117). Runs on the blocking pool.
+    fn answer(&self, session: u64, query: kelvo_proto::Query) -> kelvo_proto::Answer;
+    /// The session ended: release what its queries hold.
+    fn end_session(&self, session: u64);
 }
 static NEXT_SESSION: AtomicU64 = AtomicU64::new(1);
 struct Release {
@@ -38,6 +42,7 @@ impl Drop for Release {
     fn drop(&mut self) {
         self.provider
             .set_interest(self.session, RemoteInterest::default());
+        self.provider.end_session(self.session);
     }
 }
 
@@ -110,10 +115,11 @@ pub async fn serve_connection<S: AsyncRead + AsyncWrite + Unpin + Send + 'static
     }
     let kinds = SyncKinds::from_features(ack.features.iter().map(String::as_str));
     let session = NEXT_SESSION.fetch_add(1, Ordering::Relaxed);
-    let _release = Release {
+    // Also held by each query being answered, so the session's end comes after them.
+    let release: Arc<dyn Send + Sync> = Arc::new(Release {
         provider: provider.clone(),
         session,
-    };
+    });
     let hub = provider.live();
     let mut bus = hub.subscribe();
     let (mut input, task) = codec::reader_task(reader);
@@ -125,7 +131,9 @@ pub async fn serve_connection<S: AsyncRead + AsyncWrite + Unpin + Send + 'static
     let last_process = tokio::time::Instant::now() - Duration::from_secs(3600);
     codec::write(&mut writer, &Message::SourceStatus(provider.status())).await?;
     let headline = headline_metrics(hello.host.info.os);
+    let (answering, mut replies) = crate::calls::Answering::new(provider.clone(), session, release);
     let mut connection = Connection {
+        answering,
         provider,
         hub,
         headline,
@@ -140,12 +148,17 @@ pub async fn serve_connection<S: AsyncRead + AsyncWrite + Unpin + Send + 'static
         tokio::select! {
             incoming = input.recv() => connection.incoming(incoming).await?,
             event = bus.recv_event() => connection.event(event).await?,
+            Some(reply) = replies.recv() => {
+                connection.answering.finished();
+                codec::write_frame(&mut connection.writer, &reply).await?;
+            }
             _ = summary.tick(), if !connection.interest.detail => connection.summary().await?,
         }
     }
 }
 
 struct Connection<W> {
+    answering: crate::calls::Answering,
     provider: Arc<dyn ServerProvider>,
     hub: LiveHub,
     headline: &'static [&'static str],
@@ -241,6 +254,7 @@ impl<W: AsyncWrite + Unpin> Connection<W> {
                 };
                 codec::write(&mut self.writer, &reply).await?;
             }
+            Message::Request { id, query } => self.request(id, query).await?,
             Message::Unknown => {}
             _ => {
                 return Err(RemoteError::Protocol(
@@ -249,6 +263,13 @@ impl<W: AsyncWrite + Unpin> Connection<W> {
             }
         }
         Ok(())
+    }
+    /// Answers off the session loop, so a slow query never holds back live frames.
+    async fn request(&mut self, id: u32, query: kelvo_proto::Query) -> Result<()> {
+        match self.answering.start(id, query) {
+            Some(busy) => codec::write(&mut self.writer, &busy).await,
+            None => Ok(()),
+        }
     }
     async fn event(&mut self, event: kelvo_engine::Recv) -> Result<()> {
         match event {
@@ -465,6 +486,8 @@ pub(crate) mod tests {
     pub(crate) struct Provider {
         hub: LiveHub,
         interests: Mutex<Vec<RemoteInterest>>,
+        /// Answers finished and sessions ended, in order.
+        log: Mutex<Vec<String>>,
     }
     impl ServerProvider for Provider {
         fn hello(&self) -> Hello {
@@ -500,6 +523,21 @@ pub(crate) mod tests {
         fn set_interest(&self, _session: u64, interest: RemoteInterest) {
             self.interests.lock_ok().push(interest);
         }
+        /// A slow answer naming the query, so a test can tell replies apart and see live
+        /// frames pass it. A clear is slower still, so answering out of order shows.
+        fn answer(&self, _session: u64, query: kelvo_proto::Query) -> kelvo_proto::Answer {
+            let ms = if query == kelvo_proto::Query::SpaceClear {
+                300
+            } else {
+                200
+            };
+            std::thread::sleep(std::time::Duration::from_millis(ms));
+            self.log.lock_ok().push(format!("{query:?}"));
+            kelvo_proto::Answer::SpacePath(format!("{query:?}"))
+        }
+        fn end_session(&self, _session: u64) {
+            self.log.lock_ok().push("ended".into());
+        }
         fn sync(
             &self,
             request: &SyncRequest,
@@ -521,6 +559,7 @@ pub(crate) mod tests {
         Arc::new(Provider {
             hub: LiveHub::default(),
             interests: Mutex::new(vec![]),
+            log: Mutex::new(vec![]),
         })
     }
     async fn ack(client: &mut tokio::io::DuplexStream) {
@@ -603,6 +642,95 @@ pub(crate) mod tests {
         assert_eq!(
             p.interests.lock_ok().last(),
             Some(&RemoteInterest::default())
+        );
+    }
+    /// Queries answer off the session loop: a ping sent after them comes back first, each
+    /// reply carries its request's id, and one past the in-flight cap is refused at once.
+    #[tokio::test]
+    async fn queries_reply_by_id_without_blocking_the_session() {
+        let (mut client, server) = tokio::io::duplex(1024 * 1024);
+        let task = tokio::spawn(serve_connection(server, provider()));
+        ack(&mut client).await;
+        for id in 0..=crate::calls::MAX_IN_FLIGHT as u32 {
+            let query = kelvo_proto::Query::SpaceSubtree {
+                report: id,
+                node: None,
+            };
+            codec::write(&mut client, &Message::Request { id, query })
+                .await
+                .unwrap();
+        }
+        codec::write(&mut client, &Message::Ping { nonce: 9, t0_ms: 0 })
+            .await
+            .unwrap();
+        let busy = crate::calls::MAX_IN_FLIGHT as u32;
+        assert!(matches!(
+            codec::read(&mut client).await.unwrap(),
+            Message::Reply { id, answer: kelvo_proto::Answer::Error { .. } } if id == busy
+        ));
+        assert!(matches!(
+            codec::read(&mut client).await.unwrap(),
+            Message::Pong { nonce: 9, .. }
+        ));
+        let mut answered = Vec::new();
+        for _ in 0..crate::calls::MAX_IN_FLIGHT {
+            let Message::Reply {
+                id,
+                answer: kelvo_proto::Answer::SpacePath(text),
+            } = codec::read(&mut client).await.unwrap()
+            else {
+                panic!("expected a reply")
+            };
+            assert!(text.contains(&format!("report: {id},")), "{id}: {text}");
+            answered.push(id);
+        }
+        answered.sort_unstable();
+        assert_eq!(
+            answered,
+            (0..crate::calls::MAX_IN_FLIGHT as u32).collect::<Vec<_>>()
+        );
+        task.abort();
+    }
+    /// A session's start, cancel and clear are answered in the order sent, and the session
+    /// ends for the provider only after the queries it sent are answered, so a scan that
+    /// starts after the connection dropped is still released.
+    #[tokio::test]
+    async fn state_changes_answer_in_order_and_end_the_session_last() {
+        let p = provider();
+        let (mut client, server) = tokio::io::duplex(1024 * 1024);
+        let task = tokio::spawn(serve_connection(server, p.clone()));
+        ack(&mut client).await;
+        let start = kelvo_proto::Query::SpaceStart {
+            volume: "/".into(),
+            include: vec![],
+        };
+        for (id, query) in [kelvo_proto::Query::SpaceClear, start.clone()]
+            .into_iter()
+            .enumerate()
+        {
+            let id = id as u32;
+            codec::write(&mut client, &Message::Request { id, query })
+                .await
+                .unwrap();
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        drop(client);
+        assert!(task.await.unwrap().is_err());
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(5);
+        while !p.log.lock_ok().contains(&"ended".to_string()) {
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "the session never ended"
+            );
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+        assert_eq!(
+            *p.log.lock_ok(),
+            [
+                format!("{:?}", kelvo_proto::Query::SpaceClear),
+                format!("{start:?}"),
+                "ended".to_string()
+            ]
         );
     }
     #[tokio::test]

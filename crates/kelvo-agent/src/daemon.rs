@@ -4,6 +4,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::Context;
+use kelvo_engine::disk_space::SpaceService;
 use kelvo_engine::{HistoryStore, identity, retention_for};
 use kelvo_remote::{AgentPaths, HostServer};
 use kelvo_schema::HostId;
@@ -108,7 +109,7 @@ async fn serve_until_signal(
     let (stop, stopped) = tokio::sync::watch::channel(false);
     let server = kelvo_remote::serve_metrics(
         socket.to_path_buf(),
-        Arc::new(HostServer::new(host, history)),
+        Arc::new(HostServer::new(host, history).with_space(Arc::new(SpaceService::new()))),
         stopped,
     );
     tokio::pin!(server);

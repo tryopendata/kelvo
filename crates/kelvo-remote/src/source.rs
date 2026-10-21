@@ -2,13 +2,11 @@ use crate::{
     EndpointConfig, HostClock, MirrorSink, RemoteError, Result, Route, SshSession, codec, server,
 };
 use kelvo_engine::{
-    BusMsg, EngineStatus, FrameLayout, LiveFrame, ProcessBatch, Source, SourceControl, SourceError,
-    SourceHandle, SourceSink,
+    BusMsg, EngineStatus, FrameLayout, LiveFrame, ProcessBatch, Source, SourceError, SourceHandle,
+    SourceSink,
 };
 use kelvo_proto::{Message, RemoteInterest, SyncRequest};
-use kelvo_schema::{
-    Capabilities, Cursor, HostId, HostRecord, Settings, SyncKinds, Tier, lock::LockExt,
-};
+use kelvo_schema::{Capabilities, Cursor, HostId, HostRecord, SyncKinds, Tier, lock::LockExt};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
@@ -19,6 +17,10 @@ use std::{
     time::Duration,
 };
 use tokio::{sync::watch, time::Instant};
+
+mod control;
+mod queries;
+use control::Control;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct ConnectionStatus {
@@ -60,6 +62,7 @@ pub struct RemoteSource {
     controller_battery: AtomicBool,
     next_layout: AtomicU32,
     next_timeline: AtomicU32,
+    line: Mutex<crate::calls::Line>,
 }
 impl RemoteSource {
     pub fn new(
@@ -84,7 +87,17 @@ impl RemoteSource {
             controller_battery: AtomicBool::new(false),
             next_layout: AtomicU32::new(1),
             next_timeline: AtomicU32::new(1),
+            line: Mutex::default(),
         })
+    }
+    /// Asks the host (D-117). `Answer::Error` is the host's refusal; an `Err` is that the
+    /// host is not connected, too old, or did not answer within `timeout`.
+    pub async fn call(
+        &self,
+        query: kelvo_proto::Query,
+        timeout: Duration,
+    ) -> Result<kelvo_proto::Answer> {
+        crate::calls::call(&self.line, query, timeout).await
     }
     pub fn set_controller_on_battery(&self, on_battery: bool) {
         self.controller_battery.store(on_battery, Ordering::Relaxed);
@@ -140,48 +153,6 @@ impl Source for RemoteSource {
             source: self,
             thread: Some(thread),
         })))
-    }
-}
-struct Control {
-    source: Arc<RemoteSource>,
-    thread: Option<std::thread::JoinHandle<()>>,
-}
-impl SourceControl for Control {
-    fn set_paused(&self, _paused: bool) {}
-    fn set_process_interest(&self, v: Option<u32>) {
-        self.source
-            .control
-            .send_modify(|s| s.interest.process_period_ms = v);
-    }
-    fn set_network_process_interest(&self, v: bool) {
-        self.source
-            .control
-            .send_modify(|s| s.interest.network_processes = v);
-    }
-    fn set_gpu_process_interest(&self, v: bool) {
-        self.source
-            .control
-            .send_modify(|s| s.interest.gpu_processes = v);
-    }
-    fn set_port_process_interest(&self, v: bool) {
-        self.source
-            .control
-            .send_modify(|s| s.interest.port_processes = v);
-    }
-    fn set_network_history(&self, _on: bool) {}
-    fn set_detail_interest(&self, v: bool) {
-        self.source.control.send_modify(|s| s.interest.detail = v);
-    }
-    fn apply_settings(&self, _settings: &Settings) {}
-    fn set_store(&self, _store: Option<kelvo_store::Writer>) {}
-    fn status(&self) -> EngineStatus {
-        self.source.status.lock_ok().clone()
-    }
-    fn stop(&mut self) {
-        self.source.control.send_modify(|s| s.stop = true);
-        if let Some(thread) = self.thread.take() {
-            let _ = thread.join();
-        }
     }
 }
 async fn run(source: Arc<RemoteSource>, sink: SourceSink) {
@@ -317,6 +288,11 @@ async fn session_loop(
     let mut timer = tokio::time::interval(Duration::from_secs(1));
     timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let (promotion_tx, mut promotion_rx) = tokio::sync::mpsc::channel(1);
+    let answers = session
+        .negotiated
+        .features
+        .contains(kelvo_proto::QUERY_FEATURE);
+    let (_line, mut calls) = crate::calls::open(&source.line, answers);
     let mut state = Session {
         layout: None,
         summary_layout: None,
@@ -342,6 +318,7 @@ async fn session_loop(
         last_recent: Instant::now() - Duration::from_secs(60),
         promotion_tx,
         promotion_task: None,
+        pending: crate::calls::Pending::default(),
         recent_pending: false,
         recent_timed_out: None,
         ring_filled: false,
@@ -364,6 +341,7 @@ async fn session_loop(
             _ = state.control.changed() => state.control_changed().await?,
             promoted = promotion_rx.recv(), if state.promotion_task.is_some() => state.promoted(promoted)?,
             incoming = messages.recv() => state.incoming(incoming).await?,
+            Some(call) = calls.recv() => state.call(call).await?,
             _ = timer.tick() => state.tick().await?,
         };
         match action {
@@ -407,6 +385,8 @@ struct Session<'a> {
     last_recent: Instant,
     promotion_tx: tokio::sync::mpsc::Sender<Result<SshSession>>,
     promotion_task: Option<codec::AbortOnDrop>,
+    /// Calls sent to the host awaiting their reply.
+    pending: crate::calls::Pending,
     recent_pending: bool,
     recent_timed_out: Option<Instant>,
     /// The live ring was refilled from the mirror since live detail began: while no
@@ -556,6 +536,10 @@ impl Session<'_> {
         if let Some(Ok(replacement)) = promoted {
             return Ok(SessionAction::Replace(Box::new(replacement)));
         }
+        Ok(SessionAction::Continue)
+    }
+    async fn call(&mut self, call: crate::calls::Call) -> Result<SessionAction> {
+        codec::write(self.writer, &self.pending.request(call)).await?;
         Ok(SessionAction::Continue)
     }
     #[expect(
@@ -877,6 +861,7 @@ impl Session<'_> {
                 (self.source.on_status)(self.status.clone());
             }
             Message::Unknown => {}
+            Message::Reply { id, answer } => self.pending.reply(id, answer),
             _ => return Err(RemoteError::Protocol("unexpected server message".into())),
         }
         Ok(SessionAction::Continue)
@@ -1055,6 +1040,7 @@ mod tests {
             last_recent: Instant::now(),
             promotion_tx: tokio::sync::mpsc::channel(1).0,
             promotion_task: None,
+            pending: crate::calls::Pending::default(),
             recent_pending: false,
             recent_timed_out: None,
             ring_filled: false,

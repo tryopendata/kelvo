@@ -42,7 +42,7 @@ const EXCLUDED_UNDER: [&str; 7] = [
 ];
 
 /// Whether `path` is `dir` or below it.
-fn under(path: &str, dir: &str) -> bool {
+pub(super) fn under(path: &str, dir: &str) -> bool {
     path.strip_prefix(dir)
         .is_some_and(|rest| rest.is_empty() || rest.starts_with('/'))
 }
@@ -73,7 +73,7 @@ pub(super) fn real_mounts(mounts: &[Mount]) -> Vec<Mount> {
 }
 
 /// Total and available bytes of the filesystem at `path`.
-fn statvfs(path: &CString) -> Option<(u64, u64)> {
+pub(super) fn statvfs(path: &CString) -> Option<(u64, u64)> {
     let mut st = std::mem::MaybeUninit::<libc::statvfs>::uninit();
     // SAFETY: `path` is NUL-terminated and `st` is a writable statvfs the call fills.
     if unsafe { libc::statvfs(path.as_ptr(), st.as_mut_ptr()) } != 0 {
@@ -269,6 +269,7 @@ mod tests {
     fn m(point: &str, dev: (u32, u32), fstype: &str, source: &str) -> Mount {
         Mount {
             dev,
+            root: "/".into(),
             point: point.into(),
             fstype: fstype.into(),
             source: source.into(),

@@ -1,17 +1,22 @@
-//! Local, on-demand disk space reports (plan/disk-space-report.md). Session data held in
-//! memory while the dashboard is open: not metric series, not stored, not on the wire.
+//! On-demand disk space reports (plan/disk-space-report.md): session data held in memory
+//! while the dashboard is open, never metric series and never stored. A remote host
+//! answers them over the wire (D-117), so these types are wire vocabulary: fields and
+//! variants are added, never renamed. A field added later is an `Option`, so it decodes
+//! as `None` from an older host. Anything else a peer cannot decode (a newer variant)
+//! fails that one query as unsupported, never the session (`kelvo_proto::query`). Fields
+//! carry no serde defaults, which would make them optional in the webview's bindings.
 //! Byte counts are `f64` so they cross to TS as `number`; they stay far below 2^53.
 use serde::{Deserialize, Serialize};
 
-/// A volume the user can scan, as Finder shows it.
+/// A volume the user can scan.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, specta::Type)]
 pub struct SpaceVolume {
     /// The browsable mount point ("/" for the boot volume). Used as the volume's id.
     pub mount: String,
-    /// Finder's name ("Macintosh HD").
+    /// Display name: Finder's on macOS ("Macintosh HD"), the mount point on Linux.
     pub name: String,
     pub is_boot: bool,
-    /// Used space Finder reports for the volume (its APFS container for APFS volumes).
+    /// Used space as the system reports it (the APFS container's for APFS volumes).
     pub used_bytes: f64,
     pub total_bytes: f64,
     /// Locations macOS protects with privacy prompts. Skipped unless included by key.
@@ -150,7 +155,7 @@ pub struct SpaceReport {
     pub truncated: bool,
 }
 
-/// What `disk_space_reveal` shows in Finder.
+/// An entry of a finished report: a folder in its tree or one of its largest files.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SpaceTarget {

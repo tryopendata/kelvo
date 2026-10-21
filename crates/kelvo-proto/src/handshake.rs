@@ -78,6 +78,9 @@ pub enum HandshakeError {
     BadRange { min: u16, max: u16 },
 }
 
+/// `Message::Request` and `Message::Reply` (D-117).
+pub const QUERY_FEATURE: &str = "query.v1";
+
 /// The features this build offers: every `SyncPage` row kind it knows.
 pub fn local_features() -> BTreeSet<String> {
     SyncKinds::ALL
@@ -88,6 +91,7 @@ pub fn local_features() -> BTreeSet<String> {
             "live.interest",
             "live.summary",
             "live.recent",
+            QUERY_FEATURE,
         ])
         .map(str::to_string)
         .collect()

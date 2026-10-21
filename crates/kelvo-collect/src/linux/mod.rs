@@ -16,6 +16,7 @@ pub mod ifaddrs;
 mod mountinfo;
 pub mod net;
 pub mod rapl;
+pub mod space;
 mod sysroot;
 
 pub mod cpu;
