@@ -71,13 +71,39 @@ describe("a Linux host (D-116)", () => {
 
   it("shows used, cached and free memory with PSI, without the macOS split", async () => {
     await linux(<MemoryRoute />, "Memory");
-    expect(
-      await screen.findByRole("heading", { name: "Pressure stall" })
-    ).toBeVisible();
+    const strip = await screen.findByRole("region", {
+      name: "Memory composition",
+    });
+    expect(within(strip).getByText("Pressure stall")).toBeVisible();
     expect(screen.queryByText("Compressed")).toBeNull();
     expect(screen.queryByText("Wired")).toBeNull();
     expect(screen.queryByText("GB unified")).toBeNull();
-    expect(screen.getByText("Cached files")).toBeVisible();
+    expect(within(strip).getByText("Cached files")).toBeVisible();
+  });
+
+  it("charts used with cached files stacked on it up to MemTotal, in place of pressure", async () => {
+    await linux(<MemoryRoute />, "Memory");
+    const card = await screen.findByRole("region", { name: "Used" });
+    const chart = within(card).getByRole("img", {
+      name: /^Memory used and cached files, last 15 minutes, of 16\.5 GB, used [\d.]+ GB, cached [\d.]+ GB\./,
+    });
+    expect(chart.querySelector('[data-series="mem.used"]')).not.toBeNull();
+    expect(chart.querySelector('[data-series="mem.cached"]')).not.toBeNull();
+    expect(within(card).getByText("Cached files")).toBeVisible();
+    expect(within(card).getByText("16.5 GB")).toBeInTheDocument();
+    expect(
+      within(card).getByRole("slider", { name: "Select a time range" })
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: /^Pressure/ })).toBeNull();
+  });
+
+  it("keeps the Mac Memory page's pressure chart", async () => {
+    await mac(<MemoryRoute />, "Memory");
+    expect(
+      await screen.findByRole("img", { name: /^Memory pressure, last/ })
+    ).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Pressure" })).toBeVisible();
+    expect(screen.queryByRole("region", { name: "Used" })).toBeNull();
   });
 
   it("lists temperature sensors and power rails in place of SoC zones and the components", async () => {
