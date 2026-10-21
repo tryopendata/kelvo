@@ -13,10 +13,12 @@ import { BrushProvider } from "~/stores/brush-store";
 import { CompositionCard } from "./_components/composition-card";
 import { PressureCard } from "./_components/pressure-card";
 import { SwapCard } from "./_components/swap-card";
+import { UsedCard } from "./_components/used-card";
 
 /**
  * Memory page (plan 4.9): the Overview and popover Memory card pieces in the
- * CPU page's layout. Composition leads; pressure over time and swap sit below it.
+ * CPU page's layout. Composition leads; pressure over time (used and cached
+ * on a Linux host, which has no macOS pressure) and swap sit below it.
  * The cards wait for the chart window (D-091), so they appear together. A
  * range brushed on either chart scopes the peaks and the apps table (D-099).
  */
@@ -87,7 +89,14 @@ export default function MemoryRoute() {
               windowMs={windowMs}
             />
             <div className="grid grid-cols-[repeat(auto-fit,minmax(320px,1fr))] gap-4">
-              <PressureCard windowMs={windowMs} />
+              {mac || !info ? (
+                <PressureCard windowMs={windowMs} />
+              ) : (
+                <UsedCard
+                  windowMs={windowMs}
+                  totalBytes={info.mem_total_bytes}
+                />
+              )}
               <SwapCard windowMs={windowMs} />
             </div>
             <UsageAppsCard windowMs={windowMs} config={table} />
