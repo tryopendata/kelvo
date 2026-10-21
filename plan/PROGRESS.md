@@ -83,6 +83,12 @@ Status values: Not started, In progress, Blocked (say on what), Done (with the v
 
 ## Log
 
+### 2026-10-21 (Linux agent memory limits)
+
+- The agent on the M1 server sat at its 96M `MemoryMax` with its own pages swapped out. The cgroup is charged for the page cache and dentries its reads pull in, and a space scan of `/` fills it with close to 1 GB of them. The units now set `MemoryHigh=96M`, `MemoryMax=256M`, `MemorySwapMax=0` (D-116 amendment). Existing installs get the new unit on their next agent update.
+- Verified: `agent_layout` tests; on m1-linux, cgroup breakdowns under a temporary 1G cap during a scan, then the new limits applied at runtime, holding at 89 to 94 MB with no memory pressure. Open: a full scan under the new limits, and an earlier 81 MB resident plus 36 MB swap anon footprint the scan does not explain.
+- Found while debugging, not fixed: after a remote host is edited or re-set up, an open dashboard window keeps the replaced host's feed in its `LiveRegistry` slot, so the new connection never gets detail interest and shows only the headline summary (`src-tauri/src/live.rs`, `subscribe`). Closing and reopening the window works around it.
+
 ### 2026-10-20 (Linux Memory page: used and cached chart in place of pressure stall)
 
 - On a Linux host the Memory page's chart card plotted `mem.psi`, which sits at 0.0% on an idle server and read as a chart with no data. A Linux host now gets a "Used" card (`used-card.tsx`): `mem.used` with `mem.cached` stacked on it, scaled to `HostInfo.mem_total_bytes`, keyed "Used" and "Cached files" with the composition bar's swatches (steps 1 and 4), brushable like the pressure chart so a range scopes the peaks and the apps table. The PSI figures stay in the composition strip. The Mac Pressure card is unchanged; its PSI branch is gone. Stacking and the ceiling are view shaping; no new metric.
