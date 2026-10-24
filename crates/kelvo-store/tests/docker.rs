@@ -5,7 +5,9 @@ use common::*;
 use kelvo_schema::Tier;
 use kelvo_store::{Retention, docker::*};
 use std::collections::BTreeMap;
-use std::sync::mpsc::TryRecvError;
+use std::sync::{Mutex, mpsc::TryRecvError};
+// Snapshot admission is process-wide even when tests use independent databases.
+static DOCKER_READ_TESTS: Mutex<()> = Mutex::new(());
 fn batch(revision: i64) -> DockerBatch {
     DockerBatch {
         host: host(1).id,
@@ -55,6 +57,7 @@ fn query(tier: Tier) -> DockerHistoryQuery {
 }
 #[test]
 fn commit_receipts_snapshot_and_weighted_rollups() {
+    let _readers = DOCKER_READ_TESTS.lock().unwrap();
     let dir = temp_dir("docker-snapshot");
     let store = open(&dir, "h.sqlite");
     let w = store.writer();
@@ -98,6 +101,7 @@ fn commit_receipts_snapshot_and_weighted_rollups() {
 }
 #[test]
 fn events_deduplicate_full_identity_and_cursor_is_atomic() {
+    let _readers = DOCKER_READ_TESTS.lock().unwrap();
     let dir = temp_dir("docker-events");
     let store = open(&dir, "h.sqlite");
     let w = store.writer();
@@ -371,6 +375,7 @@ fn shared_commit_failure_reports_host_and_docker_and_releases_reservations() {
 }
 #[test]
 fn aggregate_population_segments_survive_rollup_and_cannot_cross_engines_or_mutate() {
+    let _readers = DOCKER_READ_TESTS.lock().unwrap();
     let dir = temp_dir("docker-populations");
     let store = open(&dir, "h.sqlite");
     let w = store.writer();
@@ -610,6 +615,7 @@ fn daemon_identity_churn_is_accounted_bounded_and_preserves_generation() {
 
 #[test]
 fn retained_catalog_reopens_latest_metadata_and_obeys_reset_and_retention() {
+    let _readers = DOCKER_READ_TESTS.lock().unwrap();
     let dir = temp_dir("docker-catalog");
     let store = open(&dir, "h.sqlite");
     let w = store.writer();
@@ -689,6 +695,7 @@ fn retained_catalog_reopens_latest_metadata_and_obeys_reset_and_retention() {
 
 #[test]
 fn retained_catalog_overlay_filters_counts_and_pages_without_duplicate_identities() {
+    let _readers = DOCKER_READ_TESTS.lock().unwrap();
     let dir = temp_dir("docker-catalog-overlay");
     let store = open(&dir, "h.sqlite");
     let w = store.writer();
@@ -771,6 +778,7 @@ fn retained_catalog_overlay_filters_counts_and_pages_without_duplicate_identitie
 }
 
 fn assert_open_interruption_recovers(reason: &str) {
+    let _readers = DOCKER_READ_TESTS.lock().unwrap();
     let dir = temp_dir("docker-switch-recovery");
     let store = open(&dir, "h.sqlite");
     let writer = store.writer();
