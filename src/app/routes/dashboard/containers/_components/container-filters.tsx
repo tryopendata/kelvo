@@ -1,4 +1,5 @@
 import { DropdownMenu } from "radix-ui";
+import { memo } from "react";
 import { SearchField } from "~/components/search-field";
 import { Button } from "~/components/ui/button";
 import {
@@ -10,7 +11,7 @@ import {
 } from "~/components/ui/select";
 import { lifecycleLabel } from "../_lib/presentation";
 
-export function ContainerFilters({
+function ContainerFiltersView({
   query,
   state,
   grouped,
@@ -95,3 +96,14 @@ export function ContainerFilters({
     </>
   );
 }
+
+export const ContainerFilters = memo(
+  ContainerFiltersView,
+  (previous, next) =>
+    previous.query === next.query &&
+    previous.state === next.state &&
+    previous.grouped === next.grouped &&
+    previous.set === next.set &&
+    previous.columns.length === next.columns.length &&
+    previous.columns.every((column, index) => column === next.columns[index])
+);

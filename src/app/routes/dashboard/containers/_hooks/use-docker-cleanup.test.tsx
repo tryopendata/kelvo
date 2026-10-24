@@ -4,6 +4,7 @@ import { dockerKeys } from "@core/query-keys";
 import type { CommandResult } from "@core/transport";
 import { act, screen, waitFor } from "@testing-library/react";
 import { createTestQueryClient, renderWithProviders } from "@tests/test-utils";
+import { memo, useState } from "react";
 import { expect, it } from "vitest";
 import { useDockerCleanup } from "./use-docker-cleanup";
 
@@ -30,6 +31,57 @@ function deferred<T>() {
   });
   return { promise, resolve };
 }
+
+it("keeps an unchanged cleanup view idle while publishing operation updates", async () => {
+  const transport = createMockTransport({
+    scenarios: ["docker-32"],
+    historyRows: 1,
+  });
+  const client = createTestQueryClient();
+  const initial = operation("initial", 1);
+  client.setQueryData(dockerKeys.operation(engine), initial);
+  transport.dockerStorageOperation = async () => ({
+    status: "ok",
+    data: initial,
+  });
+  let renders = 0;
+  const Consumer = memo(function Consumer({
+    flow,
+  }: {
+    flow: ReturnType<typeof useDockerCleanup>;
+  }) {
+    renders++;
+    return <p>{flow.operation?.id ?? "No operation"}</p>;
+  });
+  function StreamingParent() {
+    const [tick, setTick] = useState(1);
+    const flow = useDockerCleanup(engine, 1, false);
+    return (
+      <div data-tick={tick}>
+        <button type="button" onClick={() => setTick((value) => value + 1)}>
+          Next frame
+        </button>
+        <Consumer flow={flow} />
+      </div>
+    );
+  }
+  const result = renderWithProviders(<StreamingParent />, {
+    transport,
+    queryClient: client,
+  });
+  await waitFor(() => expect(client.isFetching()).toBe(0));
+  expect(screen.getByText("initial")).toBeVisible();
+  const settledRenders = renders;
+  await result.user.click(screen.getByRole("button", { name: "Next frame" }));
+  expect(renders).toBe(settledRenders);
+  await act(async () => {
+    client.setQueryData(dockerKeys.operation(engine), operation("updated", 2));
+  });
+  expect(await screen.findByText("updated")).toBeVisible();
+  expect(renders).toBeGreaterThan(settledRenders);
+  result.unmount();
+  transport.dispose();
+});
 
 it("does not let a late poll overwrite a newer locally accepted operation", async () => {
   const transport = createMockTransport({

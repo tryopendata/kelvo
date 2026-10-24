@@ -1,5 +1,5 @@
 import { formatBytes } from "@core/format";
-import { useEffect, useState } from "react";
+import { memo, useEffect, useState } from "react";
 import { Button } from "~/components/ui/button";
 import { Checkbox } from "~/components/ui/checkbox";
 import {
@@ -21,7 +21,7 @@ const statusLabels = {
 };
 
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Controller and presentation split tracked in architecture refactor package H.
-export function DockerCleanupFlow({ flow }: { flow: CleanupFlow }) {
+function DockerCleanupFlowView({ flow }: { flow: CleanupFlow }) {
   const [volumeStep, setVolumeStep] = useState(false);
   const [acknowledged, setAcknowledged] = useState(false);
   const [expired, setExpired] = useState(false);
@@ -193,3 +193,5 @@ export function DockerCleanupFlow({ flow }: { flow: CleanupFlow }) {
     </>
   );
 }
+
+export const DockerCleanupFlow = memo(DockerCleanupFlowView);

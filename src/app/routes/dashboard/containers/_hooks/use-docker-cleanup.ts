@@ -6,7 +6,7 @@ import type {
 import { dockerKeys } from "@core/query-keys";
 import { unwrap } from "@core/transport";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTransport } from "~/lib/transport-context";
 
 /** Operations live in Rust; retaining their ID in the query cache survives route navigation. */
@@ -176,14 +176,27 @@ export function useDockerCleanup(
     },
     [review, transport, client, connected]
   );
-  return {
-    review,
-    dismiss: () => setReview(null),
-    prepare,
-    execute,
-    error,
-    busy: busy || operation.data?.finished_ms === null,
-    operation: operation.data,
-    operationError: operation.error,
-  };
+  const dismiss = useCallback(() => setReview(null), []);
+  return useMemo(
+    () => ({
+      review,
+      dismiss,
+      prepare,
+      execute,
+      error,
+      busy: busy || operation.data?.finished_ms === null,
+      operation: operation.data,
+      operationError: operation.error,
+    }),
+    [
+      review,
+      dismiss,
+      prepare,
+      execute,
+      error,
+      busy,
+      operation.data,
+      operation.error,
+    ]
+  );
 }
