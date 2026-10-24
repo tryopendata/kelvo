@@ -1,6 +1,6 @@
 # Kelvo plan
 
-This folder is the plan for Kelvo, from the first installable build through remote host monitoring. Start here, then read the doc for the version you are working on. The app now runs from source; use [PROGRESS.md](PROGRESS.md) to distinguish implemented work, QA follow-ups and future plans.
+This folder is the plan for Kelvo, from the first installable build through remote host monitoring. Start here, then read the doc for the version you are working on. Kelvo 0.1.0 is available through GitHub Releases; use [PROGRESS.md](PROGRESS.md) to distinguish implemented work, QA follow-ups and future plans.
 
 | Doc | What it covers |
 |---|---|
@@ -11,6 +11,7 @@ This folder is the plan for Kelvo, from the first installable build through remo
 | [v3-native-distribution.md](v3-native-distribution.md) | v3.x: Developer ID, notarization, public WidgetKit, App Store evaluation |
 | [v4-remote-hosts.md](v4-remote-hosts.md) | Broader v4 roadmap; first Mac milestone and SSH setup/recovery merged, real-device acceptance open |
 | [remote-macs-execution.md](remote-macs-execution.md) | Implemented Mac-to-Mac behavior, SSH setup/recovery, verification evidence and remaining device checks |
+| [history-remote-landing.md](history-remote-landing.md) | Module time ranges, remote feed replacement, Linux agent memory acceptance and landing evidence |
 | [docker-container-monitoring.md](docker-container-monitoring.md) | Local Docker tab implemented and merged: aggregate/runtime and per-container stats, history, logs; real-world release acceptance remains open |
 | [docker-monitoring-ux-rfc.md](docker-monitoring-ux-rfc.md) | Implemented and verified Containers UX revision: per-container comparison, repaired history, bounded tables and automatic engine inventory |
 | [docker-storage-cleanup.md](docker-storage-cleanup.md) | In progress: on-demand Docker storage inventory, cleanup review, confirmed local actions and resource review |
@@ -37,7 +38,7 @@ Look back and attribute: "Something happened earlier. Show me what, and which pr
 
 Ambient display: "Keep a few numbers on my desktop while I work, without opening anything." Floating desktop widgets and WidgetKit widgets serve this.
 
-Watch my machines: "Show me my other Macs and Linux boxes the same way, including what happened while I was not looking." The first Mac-to-Mac milestone is implemented; Linux hosts and the broader v4 roadmap remain future work.
+Watch my machines: "Show me my other Macs and Linux boxes the same way, including what happened while I was not looking." Mac-to-Mac monitoring and the headless Linux agent are implemented, including mirrored history and Linux container metrics. Remaining device acceptance is tracked separately from the broader v4 roadmap.
 
 ## 4. Differentiators
 
@@ -90,8 +91,8 @@ The [Docker container monitoring plan](docker-container-monitoring.md) is an ind
 
 The [first Mac-to-Mac milestone](remote-macs-execution.md) brings Hosts, selection,
 SSH setup and mirrored history forward from v4. It reuses the full Mac app and bundled
-helper (D-104). That implementation is merged; this does not complete the standalone
-agent, Linux, remote alerts or remote menu-bar features in the table above.
+helper (D-104). The headless Linux agent and its install/update flow are also implemented
+(D-116). Remote alerts and remote menu-bar features in the table above remain future work.
 
 ## 8. Architecture at a glance
 

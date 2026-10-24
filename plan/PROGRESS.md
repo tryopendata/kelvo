@@ -14,7 +14,10 @@ the settings deadlock fix in `1b2e535`. Automated checks and review passed; nati
 two-Mac setup, SSH-agent interoperability and remote overhead remain unverified.
 Use the [remote execution record](remote-macs-execution.md) and
 [Docker compatibility notes](docker-container-monitoring-compatibility.md) for their
-remaining acceptance work. Broader v4 Linux/agent features are still future scope.
+remaining acceptance work. The headless Linux agent, remote app attribution and remote
+Space reports are implemented; remaining acceptance is tracked in the
+[history and remote landing record](history-remote-landing.md). Remote alerts and
+remote menu-bar features remain future scope.
 
 Stage: the accepted [architecture refactor](architecture-refactor-review.md) is implemented and reviewed; its execution record contains the final automated, visual and performance evidence. Continue manual QA and polish (`v1-local-monitor.md` section 8, "v1.x QA and polish"). The user runs the dev build day to day and files bugs and UX issues; each session takes a batch, fixes it with a regression test where one fits, and logs it here. After QA comes the release phase (same section).
 
@@ -70,18 +73,40 @@ Known follow-ups (small, not scheduled):
 | Docker storage insights and cleanup | [Storage plan](docker-storage-cleanup.md) | Done | D-107; CE review approved, 863 Rust / 987 frontend tests and 294 browser checks passed; disposable OrbStack acceptance passed, Desktop/Colima follow-up remains |
 | Disk space report | [Space plan](disk-space-report.md) | Done (automated); real-hardware checks open | D-114; Space view in Disk with a progressive, drillable treemap. Privacy prompts on a fresh account, the dataless policy on File Provider folders, clone fixtures and tick lateness during a scan are unverified |
 | v1.x QA and polish (manual, from source) | [v1](v1-local-monitor.md) | Next | The user runs the dev build day to day; sessions fix batches of filed issues |
-| v1.x Release: distribution, updater, install | [v1](v1-local-monitor.md) | Not started | After QA; the old v1.0 phase 6 distribution items (D-078) |
+| v1.x Release: distribution, updater, install | [v1](v1-local-monitor.md) | Done (0.1.0 published) | Ad-hoc-signed GitHub release and signature-verified updates; paid Apple signing, notarization and Homebrew remain deferred |
 | v2.0 Widget manifest and popover composer | [v2](v2-customization-widgets.md) | Not started | |
 | v2.1 Floating desktop widgets | [v2](v2-customization-widgets.md) | Not started | |
 | v2.2 WidgetKit dev build | [v2](v2-customization-widgets.md) | Not started | |
 | v2.3 Alerts editor, configurable Overview | [v2](v2-customization-widgets.md) | Not started | |
 | v3.x Native distribution | [v3](v3-native-distribution.md) | Not started | Needs a paid Apple Developer membership |
-| v4.x Remote hosts | [v4](v4-remote-hosts.md) | Mac milestone and SSH setup/recovery merged; native acceptance open | Main includes the settings deadlock fix (`1b2e535`) and reviewed SSH guidance (`ded22a7`), with full automated checks and push gates passed. Real two-Mac setup, SSH-agent interoperability and overhead remain unverified. [Execution and verification gates](remote-macs-execution.md); broader v4 remains future scope |
-| v4.x Headless Linux agent | [D-116](decisions.md) | Done (automated + real server); app click-through, reboot and CI open | `kelvo-agent` with /proc, sysfs, hwmon, PSI and cgroup v2 collectors; Add host installs, updates, re-pairs and removes it over SSH; Linux page variants and a Containers page. Real-server lifecycle on the M1 Fedora Asahi host passed; footprint 0.32% CPU, 40.6 MB combined (accepted) |
+| v4.x Remote hosts | [v4](v4-remote-hosts.md) | Mac and Linux monitoring implemented; native acceptance open | SSH setup/recovery, remote history, app attribution and Space reports; real two-Mac setup, SSH-agent interoperability and overhead remain unverified. [Mac execution record](remote-macs-execution.md); [current landing record](history-remote-landing.md) |
+| v4.x Headless Linux agent | [D-116](decisions.md) | Done (automated + real server); native click-through and reboot open | `kelvo-agent` with /proc, sysfs, hwmon, PSI and cgroup v2 collectors; Add host installs, updates, re-pairs and removes it over SSH; Linux page variants and a Containers page. Real-server lifecycle on the M1 Fedora Asahi host passed; footprint 0.32% CPU, 40.6 MB combined (accepted) |
 
 Status values: Not started, In progress, Blocked (say on what), Done (with the verification that proved it).
 
 ## Log
+
+### 2026-10-24 (History ranges and remote feed replacement)
+
+- Completed the six range-review fixes and the related fixed/rolling placeholder and one-point GPU endpoint regressions. Fixed views avoid live-clock subscriptions. The range picker uses the existing accessible ink token in both themes; browser Axe checks cover its open menu and selected trigger. The unchanged Usage by app answer is memoized during a pending refresh, with a render regression. No performance budgets changed.
+- Replacing a remote source now retires old streams, releases its detail demand and clears process-interest caches before a fresh subscription. Racing old commands return the existing retryable error. Host-change events reconnect paused and display-idle remote views. Visible-window detail demand is aggregated, and `HostEntry` forwards only actual boolean changes. Native regressions cover replacement, visibility, removal, setup races and balanced engine demand. Both final CE reviewers approved, including the follow-up test fixes.
+- Local full gate: 1,069 Rust tests and 1,273 frontend tests in 194 files passed, including seven active native performance gates. Eleven deliberate defect mutations failed as expected. Linux portable tests, shell lifecycle fixtures and both release fill/read tests passed. The old small-cap fill assertion incorrectly promised seven days of minutes; it now checks the documented one-day floor and oldest-first trimming without changing the byte limits. All 430 functional browser checks passed with CI’s two workers; all ten frontend performance gates passed (Power 23.35 ms/s, no long tasks). Detailed commands, visual comparisons and the landing handoff are in the [execution record](history-remote-landing.md).
+- Built and verified the signed production app with both Linux agents. Updated m1-linux through the real update path, preserving identity/history and the saved 96M/256M/zero-swap unit. Root scans completed in summary and detail modes; live frames advanced during the detail scan, and three cancel/release cycles returned Idle. No swap, restarts, OOM or maximum-limit hits were observed. Native app click-through and reboot remain unverified; the existing QA installation is preserved.
+
+### 2026-10-24 (History and remote monitoring landing plan)
+
+- Added the [landing plan](history-remote-landing.md) for module ranges, agent memory limits, remote feed ownership, native acceptance, main integration and task-owned cleanup. Applied `ce:writing-tests` and `ce:architecting-systems`; three read-only CE code-reviewer passes found six range fixes and four related lifecycle defects to resolve before landing. The memory-limit literals had no code findings; installed-service acceptance remains open.
+- Review diagnostics: 14 history and 34 UI frontend tests passed. This pass changed documentation only; no remote-machine operations, full gates or implementation commits were performed. Checked remote `main` directly: local `main` contains it and is 36 commits ahead, so integration must preserve and verify those existing commits too.
+
+### 2026-10-21 (Module time ranges and bounded history charts)
+
+- Replaced the four-option module selector with `5m`, `1h`, and an active-range dropdown. Presets include 3h, 6h, 12h, 1d, 2d, 7d, 14d, 30d and 90d. Custom ranges support rolling durations and fixed local start/end dates with the timezone visible, validation, Apply and Escape dismissal. The chosen range persists across module pages and app windows.
+- Followed the existing [Grafana](https://grafana.com/docs/grafana-cloud/learn-and-build/visualizations/dashboards/use-dashboards/) and [Kibana](https://www.elastic.co/docs/explore-analyze/query-filter/filtering) relative/absolute range pattern, scoped to Kelvo's existing history retention. Applied `ce:planning-products`, `ce:design` and the local frontend design guidance.
+- Long and fixed module charts use the existing Rust `query_history` aggregation, with a 1,200-point line budget and about 60 heatmap columns. No historical averaging was added to the client: it lays returned buckets on a time grid and preserves missing data. Rust retains min/max/weighted averages and explicit gaps. Added a real SQLite 90-day test covering line and heatmap budgets, averages, extrema and gaps.
+- Summaries and attribution use the selected date bounds; current gauges remain live and are identified by the page note. Per-app power lines remain limited to their retained one-hour detail. Fixed date changes clear an incompatible brush. Historical axes use clock/date labels. Wide-range gap captions are suppressed while their accessible names and bands remain, avoiding piles of labels over the axis.
+- Visual comparison: checked CPU in light/dark, the preset and custom-date popovers, 90-day and fixed-date charts, neighboring Memory, and the dev gallery. Kept existing module accent fills, typography, radii and spacing. Intentional differences: the wider two-column popover accommodates presets and custom fields; the historical-range note identifies live readings and partial app coverage; wide-range heatmaps use larger Rust buckets. Module average fills remain as before rather than gaining Timeline's min/max envelopes. The browser fixture omits whole buckets that touch a gap, so its 90-day heatmap has more empty cells than real Rust partial buckets; the real SQLite test verifies those retained averages.
+- Verification: frontend typecheck and formatting/lint pass; 191 files / 1,259 frontend tests pass; 16 Chromium/WebKit range and history scenarios pass; Rust clippy passes; all nine store long-range tests pass. The complete Rust workspace run finished all targets but failed five hardware collector performance cases (process allocations and IOKit call budgets). The initial 90-day fixture failure was corrected to follow the real minute-to-quarter rollup lifecycle and its suite rerun successfully. Heatmap density, bucket-origin and gap-caption regressions were revert-verified. The added 90-day browser interaction also passes in Chromium and WebKit. The frontend performance run passed nine scenarios; Power failed with a 56 ms task against the 50 ms long-task threshold and repeated at 54/55 ms. A same-session snapshot of unchanged HEAD passed Power (28.96 ms/s, no long tasks), so this remains an unresolved performance check, not a claimed pre-existing failure. Live-only history observers now keep a stable disabled query key. No budgets were changed.
+
 
 ### 2026-10-21 (Linux agent memory limits)
 
