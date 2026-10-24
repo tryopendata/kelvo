@@ -312,3 +312,40 @@ lifecycle `1e3a992`, acceptance/test repairs `e267c05`, following memory limits
 observation, main SHA and task-owned cleanup are reported in the task handoff;
 this pre-push record does not claim those future results. Build/diagnostic evidence
 is retained locally under `target/qa/history-remote-landing/` after cleanup.
+
+The first required pre-push repeat passed `make check` and bindings but blocked
+the push on Containers at 41.73 ms/s (35 ms/s limit). The same-session earlier
+source `6cccd17` also failed at 40.10 ms/s. CPU traces showed unchanged filter
+controls and the idle cleanup dialog rebuilding on metric updates. Memoizing the
+filters by all input values and retaining the unchanged cleanup controller result
+removed that work. A new public-consumer render regression failed against the
+original hook and passed with the fix, including a changed-operation update.
+The reviewer approved the change. The unchanged Containers gate then passed at
+33.92 ms/s with no long tasks; no budget or sampling setting changed. The normal
+pre-push repeat and hosted checks still determine whether this follow-up lands.
+
+The post-update observation completed 66 samples over 65 minutes with the same PID, no service restarts,
+no swap, no max-limit hits and no OOM events. After the detail scan, anonymous
+memory was 85.6 MB at minute 25, 89.6 MB at minute 42, and 93.4 MB at minute 63;
+it was unchanged for the last several samples. At minute 63, RSS was 96,336 KiB
+and cgroup file pages were 1.4 MB. Memory-high reclaim occurred during scanning;
+the final pressure averages were zero. This observation confirms bounded operation
+over that interval; it does not identify the cause of the earlier resident-plus-
+swap report or establish a longer-term plateau.
+
+Follow-up frontend verification passed Biome, all TypeScript projects, 194 Vitest
+files / 1,274 tests, and all 120 affected Chromium/WebKit Docker checks, including
+filters, grouping, Stop, volume confirmation and inventory refresh.
+
+A subsequent full native run exposed test contention for the process-wide four-
+reader Docker snapshot limit: independent temporary-database scenarios could
+exhaust it and fail at snapshot creation. The affected scenarios now share a
+test-only mutex. Every snapshot/catalog caller in that test binary is covered;
+the reviewer approved the isolation. Twenty full-binary runs with `write-stats`
+and 32 test threads passed. Production admission limits and assertions are
+unchanged. The rebuilt app's signature, system-library links and packaged-agent
+digests also passed verification after the frontend follow-up.
+
+The final shared `make check` passed after these fixes, including all 1,069 Rust
+tests (48 ignored scenarios) and all 1,274 frontend tests. The normal pre-push
+repeat and hosted checks remain part of the final handoff.
