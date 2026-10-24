@@ -31,6 +31,7 @@ import {
 import { heldFor, useOpenEdge, useRangeScope } from "~/hooks/use-range-scope";
 import { useUnits } from "~/hooks/use-units";
 import { cn } from "~/lib/utils";
+import { useModuleRange } from "~/stores/chart-range";
 import { InitialChip } from "~/widgets/initial-chip";
 import {
   useCompleteEdge,
@@ -61,6 +62,7 @@ import {
  * other".
  */
 export function AppsCard({ windowMs }: { windowMs: number }) {
+  const fixed = useModuleRange()?.endMs != null;
   const complete = useCompleteEdge(useOpenEdge());
   const { selection, range, keepPrevious } = useRangeScope(windowMs, complete);
   const totals = useNetworkByApp(range, { keepPrevious });
@@ -132,7 +134,7 @@ export function AppsCard({ windowMs }: { windowMs: number }) {
 
   return (
     <AppsShell
-      title={appsTitle(selection ? (shown ?? selection) : null, windowMs)}
+      title={appsTitle(selection || fixed ? (shown ?? range) : null, windowMs)}
       aside={selection && shown && <SelectionChip range={shown} />}
     >
       {body}

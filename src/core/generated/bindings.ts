@@ -546,8 +546,15 @@ export type CapabilitiesChanged = {
 	capabilities: Capabilities,
 };
 
-/**  The dashboard chart window (D-091). Every option fits the engine's 1-hour ring. */
-export type ChartWindow = "5m" | "15m" | "30m" | "1h";
+/**  The dashboard chart window. Longer and fixed ranges read retained history. */
+export type ChartWindow = "5m" | "15m" | "30m" | "1h" |
+/**  A rolling duration in milliseconds. */
+({ relative: number }) & { absolute?: never } |
+/**  A fixed interval in Unix milliseconds. */
+({ absolute: {
+	from_ms: number,
+	to_ms: number,
+} }) & { relative?: never };
 
 /**  One CPU cluster and its DVFS state table. */
 export type ClusterInfo = {

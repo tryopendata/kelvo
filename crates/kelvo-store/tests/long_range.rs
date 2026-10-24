@@ -664,3 +664,60 @@ fn a_bucket_without_a_selected_value_is_not_a_row() {
     let csv = String::from_utf8(out).unwrap();
     assert!(!csv.contains(&(T0 + MIN).to_string()), "{csv}");
 }
+
+/// The module charts use the same point budget regardless of the selected duration.
+#[test]
+fn ninety_days_are_averaged_in_rust_with_a_bounded_point_count_and_explicit_gap() {
+    let dir = temp_dir("ninety-day-chart");
+    let store = open(&dir, "h.sqlite");
+    let w = store.writer();
+    let h = host(1);
+    w.upsert_host(h.clone()).unwrap();
+    let l = layout(&["cpu.total"]);
+    let gap_start = T0 + 40 * DAY;
+    let gap_end = gap_start + DAY;
+    for slot in 0..90 * 24 * 60 {
+        let ts = T0 + slot * MIN;
+        if (gap_start..gap_end).contains(&ts) {
+            continue;
+        }
+        let avg = if (slot / 15) % 2 == 0 { 10.0 } else { 30.0 };
+        w.write_bucket(kelvo_store::BucketRow {
+            host: h.id,
+            tier: Tier::M1,
+            bucket_ts: ts,
+            series: Arc::clone(&l),
+            stats: vec![avg - 1.0, avg + 1.0, avg],
+        })
+        .unwrap();
+    }
+    w.write_gap(
+        h.id,
+        Gap::host(gap_start, Some(gap_end), GapReason::Sleep).unwrap(),
+    )
+    .unwrap();
+    w.flush().unwrap();
+    w.prune(T0 + 90 * DAY, Retention::with_days(90)).unwrap();
+    let mut r = store.reader().unwrap();
+    // Line charts and heatmaps request their existing one-hour display budgets.
+    for budget in [1200, 60] {
+        let res = history(&mut r, h.id, T0, T0 + 90 * DAY, budget);
+        let points = cpu_points(&res);
+        assert!(!points.is_empty());
+        assert!(points.len() <= budget as usize);
+        assert!(
+            points
+                .iter()
+                .all(|p| p.avg == 20.0 && p.min == 9.0 && p.max == 31.0)
+        );
+        assert!(res.bucket_ms > Q, "Rust must combine source buckets");
+        assert_eq!(res.gaps.len(), 1);
+        assert_eq!(res.gaps[0].start_ms, gap_start);
+        assert_eq!(res.gaps[0].end_ms, Some(gap_end));
+        assert!(
+            points
+                .iter()
+                .all(|p| !(p.t >= gap_start && p.t + res.bucket_ms <= gap_end))
+        );
+    }
+}

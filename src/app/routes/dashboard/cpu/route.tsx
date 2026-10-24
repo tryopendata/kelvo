@@ -8,7 +8,7 @@ import {
 import { WindowControl } from "~/components/window-control";
 import { useChartWindow } from "~/hooks/use-chart-window";
 import { useHostNoun, useHostRecord } from "~/hooks/use-host-record";
-import { BrushProvider } from "~/stores/brush-store";
+import { ChartRangeNotice, ChartRangeProvider } from "~/stores/chart-range";
 import { CoreLoadCard } from "./_components/core-load-card";
 import { TotalCard } from "./_components/total-card";
 import { clusterViews, coreCounts } from "./_lib/clusters";
@@ -27,7 +27,7 @@ export default function CpuRoute() {
   const windowMs = useChartWindow()?.windowMs ?? null;
 
   return (
-    <BrushProvider>
+    <ChartRangeProvider>
       <div className="flex flex-col gap-4">
         <PageHeader
           title="CPU"
@@ -52,6 +52,7 @@ export default function CpuRoute() {
           }
           actions={<WindowControl />}
         />
+        <ChartRangeNotice />
         {windowMs !== null && (
           <>
             <TotalCard windowMs={windowMs} />
@@ -63,7 +64,7 @@ export default function CpuRoute() {
           </>
         )}
       </div>
-    </BrushProvider>
+    </ChartRangeProvider>
   );
 }
 

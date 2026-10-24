@@ -213,6 +213,19 @@ The dominant CPU and Containers plots share a 220 px height. Container axes use 
 48 px gutter for byte labels (live area charts retain 32 px); labels stay on one
 line. Live comparisons use the same five relative time ticks as module pages;
 paused retained views use clock times, with dates for multi-day ranges.
+`WindowControl` supplies module pages with two shortcuts (`5m`, `1h`) and an
+end-aligned range popover. Presets run through 90 days; Relative accepts an amount
+and unit, and Date range accepts local start/end times with the timezone shown.
+Presets apply immediately; custom edits require Apply. The trigger names the active
+range. It uses the existing pill, popover, segmented control, input and button tokens.
+Long and fixed ranges query Rust history with a bounded point count. Heatmap cells
+retain averages of measured portions with gaps overlaid; line charts break at gaps.
+Ranges wider than a day omit repeated gap captions to keep the axis readable, while
+retaining the bands and accessible descriptions. A page note distinguishes historical
+charts from live headline readings and explains partial app coverage. Module plots
+retain their existing average lines and fills; min/max envelopes remain in Timeline
+and container history, while module summary peaks still come from Rust.
+
 `HistoryRangeControl` supplies Timeline and Containers with the same segmented
 range picker and previous/next/Live navigation. Container comparisons retain
 categorical, unfilled 1 px lines for overlapping identities, fitted scales, and

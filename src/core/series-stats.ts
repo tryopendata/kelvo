@@ -178,7 +178,7 @@ export function liveBucketCount(
   return Math.max(2, 1 + Math.ceil(hold / bucketMs));
 }
 
-/** Heatmap bucket steps. The interval caps at 60 s, so 60 s is always enough. */
+/** Live heatmap steps; retained ranges continue in whole-minute steps. */
 const HEATMAP_BUCKETS_MS = [5000, 15_000, 30_000, 60_000];
 
 /** Columns a heatmap aims for across its window. */
@@ -194,7 +194,7 @@ export function heatmapBucketMs(windowMs: number, intervalMs: number): number {
   const floor = Math.max(windowMs / HEATMAP_COLUMNS, intervalMs);
   return (
     HEATMAP_BUCKETS_MS.find((b) => b >= floor) ??
-    (HEATMAP_BUCKETS_MS.at(-1) as number)
+    Math.ceil(floor / 60_000) * 60_000
   );
 }
 

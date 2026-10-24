@@ -1,5 +1,5 @@
 import { rangeSlots, type TimeRange } from "@core/brush";
-import { formatClockSeconds, formatRate } from "@core/format";
+import { formatHistoryTime, formatRate } from "@core/format";
 import type { DiskIoPage, DiskIoPoint } from "@core/generated/bindings";
 import { gapBands } from "@core/history-state";
 import { useCallback, useLayoutEffect, useMemo, useRef } from "react";
@@ -48,6 +48,8 @@ export function DiskIoCharts({
   const hovered = useRef<number | null>(null);
   const first = Math.floor(range.fromMs / page.bucket_ms) * page.bucket_ms;
   const count = Math.max(1, Math.ceil((range.toMs - first) / page.bucket_ms));
+  const end = first + count * page.bucket_ms;
+  const dates = range.toMs - range.fromMs >= 86_400_000;
   const points = useMemo(() => {
     const byTime = new Map(page.points.map((p) => [p.t, p]));
     return Array.from(
@@ -81,7 +83,7 @@ export function DiskIoCharts({
       set(
         "time",
         valid
-          ? `${formatClockSeconds(first + i * page.bucket_ms)}–${formatClockSeconds(first + (i + 1) * page.bucket_ms)}`
+          ? `${formatHistoryTime(first + i * page.bucket_ms, dates)}–${formatHistoryTime(first + (i + 1) * page.bucket_ms, dates)}`
           : ""
       );
       set("read", formatRate(point?.read_bps ?? null));
@@ -113,7 +115,7 @@ export function DiskIoCharts({
         )
       );
     },
-    [count, first, page.bucket_ms, points]
+    [count, first, page.bucket_ms, points, dates]
   );
   useLayoutEffect(() => paint(hovered.current), [paint]);
   const gap = useMemo(
@@ -166,8 +168,8 @@ export function DiskIoCharts({
         onHover={paint}
       />
       <WindowTicks
-        ticks={[first, first + (range.toMs - first) / 2, range.toMs].map(
-          formatClockSeconds
+        ticks={[first, first + (end - first) / 2, end].map((t) =>
+          formatHistoryTime(t, dates)
         )}
         style={{ paddingLeft: PLOT_INSET }}
       />

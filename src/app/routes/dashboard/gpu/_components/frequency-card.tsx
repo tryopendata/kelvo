@@ -1,10 +1,13 @@
 import { fixed, MISSING } from "@core/format";
 import { windowWords } from "@core/live-window";
 import { residencyRows } from "@core/residency";
-import { labelOf } from "@core/series-key";
+import { labelOf, seriesKeyString } from "@core/series-key";
+import { ChartHistoryStatus } from "~/components/chart-history-status";
 import { SectionCard } from "~/components/section-card";
+import { useHistorySeries } from "~/hooks/use-history-series";
 import { useGpuMaxMhz } from "~/hooks/use-host-record";
 import { useHeld, useLayout, useRingStats } from "~/hooks/use-ring";
+import { useModuleRange } from "~/stores/chart-range";
 import { ResidencyBar } from "~/widgets/residency-bar";
 import { RingGauge } from "~/widgets/ring-gauge";
 
@@ -15,7 +18,8 @@ import { RingGauge } from "~/widgets/ring-gauge";
  * MHz, as for CPU clusters.
  */
 export function FrequencyCard({ windowMs }: { windowMs: number }) {
-  const span = `last ${windowWords(windowMs)}`;
+  const pinned = useModuleRange()?.endMs != null;
+  const span = pinned ? "selected dates" : `last ${windowWords(windowMs)}`;
   const layout = useLayout();
   const states: { key: string; state: string }[] = [];
   layout?.series.forEach((s, i) => {
@@ -25,16 +29,27 @@ export function FrequencyCard({ windowMs }: { windowMs: number }) {
       states.push({ key: layout.keys[i] as string, state });
   });
   const maxMhz = useGpuMaxMhz();
-  const hz = useHeld(["gpu.freq"])["gpu.freq"] ?? null;
+  const hz = useHeld(["gpu.freq"])["gpu.freq"];
   const stats = useRingStats(
     states.map((s) => s.key),
     windowMs
   );
+  const history = useHistorySeries(
+    states.map((s) => s.key),
+    windowMs,
+    1
+  );
   const pct: Record<string, number | null> = {};
-  for (const s of states) pct[s.state] = stats[s.key]?.avg ?? null;
+  const retained = new Map(
+    history.page?.series.map((s) => [seriesKeyString(s.key), s.points[0]?.avg])
+  );
+  for (const s of states) {
+    const average = history.enabled ? retained.get(s.key) : stats[s.key]?.avg;
+    pct[s.state] = average ?? null;
+  }
   const rows = residencyRows(pct);
   const idle = rows?.find((r) => r.label === "idle")?.pct;
-  const ghz = hz === null ? null : hz / 1e9;
+  const ghz = hz == null ? null : hz / 1e9;
   const maxGhz = maxMhz === null ? null : maxMhz / 1000;
 
   return (
@@ -45,6 +60,7 @@ export function FrequencyCard({ windowMs }: { windowMs: number }) {
       compactHeader
       className="gap-4"
     >
+      <ChartHistoryStatus loading={history.loading} error={history.error} />
       <div className="flex items-start gap-5">
         <figure className="m-0 flex flex-col items-center gap-2.5">
           <RingGauge
@@ -61,7 +77,7 @@ export function FrequencyCard({ windowMs }: { windowMs: number }) {
         <div className="min-w-0 flex-1">
           {rows ? (
             <ResidencyBar
-              cluster={`Last ${windowWords(windowMs)}`}
+              cluster={span}
               activePct={idle === undefined ? 100 : 100 - idle}
               states={rows}
               accent="gpu"

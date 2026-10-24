@@ -19,7 +19,7 @@ import { useChartWindow } from "~/hooks/use-chart-window";
 import { useHostRecord } from "~/hooks/use-host-record";
 import { useProcessColumnCaps } from "~/hooks/use-process-interest";
 import { useHeld } from "~/hooks/use-ring";
-import { BrushProvider } from "~/stores/brush-store";
+import { ChartRangeNotice, ChartRangeProvider } from "~/stores/chart-range";
 import { useHost } from "~/stores/host-store";
 import { usePowerSource } from "~/stores/live-selectors";
 import { PowerDrawCard } from "./_components/power-draw-card";
@@ -83,13 +83,14 @@ export default function PowerRoute() {
   }
 
   return (
-    <BrushProvider>
+    <ChartRangeProvider>
       <div className="flex flex-col gap-4">
         <PageHeader
           title="Power & Sensors"
           subtitle={<PowerSubtitle />}
           actions={<WindowControl />}
         />
+        <ChartRangeNotice />
         {windowMs !== null && (
           <>
             <RingCards
@@ -105,7 +106,7 @@ export default function PowerRoute() {
           </>
         )}
       </div>
-    </BrushProvider>
+    </ChartRangeProvider>
   );
 }
 

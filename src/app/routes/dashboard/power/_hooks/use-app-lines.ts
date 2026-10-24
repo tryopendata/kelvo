@@ -1,10 +1,12 @@
 import { windowRange } from "@core/brush";
 import { resampleBuckets, type SlotGrid } from "@core/chart-math";
+import { RING_SPAN_MS } from "@core/generated/bindings";
 import { useMemo } from "react";
 import { useIsLocalHost } from "~/hooks/use-is-local-host";
 import { useProcessColumnCaps } from "~/hooks/use-process-interest";
 import { useOpenEdge } from "~/hooks/use-range-scope";
 import { useUsageSeries } from "~/hooks/use-usage-series";
+import { useModuleRange } from "~/stores/chart-range";
 
 /** Apps drawn as lines under the system draw. */
 export const APP_LINES = 5;
@@ -24,6 +26,7 @@ export type AppLines =
   | { kind: "remote" }
   /** The host attributes no energy to processes (a Linux agent, D-116). */
   | { kind: "unmeasured" }
+  | { kind: "long_range" }
   | { kind: "loading" }
   | { kind: "error" }
   /** Nothing measured in the window yet (just launched). */
@@ -40,12 +43,18 @@ export type AppLines =
 export function useAppLines(windowMs: number, grid: SlotGrid): AppLines {
   const local = useIsLocalHost();
   const energy = useProcessColumnCaps().energy;
-  const edge = useOpenEdge();
+  const fixedEnd = useModuleRange()?.endMs ?? null;
+  const liveEdge = useOpenEdge(fixedEnd === null);
+  const edge = fixedEnd ?? liveEdge;
+  const long = windowMs > RING_SPAN_MS;
   const range = useMemo(
-    () => (edge === null || !energy ? null : windowRange(edge, windowMs)),
-    [edge, windowMs, energy]
+    () =>
+      edge === null || !energy || long ? null : windowRange(edge, windowMs),
+    [edge, windowMs, energy, long]
   );
-  const q = useUsageSeries(range, "energy", APP_LINES, { keepPrevious: true });
+  const q = useUsageSeries(range, "energy", APP_LINES, {
+    keepPrevious: fixedEnd === null,
+  });
   const data = q.data;
   const { tEndMs, intervalMs, length } = grid;
   const apps = useMemo(
@@ -72,6 +81,7 @@ export function useAppLines(windowMs: number, grid: SlotGrid): AppLines {
   let lines: AppLines;
   if (!local) lines = { kind: "remote" };
   else if (!energy) lines = { kind: "unmeasured" };
+  else if (long) lines = { kind: "long_range" };
   else if (q.isError) lines = { kind: "error" };
   else if (!data) lines = { kind: "loading" };
   else if (apps.length === 0) lines = { kind: "empty" };

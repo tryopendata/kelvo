@@ -1,3 +1,4 @@
+import { relativeWindow } from "@core/chart-range";
 import { formatRate } from "@core/format";
 import type { DiskDevice } from "@core/generated/bindings";
 import { labelValues, sk } from "@core/series-key";
@@ -17,7 +18,7 @@ import {
 } from "~/components/ui/select";
 import { VolumeTable } from "~/components/volume-table";
 import { WindowControl } from "~/components/window-control";
-import { useChartWindow } from "~/hooks/use-chart-window";
+import { useChartWindow, useSetChartWindow } from "~/hooks/use-chart-window";
 import { useEdition } from "~/hooks/use-edition";
 import { useElementSize } from "~/hooks/use-element-size";
 import { useHostNoun, useHostRecord } from "~/hooks/use-host-record";
@@ -25,11 +26,8 @@ import { useIsLocalHost } from "~/hooks/use-is-local-host";
 import { useProcessColumnCaps } from "~/hooks/use-process-interest";
 import { useOpenEdge } from "~/hooks/use-range-scope";
 import { useHeld, useLayout } from "~/hooks/use-ring";
-import {
-  BrushProvider,
-  useBrushRange,
-  useBrushStore,
-} from "~/stores/brush-store";
+import { useBrushRange, useBrushStore } from "~/stores/brush-store";
+import { ChartRangeNotice, ChartRangeProvider } from "~/stores/chart-range";
 import { useHost } from "~/stores/host-store";
 import { useMemory } from "~/stores/live-selectors";
 import { StatStrip } from "~/widgets/stat-strip";
@@ -78,14 +76,14 @@ export default function DiskRoute() {
       />
     );
   return (
-    <BrushProvider initial={diskRange(params)}>
+    <ChartRangeProvider initial={diskRange(params)}>
       <DiskActivity
         switcher={switcher}
         onAnalyze={
           edition?.disk_space ? (vol) => set({ view: "space", vol }) : undefined
         }
       />
-    </BrushProvider>
+    </ChartRangeProvider>
   );
 }
 
@@ -98,7 +96,9 @@ function DiskActivity({
   /** Opens Space for a volume; absent when this build has no Space view. */
   onAnalyze: ((vol: string) => void) | undefined;
 }) {
-  const windowMs = useChartWindow()?.windowMs ?? null;
+  const chartWindow = useChartWindow();
+  const setChartWindow = useSetChartWindow();
+  const windowMs = chartWindow?.windowMs ?? null;
   const [params, setParams] = useSearchParams();
   const hostRecord = useHostRecord();
   // Rows without measured disk rates would list every process at 0 B/s.
@@ -119,7 +119,8 @@ function DiskActivity({
   useDismissOutside(brush.getState().clear, selection !== null);
   const edge = useOpenEdge();
   // A pinned interval keeps its surrounding chart window when live time advances.
-  const end = selection?.toMs ?? edge;
+  const fixedEnd = chartWindow?.endMs ?? null;
+  const end = fixedEnd ?? selection?.toMs ?? edge;
   const canReadHistory = !local || inventory.data !== undefined;
   const range =
     windowMs !== null && end !== null && canReadHistory
@@ -130,7 +131,12 @@ function DiskActivity({
     12,
     Math.min(120, Math.floor((chartWidth - 128) / 5))
   );
-  const chart = useDiskIo(device, range, maxPoints, selection === null);
+  const chart = useDiskIo(
+    device,
+    range,
+    maxPoints,
+    selection === null && fixedEnd === null
+  );
   const selectedTotals = useDiskIo(
     device,
     canReadHistory ? selection : null,
@@ -197,6 +203,7 @@ function DiskActivity({
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <WindowControl />
+            <ChartRangeNotice />
             {switcher}
           </div>
         }
@@ -241,8 +248,12 @@ function DiskActivity({
               </Select>
               <button
                 type="button"
-                onClick={() => brush.getState().clear()}
-                aria-pressed={selection === null}
+                onClick={() => {
+                  brush.getState().clear();
+                  if (windowMs !== null && fixedEnd !== null)
+                    setChartWindow(relativeWindow(windowMs));
+                }}
+                aria-pressed={selection === null && fixedEnd === null}
                 className="h-7 rounded-control border border-border bg-btn px-3 text-[12px] outline-none hover:bg-selected focus-visible:ring-2 focus-visible:ring-ring"
               >
                 Live

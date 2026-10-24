@@ -18,7 +18,7 @@ import { useIsLocalHost } from "~/hooks/use-is-local-host";
 import { useProcessNetwork } from "~/hooks/use-process-interest";
 import { useHeld, useLayout } from "~/hooks/use-ring";
 import { useUnits } from "~/hooks/use-units";
-import { BrushProvider } from "~/stores/brush-store";
+import { ChartRangeNotice, ChartRangeProvider } from "~/stores/chart-range";
 import { useNetwork, usePrimaryIface } from "~/stores/live-selectors";
 import { useSettings } from "~/stores/settings-store";
 import { StatStrip } from "~/widgets/stat-strip";
@@ -59,8 +59,9 @@ export default function NetworkRoute() {
   const local = useIsLocalHost();
   // Null until settings load: the page waits rather than draw a span it would
   // redo, and the Apps card reads nothing.
-  const windowMs = useChartWindow()?.windowMs ?? null;
-  const gaps = useGapBands("network");
+  const chartWindow = useChartWindow();
+  const windowMs = chartWindow?.windowMs ?? null;
+  const gaps = useGapBands("network", chartWindow);
   const units = useUnits();
   const net = useNetwork();
   const primary = usePrimaryIface();
@@ -86,7 +87,7 @@ export default function NetworkRoute() {
   const brush = perProcess && history === true;
 
   return (
-    <BrushProvider>
+    <ChartRangeProvider>
       <div className="flex flex-col gap-4">
         <PageHeader
           title="Network"
@@ -98,6 +99,7 @@ export default function NetworkRoute() {
           }
           actions={<WindowControl />}
         />
+        <ChartRangeNotice />
         {windowMs !== null && (
           <>
             <div {...{ [BRUSH_SCOPE_ATTR]: "" }} className="contents">
@@ -164,6 +166,6 @@ export default function NetworkRoute() {
           </>
         )}
       </div>
-    </BrushProvider>
+    </ChartRangeProvider>
   );
 }

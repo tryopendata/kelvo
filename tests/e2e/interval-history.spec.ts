@@ -120,11 +120,12 @@ test("module windows too short for the interval are disabled", async ({
   await expect(
     control.getByRole("radio", { name: "5m", exact: true })
   ).toBeDisabled();
-  await expect(
-    control.getByRole("radio", { name: "15m", exact: true })
-  ).toBeEnabled();
   // A saved 5m shows as the shortest window still offered, unsaved.
   await expect(
-    control.getByRole("radio", { name: "15m", exact: true })
-  ).toHaveAttribute("data-state", "on");
+    page.getByRole("button", { name: "Time range: 15m" })
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Time range: 15m" }).click();
+  await expect(
+    page.getByRole("button", { name: "Last 15 minutes" })
+  ).toHaveAttribute("aria-pressed", "true");
 });

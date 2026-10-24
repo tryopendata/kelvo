@@ -87,3 +87,16 @@ describe("GapBands", () => {
     errors.mockRestore();
   });
 });
+
+it("keeps long-range gap bands accessible without piling captions over the axis", () => {
+  const label = "Asleep 01:00–07:00 · not interpolated";
+  const { getByRole, queryByText } = render(
+    <GapBands
+      rangeFromMs={0}
+      rangeToMs={90 * 86_400_000}
+      gaps={[{ fromMs: 3_600_000, toMs: 7 * 3_600_000, label }]}
+    />
+  );
+  expect(getByRole("note", { name: label })).toBeTruthy();
+  expect(queryByText(label)).toBeNull();
+});

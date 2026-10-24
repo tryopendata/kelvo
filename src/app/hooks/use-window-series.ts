@@ -14,6 +14,8 @@ export interface WindowSeries {
   values: Record<string, (number | null)[]>;
   tEndMs: number;
   intervalMs: number;
+  loading?: boolean;
+  error?: boolean;
 }
 
 /**
@@ -33,7 +35,7 @@ export interface WindowSeries {
 export function useWindowSeries(
   keys: readonly string[],
   windowMs: number,
-  { brush = false }: { brush?: boolean } = {}
+  { brush = false, enabled = true }: { brush?: boolean; enabled?: boolean } = {}
 ): WindowSeries {
   const store = useHostStore();
   const interval = gridIntervalMs(store.getState().status);
@@ -43,10 +45,12 @@ export function useWindowSeries(
   const count = Math.ceil(windowMs / bucketMs);
   // Subscribes to the tick; the bucket work is skipped on the raw grid.
   const buckets = useRingBuckets(keys, bucketMs, count, {
-    enabled: factor > 1,
+    enabled: factor > 1 && enabled,
+    subscribe: enabled,
   });
   const state = store.getState();
 
+  if (!enabled) return { values: {}, tEndMs: 0, intervalMs: bucketMs };
   if (factor <= 1) {
     const values: Record<string, (number | null)[]> = {};
     for (const k of keys) values[k] = seriesWindow(state, k, windowMs).values;

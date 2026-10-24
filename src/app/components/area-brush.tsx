@@ -1,4 +1,5 @@
 import { rangeFractions } from "@core/brush";
+import { seriesRange } from "@core/chart-math";
 import type { ReactNode } from "react";
 import { BrushOverlay } from "~/components/brush-overlay";
 import { useChartBrush } from "~/hooks/use-chart-brush";
@@ -27,8 +28,8 @@ export function useAreaBrush(
   if (!on || series.tEndMs <= 0 || n < 2) {
     return { highlight: null, overlay: null };
   }
-  const spanMs = (n - 1) * series.intervalMs;
-  const firstMs = series.tEndMs - spanMs;
+  const { fromMs: firstMs, toMs } = seriesRange(series);
+  const spanMs = toMs - firstMs;
   return {
     highlight: selected ? rangeFractions(selected, firstMs, spanMs) : null,
     overlay: (

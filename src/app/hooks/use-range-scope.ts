@@ -1,5 +1,6 @@
 import { floorTo, type TimeRange, windowRange } from "@core/brush";
 import { useBrushRange } from "~/stores/brush-store";
+import { useModuleRange } from "~/stores/chart-range";
 import { useHost } from "~/stores/host-store";
 
 /**
@@ -34,12 +35,15 @@ export function useRangeScope(
   edgeMs?: number | null
 ): RangeScope {
   const selection = useBrushRange();
-  const open = useOpenEdge();
-  const edge = edgeMs === undefined ? open : edgeMs;
+  const fixedEnd = useModuleRange()?.endMs ?? null;
+  const open = useOpenEdge(
+    selection === null && fixedEnd === null && edgeMs === undefined
+  );
+  const edge = fixedEnd ?? (edgeMs === undefined ? open : edgeMs);
   return {
     selection,
     range: selection ?? (edge === null ? null : windowRange(edge, windowMs)),
-    keepPrevious: selection === null,
+    keepPrevious: selection === null && fixedEnd === null,
   };
 }
 

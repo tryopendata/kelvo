@@ -55,6 +55,7 @@ import { useIsLocalHost } from "~/hooks/use-is-local-host";
 import { heldFor, useRangeScope } from "~/hooks/use-range-scope";
 import { useUsageByApp } from "~/hooks/use-usage-by-app";
 import { cn } from "~/lib/utils";
+import { useModuleRange } from "~/stores/chart-range";
 import { InitialChip } from "~/widgets/initial-chip";
 import type { Accent } from "~/widgets/lib/accent";
 
@@ -99,6 +100,7 @@ export function UsageAppsCard({
   config: UsageTableConfig;
   viewControl?: ReactNode;
 }) {
+  const fixedEnd = useModuleRange()?.endMs ?? null;
   const { selection, range, keepPrevious } = useRangeScope(windowMs);
   const q = useUsageByApp(range, config.by, { keepPrevious });
   const [query, setQuery] = useState("");
@@ -141,7 +143,7 @@ export function UsageAppsCard({
     <div {...brushScopeProps} className="contents">
       <AppsShell
         accent={config.accent}
-        title={`${config.noun} by app, ${scopeWords(selection ? (shown ?? selection) : null, windowMs)}`}
+        title={`${config.noun} by app, ${scopeWords(selection ? (shown ?? selection) : fixedEnd === null ? null : range, windowMs)}`}
         aside={
           <>
             {viewControl}

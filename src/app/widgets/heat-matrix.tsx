@@ -4,7 +4,7 @@ import { type CSSProperties, memo, type ReactElement, useRef } from "react";
 import { cn } from "~/lib/utils";
 import { GapBands, type GapSpan } from "./gap-band";
 import { type Accent, accentVars } from "./lib/accent";
-import { windowTicks } from "./lib/chart-labels";
+import { historyTicks } from "./lib/chart-labels";
 import { WindowTicks } from "./window-ticks";
 
 export interface HeatMatrixRow {
@@ -32,6 +32,7 @@ export interface HeatMatrixProps {
   labelWidth?: number;
   bucketMs: number;
   windowMs: number;
+  live?: boolean;
   /**
    * Start of the newest bucket (ms epoch). Cells are then keyed by bucket,
    * so when a column closes and the window slides, existing cells keep
@@ -142,6 +143,7 @@ const ClosedCells = memo(function ClosedCells({
  * Takes a formatter, so unlike `CoreHeatmap` its props are not JSON.
  */
 export function HeatMatrix({
+  live = true,
   rows,
   scale,
   formatNow,
@@ -156,7 +158,8 @@ export function HeatMatrix({
   const cols = Math.max(1, Math.round(windowMs / bucketMs));
   // Bucket number of the first column, or 0 for positional keys.
   const firstKey = endMs === null ? 0 : Math.floor(endMs / bucketMs) - cols + 1;
-  const ticks = windowTicks(windowMs, 3);
+  const right = (endMs ?? 0) + bucketMs;
+  const ticks = historyTicks(right - cols * bucketMs, right, live, 3);
   // Rows are placed explicitly so the gap band can span the cell column of
   // every row without the auto-placement flowing around it.
   const row = (k: number) => ({ gridRow: k + 1 });
@@ -222,8 +225,8 @@ export function HeatMatrix({
         >
           <GapBands
             gaps={gaps}
-            rangeFromMs={firstKey * bucketMs}
-            rangeToMs={(firstKey + cols) * bucketMs}
+            rangeFromMs={endMs - (cols - 1) * bucketMs}
+            rangeToMs={endMs + bucketMs}
           />
         </div>
       )}

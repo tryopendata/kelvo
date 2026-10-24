@@ -206,3 +206,12 @@ describe("heatmapBucketMs", () => {
     expect(heatmapBucketMs(3_600_000, 60_000)).toBe(60_000);
   });
 });
+
+it.each([3_600_000, 7 * 86_400_000, 90 * 86_400_000])(
+  "keeps heatmap columns bounded for a %s ms window",
+  (windowMs) => {
+    expect(
+      Math.ceil(windowMs / heatmapBucketMs(windowMs, 1000))
+    ).toBeLessThanOrEqual(60);
+  }
+);

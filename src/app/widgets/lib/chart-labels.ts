@@ -1,3 +1,8 @@
+import {
+  formatClock,
+  formatClockSeconds,
+  formatHistoryTime,
+} from "@core/format";
 /**
  * Relative time label for a chart's x axis: "−60s", "−5m", "−24h". Uses the
  * true minus sign.
@@ -8,6 +13,7 @@ export function agoLabel(ms: number): string {
   if (s < 120) return `−${s}s`;
   const m = Math.round(s / 60);
   if (m < 120) return `−${m}m`;
+  if (m >= 2880) return `−${Math.round(m / 1440)}d`;
   return `−${Math.round(m / 60)}h`;
 }
 
@@ -62,14 +68,14 @@ export function historyTicks(
   count = 5
 ): string[] {
   if (live) return windowTicks(to - from, count);
-  const format = new Intl.DateTimeFormat(undefined, {
-    ...(to - from >= 86_400_000
-      ? ({ month: "short", day: "numeric" } as const)
-      : {}),
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  const span = to - from;
+  const format = (t: number) =>
+    span >= 86_400_000
+      ? formatHistoryTime(t, true)
+      : span <= 300_000
+        ? formatClockSeconds(t)
+        : formatClock(t);
   return Array.from({ length: count }, (_, tick) =>
-    format.format(from + ((to - from) * tick) / Math.max(1, count - 1))
+    format(from + ((to - from) * tick) / Math.max(1, count - 1))
   );
 }

@@ -21,7 +21,10 @@ describe("CPU page chart window (D-091)", () => {
     const { router, transport, user } = renderWithProviders(<Pages />, {
       route: "/cpu",
     });
-    await user.click(await screen.findByRole("radio", { name: "30m" }));
+    await user.click(
+      await screen.findByRole("button", { name: "Time range: 15m" })
+    );
+    await user.click(screen.getByRole("button", { name: "Last 30 minutes" }));
     expect(
       await screen.findByRole("img", {
         name: /^CPU total and system, last 30 minutes,/,
@@ -40,7 +43,9 @@ describe("CPU page chart window (D-091)", () => {
     expect(
       await screen.findByRole("heading", { name: "Power, last 30 minutes" })
     ).toBeVisible();
-    expect(screen.getByRole("radio", { name: "30m" })).toBeChecked();
+    expect(
+      screen.getByRole("button", { name: "Time range: 30m" })
+    ).toBeVisible();
     expect(
       screen.getByRole("img", { name: /^GPU power, last 30 minutes,/ })
     ).toBeVisible();
@@ -49,7 +54,9 @@ describe("CPU page chart window (D-091)", () => {
     expect(
       await screen.findByRole("img", { name: /^Disk I\/O:/ })
     ).toBeVisible();
-    expect(screen.getByRole("radio", { name: "30m" })).toBeChecked();
+    expect(
+      screen.getByRole("button", { name: "Time range: 30m" })
+    ).toBeVisible();
     expect(
       await screen.findByRole("region", { name: "Recorded device byte totals" })
     ).toHaveTextContent("Read · 30 min");
@@ -66,7 +73,9 @@ describe("CPU page chart window (D-091)", () => {
         name: /^CPU total and system, last 15 minutes,/,
       })
     ).toBeVisible();
-    expect(screen.getByRole("radio", { name: "15m" })).toBeChecked();
+    expect(
+      screen.getByRole("button", { name: "Time range: 15m" })
+    ).toBeVisible();
     expect(error).toHaveBeenCalledWith(
       "[settings] get_settings failed",
       expect.anything()

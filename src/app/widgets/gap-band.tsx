@@ -89,6 +89,7 @@ export function GapBands({
         fromMs={g.fromMs}
         toMs={g.toMs}
         label={g.label}
+        labelPosition={rangeToMs - rangeFromMs > 86_400_000 ? "none" : "bottom"}
         rangeFromMs={rangeFromMs}
         rangeToMs={rangeToMs}
       />

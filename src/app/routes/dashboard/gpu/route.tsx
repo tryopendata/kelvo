@@ -12,7 +12,7 @@ import {
   useProcessGpu,
   useProcessInterest,
 } from "~/hooks/use-process-interest";
-import { BrushProvider } from "~/stores/brush-store";
+import { ChartRangeNotice, ChartRangeProvider } from "~/stores/chart-range";
 import { FrequencyCard } from "./_components/frequency-card";
 import { PowerCard } from "./_components/power-card";
 import { UsageCard } from "./_components/usage-card";
@@ -65,13 +65,14 @@ export default function GpuRoute() {
   useProcessInterest(perProcess ? GPU_VIEW : null);
   const windowMs = useChartWindow()?.windowMs ?? null;
   return (
-    <BrushProvider>
+    <ChartRangeProvider>
       <div className="flex flex-col gap-4">
         <PageHeader
           title="GPU"
           subtitle={info?.chip ?? undefined}
           actions={<WindowControl />}
         />
+        <ChartRangeNotice />
         {windowMs !== null && (
           <>
             <UsageCard windowMs={windowMs} />
@@ -83,6 +84,6 @@ export default function GpuRoute() {
           </>
         )}
       </div>
-    </BrushProvider>
+    </ChartRangeProvider>
   );
 }

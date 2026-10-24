@@ -1,7 +1,9 @@
+import { seriesRange } from "@core/chart-math";
 import { formatGhz, formatPercent, formatWatts } from "@core/format";
 import { windowWords } from "@core/live-window";
 import { useAreaBrush } from "~/components/area-brush";
 import { brushScopeProps } from "~/components/brush-overlay";
+import { ChartHistoryStatus } from "~/components/chart-history-status";
 import {
   type RangeTotal,
   RangeTotalsStrip,
@@ -9,12 +11,13 @@ import {
 import { SectionCard } from "~/components/section-card";
 import { SelectionSummary } from "~/components/selection-summary";
 import { useGapBands } from "~/hooks/use-gap-bands";
+import { useModuleSeries } from "~/hooks/use-module-series";
 import { useHeld } from "~/hooks/use-ring";
-import { useWindowSeries } from "~/hooks/use-window-series";
+import { useModuleRange } from "~/stores/chart-range";
 import {
+  historyTicks,
   PERCENT_GRID,
   PERCENT_Y_TICKS,
-  windowTicks,
 } from "~/widgets/lib/chart-labels";
 import { StatStrip } from "~/widgets/stat-strip";
 import { StreamArea } from "~/widgets/stream-area";
@@ -39,7 +42,8 @@ const TOTALS: readonly RangeTotal[] = [
  */
 export function UsageCard({ windowMs }: { windowMs: number }) {
   const v = useHeld(HELD);
-  const series = useWindowSeries(CHART, windowMs, { brush: true });
+  const endMs = useModuleRange()?.endMs ?? null;
+  const series = useModuleSeries(CHART, windowMs, { brush: true });
   const brush = useAreaBrush(series, HEIGHT);
   const gaps = useGapBands("gpu");
   const util = v["gpu.util"] ?? null;
@@ -67,6 +71,7 @@ export function UsageCard({ windowMs }: { windowMs: number }) {
           />
         </div>
         <div className="flex flex-col gap-1.5">
+          <ChartHistoryStatus loading={series.loading} error={series.error} />
           <StreamArea
             gaps={gaps}
             series={[
@@ -81,10 +86,15 @@ export function UsageCard({ windowMs }: { windowMs: number }) {
             yMax={100}
             accent="gpu"
             height={HEIGHT}
-            ariaLabel={`GPU utilization, last ${windowWords(windowMs)}, now ${formatPercent(util)}. Drag to select a range.`}
+            ariaLabel={`GPU utilization, ${endMs === null ? `last ${windowWords(windowMs)}` : "selected dates"}, now ${formatPercent(util)}. Drag to select a range.`}
             gridlines={PERCENT_GRID}
             yTicks={PERCENT_Y_TICKS}
-            xTicks={windowTicks(windowMs, 5)}
+            xTicks={historyTicks(
+              seriesRange(series).fromMs,
+              seriesRange(series).toMs,
+              endMs === null,
+              5
+            )}
             highlight={brush.highlight}
             overlay={brush.overlay}
           />

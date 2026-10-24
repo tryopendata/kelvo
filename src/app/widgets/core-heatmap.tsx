@@ -13,6 +13,7 @@ export interface CoreHeatmapProps {
   }[];
   bucketMs: number;
   windowMs: number;
+  live?: boolean;
   /**
    * Start of the newest bucket (ms epoch). Cells are then keyed by bucket,
    * so when a column closes and the window slides, existing cells keep

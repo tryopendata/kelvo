@@ -9,7 +9,7 @@ import { WindowControl } from "~/components/window-control";
 import { useChartWindow } from "~/hooks/use-chart-window";
 import { useHostRecord } from "~/hooks/use-host-record";
 import { useUnits } from "~/hooks/use-units";
-import { BrushProvider } from "~/stores/brush-store";
+import { ChartRangeNotice, ChartRangeProvider } from "~/stores/chart-range";
 import { CompositionCard } from "./_components/composition-card";
 import { PressureCard } from "./_components/pressure-card";
 import { SwapCard } from "./_components/swap-card";
@@ -65,7 +65,7 @@ export default function MemoryRoute() {
   }, [bytes, mac]);
 
   return (
-    <BrushProvider>
+    <ChartRangeProvider>
       <div className="flex flex-col gap-4">
         <PageHeader
           title="Memory"
@@ -81,6 +81,7 @@ export default function MemoryRoute() {
           }
           actions={<WindowControl />}
         />
+        <ChartRangeNotice />
         {windowMs !== null && (
           <>
             <CompositionCard
@@ -103,6 +104,6 @@ export default function MemoryRoute() {
           </>
         )}
       </div>
-    </BrushProvider>
+    </ChartRangeProvider>
   );
 }

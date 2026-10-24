@@ -29,6 +29,24 @@ export type TierKey = Tier | "auto";
 
 export const historyKeys = {
   all: ["history"] as const,
+  moduleSeries: (
+    hostId: HostId,
+    keys: readonly string[],
+    windowMs: number,
+    endMs: number,
+    points: number,
+    fixed = false
+  ) =>
+    [
+      "history",
+      hostId,
+      "module-series",
+      keys,
+      windowMs,
+      endMs,
+      points,
+      fixed,
+    ] as const,
   diskIo: (
     hostId: HostId,
     device: string | null,
@@ -145,8 +163,19 @@ export const historyKeys = {
    * is in the key so a pause or resume fetches again rather than leaving a
    * stale open "Paused" gap over new samples.
    */
-  ringGaps: (hostId: HostId, paused: boolean) =>
-    [...historyKeys.host(hostId), "ring-gaps", paused] as const,
+  ringGaps: (
+    hostId: HostId,
+    paused: boolean,
+    windowMs = 3_600_000,
+    endMs: number | null = null
+  ) =>
+    [
+      ...historyKeys.host(hostId),
+      "ring-gaps",
+      paused,
+      windowMs,
+      endMs,
+    ] as const,
 };
 
 export const hostKeys = {

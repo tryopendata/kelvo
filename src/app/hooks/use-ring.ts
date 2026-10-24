@@ -63,12 +63,15 @@ export function useRingBuckets(
   keys: readonly string[],
   bucketMs: number,
   count: number,
-  { enabled = true }: { enabled?: boolean } = {}
+  {
+    enabled = true,
+    subscribe = enabled,
+  }: { enabled?: boolean; subscribe?: boolean } = {}
 ): { values: Record<string, (number | null)[]>; endMs: number | null } {
   const store = useHostStore();
-  useHost((s) => s.rowsVersion);
+  useHost((s) => (subscribe ? s.rowsVersion : 0));
   // Earlier history prepended, or the ring restarted: closed buckets change.
-  const epoch = useHost((s) => s.rowsEpoch);
+  const epoch = useHost((s) => (enabled ? s.rowsEpoch : 0));
   const state = store.getState();
   const lastTs = enabled ? state.lastTsMs : null;
   const last = lastTs === null ? null : bucketIndex(lastTs, bucketMs);

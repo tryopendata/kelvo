@@ -1,11 +1,7 @@
 import { BRUSH_STEP_MS, type TimeRange } from "@core/brush";
 import type { HostId } from "@core/generated/bindings";
 import type { Transport } from "@core/transport";
-import {
-  keepPreviousData,
-  type QueryKey,
-  useQuery,
-} from "@tanstack/react-query";
+import { type QueryKey, useQuery } from "@tanstack/react-query";
 import { useTransport } from "~/lib/transport-context";
 import { useHostId } from "~/stores/host-store";
 
@@ -38,7 +34,7 @@ export function rangeQueryOptions<T>(
       q.state.status === "error" || isFinal(q.state.data)
         ? false
         : pollMs(q.state.data, q.state.dataUpdateCount),
-    ...(keepPrevious ? { placeholderData: keepPreviousData } : {}),
+    meta: { rolling: keepPrevious },
   };
 }
 
@@ -77,5 +73,7 @@ export function useRangeQuery<T>(
     queryFn: () => fetch(transport, hostId, fromMs, toMs),
     enabled: range !== null,
     ...rangeQueryOptions<T>((d) => isFinal(d, toMs), keepPrevious, pollMs),
+    placeholderData: (previous, query) =>
+      keepPrevious && query?.meta?.rolling === true ? previous : undefined,
   });
 }

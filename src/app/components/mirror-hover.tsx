@@ -1,4 +1,4 @@
-import { formatClockSeconds } from "@core/format";
+import { formatHistoryTime } from "@core/format";
 import { type RefObject, useLayoutEffect, useRef } from "react";
 import {
   ChartTooltipShell,
@@ -47,6 +47,8 @@ export interface MirrorHoverProps {
   accent: Accent;
   /** Draw a column over the hovered bar (off when the brush draws its own). */
   column: boolean;
+  live?: boolean;
+  dateLabels?: boolean;
 }
 
 /**
@@ -59,6 +61,21 @@ export interface MirrorHoverProps {
  * refs, so a pointer passing over the chart re-renders nothing. Each tick's
  * render repaints it with the new values.
  */
+function hoverCaption(p: MirrorHoverProps, i: number) {
+  const from = p.firstMs + i * p.bucketMs;
+  const format = (t: number) => formatHistoryTime(t, p.dateLabels ?? false);
+  return {
+    span:
+      p.bucketMs > 1000
+        ? `${format(from)}–${format(from + p.bucketMs)}`
+        : format(from),
+    res:
+      p.live !== false && i === p.count - 1
+        ? "so far"
+        : `${p.bucketMs / 1000} s avg`,
+  };
+}
+
 /** Fill and place the tooltip and column for bar `i`, or hide them. */
 function paint(
   tip: HTMLElement,
@@ -82,13 +99,9 @@ function paint(
     const el = field(name);
     if (el && el.textContent !== text) el.textContent = text;
   };
-  set(
-    "span",
-    p.bucketMs > 1000
-      ? `${formatClockSeconds(fromMs)}–${formatClockSeconds(toMs)}`
-      : formatClockSeconds(fromMs)
-  );
-  set("res", i === p.count - 1 ? "so far" : `${p.bucketMs / 1000} s avg`);
+  const caption = hoverCaption(p, i);
+  set("span", caption.span);
+  set("res", caption.res);
   set("up", u === null ? "—" : p.format(u));
   set("down", d === null ? "—" : p.format(d));
   set("note", gapAt(p.gaps, fromMs, toMs) ?? "No samples");

@@ -15,6 +15,8 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 
 mod agent;
+mod chart_window;
+pub use chart_window::ChartWindow;
 
 use crate::alert::AlertRule;
 use crate::catalog::Module;
@@ -499,22 +501,6 @@ pub struct GeneralSettings {
     pub chart_window: ChartWindow,
 }
 
-/// The dashboard chart window (D-091). Every option fits the engine's 1-hour ring.
-#[derive(
-    Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize, specta::Type,
-)]
-pub enum ChartWindow {
-    #[serde(rename = "5m")]
-    M5,
-    #[default]
-    #[serde(rename = "15m")]
-    M15,
-    #[serde(rename = "30m")]
-    M30,
-    #[serde(rename = "1h")]
-    H1,
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "snake_case")]
 pub enum Appearance {
@@ -647,6 +633,9 @@ impl Settings {
 
     /// Checks every value against the allowed sets in 6.4.
     pub fn validate(&self) -> Result<(), SettingsError> {
+        if !self.general.chart_window.valid() {
+            return Err(SettingsError::ChartWindow);
+        }
         if self
             .docker
             .selected_engine
@@ -688,6 +677,8 @@ impl Settings {
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum SettingsError {
+    #[error("chart range must be between 1 minute and 90 days, with valid start and end times")]
+    ChartWindow,
     #[error("invalid Docker local socket or monitored population (maximum 128)")]
     Docker,
     #[error("sampling interval {0} ms is not one of 500, 1000, 2000, 5000, 10000, 30000, 60000")]
@@ -768,6 +759,44 @@ mod tests {
             .remove("performance_mode");
         let s: Settings = serde_json::from_value(json).unwrap();
         assert!(!s.sampling.performance_mode);
+    }
+
+    #[test]
+    fn custom_chart_window_round_trips_and_validates() {
+        for window in [
+            ChartWindow::Relative(90 * 60_000),
+            ChartWindow::Relative(90 * 86_400_000),
+            ChartWindow::Absolute {
+                from_ms: 1_000_000,
+                to_ms: 4_600_000,
+            },
+        ] {
+            assert!(window.valid());
+            let json = serde_json::to_string(&window).unwrap();
+            assert_eq!(serde_json::from_str::<ChartWindow>(&json).unwrap(), window);
+        }
+        for window in [
+            ChartWindow::Relative(0),
+            ChartWindow::Relative(59_999),
+            ChartWindow::Relative(90 * 86_400_000 + 1),
+            ChartWindow::Relative(i64::MAX),
+            ChartWindow::Absolute {
+                from_ms: -1,
+                to_ms: 60_000,
+            },
+            ChartWindow::Absolute {
+                from_ms: 60_000,
+                to_ms: 0,
+            },
+            ChartWindow::Absolute {
+                from_ms: 0,
+                to_ms: i64::MAX,
+            },
+        ] {
+            let mut settings = Settings::default();
+            settings.general.chart_window = window;
+            assert_eq!(settings.validate(), Err(SettingsError::ChartWindow));
+        }
     }
 
     /// A settings file from before D-091 has no `general.chart_window`: 15m.

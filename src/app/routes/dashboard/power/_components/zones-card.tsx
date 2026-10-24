@@ -3,10 +3,13 @@ import { gridIntervalMs } from "@core/live-state";
 import { windowWords } from "@core/live-window";
 import { heatmapBucketMs } from "@core/series-stats";
 import { useDeferredValue } from "react";
+import { ChartHistoryStatus } from "~/components/chart-history-status";
 import { SectionCard } from "~/components/section-card";
 import { useGapBands } from "~/hooks/use-gap-bands";
-import { useHeld, useLayout, useRingBuckets } from "~/hooks/use-ring";
+import { useModuleBuckets } from "~/hooks/use-module-buckets";
+import { useHeld, useLayout } from "~/hooks/use-ring";
 import { useUnits } from "~/hooks/use-units";
+import { useModuleRange } from "~/stores/chart-range";
 import { useHost } from "~/stores/host-store";
 import { HeatMatrix, HeatScaleLegend } from "~/widgets/heat-matrix";
 import { sensorLabel, zoneName } from "../_lib/sensors";
@@ -28,7 +31,8 @@ export function ZonesCard({ windowMs: windowProp }: { windowMs: number }) {
   // Deferred for the same reason as CoreLoadCard: a window change remounts
   // every cell, which React can then split across frames.
   const windowMs = useDeferredValue(windowProp);
-  const bucketMs = heatmapBucketMs(
+  const end = useModuleRange()?.endMs ?? null;
+  const desiredBucketMs = heatmapBucketMs(
     windowMs,
     useHost((s) => gridIntervalMs(s.status))
   );
@@ -42,13 +46,15 @@ export function ZonesCard({ windowMs: windowProp }: { windowMs: number }) {
   const sensorKeys = zones ? sensorList : [];
   const now = useHeld([...zoneKeys, ...sensorKeys]);
   const gaps = useGapBands("sensors");
-  const { values, endMs } = useRingBuckets(
+  const { values, endMs, bucketMs, loading, error } = useModuleBuckets(
     zoneKeys,
-    bucketMs,
-    Math.ceil(windowMs / bucketMs)
+    desiredBucketMs,
+    Math.ceil(windowMs / desiredBucketMs),
+    windowMs
   );
   const title = zones ? "SoC thermal zones" : "Temperature sensors";
-  const span = `last ${windowWords(windowMs)}`;
+  const span =
+    end === null ? `last ${windowWords(windowMs)}` : "selected dates";
   const temp = (c: number) => formatTemperature(c, { units });
   const compact = (c: number | null) =>
     formatTemperature(c, { units, compact: true });
@@ -85,7 +91,9 @@ export function ZonesCard({ windowMs: windowProp }: { windowMs: number }) {
           ? "Apple doesn't document which zone sits over which core, so zones keep their sensor names."
           : "As the kernel names them."}
       </p>
+      <ChartHistoryStatus loading={loading} error={error} />
       <HeatMatrix
+        live={end === null}
         gaps={gaps}
         rows={zoneKeys.map((k, i) => ({
           id: k,

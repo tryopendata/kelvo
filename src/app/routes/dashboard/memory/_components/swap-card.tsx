@@ -1,14 +1,17 @@
+import { seriesRange } from "@core/chart-math";
 import { fixed, formatBytes, MISSING } from "@core/format";
 import { windowWords } from "@core/live-window";
 import { useAreaBrush } from "~/components/area-brush";
 import { brushScopeProps } from "~/components/brush-overlay";
+import { ChartHistoryStatus } from "~/components/chart-history-status";
 import { SectionCard } from "~/components/section-card";
 import { useGapBands } from "~/hooks/use-gap-bands";
+import { useModuleSeries } from "~/hooks/use-module-series";
 import { useNiceCeiling } from "~/hooks/use-nice-ceiling";
 import { useHeld } from "~/hooks/use-ring";
 import { useUnits } from "~/hooks/use-units";
-import { useWindowSeries } from "~/hooks/use-window-series";
-import { ceilingAxis, windowTicks } from "~/widgets/lib/chart-labels";
+import { useModuleRange } from "~/stores/chart-range";
+import { ceilingAxis, historyTicks } from "~/widgets/lib/chart-labels";
 import { StatStrip } from "~/widgets/stat-strip";
 import { StreamArea } from "~/widgets/stream-area";
 
@@ -23,10 +26,12 @@ const pages = (v: number | null | undefined) =>
  * swap-out rates. Brushable like the pressure chart (D-099).
  */
 export function SwapCard({ windowMs }: { windowMs: number }) {
-  const span = `last ${windowWords(windowMs)}`;
   const units = useUnits();
   const v = useHeld([KEY, "mem.swap_in", "mem.swap_out"]);
-  const series = useWindowSeries([KEY], windowMs, { brush: true });
+  const endMs = useModuleRange()?.endMs ?? null;
+  const span =
+    endMs === null ? `last ${windowWords(windowMs)}` : "selected dates";
+  const series = useModuleSeries([KEY], windowMs, { brush: true });
   const brush = useAreaBrush(series, HEIGHT);
   const gaps = useGapBands("memory");
   const values = series.values[KEY] ?? [];
@@ -51,6 +56,7 @@ export function SwapCard({ windowMs }: { windowMs: number }) {
             { label: "Out", value: pages(v["mem.swap_out"]), unit: "pages/s" },
           ]}
         />
+        <ChartHistoryStatus loading={series.loading} error={series.error} />
         <StreamArea
           gaps={gaps}
           series={[{ key: KEY, values, step: 1 }]}
@@ -62,7 +68,12 @@ export function SwapCard({ windowMs }: { windowMs: number }) {
           ariaLabel={`Swap used, ${span}, now ${fmt(v[KEY])}. Drag to select a range.`}
           ceilingLabel={fmt(ceiling)}
           {...ceilingAxis(ceiling)}
-          xTicks={windowTicks(windowMs, 3)}
+          xTicks={historyTicks(
+            seriesRange(series).fromMs,
+            seriesRange(series).toMs,
+            endMs === null,
+            3
+          )}
           highlight={brush.highlight}
           overlay={brush.overlay}
         />

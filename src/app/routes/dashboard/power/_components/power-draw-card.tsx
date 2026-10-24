@@ -1,3 +1,4 @@
+import { seriesRange } from "@core/chart-math";
 import { cpuPowerNote } from "@core/cpu-power-source";
 import { eventLabel } from "@core/events";
 import { formatWatts, formatWattsFine } from "@core/format";
@@ -5,6 +6,7 @@ import { windowWords } from "@core/live-window";
 import { useMemo, useState } from "react";
 import { useAreaBrush } from "~/components/area-brush";
 import { brushScopeProps } from "~/components/brush-overlay";
+import { ChartHistoryStatus } from "~/components/chart-history-status";
 import {
   type RangeTotal,
   RangeTotalsStrip,
@@ -13,13 +15,14 @@ import { SectionCard } from "~/components/section-card";
 import { SelectionSummary } from "~/components/selection-summary";
 import { useEvents } from "~/hooks/use-events";
 import { useGapBands } from "~/hooks/use-gap-bands";
+import { useModuleSeries } from "~/hooks/use-module-series";
 import { useNiceCeiling } from "~/hooks/use-nice-ceiling";
 import { useHeld, useLayout } from "~/hooks/use-ring";
-import { useWindowSeries } from "~/hooks/use-window-series";
+import { useModuleRange } from "~/stores/chart-range";
 import { usePowerComponents } from "~/stores/live-selectors";
 import { DASHBOARD_CHART_HEIGHT } from "~/widgets/chart-frame";
 import { Legend, type LegendItem } from "~/widgets/legend";
-import { ceilingAxis, windowTicks } from "~/widgets/lib/chart-labels";
+import { ceilingAxis, historyTicks } from "~/widgets/lib/chart-labels";
 import { StatStrip } from "~/widgets/stat-strip";
 import { StreamArea, type StreamAreaProps } from "~/widgets/stream-area";
 import {
@@ -76,7 +79,10 @@ export function PowerDrawCard({ windowMs }: { windowMs: number }) {
   const rails = components ? [] : railKeys;
   const v = useHeld([...HELD, ...rails]);
   const system = v[SYSTEM] ?? null;
-  const series = useWindowSeries(CHART, windowMs, { brush: true });
+  const endMs = useModuleRange()?.endMs ?? null;
+  const span =
+    endMs === null ? `last ${windowWords(windowMs)}` : "selected dates";
+  const series = useModuleSeries(CHART, windowMs, { brush: true });
   const values = series.values[SYSTEM] ?? [];
   const brush = useAreaBrush(series, HEIGHT);
   const gaps = useGapBands("power");
@@ -100,7 +106,6 @@ export function PowerDrawCard({ windowMs }: { windowMs: number }) {
   const focused = apps.some((a) => a.name === (hovered ?? pinned))
     ? (hovered ?? pinned)
     : null;
-  const span = `last ${windowWords(windowMs)}`;
   const cpuNote = cpuPowerNote(v["power.cpu_source"] ?? null);
 
   // System's figures are in the strip and the range totals; no value here.
@@ -144,6 +149,7 @@ export function PowerDrawCard({ windowMs }: { windowMs: number }) {
         <div className="flex flex-col gap-2.5">
           <Legend items={legend} />
           <div className="flex flex-col gap-1.5">
+            <ChartHistoryStatus loading={series.loading} error={series.error} />
             <StreamArea
               gaps={gaps}
               series={chartSeries(values, apps, focused)}
@@ -154,7 +160,12 @@ export function PowerDrawCard({ windowMs }: { windowMs: number }) {
               height={HEIGHT}
               ariaLabel={ariaLabel(span, system, apps)}
               {...ceilingAxis(ceiling, `${ceiling}W`)}
-              xTicks={windowTicks(windowMs, 5)}
+              xTicks={historyTicks(
+                seriesRange(series).fromMs,
+                seriesRange(series).toMs,
+                endMs === null,
+                5
+              )}
               highlight={brush.highlight}
               overlay={brush.overlay}
               annotations={annotations}
@@ -218,16 +229,15 @@ function ariaLabel(
 
 /** What the app lines are, or why there are none. */
 function AppsNote({ lines }: { lines: AppLines }) {
-  const text =
-    lines.kind === "ok"
-      ? "App lines are CPU energy as macOS estimates it, for your own processes, so they add up to less than system draw."
-      : lines.kind === "empty"
-        ? "Per-app power appears after Kelvo has sampled processes for a while."
-        : lines.kind === "remote"
-          ? "Per-app power isn't available for remote hosts."
-          : lines.kind === "error"
-            ? "Couldn't load per-app power."
-            : null;
+  const messages: Partial<Record<AppLines["kind"], string>> = {
+    long_range: "App power lines are available for ranges up to 1 hour.",
+    ok: "App lines are CPU energy as macOS estimates it, for your own processes, so they add up to less than system draw.",
+    empty:
+      "Per-app power appears after Kelvo has sampled processes for a while.",
+    remote: "Per-app power isn't available for remote hosts.",
+    error: "Couldn't load per-app power.",
+  };
+  const text = messages[lines.kind];
   return (
     text && <p className="m-0 text-[11px] text-muted-foreground">{text}</p>
   );
@@ -238,7 +248,8 @@ function AppsNote({ lines }: { lines: AppLines }) {
  * have scrolled out of its window.
  */
 function useSpikeAnnotations(windowMs: number) {
-  const events = useEvents(windowMs, null);
+  const end = useModuleRange()?.endMs ?? null;
+  const events = useEvents(windowMs, end);
   return useMemo(
     () =>
       events

@@ -58,3 +58,11 @@ export function formatClockSeconds(ms: MaybeNumber): string {
   const d = new Date(ms);
   return `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
 }
+
+/** Include a calendar date when a retained chart can span more than one day. */
+export function formatHistoryTime(ms: number, dates: boolean): string {
+  const d = new Date(ms);
+  return dates
+    ? `${monthName(d)} ${d.getDate()}, ${formatClockSeconds(ms)}`
+    : formatClockSeconds(ms);
+}

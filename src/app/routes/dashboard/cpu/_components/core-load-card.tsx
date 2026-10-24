@@ -3,9 +3,12 @@ import { windowWords } from "@core/live-window";
 import { sk } from "@core/series-key";
 import { heatmapBucketMs } from "@core/series-stats";
 import { useDeferredValue } from "react";
+import { ChartHistoryStatus } from "~/components/chart-history-status";
 import { SectionCard } from "~/components/section-card";
 import { useGapBands } from "~/hooks/use-gap-bands";
-import { useHeld, useRingBuckets } from "~/hooks/use-ring";
+import { useModuleBuckets } from "~/hooks/use-module-buckets";
+import { useHeld } from "~/hooks/use-ring";
+import { useModuleRange } from "~/stores/chart-range";
 import { useHost } from "~/stores/host-store";
 import { CoreHeatmap } from "~/widgets/core-heatmap";
 import { HeatScaleLegend } from "~/widgets/heat-matrix";
@@ -31,11 +34,13 @@ export function CoreLoadCard({
   // redo it synchronously; if the perf gate flakes here, keep cells mounted
   // across a window change instead (the Cell keys in core-heatmap.tsx).
   const windowMs = useDeferredValue(windowProp);
-  const bucketMs = heatmapBucketMs(
+  const end = useModuleRange()?.endMs ?? null;
+  const desiredBucketMs = heatmapBucketMs(
     windowMs,
     useHost((s) => gridIntervalMs(s.status))
   );
-  const span = `last ${windowWords(windowMs)}`;
+  const span =
+    end === null ? `last ${windowWords(windowMs)}` : "selected dates";
   const cores = clusters.flatMap((c) =>
     c.cores.map((id) => ({
       id,
@@ -46,10 +51,11 @@ export function CoreLoadCard({
   const keys = cores.map((c) => c.key);
   const now = useHeld(keys);
   const gaps = useGapBands("cpu");
-  const { values, endMs } = useRingBuckets(
+  const { values, endMs, bucketMs, loading, error } = useModuleBuckets(
     keys,
-    bucketMs,
-    Math.ceil(windowMs / bucketMs)
+    desiredBucketMs,
+    Math.ceil(windowMs / desiredBucketMs),
+    windowMs
   );
 
   return (
@@ -62,7 +68,9 @@ export function CoreLoadCard({
       compactHeader
       className="col-span-2 gap-3"
     >
+      <ChartHistoryStatus loading={loading} error={error} />
       <CoreHeatmap
+        live={end === null}
         gaps={gaps}
         cores={cores.map((c) => ({
           id: c.id,

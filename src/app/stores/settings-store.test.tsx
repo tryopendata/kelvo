@@ -97,7 +97,7 @@ describe("SettingsProvider", () => {
       const window = useSettings((s) => s.general.chart_window);
       return (
         <p>
-          {status} {window ?? "none"}
+          {status} {typeof window === "string" ? window : "none"}
         </p>
       );
     }

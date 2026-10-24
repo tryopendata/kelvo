@@ -3,15 +3,17 @@ import { gridIntervalMs } from "@core/live-state";
 import { windowWords } from "@core/live-window";
 import { useRef } from "react";
 import { BrushOverlay } from "~/components/brush-overlay";
+import { ChartHistoryStatus } from "~/components/chart-history-status";
 import { PLOT_INSET } from "~/components/charts/layout";
 import { MirrorHover } from "~/components/mirror-hover";
 import { useChartBrush } from "~/hooks/use-chart-brush";
+import { useModuleBuckets } from "~/hooks/use-module-buckets";
 import { useNiceCeiling } from "~/hooks/use-nice-ceiling";
-import { useRingBuckets } from "~/hooks/use-ring";
+import { useModuleRange } from "~/stores/chart-range";
 import { useHost } from "~/stores/host-store";
 import { GapBands, type GapSpan } from "~/widgets/gap-band";
 import type { Accent } from "~/widgets/lib/accent";
-import { windowTicks } from "~/widgets/lib/chart-labels";
+import { historyTicks } from "~/widgets/lib/chart-labels";
 import { FIELD_LABEL } from "~/widgets/lib/classes";
 import { MirrorBars } from "~/widgets/mirror-bars";
 import { WindowTicks } from "~/widgets/window-ticks";
@@ -26,11 +28,14 @@ const MAX_BARS = 120;
  */
 export function mirrorBuckets(
   windowMs: number,
-  intervalMs: number
+  intervalMs: number,
+  brush = false
 ): { bucketMs: number; count: number } {
   const samples = Math.max(1, Math.round(windowMs / intervalMs));
   const per = Math.max(1, Math.ceil(samples / MAX_BARS));
-  const bucketMs = per * intervalMs;
+  const bucketMs = brush
+    ? brushBucketMs(per * intervalMs, intervalMs)
+    : per * intervalMs;
   return { bucketMs, count: Math.max(1, Math.round(windowMs / bucketMs)) };
 }
 
@@ -84,13 +89,22 @@ export function LiveMirrorChart({
   brush = false,
 }: LiveMirrorChartProps) {
   const intervalMs = useHost((s) => gridIntervalMs(s.status));
-  const plain = mirrorBuckets(windowMs, intervalMs);
-  const bucketMs = brush
-    ? brushBucketMs(plain.bucketMs, intervalMs)
-    : plain.bucketMs;
-  const count = Math.max(1, Math.round(windowMs / bucketMs));
+  const { bucketMs: requestedBucketMs, count: requestedCount } = mirrorBuckets(
+    windowMs,
+    intervalMs,
+    brush
+  );
   const { selected, elapsedEdge } = useChartBrush(brush);
-  const { values, endMs } = useRingBuckets([upKey, downKey], bucketMs, count);
+  const fixedEnd = useModuleRange()?.endMs ?? null;
+  const spanLabel =
+    fixedEnd === null ? `last ${windowWords(windowMs)}` : "selected dates";
+  const { values, endMs, bucketMs, loading, error } = useModuleBuckets(
+    [upKey, downKey],
+    requestedBucketMs,
+    requestedCount,
+    windowMs
+  );
+  const count = values[upKey]?.length ?? Math.ceil(windowMs / bucketMs);
   const pick = (key: string) =>
     Array.from({ length: count }, (_, i) => values[key]?.[i] ?? null);
   const up = pick(upKey);
@@ -98,8 +112,8 @@ export function LiveMirrorChart({
   const now = endMs ?? 0;
   const upMax = useNiceCeiling(up, now, minCeiling, windowMs);
   const downMax = useNiceCeiling(down, now, minCeiling, windowMs);
-  const ticks = windowTicks(windowMs, 5);
   const firstMs = now - (count - 1) * bucketMs;
+  const ticks = historyTicks(firstMs, now + bucketMs, fixedEnd === null, 5);
   const slots =
     selected && endMs !== null
       ? rangeSlots(selected, firstMs, bucketMs, count)
@@ -110,6 +124,7 @@ export function LiveMirrorChart({
 
   return (
     <div className="flex flex-col gap-1.5">
+      <ChartHistoryStatus loading={loading} error={error} />
       <div className="relative" style={{ paddingLeft: PLOT_INSET }}>
         <div
           aria-hidden
@@ -141,7 +156,7 @@ export function LiveMirrorChart({
             downHeight={downHeight}
             accent={accent}
             highlight={highlight}
-            ariaLabel={`${upLabel} above the line, ${downLabel.toLowerCase()} below, last ${windowWords(windowMs)}${brush ? ". Drag to select a range." : ""}`}
+            ariaLabel={`${upLabel} above the line, ${downLabel.toLowerCase()} below, ${spanLabel}${brush ? ". Drag to select a range." : ""}`}
           />
         </div>
         {brush && endMs !== null && (
@@ -180,6 +195,8 @@ export function LiveMirrorChart({
             format={format}
             accent={accent}
             column={!brush}
+            live={fixedEnd === null}
+            dateLabels={fixedEnd !== null || windowMs >= 86_400_000}
           />
         )}
       </div>

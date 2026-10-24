@@ -1,7 +1,8 @@
 import type { TimeRange } from "@core/brush";
-import { formatClockSeconds } from "@core/format";
+import { formatHistoryTime } from "@core/format";
 import { PLOT_INSET } from "~/components/charts/layout";
 import { useBrushRange } from "~/stores/brush-store";
+import { useModuleRange } from "~/stores/chart-range";
 import { useHost } from "~/stores/host-store";
 
 /**
@@ -24,12 +25,14 @@ export function SelectionSummary({
   inset?: number;
 }) {
   const range = useBrushRange();
+  const end = useModuleRange()?.endMs ?? null;
+  const start = fromMs ?? (end === null ? undefined : end - windowMs);
   // A boolean, so the line re-renders when the range leaves the chart, not per tick.
   const offChart = useHost(
     (s) =>
       range !== null &&
-      (fromMs !== undefined || s.lastTsMs !== null) &&
-      range.toMs <= (fromMs ?? (s.lastTsMs ?? 0) - windowMs)
+      (start !== undefined || s.lastTsMs !== null) &&
+      range.toMs <= (start ?? (s.lastTsMs ?? 0) - windowMs)
   );
   const className = "mt-1 mb-0 font-normal text-[12px] text-muted-foreground";
 
@@ -41,6 +44,7 @@ export function SelectionSummary({
     );
   }
   const r = shown ?? range;
+  const dates = end !== null || windowMs >= 86_400_000;
   return (
     <p
       data-testid="selection-summary"
@@ -48,11 +52,11 @@ export function SelectionSummary({
       style={{ paddingLeft: inset }}
     >
       <span className="figures text-foreground">
-        {formatClockSeconds(r.fromMs)}
+        {formatHistoryTime(r.fromMs, dates)}
       </span>{" "}
       to{" "}
       <span className="figures text-foreground">
-        {formatClockSeconds(r.toMs)}
+        {formatHistoryTime(r.toMs, dates)}
       </span>
       {offChart && " · earlier than this chart"}
       <span className="text-fg-faint">

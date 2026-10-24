@@ -45,8 +45,10 @@ export function useDiskIo(
     enabled: range !== null,
     staleTime: edge !== null && to <= edge ? Infinity : 0,
     refetchInterval: edge !== null && to <= edge ? false : 10_000,
+    meta: { rolling: hold },
     placeholderData: (previous, query) =>
       hold &&
+      query?.meta?.rolling === true &&
       query?.queryKey[1] === host &&
       query.queryKey[3] === device &&
       Number(query.queryKey[5]) - Number(query.queryKey[4]) === to - from

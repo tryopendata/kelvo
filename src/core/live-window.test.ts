@@ -76,6 +76,14 @@ describe("window labels", () => {
 });
 
 describe("effectiveWindow", () => {
+  it("temporarily expands a custom relative duration when sampling slows", () => {
+    const saved = { relative: 120_000 } as const;
+    expect(effectiveWindow(saved, 1000)).toEqual(saved);
+    expect(effectiveWindow(saved, 60_000)).toBe("15m");
+    expect(effectiveWindow(saved, 1000)).toEqual(saved);
+    const fixed = { absolute: { from_ms: 1_000_000, to_ms: 1_120_000 } };
+    expect(effectiveWindow(fixed, 60_000)).toEqual(fixed);
+  });
   it("keeps the saved window when it holds enough samples", () => {
     for (const w of CHART_WINDOWS) expect(effectiveWindow(w, 1000)).toBe(w);
     expect(effectiveWindow("5m", 30_000)).toBe("5m");

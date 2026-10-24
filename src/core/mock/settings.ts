@@ -3,7 +3,7 @@ import type {
   SettingsPatch,
   SettingsSnapshot,
 } from "@core/generated/bindings";
-import { CHART_WINDOWS } from "../live-window";
+import { validChartRange } from "../chart-range";
 import { INTERVALS_MS, menuBarOf, SIZE_LIMITS_MB } from "../settings-patch";
 import type { MockCommands } from "./commands";
 import type { MockTransport, MockTransportOptions } from "./contracts";
@@ -51,7 +51,7 @@ export class MockSettings {
     }
     const next = applyPatch(this.snapshot.settings, patch);
     const chartWindow = next.general.chart_window;
-    if (chartWindow !== undefined && !CHART_WINDOWS.includes(chartWindow)) {
+    if (chartWindow !== undefined && !validChartRange(chartWindow)) {
       return err({
         kind: "invalid_settings",
         message: `chart window ${chartWindow}`,

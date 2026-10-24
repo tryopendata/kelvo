@@ -1,16 +1,18 @@
-import { stackSum } from "@core/chart-math";
+import { seriesRange, stackSum } from "@core/chart-math";
 import { formatBytes } from "@core/format";
 import { windowWords } from "@core/live-window";
 import { useAreaBrush } from "~/components/area-brush";
 import { brushScopeProps } from "~/components/brush-overlay";
+import { ChartHistoryStatus } from "~/components/chart-history-status";
 import { SectionCard } from "~/components/section-card";
 import { SelectionSummary } from "~/components/selection-summary";
 import { useGapBands } from "~/hooks/use-gap-bands";
+import { useModuleSeries } from "~/hooks/use-module-series";
 import { useHeld } from "~/hooks/use-ring";
 import { useUnits } from "~/hooks/use-units";
-import { useWindowSeries } from "~/hooks/use-window-series";
+import { useModuleRange } from "~/stores/chart-range";
 import { Legend } from "~/widgets/legend";
-import { ceilingAxis, windowTicks } from "~/widgets/lib/chart-labels";
+import { ceilingAxis, historyTicks } from "~/widgets/lib/chart-labels";
 import { StreamArea } from "~/widgets/stream-area";
 
 const HEIGHT = 160;
@@ -51,7 +53,8 @@ export function UsedCard({
 }) {
   const units = useUnits();
   const v = useHeld(KEYS);
-  const series = useWindowSeries(KEYS, windowMs, { brush: true });
+  const endMs = useModuleRange()?.endMs ?? null;
+  const series = useModuleSeries(KEYS, windowMs, { brush: true });
   const brush = useAreaBrush(series, HEIGHT);
   const gaps = useGapBands("memory");
   const used = series.values[USED] ?? [];
@@ -78,6 +81,7 @@ export function UsedCard({
         }
       >
         <div className="flex flex-col gap-1.5">
+          <ChartHistoryStatus loading={series.loading} error={series.error} />
           <StreamArea
             gaps={gaps}
             series={[
@@ -93,10 +97,15 @@ export function UsedCard({
             yMax={totalBytes}
             accent="mem"
             height={HEIGHT}
-            ariaLabel={`Memory used and cached files, last ${windowWords(windowMs)}, of ${fmt(totalBytes)}, used ${fmt(v[USED])}, cached ${fmt(v[CACHED])}. Drag to select a range.`}
+            ariaLabel={`Memory used and cached files, ${endMs === null ? `last ${windowWords(windowMs)}` : "selected dates"}, of ${fmt(totalBytes)}, used ${fmt(v[USED])}, cached ${fmt(v[CACHED])}. Drag to select a range.`}
             ceilingLabel={fmt(totalBytes)}
             {...ceilingAxis(totalBytes)}
-            xTicks={windowTicks(windowMs, 5)}
+            xTicks={historyTicks(
+              seriesRange(series).fromMs,
+              seriesRange(series).toMs,
+              endMs === null,
+              5
+            )}
             highlight={brush.highlight}
             overlay={brush.overlay}
           />
