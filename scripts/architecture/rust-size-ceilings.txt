@@ -19,7 +19,7 @@ crates/kelvo-store/src/writer/prune.rs 650
 crates/kelvo-store/examples/seed.rs 1850
 src-tauri/src/commands.rs 700
 src-tauri/src/ipc.rs 800
-src-tauri/src/live.rs 1050
+src-tauri/src/live.rs 750
 src-tauri/src/state.rs 600
 src-tauri/src/tray/mod.rs 600
 src-tauri/src/tray/model.rs 850

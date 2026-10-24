@@ -75,6 +75,7 @@ pub(super) fn register(app: &AppHandle, saved: SavedHost) -> Result<(), CommandE
         discard_host(&state, id);
         return Err(failure(error));
     }
+    state.live.replace_host(entry);
     state.emit_hosts_changed(app);
     Ok(())
 }
@@ -87,6 +88,7 @@ pub(super) async fn discard_host_async(app: &AppHandle, id: HostId) -> Result<()
 }
 
 fn discard_host(state: &AppState, id: HostId) {
+    state.live.remove_host(id);
     if let Some(watcher) = state.remotes.watchers.lock_ok().remove(&id) {
         watcher.abort();
     }

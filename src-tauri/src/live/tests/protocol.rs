@@ -28,7 +28,8 @@ async fn frontend_protocol_fixture_matches_native_registry() {
     }
     let reg = registry(&["dashboard"]);
     let (live_sink, rx, _) = sink();
-    reg.subscribe("dashboard", feed.clone(), live_sink, req(3_600_000));
+    reg.subscribe("dashboard", feed.clone(), live_sink, req(3_600_000))
+        .unwrap();
     let initial = trace(rx.try_iter());
     feed.tick(&layout, 1_501_000, 1.0);
     settle().await;
@@ -42,7 +43,9 @@ async fn frontend_protocol_fixture_matches_native_registry() {
     // a subsequent frame may publish into the closed window.
     let cancel_reg = registry(&["dashboard"]);
     let (cancel_sink, cancel_rx, _) = sink();
-    cancel_reg.subscribe("dashboard", feed.clone(), cancel_sink, req(3_600_000));
+    cancel_reg
+        .subscribe("dashboard", feed.clone(), cancel_sink, req(3_600_000))
+        .unwrap();
     let _ = trace(cancel_rx.try_iter());
     cancel_reg.window_closed("dashboard");
     tokio::time::advance(Duration::from_secs(2)).await;

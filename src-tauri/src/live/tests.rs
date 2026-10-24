@@ -133,9 +133,7 @@ impl LiveFeed for FakeFeed {
         self.ports.lock().unwrap().push(interested);
     }
     fn set_detail_interest(&self, interested: bool) {
-        let before = self
-            .detail
-            .fetch_add(if interested { 1 } else { -1 }, Ordering::SeqCst);
+        let before = self.detail.swap(i64::from(interested), Ordering::SeqCst);
         if self.background_tick.load(Ordering::SeqCst) && (before == 0) == interested {
             self.set_status(|s| s.interval_ms = if interested { 1000 } else { 2000 });
         }
@@ -296,7 +294,8 @@ async fn an_open_window_receives_the_history_a_refilled_ring_brings() {
     }
     let (s, rx, _) = sink();
     let reg = registry(&["dashboard"]);
-    reg.subscribe("dashboard", feed.clone(), s, req(3_600_000));
+    reg.subscribe("dashboard", feed.clone(), s, req(3_600_000))
+        .unwrap();
     drain(&rx).await;
 
     let history = kelvo_store::HistoryResult {
@@ -376,7 +375,9 @@ async fn startup_backfills_warm_history_before_the_first_frame() {
     assert!(feed.hub.latest_frame().is_none());
     let (s, rx, _) = sink();
     let reg = registry(&["dashboard"]);
-    let info = reg.subscribe("dashboard", feed.clone(), s, req(3_600_000));
+    let info = reg
+        .subscribe("dashboard", feed.clone(), s, req(3_600_000))
+        .unwrap();
     assert_eq!(
         info.backfill_rows, 3,
         "saved samples must arrive before live ticks"
@@ -413,7 +414,9 @@ async fn subscribe_sends_layout_then_backfill_then_frames() {
     }
     let (s, rx, _) = sink();
     let reg = registry(&["popover"]);
-    let info = reg.subscribe("popover", feed.clone(), s, req(3_000));
+    let info = reg
+        .subscribe("popover", feed.clone(), s, req(3_000))
+        .unwrap();
     // The ring holds 10,040..14,040; 3 s back from the latest frame gives four rows.
     assert_eq!(info.backfill_start_ms, Some(11_040));
     assert_eq!(info.backfill_rows, 4);
@@ -444,7 +447,8 @@ async fn frames_carry_raw_values_and_held_values_with_nan_as_null() {
     let l = layout(1, 2);
     let (s, rx, _) = sink();
     let reg = registry(&["dashboard"]);
-    reg.subscribe("dashboard", feed.clone(), s, req(60_000));
+    reg.subscribe("dashboard", feed.clone(), s, req(60_000))
+        .unwrap();
     feed.frame(&l, 1_000, vec![f32::NAN, 2.0].into(), vec![1.0, 2.0].into());
     settle().await;
     let frame = rx
@@ -470,7 +474,8 @@ async fn hidden_window_stops_and_resumes_with_only_the_missed_span() {
     feed.tick(&l, 1_000, 0.0);
     let reg = registry(&["dashboard"]);
     let (s, rx, _) = sink();
-    reg.subscribe("dashboard", feed.clone(), s, req(60_000));
+    reg.subscribe("dashboard", feed.clone(), s, req(60_000))
+        .unwrap();
     feed.tick(&l, 2_000, 1.0);
     assert_eq!(
         drain(&rx).await,
@@ -507,7 +512,9 @@ async fn subscribing_while_hidden_sends_nothing_until_shown() {
     let reg = LiveRegistry::new();
     reg.window_visible("popover", false);
     let (s, rx, _) = sink();
-    let info = reg.subscribe("popover", feed.clone(), s, req(60_000));
+    let info = reg
+        .subscribe("popover", feed.clone(), s, req(60_000))
+        .unwrap();
     assert_eq!(info.backfill_start_ms, None);
     feed.tick(&l, 2_000, 1.0);
     assert!(drain(&rx).await.is_empty());
@@ -528,7 +535,9 @@ async fn an_unreported_window_counts_as_hidden() {
     let reg = LiveRegistry::new();
     assert!(!reg.is_visible("board-1"));
     let (s, rx, _) = sink();
-    let info = reg.subscribe("board-1", feed.clone(), s, req(60_000));
+    let info = reg
+        .subscribe("board-1", feed.clone(), s, req(60_000))
+        .unwrap();
     feed.tick(&l, 2_000, 1.0);
     assert_eq!(info.backfill_rows, 0);
     assert!(drain(&rx).await.is_empty());
@@ -547,7 +556,8 @@ async fn display_sleep_pauses_frames_and_wake_backfills_the_gap() {
     let l = layout(1, 1);
     let reg = registry(&["dashboard"]);
     let (s, rx, _) = sink();
-    reg.subscribe("dashboard", feed.clone(), s, req(60_000));
+    reg.subscribe("dashboard", feed.clone(), s, req(60_000))
+        .unwrap();
     feed.tick(&l, 1_000, 1.0);
     feed.set_status(|s| s.display_idle = true);
     feed.tick(&l, 2_000, 2.0);
@@ -574,7 +584,8 @@ async fn status_and_caps_are_sent_on_change_only() {
     let feed = FakeFeed::new();
     let reg = registry(&["dashboard"]);
     let (s, rx, _) = sink();
-    reg.subscribe("dashboard", feed.clone(), s, req(60_000));
+    reg.subscribe("dashboard", feed.clone(), s, req(60_000))
+        .unwrap();
     feed.set_status(|_| {});
     feed.set_status(|s| s.interval_ms = 2000);
     for revision in [1, 2] {
@@ -729,13 +740,13 @@ async fn a_reloaded_page_does_not_keep_the_old_pages_interest() {
     let f = || -> Arc<dyn LiveFeed> { feed.clone() };
 
     let (s1, _rx1, id1) = sink();
-    reg.subscribe("dashboard", f(), s1, req(0));
+    reg.subscribe("dashboard", f(), s1, req(0)).unwrap();
     reg.set_process_interest("dashboard", f(), Some(view(None, &[], None)), Some(id1));
     assert_eq!(feed.period(), Some(0));
 
     // Reload: the new page subscribes without asking for processes.
     let (s2, _rx2, id2) = sink();
-    reg.subscribe("dashboard", f(), s2, req(0));
+    reg.subscribe("dashboard", f(), s2, req(0)).unwrap();
     assert_eq!(feed.period(), None, "the old page's interest ended with it");
 
     // Next reload: this page asks before its subscribe arrives. It waits for its stream.
@@ -746,7 +757,7 @@ async fn a_reloaded_page_does_not_keep_the_old_pages_interest() {
         None,
         "the current stream ({id2}) is not this page's"
     );
-    reg.subscribe("dashboard", f(), s3, req(0));
+    reg.subscribe("dashboard", f(), s3, req(0)).unwrap();
     assert_eq!(feed.period(), Some(0));
     feed.processes(1, Vec::new());
     assert_eq!(drain(&rx3).await, with_head(&["processes x0"]));
@@ -760,18 +771,20 @@ async fn a_visible_window_with_a_stream_counts_as_detail_interest() {
     assert_eq!(count(), 0, "tray-only: nothing streams");
 
     let (s1, _rx1, _) = sink();
-    reg.subscribe("dashboard", feed.clone(), s1, req(0));
+    reg.subscribe("dashboard", feed.clone(), s1, req(0))
+        .unwrap();
     assert_eq!(count(), 1);
     let (s1, _rx1b, _) = sink();
-    reg.subscribe("dashboard", feed.clone(), s1, req(0));
+    reg.subscribe("dashboard", feed.clone(), s1, req(0))
+        .unwrap();
     assert_eq!(count(), 1, "a page reload re-subscribes but counts once");
 
     reg.window_visible("popover", false);
     let (s2, _rx2, _) = sink();
-    reg.subscribe("popover", feed.clone(), s2, req(0));
+    reg.subscribe("popover", feed.clone(), s2, req(0)).unwrap();
     assert_eq!(count(), 1, "the hidden warm popover does not count");
     reg.window_visible("popover", true);
-    assert_eq!(count(), 2);
+    assert_eq!(count(), 1, "visible demand is aggregated before the source");
     reg.window_visible("popover", false);
     assert_eq!(count(), 1);
 
@@ -806,7 +819,8 @@ async fn a_visible_window_never_sees_the_background_tick() {
     feed.tick(&l, 2_000, 0.0);
     let reg = registry(&["popover"]);
     let (s, rx, _) = sink();
-    reg.subscribe("popover", feed.clone(), s, req(60_000));
+    reg.subscribe("popover", feed.clone(), s, req(60_000))
+        .unwrap();
     assert_eq!(status_intervals(&drain_raw(&rx).await), [1000]);
 
     reg.window_visible("popover", false);
@@ -871,8 +885,9 @@ async fn processes_go_only_to_windows_with_interest_at_their_period() {
     let reg = registry(&["dashboard", "popover"]);
     let (s1, rx1, _) = sink();
     let (s2, rx2, _) = sink();
-    reg.subscribe("dashboard", feed.clone(), s1, req(0));
-    reg.subscribe("popover", feed.clone(), s2, req(0));
+    reg.subscribe("dashboard", feed.clone(), s1, req(0))
+        .unwrap();
+    reg.subscribe("popover", feed.clone(), s2, req(0)).unwrap();
     reg.set_process_interest(
         "dashboard",
         feed.clone(),
@@ -905,9 +920,11 @@ async fn resubscribe_replaces_and_close_ends_the_stream() {
     let l = layout(1, 1);
     let reg = registry(&["dashboard"]);
     let (old, old_rx, _) = sink();
-    reg.subscribe("dashboard", feed.clone(), old, req(0));
+    reg.subscribe("dashboard", feed.clone(), old, req(0))
+        .unwrap();
     let (new, new_rx, _) = sink();
-    reg.subscribe("dashboard", feed.clone(), new, req(0));
+    reg.subscribe("dashboard", feed.clone(), new, req(0))
+        .unwrap();
     settle().await;
     assert_eq!(
         feed.hub.bus().subscriber_count(),
@@ -931,7 +948,7 @@ async fn a_dropped_receiver_ends_the_stream() {
     let l = layout(1, 1);
     let reg = registry(&["dashboard"]);
     let (s, rx, _) = sink();
-    reg.subscribe("dashboard", feed.clone(), s, req(0));
+    reg.subscribe("dashboard", feed.clone(), s, req(0)).unwrap();
     drop(rx);
     feed.tick(&l, 1_000, 1.0);
     settle().await;
@@ -947,7 +964,8 @@ async fn a_clock_step_back_restarts_the_stream_instead_of_freezing_it() {
     let l1 = layout(1, 1);
     let reg = registry(&["dashboard"]);
     let (s, rx, _) = sink();
-    reg.subscribe("dashboard", feed.clone(), s, req(60_000));
+    reg.subscribe("dashboard", feed.clone(), s, req(60_000))
+        .unwrap();
     reg.set_process_interest(
         "dashboard",
         feed.clone(),
@@ -1001,7 +1019,8 @@ async fn a_new_layout_with_an_old_time_is_not_a_reset() {
     }
     let reg = registry(&["dashboard"]);
     let (s, rx, _) = sink();
-    reg.subscribe("dashboard", feed.clone(), s, req(60_000));
+    reg.subscribe("dashboard", feed.clone(), s, req(60_000))
+        .unwrap();
     feed.tick(&l2, 3_000, 1.0);
     feed.tick(&l2, 4_000, 1.0);
     assert_eq!(
@@ -1027,7 +1046,8 @@ async fn a_window_hidden_across_a_step_back_resumes_on_the_new_timeline() {
     }
     let reg = registry(&["dashboard"]);
     let (s, rx, _) = sink();
-    reg.subscribe("dashboard", feed.clone(), s, req(60_000));
+    reg.subscribe("dashboard", feed.clone(), s, req(60_000))
+        .unwrap();
     assert_eq!(
         drain(&rx).await,
         with_head(&["layout 1/1", "backfill 1 @595000 x6"])
@@ -1058,7 +1078,8 @@ async fn a_resume_before_the_last_thing_sent_starts_over() {
     feed.tick(&l, 600_000, 0.0);
     let reg = registry(&["dashboard"]);
     let (s, rx, _) = sink();
-    reg.subscribe("dashboard", feed.clone(), s, req(60_000));
+    reg.subscribe("dashboard", feed.clone(), s, req(60_000))
+        .unwrap();
     drain(&rx).await;
     reg.window_visible("dashboard", false);
     settle().await;
@@ -1081,7 +1102,8 @@ async fn a_long_resume_arrives_in_chunks_in_time_order() {
     feed.tick(&l, 1_000, 0.0);
     let reg = registry(&["dashboard"]);
     let (s, rx, _) = sink();
-    reg.subscribe("dashboard", feed.clone(), s, req(3_600_000));
+    reg.subscribe("dashboard", feed.clone(), s, req(3_600_000))
+        .unwrap();
     drain(&rx).await;
     reg.window_visible("dashboard", false);
     settle().await;
@@ -1110,7 +1132,8 @@ async fn a_lagging_stream_catches_up_from_the_ring() {
     let l = layout(1, 1);
     let reg = registry(&["dashboard"]);
     let (s, rx, _) = sink();
-    reg.subscribe("dashboard", feed.clone(), s, req(60_000));
+    reg.subscribe("dashboard", feed.clone(), s, req(60_000))
+        .unwrap();
     feed.tick(&l, 1_000, 1.0);
     assert_eq!(
         drain(&rx).await,
@@ -1175,7 +1198,8 @@ async fn a_series_selection_projects_layouts_rows_and_frames() {
             series: Some(series),
             ..req(60_000)
         },
-    );
+    )
+    .unwrap();
     feed.frame(&l, 2_000, values(20.0), values(20.0));
     settle().await;
     let msgs: Vec<LiveMsg> = rx.try_iter().collect();
@@ -1216,7 +1240,9 @@ async fn the_recent_window_goes_first_and_older_history_follows_in_chunks() {
     }
     let reg = registry(&["dashboard"]);
     let (s, rx, _) = sink();
-    let info = reg.subscribe("dashboard", feed.clone(), s, req(3_600_000));
+    let info = reg
+        .subscribe("dashboard", feed.clone(), s, req(3_600_000))
+        .unwrap();
     assert_eq!(
         info.backfill_start_ms,
         Some(1_380_000),
@@ -1254,7 +1280,8 @@ async fn older_history_still_arrives_when_no_frame_comes() {
     feed.set_status(|s| s.paused = true);
     let reg = registry(&["dashboard"]);
     let (s, rx, _) = sink();
-    reg.subscribe("dashboard", feed.clone(), s, req(3_600_000));
+    reg.subscribe("dashboard", feed.clone(), s, req(3_600_000))
+        .unwrap();
     let first = drain(&rx).await;
     assert!(first.iter().all(|t| !t.starts_with("earlier")), "{first:?}");
     tokio::time::sleep(EARLIER_AFTER).await;
@@ -1275,7 +1302,8 @@ async fn a_minimum_period_thins_the_frames() {
             min_period_ms: 5_000,
             ..req(0)
         },
-    );
+    )
+    .unwrap();
     for t in 1..=11 {
         // Real ticks jitter a little either way.
         feed.tick(&l, t * 1000 + if t % 2 == 0 { 30 } else { -30 }, 0.0);
@@ -1323,14 +1351,17 @@ async fn of_two_interleaved_subscribes_the_newer_one_stays() {
         let reg = Arc::clone(&reg);
         let feed: Arc<dyn LiveFeed> = feed.clone();
         Box::new(move || {
-            reg.subscribe("dashboard", feed, sb, req(60_000));
+            reg.subscribe("dashboard", feed, sb, req(60_000)).unwrap();
         }) as Box<dyn FnOnce() + Send>
     };
     let a: Arc<dyn LiveSink> = Arc::new(ReentrantSink {
         inner: sa,
         hook: Mutex::new(Some(hook)),
     });
-    reg.subscribe("dashboard", feed.clone(), a, req(60_000));
+    assert!(
+        reg.subscribe("dashboard", feed.clone(), a, req(60_000))
+            .is_none()
+    );
     settle().await;
     assert_eq!(feed.hub.bus().subscriber_count(), 1, "one stream");
     assert_eq!(feed.detail.load(Ordering::SeqCst), 1);
@@ -1356,7 +1387,8 @@ async fn status_carries_display_idle_and_the_frame_period() {
             min_period_ms: 5_000,
             ..req(0)
         },
-    );
+    )
+    .unwrap();
     feed.set_status(|s| s.display_idle = true);
     feed.set_status(|s| {
         s.display_idle = false;
@@ -1391,7 +1423,7 @@ async fn performance_mode_paces_frames_to_two_seconds() {
     let l = layout(1, 1);
     let reg = registry(&["dashboard"]);
     let (s, rx, _) = sink();
-    reg.subscribe("dashboard", feed.clone(), s, req(0));
+    reg.subscribe("dashboard", feed.clone(), s, req(0)).unwrap();
     feed.set_status(|s| s.performance = PerformanceReason::LowPowerMode);
     settle().await;
     for t in 1..=6 {
@@ -1428,7 +1460,7 @@ async fn holds_go_before_the_first_frame_and_again_only_when_they_change() {
     let l1 = layout(1, 2);
     let reg = registry(&["main"]);
     let (s, rx, _) = sink();
-    reg.subscribe("main", feed.clone(), s, req(0));
+    reg.subscribe("main", feed.clone(), s, req(0)).unwrap();
     let tray: Arc<[u32]> = vec![2_500, 25_000].into();
     let v: Arc<[f32]> = vec![1.0, 1.0].into();
     feed.frame_with_holds(&l1, 1_000, v.clone(), v.clone(), Arc::clone(&tray));
@@ -1462,7 +1494,8 @@ async fn a_thinned_stream_holds_samples_for_at_least_its_frame_period() {
             min_period_ms: 5_000,
             ..req(0)
         },
-    );
+    )
+    .unwrap();
     let v: Arc<[f32]> = vec![1.0, 1.0].into();
     feed.frame_with_holds(&l1, 1_000, v.clone(), v, vec![2_500, 25_000].into());
     let holds: Vec<Vec<u32>> = drain_raw(&rx)
@@ -1497,7 +1530,7 @@ async fn layout_carries_catalog_kinds_and_backfill_carries_holds() {
     );
     let reg = registry(&["main"]);
     let (s, rx, _) = sink();
-    reg.subscribe("main", feed.clone(), s, req(60_000));
+    reg.subscribe("main", feed.clone(), s, req(60_000)).unwrap();
     let msgs = drain_raw(&rx).await;
     let kinds = msgs.iter().find_map(|m| match m {
         LiveMsg::Layout { kinds, .. } => Some(kinds.clone()),
@@ -1521,3 +1554,5 @@ async fn layout_carries_catalog_kinds_and_backfill_carries_holds() {
 }
 
 mod protocol;
+
+mod replacement;

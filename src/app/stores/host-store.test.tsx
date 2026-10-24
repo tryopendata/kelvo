@@ -79,6 +79,56 @@ describe("live subscription while the window is hidden", () => {
 });
 
 describe("subscription setup races", () => {
+  it.each(["paused", "display_idle"] as const)(
+    "reconnects a replaced remote even while %s disables the watchdog",
+    async (state) => {
+      const mock = createMockTransport({
+        autoTick: false,
+        scenarios: ["multi-host"],
+      });
+      const host = (await mock.listHosts()).find((h) => !h.is_local);
+      if (!host) throw new Error("Missing remote fixture");
+      let subscriptions = 0;
+      const subscribeLive: Transport["subscribeLive"] = (
+        id,
+        callback,
+        options
+      ) => {
+        subscriptions++;
+        return mock.subscribeLive(
+          id,
+          (msg) =>
+            callback(
+              msg.kind === "status"
+                ? { ...msg, [state]: subscriptions === 1 }
+                : msg
+            ),
+          options
+        );
+      };
+      const transport = { ...mock, subscribeLive };
+      let paused = false;
+      function Probe() {
+        paused = useHost((s) => s.status?.[state] ?? false);
+        return <Stale />;
+      }
+      const view = render(
+        <TransportProvider transport={transport}>
+          <HostStoreProvider hostId={host.id}>
+            <Probe />
+          </HostStoreProvider>
+        </TransportProvider>
+      );
+      await act(async () => {});
+      expect(paused).toBe(true);
+      expect(subscriptions).toBe(1);
+      await act(() => mock.emitHostsChanged());
+      expect(subscriptions).toBe(2);
+      expect(paused).toBe(false);
+      view.unmount();
+      mock.dispose();
+    }
+  );
   it("releases a subscription whose promise resolves after unmount", async () => {
     const mock = createMockTransport();
     let finish: (() => void) | undefined;

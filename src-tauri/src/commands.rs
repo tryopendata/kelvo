@@ -90,7 +90,12 @@ pub async fn subscribe_live(
         series,
         min_period_ms: min_period_ms.unwrap_or(0),
     };
-    Ok(state.live.subscribe(window.label(), feed, sink, req))
+    state
+        .live
+        .subscribe(window.label(), feed, sink, req)
+        .ok_or_else(|| CommandError::RemoteUnreachable {
+            message: "The host connection changed; reconnecting".into(),
+        })
 }
 
 /// Whether this window shows process data for `host`, and which rows (`view`; default

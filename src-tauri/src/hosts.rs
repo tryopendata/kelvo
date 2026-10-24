@@ -39,6 +39,7 @@ impl HostEntry {
 
     fn change_interest(&self, update: impl FnOnce(&mut InterestSet)) {
         let mut all = self.interests.lock_ok();
+        let previous = all.merged();
         update(&mut all);
         let interest = all.merged();
         // Hold the interest lock through application so concurrent releases cannot
@@ -48,7 +49,9 @@ impl HostEntry {
             c.set_network_process_interest(interest.network_processes);
             c.set_gpu_process_interest(interest.gpu_processes);
             c.set_port_process_interest(interest.port_processes);
-            c.set_detail_interest(interest.detail);
+            if interest.detail != previous.detail {
+                c.set_detail_interest(interest.detail);
+            }
         });
     }
 

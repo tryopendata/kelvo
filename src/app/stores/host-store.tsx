@@ -148,6 +148,7 @@ function useLiveSubscription(
   // biome-ignore lint/correctness/useExhaustiveDependencies: seriesKey stands for request.series, read through seriesRef.
   useEffect(() => {
     let cancelled = false;
+    let generation = 0;
     let unsubscribe = () => {};
     let staleTimer: ReturnType<typeof setTimeout> | undefined;
     let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
@@ -229,9 +230,10 @@ function useLiveSubscription(
     const acceptSubscription = (
       sub: LiveSubscription,
       attempt: number,
-      backfill: number
+      backfill: number,
+      attemptGeneration: number
     ) => {
-      if (cancelled) {
+      if (cancelled || generation !== attemptGeneration) {
         sub.unsubscribe();
         return;
       }
@@ -246,6 +248,7 @@ function useLiveSubscription(
     };
 
     const connect = async (attempt: number, backfill: number) => {
+      const attemptGeneration = ++generation;
       const options = {
         backfillMs: backfill,
         ...(seriesRef.current === undefined
@@ -253,14 +256,25 @@ function useLiveSubscription(
           : { series: seriesRef.current }),
       };
       try {
-        const sub = await transport.subscribeLive(hostId, onMsg, options);
-        acceptSubscription(sub, attempt, backfill);
+        const sub = await transport.subscribeLive(
+          hostId,
+          (msg) => {
+            if (!cancelled && generation === attemptGeneration) onMsg(msg);
+          },
+          options
+        );
+        acceptSubscription(sub, attempt, backfill, attemptGeneration);
       } catch (err) {
-        if (!cancelled) retry(attempt, err, backfill);
+        if (!cancelled && generation === attemptGeneration)
+          retry(attempt, err, backfill);
       }
     };
 
     const reconnect = () => {
+      clearTimeout(staleTimer);
+      clearTimeout(reconnectTimer);
+      clearTimeout(retryTimer);
+      clearOnVisible();
       reconnects++;
       const s = store.getState();
       console.warn("[live] no frames while visible; resubscribing", {
@@ -295,9 +309,15 @@ function useLiveSubscription(
     };
     document.addEventListener("visibilitychange", rearmOnShow);
 
+    // Registration replaces a source even when a paused/idle status disables the
+    // frame watchdog. Reconnect mounted remote views on the existing host event.
+    const stopHostsChanged = transport.onHostsChanged(({ hosts }) => {
+      if (hosts.some((h) => h.id === hostId && !h.is_local)) reconnect();
+    });
     void connect(0, backfillMs);
     return () => {
       cancelled = true;
+      stopHostsChanged();
       unsubscribe();
       clearTimeout(staleTimer);
       clearTimeout(reconnectTimer);
