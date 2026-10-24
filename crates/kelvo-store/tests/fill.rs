@@ -286,8 +286,8 @@ fn thirty_days_fit_the_budget() {
     assert_eq!(m250.m15_rows, 23 * 24 * 4);
     assert!(m250.bytes <= BUDGET_150, "{} bytes after close", m250.bytes);
 
-    // A cap below what 250 series need: the cap trims the 15-minute history (oldest
-    // first) and stays met right after every prune.
+    // A cap below what 250 series need: trim oldest history first, including minutes
+    // if quarters alone cannot meet the low-water mark. The last day stays intact.
     let cap = CAP_SMALL;
     let small = fill(
         250,
@@ -306,10 +306,17 @@ fn thirty_days_fit_the_budget() {
     );
     assert!(small.bytes <= cap, "{} bytes after close", small.bytes);
     assert!(
-        (1..23 * 24 * 4).contains(&small.m15_rows),
-        "the oldest quarters were trimmed, not all of them"
+        (0..m250.m15_rows).contains(&small.m15_rows),
+        "the oldest quarters were trimmed"
     );
-    assert_eq!(small.m1_rows, 7 * 24 * 60, "minutes untouched");
+    assert!(
+        (24 * 60..=m250.m1_rows).contains(&small.m1_rows),
+        "at least the recent day of minutes is preserved"
+    );
+    if small.m1_rows < m250.m1_rows {
+        assert_eq!(small.m15_rows, 0, "quarters are trimmed before minutes");
+    }
+    assert_eq!(small.s10_rows, m250.s10_rows, "recent 10 s rows untouched");
 }
 
 /// A threshold from `perf-budget.json`, section `store`.

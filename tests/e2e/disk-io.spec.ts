@@ -14,14 +14,16 @@ for (const theme of ["dark", "light"] as const) {
         page.getByRole("img", { name: /^Average request time:/ })
       ).toBeVisible();
       const plot = page.getByRole("img", { name: /^Disk I\/O:/ });
-      expect(
-        await plot.locator("span").evaluateAll((bars) =>
-          bars.some((bar) => {
-            const box = bar.getBoundingClientRect();
-            return box.width >= 2 && box.height > 0;
-          })
+      await expect
+        .poll(() =>
+          plot.locator("span").evaluateAll((bars) =>
+            bars.some((bar) => {
+              const box = bar.getBoundingClientRect();
+              return box.width >= 2 && box.height > 0;
+            })
+          )
         )
-      ).toBe(true);
+        .toBe(true);
       const table = page.getByRole("table", { name: "Disk processes · Live" });
       await expect(table.getByRole("row").nth(5)).toBeVisible();
       if (width === 1280) {
@@ -150,6 +152,9 @@ test("a process checkbox at the viewport edge stays under the pointer during foc
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.clock.setFixedTime(new Date("2026-10-13T17:30:05Z"));
   await page.goto("/?window=dashboard&route=/dashboard/disk&ticks=0");
+  await expect(
+    page.getByRole("img", { name: /^Average request time:/ })
+  ).toBeVisible();
   const checkbox = page.getByRole("checkbox", {
     name: "Select Xcode (2214)",
     exact: true,

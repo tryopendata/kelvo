@@ -331,13 +331,15 @@ async fn queries_answer_on_a_real_host() {
     let record = kelvo_schema::HostRecord::from_identity(session.hello.host.clone(), false);
     session.close().await;
     let source = kelvo_remote::RemoteSource::new(record, local, config, Arc::new(|_| {}), None);
+    let hub = LiveHub::default();
     let mut handle = source
         .clone()
         .start(SourceSink {
-            live: LiveHub::default(),
+            live: hub.clone(),
             store: None,
         })
         .unwrap();
+    handle.control().set_detail_interest(true);
     let wait = Duration::from_secs(20);
     let call = |query: Query| {
         let source = source.clone();
@@ -407,6 +409,7 @@ async fn queries_answer_on_a_real_host() {
     };
     assert!(matches!(call(start).await, Answer::SpaceStatus(_)));
     let mut anon_peak = 0u64;
+    let mut frames = std::collections::BTreeSet::new();
     let status = loop {
         let Answer::SpaceStatus(status) = call(Query::SpaceStatus).await else {
             panic!("expected a status")
@@ -419,6 +422,11 @@ async fn queries_answer_on_a_real_host() {
         .unwrap_or_default();
         let anon = anon.split_whitespace().nth(1).and_then(|n| n.parse().ok());
         anon_peak = anon_peak.max(anon.unwrap_or(0));
+        if let Some(frame) = hub.latest_frame()
+            && frame.values.iter().any(|v| v.is_finite())
+        {
+            frames.insert(frame.ts_ms);
+        }
         if status.phase != SpacePhase::Scanning || started.elapsed() > Duration::from_secs(900) {
             break status;
         }
@@ -437,6 +445,14 @@ async fn queries_answer_on_a_real_host() {
     );
     memory().await;
     assert_eq!(status.phase, SpacePhase::Done);
+    assert!(
+        frames.len() >= 2,
+        "live detail must advance during the scan"
+    );
+    println!(
+        "{} distinct measured live frames during the scan",
+        frames.len()
+    );
     // Shared extents (snapshots) must not count the same space many times over.
     assert!(
         status.measured_bytes <= status.used_bytes * 1.15,
@@ -483,6 +499,23 @@ async fn queries_answer_on_a_real_host() {
         panic!("expected a status")
     };
     assert_eq!(after.phase, SpacePhase::Idle);
+    for cycle in 1..=3 {
+        assert!(matches!(
+            call(Query::SpaceStart {
+                volume: "/".into(),
+                include: Vec::new(),
+            })
+            .await,
+            Answer::SpaceStatus(_)
+        ));
+        assert!(matches!(call(Query::SpaceCancel).await, Answer::Done));
+        assert!(matches!(call(Query::SpaceClear).await, Answer::Done));
+        let Answer::SpaceStatus(after) = call(Query::SpaceStatus).await else {
+            panic!("expected a status")
+        };
+        assert_eq!(after.phase, SpacePhase::Idle);
+        println!("scan/cancel/release cycle {cycle}: idle");
+    }
     handle.stop();
     memory().await;
 }
