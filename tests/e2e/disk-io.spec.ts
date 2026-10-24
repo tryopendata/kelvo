@@ -32,16 +32,21 @@ for (const theme of ["dark", "light"] as const) {
           900
         );
       }
-      expect(
-        await page.evaluate(
-          () => document.documentElement.scrollWidth <= window.innerWidth
+      await expect
+        .poll(() =>
+          page.evaluate(() => {
+            const main = document.querySelector("main");
+            if (!main) throw new Error("Disk page requires its scrollport");
+            return {
+              pageOverflow: Math.max(
+                0,
+                document.documentElement.scrollWidth - window.innerWidth
+              ),
+              contentOverflow: Math.max(0, main.scrollWidth - main.clientWidth),
+            };
+          })
         )
-      ).toBe(true);
-      expect(
-        await page
-          .locator("main")
-          .evaluate((el) => el.scrollWidth <= el.clientWidth)
-      ).toBe(true);
+        .toEqual({ pageOverflow: 0, contentOverflow: 0 });
       await page.screenshot({
         path: `test-results/screens/disk-io-${theme}-${width}-${info.project.name}.png`,
         fullPage: true,

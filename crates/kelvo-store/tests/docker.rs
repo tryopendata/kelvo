@@ -55,6 +55,33 @@ fn query(tier: Tier) -> DockerHistoryQuery {
         max_points: 100,
     }
 }
+
+#[test]
+fn retained_bounds_stay_with_the_snapshot_across_commits_and_reset() {
+    let _readers = DOCKER_READ_TESTS.lock().unwrap();
+    let dir = temp_dir("docker-retained-bounds");
+    let store = open(&dir, "h.sqlite");
+    let writer = store.writer();
+    writer.upsert_host(host(1)).unwrap();
+    let mut reader = store.reader().unwrap();
+    let empty = reader.docker_snapshot(host(1).id, "daemon").unwrap();
+    assert_eq!(empty.retained_range().unwrap(), None);
+    let ack = writer.write_docker(batch(1)).unwrap();
+    writer.flush().unwrap();
+    assert_eq!(ack.recv().unwrap().outcome, DockerOutcome::Persisted);
+    assert_eq!(empty.retained_range().unwrap(), None);
+    drop(empty);
+
+    let snapshot = reader.docker_snapshot(host(1).id, "daemon").unwrap();
+    let bounds = snapshot.retained_range().unwrap();
+    assert!(bounds.is_some());
+    writer.reset_docker(host(1).id, 10).unwrap();
+    assert_eq!(snapshot.retained_range().unwrap(), bounds);
+    drop(snapshot);
+    let reset = reader.docker_snapshot(host(1).id, "daemon").unwrap();
+    assert_eq!(reset.retained_range().unwrap(), None);
+}
+
 #[test]
 fn commit_receipts_snapshot_and_weighted_rollups() {
     let _readers = DOCKER_READ_TESTS.lock().unwrap();

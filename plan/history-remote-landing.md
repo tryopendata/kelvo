@@ -349,3 +349,39 @@ digests also passed verification after the frontend follow-up.
 The final shared `make check` passed after these fixes, including all 1,069 Rust
 tests (48 ignored scenarios) and all 1,274 frontend tests. The normal pre-push
 repeat and hosted checks remain part of the final handoff.
+
+Main was fast-forwarded and pushed normally at `28c8177`; its required pre-push
+repeat passed. Hosted run `40142083460` then found two remaining gate failures:
+
+- The 510-container comparison expired its two-second SQLite snapshot. A same-
+  session native sample showed repeated retained-range scans and SQL preparation
+  for each candidate. Successful bounds are now cached per immutable WAL snapshot,
+  and repeated history statements use rusqlite's bounded statement cache. The
+  five-request debug fixture dropped from 3.51 to 2.17 seconds. The two-second
+  expiry, four-reader admission and response bounds are unchanged. A real SQLite
+  test covers empty/populated bounds across commits, reset and fresh snapshots;
+  deliberately making the cache global failed that test. The catalog query moved
+  into `docker/read/catalog.rs` to preserve the 500-line file limit. Native review
+  approved the cache changes.
+- Three narrow Disk geometry assertions failed on Ubuntu, while completed
+  screenshots fit the viewport. Ten repetitions of the original case passed in
+  the matching Linux Chromium container, so a persistent CSS defect is not
+  established. The assertions now poll for the same strict zero document/content
+  overflow, reporting excess pixels while layout settles. All 22 local Disk
+  checks passed. The 430-case combined browser invocation also hit its existing
+  ten-minute suite cap with 149 cases unrun; CI now invokes Chromium and WebKit
+  separately, preserving that cap per invocation, individual timeouts, assertions
+  and job limits. The reviewer approved; hosted completion remains required.
+
+The hosted advisory audits also report existing WebPKI/Tokio runtime and
+Happy DOM/Vite tooling dependencies. Their affected versions were already present
+on previous remote main `26fda11`. The independent reachability review found no
+established landing blocker, but dependency updates remain follow-up work.
+The repository's tracking-issue policy is not satisfied by local triage alone;
+a concrete draft and audit logs are retained with QA evidence, pending permission
+to publish the separate public issue. Audit jobs remain enabled.
+
+The hosted-failure follow-up passed the full local `make check`: 1,070 Rust tests
+(48 ignored scenarios), all 1,274 frontend tests, type checks, Clippy and
+architecture checks. The reviewer also approved the unchanged catalog extraction.
+The normal push repeat and the next hosted run still need to complete.

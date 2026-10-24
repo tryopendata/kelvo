@@ -70,8 +70,11 @@ jobs:
       - name: Install Playwright browsers
         run: bunx playwright install --with-deps chromium webkit
 
-      - name: Playwright
-        run: bunx playwright test --grep-invert "performance gate"
+      - name: Playwright Chromium
+        run: bunx playwright test --project chromium --grep-invert "performance gate"
+
+      - name: Playwright WebKit
+        run: bunx playwright test --project webkit --grep-invert "performance gate"
 
       - name: Upload Playwright report
         if: failure()
@@ -196,8 +199,11 @@ jobs:
       - name: Install Playwright browsers
         run: bunx playwright install chromium webkit
 
-      - name: Playwright
-        run: bunx playwright test --grep-invert "performance gate"
+      - name: Playwright Chromium
+        run: bunx playwright test --project chromium --grep-invert "performance gate"
+
+      - name: Playwright WebKit
+        run: bunx playwright test --project webkit --grep-invert "performance gate"
 
       # Run after the functional browser suite, without competing workers.
       - name: Frontend performance gates

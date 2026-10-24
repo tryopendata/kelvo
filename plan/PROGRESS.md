@@ -88,6 +88,8 @@ Status values: Not started, In progress, Blocked (say on what), Done (with the v
 
 ### 2026-10-24 (History ranges and remote feed replacement)
 
+- Pushed main normally at `28c8177` after the required pre-push gate passed. Hosted CI found a two-second Docker comparison snapshot expiry and narrow Disk geometry failures, then exhausted the combined browser suite cap. Reviewed follow-ups cache immutable snapshot bounds and prepared statements, retain zero-overflow assertions with asynchronous polling, and run each browser under its existing suite cap. The catalog query extraction preserves the 500-line source limit. Current gate and hosted results remain in the [landing record](history-remote-landing.md) and final handoff.
+
 - The first pre-push repeat caught Containers above its unchanged 35 ms/s gate; the earlier source also failed in a same-session comparison. Traces identified redundant filter and idle cleanup rendering. Memoizing those boundaries passed at 33.92 ms/s with no long tasks. The reviewer approved, the new render regression fails on the original hook, all 1,274 frontend tests pass, and all 120 affected Chromium/WebKit Docker checks pass. The QA agent completed 66 memory samples over 65 minutes with zero swap, OOMs or restarts. The [execution record](history-remote-landing.md) preserves limits and outstanding native acceptance.
 - A later native run caught independent Docker snapshot tests competing for the process-wide four-reader limit. A test-only mutex now isolates those scenarios; the reviewer approved and 20 runs at 32 test threads passed. Production limits and functional assertions are unchanged. The final rebuilt app passed signature, packaged-agent digest and system-library checks.
 
