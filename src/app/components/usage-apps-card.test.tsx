@@ -11,6 +11,38 @@ import { UsageAppsCard, type UsageTableConfig } from "./usage-apps-card";
 const NOW = 1_800_000_000_000;
 const WINDOW_MS = 600_000;
 
+it("does not rebuild app rows while a rolling refresh still holds the same answer", async () => {
+  let now = NOW;
+  const format = vi.fn((u: { energy_j: number | null }) => `${u.energy_j} J`);
+  const config = {
+    ...CONFIG,
+    columns: [{ label: "Energy", format, ranked: true }],
+  };
+  const transport = createMockTransport({ now: () => now, autoTick: false });
+  let release: (() => void) | undefined;
+  transport.queryUsageByApp = async (_host, from, to) => {
+    if (to > NOW)
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+    return { status: "ok", data: full(from, to) };
+  };
+  renderWithProviders(<UsageAppsCard windowMs={WINDOW_MS} config={config} />, {
+    transport,
+  });
+  await screen.findByText("Google Chrome");
+  const before = format.mock.calls.length;
+  now += 20_000;
+  try {
+    await act(() => transport.tick());
+    await waitFor(() => expect(release).toBeDefined());
+    expect(format).toHaveBeenCalledTimes(before);
+  } finally {
+    await act(async () => release?.());
+  }
+  await waitFor(() => expect(format.mock.calls.length).toBeGreaterThan(before));
+});
+
 const CONFIG: UsageTableConfig = {
   by: "energy",
   noun: "Energy",

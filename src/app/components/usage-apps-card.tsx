@@ -21,7 +21,7 @@ import {
   usageWhole,
 } from "@core/usage-rows";
 import { ChevronRight } from "lucide-react";
-import { type ReactNode, useMemo, useRef, useState } from "react";
+import { memo, type ReactNode, useMemo, useRef, useState } from "react";
 import {
   APP_CELL,
   AppsNote,
@@ -125,7 +125,7 @@ export function UsageAppsCard({
     body = <AppsNote>Loading use by app…</AppsNote>;
   } else {
     body = (
-      <UsageBody
+      <MemoUsageBody
         data={data}
         config={config}
         query={query}
@@ -162,6 +162,8 @@ export function UsageAppsCard({
     </div>
   );
 }
+
+const MemoUsageBody = memo(UsageBody);
 
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Existing cohesive logic; split when substantially changed (architecture refactor section 10).
 function UsageBody({
