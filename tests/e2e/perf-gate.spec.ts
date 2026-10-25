@@ -3,6 +3,8 @@ import { type CDPSession, expect, type Page, test } from "@playwright/test";
 
 /**
  * Frontend performance gate (plan 7; thresholds in `perf-budget.json`).
+ * `make e2e-perf` uses production React and the browser mock, in a separate
+ * build directory; functional tests keep their development server (D-060).
  * Opens the popover, the Overview, and the CPU, GPU and Power pages on the
  * 1 h chart window (the longest live charts: a full hour of ring, bucketed,
  * and per-key stats over the hour on GPU and Power) on the mock transport
@@ -42,6 +44,20 @@ interface FrontendBudget {
 const budget: FrontendBudget = JSON.parse(
   readFileSync(new URL("../../perf-budget.json", import.meta.url), "utf8")
 ).frontend;
+
+test("performance gate runtime uses the requested React build and preview controls", async ({
+  page,
+}) => {
+  await page.goto("/?route=/dashboard/cpu&theme=light&ticks=0");
+  await expect(page.locator('meta[name="kelvo-production"]')).toHaveAttribute(
+    "content",
+    String(process.env.PLAYWRIGHT_PERFORMANCE === "1")
+  );
+  await expect(
+    page.getByRole("heading", { name: "CPU", exact: true })
+  ).toBeVisible();
+  await expect(page.locator("html")).not.toHaveClass(/dark/);
+});
 
 /** Seconds of main-thread work, cumulative since `Performance.enable`. */
 const METRICS = ["ScriptDuration", "LayoutDuration", "RecalcStyleDuration"];

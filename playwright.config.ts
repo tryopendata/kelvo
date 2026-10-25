@@ -4,7 +4,9 @@ import { defineConfig, devices } from "@playwright/test";
 /**
  * Playwright E2E Test Configuration
  *
- * Runs against the Vite dev server in a browser, fed by the mock transport.
+ * Functional cases run against the Vite dev server with the mock transport.
+ * `make e2e-perf` builds production React into target/perf-dist and measures
+ * that separate preview with the same mock transport.
  * The packaged app's WKWebView is not reachable from Playwright
  * (tauri-driver/WebDriver does not support it on macOS); Rust integration
  * tests plus scripted manual checks cover that layer. E2E here is for
@@ -31,6 +33,10 @@ import { defineConfig, devices } from "@playwright/test";
  *   with VITE_TRANSPORT=mock.
  */
 const REUSE_SERVER = process.env.PLAYWRIGHT_REUSE_SERVER === "1";
+const PERFORMANCE = process.env.PLAYWRIGHT_PERFORMANCE === "1";
+
+if (PERFORMANCE && REUSE_SERVER)
+  throw new Error("Performance gates must start their own production preview");
 
 // A bare listen(0) binds the dual-stack wildcard, which covers both 127.0.0.1
 // and ::1 where Vite's "localhost" may land.
@@ -102,7 +108,9 @@ export default defineConfig({
   ],
 
   webServer: {
-    command: `bun run dev:fast --port ${PORT} --strictPort`,
+    command: PERFORMANCE
+      ? `bun run build --outDir target/perf-dist && bunx vite preview --outDir target/perf-dist --port ${PORT} --strictPort`
+      : `bun run dev:fast --port ${PORT} --strictPort`,
     url: BASE_URL,
     reuseExistingServer: REUSE_SERVER,
     timeout: 120000,

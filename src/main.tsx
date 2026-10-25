@@ -10,9 +10,12 @@ import { App } from "~/app";
 import { initialRoute } from "~/routes/initial-route";
 
 const search = window.location.search;
+// Explicit browser previews keep routing/theme controls with production React.
+const preview =
+  import.meta.env.DEV || import.meta.env.VITE_TRANSPORT === "mock";
 const themeParam = new URLSearchParams(search).get("theme");
 const theme =
-  import.meta.env.DEV && (themeParam === "light" || themeParam === "dark")
+  preview && (themeParam === "light" || themeParam === "dark")
     ? themeParam
     : null;
 
@@ -32,7 +35,7 @@ createAppTransport(search).then(
             initialEntry: initialRoute(
               transport.windowLabel(),
               search,
-              import.meta.env.DEV,
+              preview,
               window.location.pathname
             ),
             theme,

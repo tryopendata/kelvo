@@ -227,10 +227,10 @@ stub-dist:
 bindings: stub-dist
 	cargo run --quiet -p kelvo --example export_bindings
 
-# Main-thread and long-task budgets (perf-budget.json `frontend`), measured on macOS
-# Chromium, so they run separately on macOS CI and in the pre-push hook.
+# Main-thread and long-task budgets (perf-budget.json `frontend`), measured with
+# production React on macOS Chromium in CI and the pre-push hook (D-060).
 e2e-perf:
-	bunx playwright test tests/e2e/perf-gate.spec.ts --project=chromium --workers=1
+	PLAYWRIGHT_PERFORMANCE=1 bunx playwright test tests/e2e/perf-gate.spec.ts --project=chromium --workers=1
 
 # Fails if src/core/generated differs from the commit after regenerating, including
 # new untracked files.

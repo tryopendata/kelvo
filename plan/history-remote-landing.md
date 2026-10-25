@@ -621,3 +621,60 @@ runs failed: Power in the first, then Containers/Power/open/resume in the second
 Runner isolation alone is insufficient and is not adopted as the resolution.
 The raw results, unchanged assertions, status codes and new profiles are retained
 in the task evidence directory for the next performance investigation.
+
+
+### Production performance measurement
+
+The exact-code profiles show React development JSX self time of 357 ms per
+20 seconds in Containers, 270 ms in Overview and 176 ms in CPU. They do not
+identify one shared redundant production computation. D-060 already names a
+production-build Playwright target as a reason to change the measurement. The
+reviewed target builds production React plus the explicit browser mock into
+`target/perf-dist`, starts a fresh preview, and verifies production mode, route
+and theme. Native packaging continues to use its separate `dist`; functional
+browser tests retain development mode.
+
+This changes measurement runtime and increases headroom under the same numeric
+ceilings. Historical development numbers are not comparable. The fixture size,
+cadence, routes, themes, viewports, budgets, sampling, long-task checks, retries
+and suite cap remain the same. Component/transport render regressions continue
+to catch narrower selector and caching mistakes.
+
+In sequential local runs, baseline `6cccd17` with the common harness and the
+candidate each passed all 13 cases. Main-thread ms/s, baseline / candidate:
+
+| Screen | Baseline | Candidate |
+| --- | ---: | ---: |
+| Containers | 11.35 | 9.30 |
+| Container detail | 5.80 | 5.45 |
+| Popover | 12.23 | 12.19 |
+| Overview | 12.63 | 11.17 |
+| CPU 1h | 9.38 | 9.89 |
+| GPU 1h | 12.10 | 11.10 |
+| Power 1h | 11.21 | 9.16 |
+
+Neither run reported long tasks; opening, hidden resume and the reload guards
+also passed. These single pairs do not establish a precise speedup. A deliberate
+mutation drove actual StreamArea reconstruction through React on every animation
+frame rather than the sampling cadence. CPU measured 112.50 ms/s and failed its
+existing 35 ms/s ceiling. No artificial delay was inserted. The original source
+was restored byte-for-byte; the normal final push gate verifies it again.
+Together with the comparison, this establishes the production target as a gross
+regression guard, with the changed headroom explicitly accepted in D-060.
+
+The remaining concrete Power finding was an overly broad battery-history
+subscription: the card received changing system watts, battery watts and
+temperature although it renders none of those values. Its hook now selects only
+the displayed battery summary. The real-transport Profiler regression fails on
+the old hook, keeps commits unchanged through power-only frames, then verifies
+visible charge and history-query updates. Review approved; all 18 affected
+component/hook/Power tests pass. No markup or styling changed.
+
+
+After the final subscription/startup changes, all 78 affected Chromium/WebKit
+browser cases pass, plus the two development-runtime checks and all 18 focused
+battery/Power tests. Fresh WebKit Power/Battery history and gallery captures in
+both themes retain the existing typography, accents, surfaces and spacing.
+There are no intentional visible differences from the subscription change.
+The final normal push runs the complete code, bindings and restored production
+performance gates; its exact revision and hosted result belong in the task handoff.

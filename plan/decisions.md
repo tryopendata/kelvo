@@ -1528,6 +1528,35 @@ The gate catches gross regressions, not small ones: a deliberate mutation that r
 
 CI runners give numbers far from the dev machine's (move to a ratio against a baseline page), or a production-build Playwright target exists (measure that instead).
 
+### Amendment, 2026-10-24: measure production React
+
+The stable hosted runner failed both baseline and candidate development-mode
+checks. Two complete candidate runs on a fresh runner without prior build or
+functional workloads also failed. Exact-code profiles attribute substantial
+self time to React's development JSX instrumentation (357 ms per 20 seconds on
+Containers, 270 ms on Overview and 176 ms on CPU); they do not establish one
+shared production regression or explain unattributed program time.
+
+Use D-060's production-target revisit: `make e2e-perf` builds the same frontend
+with production React and the explicit mock transport, then starts its own
+preview server. Its output is `target/perf-dist`, separate from native packaging's
+`dist`. Functional tests retain the development server. Explicit mock builds
+preserve route/theme controls while developer-only routes stay disabled. A
+runtime check verifies production mode, route and theme before acceptance.
+
+This changes the measurement definition. Every numerical budget, mock workload,
+viewport, cadence, warm-up/sample duration, long-task assertion, retry count and
+suite cap remains the same, but production React has more headroom under those
+ceilings. Old development-mode measurements are not comparable. The target
+continues to catch gross regressions; component/transport render regressions
+remain necessary for selector and caching discipline. Visible UI stays
+regression-guarded, and the background whole-app CPU promise is unchanged.
+
+Baseline and candidate each passed all 13 production cases. A deliberate
+actual-render cadence regression failed CPU at 112.50 ms/s against its existing
+35 ms/s ceiling; the original source was restored byte-for-byte. Measurements,
+mutation evidence and limits are in the [landing execution record](history-remote-landing.md).
+
 ## D-061: Sampling intervals from 0.5 s to 60 s; collector cadences are wall-clock periods; tray-only IOReport at 10 s
 
 Status: Accepted. Date: 2026-10-05. Phase 6.4 and 7 (performance).
@@ -3406,7 +3435,8 @@ whether a contributor installed or bypassed a local hook.
 The workflow runs one stable `macos-26` leg on main pushes and pull requests, covering
 Rust formatting/Clippy/tests, bindings freshness, the App Store build configuration,
 functional browser tests, debug packaging and runtime dependency checks. Frontend
-performance gates run separately with one worker and unchanged macOS budgets. The
+performance gates run separately with one worker against production React plus the
+explicit browser mock (D-060 amendment), retaining the numerical macOS budgets. The
 `xcode-27` preview leg is manual and advisory. Hardware acceptance and whole-app
 benchmarks remain separate; hosted checks do not establish their results. Local
 pre-push checks remain for early feedback. These are workflow settings, not a claim
