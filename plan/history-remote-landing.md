@@ -1,6 +1,6 @@
 # History and remote monitoring landing plan
 
-Status: Implemented and verified locally, 2026-10-24. Main integration and hosted CI are recorded in the task handoff. Native click-through and reboot acceptance remain open.
+Status: Implemented and reviewed, 2026-10-24. Local and real-host evidence is below; final-tip hosted status is in the [main CI workflow](https://github.com/tryopendata/kelvo/actions/workflows/ci.yml?query=branch%3Amain) and task handoff. Native click-through and reboot acceptance remain open.
 
 Finish the module time ranges, Linux agent memory limits and remote feed lifecycle,
 verify the combined app, land the commits on `main`, and remove only this batch's
@@ -160,7 +160,7 @@ properties. Preserve the QA host's identity and history.
   detail is visible. Record scan completion, sampler responsiveness, restart count,
   cgroup `memory.current`, anon/file/slab from `memory.stat`, swap, pressure,
   `memory.events`, and process `smaps_rollup` before, during and after report release.
-- [ ] Repeat scan/cancel/release and reconnect cycles, then observe after the
+- [x] Repeat scan/cancel/release and reconnect cycles, then observe after the
   in-memory hour fills. Account for the earlier 81 MB resident plus 36 MB swap
   observation. Establish bounded retained anonymous memory rather than treating
   kernel-charged cache as a leak; fix unbounded growth or reclaim stalls if found.
@@ -540,3 +540,84 @@ regressions and all ten existing gates. Containers measured 32.66 ms/s, CPU 1h
 Overview measured 33.79 ms/s; Performance mode measured 16.05 against 34.07
 plain. Opening and hidden-window resume also passed. The helper discarded and
 repeated a sample that spanned a reload. The separate final typecheck passed.
+
+### Completed warm-agent acceptance and Back-link correction
+
+The corrected installed agent completed 3,600 seconds of continuous detail
+demand on one PID, with continuing usage queries and 3,548 distinct measured
+frame timestamps observed by polling. Root scans at 20 and 40 minutes completed
+in 19 and 20 seconds. The final warm scan completed in 20 seconds with 18 observed
+frames, followed by a fresh scan in 21 seconds with 19 observed frames. Each scan
+had three successful cancel/release cycles. The final sampled anonymous peak was
+61 MB and the cgroup peak was 136.3 MB. All restart, swap, maximum-limit and OOM
+counters remained zero. The saved/effective unit remained 128M / 256M / zero swap,
+with only vendor drop-ins and the same installed binary hash.
+
+Twenty-five additional memory/smaps observations span the last warm minutes and
+both final scans. The largest observed full-PSI delta was 2.36% over about ten
+seconds. These diagnostics establish responsiveness during this workload; neither
+the polling frame count nor the passing query assertions establish uninterrupted
+1 Hz cadence or a long-term memory plateau.
+
+Eleven further observations over ten minutes after the final report release
+ranged from 53.85 to 54.15 MB anonymous memory, with no restart, swap, hard-limit
+or OOM event. File cache and slab are recorded separately; total cgroup memory
+is not used as an anonymous-leak estimate. All diagnostic clients have finished.
+
+The production app rebuilt from `5d84c1c` passed deep/strict signature validation
+and system-library dependency checks. Both packaged agents match their built
+bytes and embedded SHA-256 strings; the aarch64 bytes match the installed QA
+agent. This is the pre-Back bundle; verify its replacement and retain the source
+revision, packaged-resource hashes and signature/dependency checks in the final
+task handoff.
+
+Hosted run [40155045096](https://github.com/tryopendata/kelvo/actions/runs/40155045096)
+at `5d84c1c` passed Linux, license/source/banned-dependency checks and all 430 Ubuntu
+functional browser cases, with two first-attempt recoveries. macOS passed native,
+bindings and functional checks, then failed frontend performance checks despite
+valid warm-up periods. A fresh-runner diagnostic runs the unchanged full gate
+twice without native or functional workloads to test runner isolation. Existing dependency advisories remain advisory; no audit was
+disabled or ignored. The final task handoff records the verified tip and cleanup.
+
+The Disk recovery exposed a real navigation race: the first historical process
+link already contained its selected interval, but its Back URL briefly lacked
+that interval while the parent mirrored brush state into the URL. Activating that
+actual first link returned to Live. Back is now derived synchronously from current
+brush state, preserving device/response parameters and removing stale bounds for
+live links. Both real-component regressions fail on the original source and all
+47 Disk tests pass with the fix. The browser's immediate-first-link navigation
+passed three repeats afterward. Independent review approved; a Space hover
+recovery passed five focused WebKit repeats without an established product fault.
+
+The Back correction passed the full check and bindings gate: 1,071 Rust tests
+(48 ignored), 1,278 frontend tests in 196 files, type checks, Clippy, architecture
+fixtures and binding generation. The final full functional browser sweep and
+normal push performance gate follow this source verification.
+
+
+The first complete Back-fix browser run passed 428 of 430 cases and exposed two
+fixture defects. The Space clock was installed but continued advancing with real
+wall time, so the eight-second mock scan could finish before its partial-stage
+assertion. The test now pauses explicitly, advances to a label-bearing partial
+stage, and resumes after completion so folder-query notifications can run. The
+motion classifier required an effective duration of exactly 150 ms, although CSS
+shortens interrupted reversals. It now permits positive effective durations up to
+150 ms only when the declared token remains 150 ms, preserving the existing
+property, element and iteration guards.
+
+A real CSS-reversal regression fails with the old classifier in both engines. It
+also rejects a 400 ms effect, a nominal 400 ms transition shortened below 150 ms,
+and a replayed entrance. Removing either duration guard fails both browser
+projects; both guards were restored. All 20 affected Space/motion cases pass,
+and independent reviewers approved both fixture corrections. No production
+motion, timeout, assertion or performance threshold was relaxed.
+
+
+The corrected complete functional suite passes all 432 Chromium/WebKit cases
+with two workers and no retries. Fresh-runner diagnostic
+[40157532387](https://github.com/tryopendata/kelvo/actions/runs/40157532387)
+ran the exact `5d84c1c` gate twice without native/functional workloads. Both full
+runs failed: Power in the first, then Containers/Power/open/resume in the second.
+Runner isolation alone is insufficient and is not adopted as the resolution.
+The raw results, unchanged assertions, status codes and new profiles are retained
+in the task evidence directory for the next performance investigation.

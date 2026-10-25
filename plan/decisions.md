@@ -3652,11 +3652,20 @@ working-set headroom, not an increase to the hard leak backstop. The 50 MB
 combined sanity bound above was a summary-only measurement; it does not describe
 continuous detail demand with a warm ring and a space scan.
 
-The persisted update and a continuous-detail retention-hour soak are required
-before treating these limits as accepted for the warm workload. Frame/query
-progress, PSI counter deltas, anonymous memory and restart/OOM/swap counters are
-recorded separately: a passing query test alone does not establish normal 1 Hz
-cadence or bounded long-term memory.
+The persisted update and continuous-detail retention-hour soak passed on the
+corrected agent, without a task-owned runtime override. The same PID answered
+usage queries throughout 3,600 seconds, with 3,548 distinct measured frame
+timestamps observed by polling. Root scans at 20 and 40 minutes, at the horizon
+and immediately afterward completed in 19, 20, 20 and 21 seconds; each was followed
+by three successful cancel/release cycles. The final scan's sampled anonymous
+peak was 61 MB; the cgroup peak was 136.3 MB. No restart, swap, maximum-limit or
+OOM event occurred. Dense diagnostics around the final scans measured at most
+2.36% full PSI over an approximately ten-second interval. These are progress and
+working-set measurements, not proof of uninterrupted 1 Hz delivery or a long-term
+memory plateau. Eleven observations over ten minutes after report release ranged
+from 53.85 to 54.15 MB anonymous memory, with the same zero counters. Exact binary
+hashes, smaps, cache/slab and pressure observations are retained with the landing
+evidence.
 
 Two container models coexist: the local Docker page keeps its own clock and history
 (D-103); a Linux host's Containers page reads `cgroup.*` series. Converging them is a

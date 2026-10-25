@@ -142,7 +142,16 @@ function DiskProcessList({
   const scope = range ? scopeWords(range, windowMs) : "Live";
   const waiting = range ? history.isPending : live === null;
   const unrecorded = range !== null && history.data?.covered_ms === 0;
-  const back = `${location.pathname}${location.search}`;
+  const backParams = new URLSearchParams(location.search);
+  if (range) {
+    backParams.set("from", String(range.fromMs));
+    backParams.set("to", String(range.toMs));
+  } else {
+    backParams.delete("from");
+    backParams.delete("to");
+  }
+  const backSearch = backParams.toString();
+  const back = `${location.pathname}${backSearch ? `?${backSearch}` : ""}`;
   return (
     <div {...brushScopeProps} className="contents">
       <AppsShell

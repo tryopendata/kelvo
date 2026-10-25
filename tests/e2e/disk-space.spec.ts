@@ -8,13 +8,20 @@ const space = "/?route=/dashboard/disk%3Fview%3Dspace";
 async function scanBoot(page: Page, theme = "dark") {
   await page.clock.install();
   await page.goto(`${space}&theme=${theme}`);
+  await expect(
+    page.getByRole("button", { name: "Scan Macintosh HD" })
+  ).toBeVisible();
+  await page.clock.pauseAt((await page.evaluate(() => Date.now())) + 1000);
   await page.getByRole("button", { name: "Scan Macintosh HD" }).click();
+  await page.clock.runFor(100);
   await expect(page.getByText(/Scanning · about/)).toBeVisible();
 }
 
 async function finish(page: Page) {
   await page.clock.runFor(9000);
   await expect(page.getByRole("button", { name: "Scan again" })).toBeVisible();
+  // Folder queries notify through timers; resume after the controlled scan stage.
+  await page.clock.resume();
 }
 
 const tile = (page: Page, name: string, depth = 1) =>
@@ -31,6 +38,7 @@ test("the treemap fills in while scanning, then opens folders two levels deep", 
   const map = page.getByRole("img", { name: /^Treemap of Macintosh HD/ });
   await expect(map.locator('[data-kind="unmeasured"]')).toHaveCount(1);
   // The running home folder is drawn as it grows, with what it holds so far.
+  await page.clock.runFor(4000);
   await expect(map.locator("[data-live]").first()).toContainText("so far");
   await finish(page);
   await expect(map.locator('[data-kind="unmeasured"]')).toHaveCount(0);

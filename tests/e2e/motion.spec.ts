@@ -49,7 +49,8 @@ const unexpectedRunning = (page: Page) =>
         const target = (a.effect as KeyframeEffect | null)?.target;
         if (!(target instanceof Element)) return true;
         const timing = a.effect?.getTiming();
-        if (timing?.iterations !== 1 || timing.duration !== 150) return true;
+        // CSS shortens an interrupted reversal; its declared token stays 150ms.
+        const declared = getComputedStyle(target).transitionDuration.split(",");
         // RingGauge: each live reading tweens arc length and segment rotation.
         const ring =
           target.matches("main svg circle") &&
@@ -59,10 +60,17 @@ const unexpectedRunning = (page: Page) =>
           ["stroke-dashoffset", "transform"].includes(a.transitionProperty);
         // InlineBar's MeterTrack: each live reading tweens the fill scale.
         const bar =
-          target.matches("main span.origin-left") &&
-          target.classList.contains("transition-transform") &&
+          target.matches("main span.origin-left.transition-transform") &&
           a.transitionProperty === "transform";
-        return !(ring || bar);
+        return !(
+          timing?.iterations === 1 &&
+          typeof timing.duration === "number" &&
+          Number.isFinite(timing.duration) &&
+          timing.duration > 0 &&
+          timing.duration <= 150 &&
+          declared.every((value) => value.trim() === "0.15s") &&
+          (ring || bar)
+        );
       })
       .map((a) =>
         a instanceof CSSAnimation
@@ -80,6 +88,106 @@ const openOverview = async (page: Page) => {
     page.getByRole("heading", { name: "Overview", exact: true })
   ).toBeVisible();
 };
+
+async function reverseRing(page: Page, duration: number | null = null) {
+  await openOverview(page);
+  await expect.poll(() => running(page), { timeout: 2000 }).toBe(0);
+  const original = await page.evaluate(async (duration) => {
+    const circle = Array.from(document.querySelectorAll("main circle")).find(
+      (el) => el.classList.contains("transition-[stroke-dashoffset,transform]")
+    );
+    if (!(circle instanceof SVGElement)) throw new Error("No ring circle");
+    circle.setAttribute("data-motion-test-ring", "");
+    if (duration !== null) circle.style.transitionDuration = `${duration}ms`;
+    const original = circle.getAttribute("stroke-dashoffset");
+    if (original === null) throw new Error("No ring offset");
+    circle.setAttribute("stroke-dashoffset", String(Number(original) + 50));
+    getComputedStyle(circle).strokeDashoffset;
+    const forward = circle
+      .getAnimations()
+      .find(
+        (a) =>
+          a instanceof CSSTransition &&
+          a.transitionProperty === "stroke-dashoffset"
+      );
+    if (!forward) throw new Error("No forward transition");
+    forward.pause();
+    await forward.ready;
+    forward.currentTime = 20;
+    getComputedStyle(circle).strokeDashoffset;
+    return original;
+  }, duration);
+  return page.evaluate(async (original) => {
+    const circle = document.querySelector("[data-motion-test-ring]");
+    if (!circle) throw new Error("No test ring");
+    circle.setAttribute("stroke-dashoffset", original);
+    getComputedStyle(circle).strokeDashoffset;
+    const reversal = circle
+      .getAnimations()
+      .find(
+        (a) =>
+          a instanceof CSSTransition &&
+          a.transitionProperty === "stroke-dashoffset"
+      );
+    if (!reversal) throw new Error("No reversal transition");
+    // Keep genuine CSS shortening observable across separate browser calls.
+    reversal.updatePlaybackRate(0);
+    await reversal.ready;
+    const duration = reversal.effect?.getTiming().duration;
+    if (typeof duration !== "number") throw new Error("No reversal duration");
+    return { duration, state: reversal.playState, rate: reversal.playbackRate };
+  }, original);
+}
+
+test("live-motion validation accepts shortened reversals and rejects long transitions and entrances", async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  const reversal = await reverseRing(page);
+  expect(reversal.state).toBe("running");
+  expect(reversal.rate).toBe(0);
+  expect(reversal.duration).toBeGreaterThan(0);
+  expect(reversal.duration).toBeLessThan(150);
+  expect(await unexpectedRunning(page)).toEqual([]);
+
+  await page.evaluate(() => {
+    const transition = document
+      .querySelector("[data-motion-test-ring]")
+      ?.getAnimations()
+      .find((a) => a instanceof CSSTransition);
+    if (!transition?.effect) throw new Error("No ring transition effect");
+    transition.effect.updateTiming({ duration: 400 });
+  });
+  expect(await unexpectedRunning(page)).toContain("stroke-dashoffset");
+
+  const longDeclared = await reverseRing(page, 400);
+  expect(longDeclared.duration).toBeLessThan(150);
+  expect(await unexpectedRunning(page)).toContain("stroke-dashoffset");
+
+  await openOverview(page);
+  await expect.poll(() => running(page), { timeout: 2000 }).toBe(0);
+  await page.evaluate(async () => {
+    const element = Array.from(
+      document.querySelectorAll("main > * > *, main [data-stagger] > *")
+    ).find((el) => /lift/.test(getComputedStyle(el).animationName));
+    if (!(element instanceof HTMLElement))
+      throw new Error("No entering element");
+    const name = getComputedStyle(element).animationName;
+    element.style.animationName = "none";
+    getComputedStyle(element).animationName;
+    element.style.animationName = name;
+    getComputedStyle(element).animationName;
+    const entrance = element
+      .getAnimations()
+      .find((a) => a instanceof CSSAnimation && /lift/.test(a.animationName));
+    if (!entrance) throw new Error("No entrance animation");
+    entrance.updatePlaybackRate(0);
+    await entrance.ready;
+  });
+  expect(
+    (await unexpectedRunning(page)).some((name) => /lift/.test(name))
+  ).toBe(true);
+});
 
 test("Overview sections and cards lift in, then settle with nothing running", async ({
   page,
