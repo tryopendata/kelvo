@@ -1,5 +1,6 @@
 .PHONY: help install dev dev-web build test test-e2e test-fill test-read-perf lint format fix typecheck check rust-fmt rust-check rust-test rust-linux-check rust-linux-test remote-scripts-test rust-portable-check rust-portable-test appstore-check agent-linux agent-linux-tools check-deps deny perf bench bench-perf-mode bench-vs-stats bindings bindings-check e2e-perf hooks clean stub-dist
 .PHONY: agent-config agent-config-check agent-config-test agent-hooks-test architecture-check architecture-test
+.PHONY: verification-test
 
 # All library crates are portable by default. New workspace crates enter this gate
 # automatically; only the macOS shell and separately checked helper are excluded.
@@ -13,6 +14,7 @@ help:
 	@echo "  make agent-config  Regenerate shared agent guidance from Claude sources"
 	@echo "  make agent-config-check  Check shared agent guidance for drift (read-only)"
 	@echo "  make agent-config-test   Test the agent config synchronizer"
+	@echo "  make verification-test   Test pre-push evidence and failure propagation"
 	@echo ""
 	@echo "Development:"
 	@echo "  make dev           Full app (tauri dev: Vite on :1420 + Rust)"
@@ -63,6 +65,9 @@ agent-config-test:
 agent-hooks-test:
 	python3 -B -m unittest discover -s scripts/agent-hooks -p 'test_*.py' -v
 
+verification-test:
+	python3 -B -m unittest discover -s scripts/verification -p 'test_*.py' -v
+
 architecture-check:
 	python3 scripts/architecture/rust_size.py
 	bash -o pipefail -c 'cargo metadata --no-deps --format-version 1 | jq -e --slurpfile allowed scripts/architecture/crate-edges.json -f scripts/architecture/crate-edges.jq'
@@ -110,7 +115,7 @@ typecheck: stub-dist
 	bun run typecheck
 	cargo check --workspace --all-targets
 
-check: agent-config-check agent-config-test agent-hooks-test architecture-check architecture-test rust-check appstore-check rust-test
+check: agent-config-check agent-config-test agent-hooks-test verification-test architecture-check architecture-test rust-check appstore-check rust-test
 	bun run check
 
 rust-fmt:

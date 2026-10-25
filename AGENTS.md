@@ -194,6 +194,7 @@ path or filter. These links do not automatically invoke workflows.
 | --- | --- |
 | [kelvo:check](.claude/commands/kelvo:check.md) | Run full quality checks (format, lint, typecheck, test) for frontend and Rust |
 | [kelvo:dev](.claude/commands/kelvo:dev.md) | Start the development environment |
+| [kelvo:land](.claude/commands/kelvo:land.md) | Land reviewed work with exact-commit evidence and task-owned cleanup |
 | [kelvo:test](.claude/commands/kelvo:test.md) | Run tests (scoped by default) |
 | [kelvo:typecheck](.claude/commands/kelvo:typecheck.md) | Run the TypeScript and Rust type checkers |
 

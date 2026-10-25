@@ -101,9 +101,10 @@ repos:
     hooks:
       - id: macos-check
         name: make check bindings-check e2e-perf (macOS)
-        entry: make check bindings-check e2e-perf
+        entry: bash scripts/pre-push-check.sh
         language: system
         stages: [pre-push]
-        files: (\.(rs|ts|tsx|js|mjs|css|json|jsonc|toml|lock|html)$|^Makefile$|^clippy\.toml$|^perf-budget\.json$)
+        files: (\.(rs|ts|tsx|js|mjs|css|json|jsonc|toml|lock|html)$|^Makefile$|^clippy\.toml$|^perf-budget\.json$|^scripts/(pre-push-check\.sh$|verification/.*\.py$)|^\.pre-commit-config\.yaml$)
         pass_filenames: false
         require_serial: true
+        verbose: true

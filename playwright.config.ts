@@ -75,12 +75,14 @@ const BASE_URL = `http://localhost:${PORT}`;
 
 export default defineConfig({
   testDir: "./tests/e2e",
+  ...(PERFORMANCE ? { testMatch: "**/perf-gate.spec.ts" } : {}),
+  testIgnore: PERFORMANCE ? [] : ["**/perf-gate.spec.ts"],
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
   // One browser per core oversubscribes, and screenshot specs are sensitive
   // to a starved renderer. Half the cores locally, two on CI.
-  workers: process.env.CI ? 2 : "50%",
+  workers: PERFORMANCE ? 1 : process.env.CI ? 2 : "50%",
   // "line" makes failures visible on stdout (agents read that); html's open
   // default is "on-failure", which would block a headless run on a report
   // server, so keep it "never".
@@ -99,12 +101,16 @@ export default defineConfig({
       name: "chromium",
       use: { ...devices["Desktop Chrome"] },
     },
-    {
-      // The app ships in WKWebView; WebKit is the closer engine for
-      // screenshot comparison.
-      name: "webkit",
-      use: { ...devices["Desktop Safari"] },
-    },
+    ...(!PERFORMANCE
+      ? [
+          {
+            // The app ships in WKWebView; WebKit is the closer engine for
+            // screenshot comparison.
+            name: "webkit",
+            use: { ...devices["Desktop Safari"] },
+          },
+        ]
+      : []),
   ],
 
   webServer: {

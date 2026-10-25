@@ -1,6 +1,9 @@
 # History and remote monitoring landing plan
 
-Status: Implemented and reviewed, 2026-10-24. Local and real-host evidence is below; final-tip hosted status is in the [main CI workflow](https://github.com/tryopendata/kelvo/actions/workflows/ci.yml?query=branch%3Amain) and task handoff. Native click-through and reboot acceptance remain open.
+Status: Landed on main at `8cab4afd2b4896ff985681e2b52b3748b779b2b1`.
+[Exact-revision CI](https://github.com/tryopendata/kelvo/actions/runs/40160372209)
+passed all required jobs. Native click-through and reboot acceptance remain open.
+The final result below supersedes earlier pending-gate notes in this execution log.
 
 Finish the module time ranges, Linux agent memory limits and remote feed lifecycle,
 verify the combined app, land the commits on `main`, and remove only this batch's
@@ -676,5 +679,43 @@ browser cases pass, plus the two development-runtime checks and all 18 focused
 battery/Power tests. Fresh WebKit Power/Battery history and gallery captures in
 both themes retain the existing typography, accents, surfaces and spacing.
 There are no intentional visible differences from the subscription change.
-The final normal push runs the complete code, bindings and restored production
-performance gates; its exact revision and hosted result belong in the task handoff.
+The final normal push passed the complete code, bindings and restored production
+performance gates. Exact-revision acceptance is recorded below.
+
+## Final landing and cleanup, 2026-10-25
+
+Source `8cab4af` is on local and remote main. CI run
+[40160372209](https://github.com/tryopendata/kelvo/actions/runs/40160372209)
+completed successfully: frontend, Linux, stable macOS and dependency
+bans/licenses/sources all passed. Both hosted frontend suites ran 1,279 tests in
+197 files; each platform passed all 432 functional browser cases without retries.
+All 13 production performance cases passed locally and hosted without skips or
+retries. Hosted Containers/CPU/GPU/Power measured 11.29/6.35/7.25/6.74 ms/s with
+no long tasks; opening filled in 1,145 ms. Native/App Store checks, bindings and
+packaging passed. Linux ran the portable tests, both static agent builds, four
+pipe integration cases and both release-mode storage fill/read tests.
+
+The final app passed deep/strict ad-hoc signature and system-library checks.
+Packaged agents matched their built bytes and embedded digests; the installed QA
+agent matched the aarch64 build. The accepted Linux workload remains the full
+detail retention hour and repeated scans described above, not an uninterrupted
+1 Hz delivery or indefinite memory-plateau claim.
+
+The diagnostic worktree was archived, then verified absent from both disk and
+Git registration. Task-owned local/remote diagnostic branches, temporary source
+trees and CLI logs were removed after preserving original tracked/untracked work,
+profiles and a verified Git recovery bundle. Only the primary worktree remained;
+shared caches, app artifacts, QA evidence, installations/history and unrelated
+resources were preserved.
+
+Native built-app setup/update/edit/re-pair/remove/picker, an older-version UI
+update and host reboot remain unverified. No reboot or identity/history reset
+was performed. Existing advisory jobs still report Rust advisories
+RUSTSEC-2026-0382/0386 and seven npm advisories under the committed policy. The
+reviewed issue draft remains local; no public follow-up was published.
+
+Detailed local evidence remains in `target/qa/history-remote-landing/`, including
+`exact-final-ci.json`, `final-handoff.md`, `final-bundle-verification.json` and
+`cleanup-receipt.json`. These ignored files supplement this tracked summary.
+See the [agent operations post-mortem](agent-ops-post-mortem-2026-10-25.md) for
+workflow fixes and retained follow-ups.

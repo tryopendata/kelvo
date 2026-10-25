@@ -4,7 +4,7 @@ This file tracks where Kelvo is against the plan. Task-level checkboxes live in 
 
 Agents update this file whenever a phase starts or finishes. Each update adds a log entry: what changed, how it was verified, and anything left open. They also tick the matching checkboxes in the version doc.
 
-## Start here (handoff, 2026-10-14, architecture refactor and QA)
+## Start here (handoff, 2026-10-25, history/remote landing and QA)
 
 State: `main` holds v1.0, v1.1 and v1.2. The app runs from source with `bun run tauri dev`. Verification evidence is dated in the log; older green runs do not establish the current refactor as complete. The user accepted day-to-day stability on 2026-10-16 and authorized the free GitHub release path: an ad-hoc-signed DMG and signature-verified in-app updates. Kelvo 0.1.0 is publicly available through GitHub Releases; release build and package verification are complete; Apple Developer membership, notarization, Homebrew and the Mac App Store remain deferred.
 
@@ -19,12 +19,20 @@ Space reports are implemented; remaining acceptance is tracked in the
 [history and remote landing record](history-remote-landing.md). Remote alerts and
 remote menu-bar features remain future scope.
 
+The history/remote batch landed at `8cab4af` with
+[required CI passing](https://github.com/tryopendata/kelvo/actions/runs/40160372209),
+including 432 functional browser cases per hosted platform and 13 production
+performance cases. The Linux retention-hour/scan acceptance passed; native
+click-through and reboot remain open. Its temporary worktree/branches are cleaned
+up. The [agent operations post-mortem](agent-ops-post-mortem-2026-10-25.md) records
+the verification and handoff gaps closed afterward.
+
 Stage: the accepted [architecture refactor](architecture-refactor-review.md) is implemented and reviewed; its execution record contains the final automated, visual and performance evidence. Continue manual QA and polish (`v1-local-monitor.md` section 8, "v1.x QA and polish"). The user runs the dev build day to day and files bugs and UX issues; each session takes a batch, fixes it with a regression test where one fits, and logs it here. After QA comes the release phase (same section).
 
 How to work a QA session:
 1. Read the issues the user filed for the session. Reproduce each in the browser dev server (`bun run dev:fast`, mock transport) when it is a UI issue, or in `bun run dev` (the full app) when it needs real collectors.
 2. Check UI fixes against design-system.md and the screens already built, and name any difference left in place.
-3. Run `make check` and `bun run test:e2e` before merging. The perf-gate long-task checks fail under heavy machine load (several worktrees building at once) on unchanged code; rerun on a quiet machine before suspecting a regression (see "v1.2 code review fixes").
+3. Use the [landing workflow](../.claude/commands/kelvo:land.md). Functional browsers run with `bun run test:e2e`; production performance runs separately with `make e2e-perf`. Preserve failures and compare a matching baseline before blaming machine load. The normal pre-push hook runs the complete code/bindings/performance gate and retains live stage logs; avoid immediately duplicating it unchanged by hand.
 
 Manual checks waiting for the user (the QA checklist in `v1-local-monitor.md` lists them all):
 - ⌘-drag order persistence of per-module status items, and WindowServer cost with every module in its own item (D-080).
@@ -85,6 +93,11 @@ Known follow-ups (small, not scheduled):
 Status values: Not started, In progress, Blocked (say on what), Done (with the verification that proved it).
 
 ## Log
+
+### 2026-10-25 (Landing closeout and agent operations post-mortem)
+
+- The history/remote source at `8cab4af` passed [exact-revision CI](https://github.com/tryopendata/kelvo/actions/runs/40160372209): all required jobs, 1,279 frontend tests, 432 functional browser cases per hosted platform and 13 production performance cases. Final bundle and Linux detail-hour/scan checks passed; task-owned cleanup completed. Native click-through/reboot and existing dependency advisories remain explicit follow-ups in the [landing record](history-remote-landing.md).
+- The [post-mortem](agent-ops-post-mortem-2026-10-25.md) closes three recurring DX gaps: default/CI browser selection now shares the functional lane, the pre-push wrapper retains live stage evidence even on success, and final landing facts are tracked instead of living only under ignored QA output. A focused `kelvo:land` workflow and browser timing/readiness guidance capture the reusable operating steps. Actual Playwright collection tests reproduce the old selection defect; disposable Git/Make fixtures cover retained output and failure propagation.
 
 ### 2026-10-24 (History ranges and remote feed replacement)
 

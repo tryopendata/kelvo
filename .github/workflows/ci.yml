@@ -35,7 +35,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
       - name: Check shared agent guidance and synchronizer
-        run: make agent-config-check agent-config-test agent-hooks-test
+        run: make agent-config-check agent-config-test agent-hooks-test verification-test
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
@@ -71,13 +71,13 @@ jobs:
         run: bunx playwright install --with-deps chromium webkit
 
       - name: Playwright Chromium
-        run: bunx playwright test --project chromium --grep-invert "performance gate"
+        run: bun run test:e2e --project chromium
 
       - name: Playwright WebKit (1/2)
-        run: bunx playwright test --project webkit --shard 1/2 --grep-invert "performance gate"
+        run: bun run test:e2e --project webkit --shard 1/2
 
       - name: Playwright WebKit (2/2)
-        run: bunx playwright test --project webkit --shard 2/2 --grep-invert "performance gate"
+        run: bun run test:e2e --project webkit --shard 2/2
 
       - name: Upload Playwright report
         if: failure()
@@ -203,13 +203,13 @@ jobs:
         run: bunx playwright install chromium webkit
 
       - name: Playwright Chromium
-        run: bunx playwright test --project chromium --grep-invert "performance gate"
+        run: bun run test:e2e --project chromium
 
       - name: Playwright WebKit (1/2)
-        run: bunx playwright test --project webkit --shard 1/2 --grep-invert "performance gate"
+        run: bun run test:e2e --project webkit --shard 1/2
 
       - name: Playwright WebKit (2/2)
-        run: bunx playwright test --project webkit --shard 2/2 --grep-invert "performance gate"
+        run: bun run test:e2e --project webkit --shard 2/2
 
       # Run after the functional browser suite, without competing workers.
       - name: Frontend performance gates

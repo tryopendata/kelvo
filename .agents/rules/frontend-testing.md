@@ -18,6 +18,7 @@ bun run test:watch              # Vitest watch mode
 bun run test -- src/core/format # Scoped by path substring
 bun run test:e2e                # Playwright against the Vite dev server + mock transport
 bun run test:e2e:ui             # Playwright with UI
+make e2e-perf                  # Production React + mock, Chromium, one worker (macOS budgets)
 ```
 
 ## Test Location
@@ -52,6 +53,20 @@ E2E is for screenshots of each screen in both themes, contrast checks, and flows
 span routes. Every run starts its own dev server on a free port and never reuses one
 already listening (see `playwright.config.ts`).
 
+`bun run test:e2e` excludes `perf-gate.spec.ts`; `make e2e-perf` selects only that
+file, using a separate production preview and one Chromium worker. Test selection
+lives in the Playwright config, so CI does not need a title-based grep exclusion.
+Keep the checkout unchanged during acceptance runs, including config and documentation:
+Vite/Tailwind watch more than application source. Preserve logs if navigation or HMR
+interrupts a test, diagnose it, then rerun against a stable tree.
+
+For staged mock workflows, `page.clock.install()` replaces timers but does not pause
+them. Pause explicitly, advance to the intended stage, then resume after deterministic
+checks so React Query's notification timers can drain. For screenshots, wait for the
+expected chart/content and entrance motion to settle; a visible page heading alone
+does not establish visual readiness. Keep live ticks running during slow accessibility
+scans unless the test also controls the stale-data watchdog.
+
 ## Async waiting
 
 Never hold an element reference across an `await`. React can re-render and detach it.
@@ -69,7 +84,7 @@ widening the selector and confirming it goes red.
 
 ## Performance gate
 
-`tests/e2e/perf-gate.spec.ts` (Chromium only, part of `bun run test:e2e`) samples CDP
+`tests/e2e/perf-gate.spec.ts` (Chromium only, `make e2e-perf`) samples CDP
 script + layout + style time per second on the popover and the Overview at 1 Hz, and fails on
 any long task over 50 ms after warm-up. The thresholds live in `perf-budget.json` at the
 repo root and nowhere else. **Raising a threshold needs a decision entry in
