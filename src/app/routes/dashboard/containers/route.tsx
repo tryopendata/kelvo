@@ -1,6 +1,6 @@
 import type { DockerSettings, DockerSnapshot } from "@core/generated/bindings";
 import type { ReactNode } from "react";
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useLocation, useSearchParams } from "react-router";
 import { PageHeader } from "~/components/page-header";
 import { SegmentedControl } from "~/components/segmented-control";
@@ -73,6 +73,20 @@ function LocalContainersRoute() {
       ),
     [setParams]
   );
+  const viewControl = useMemo(
+    () => (
+      <SegmentedControl
+        options={[
+          { value: "activity", label: "Activity" },
+          { value: "storage", label: "Storage & cleanup" },
+        ]}
+        value={storageView ? "storage" : "activity"}
+        onChange={(value) => set("view", value)}
+        ariaLabel="Containers view"
+      />
+    ),
+    [storageView, set]
+  );
   useRestoredScroll(location.state);
   if (!snapshot)
     return (
@@ -116,15 +130,7 @@ function LocalContainersRoute() {
           />
         )}
         <MonitoringContent snapshot={snapshot} configure={configure}>
-          <SegmentedControl
-            options={[
-              { value: "activity", label: "Activity" },
-              { value: "storage", label: "Storage & cleanup" },
-            ]}
-            value={storageView ? "storage" : "activity"}
-            onChange={(value) => set("view", value)}
-            ariaLabel="Containers view"
-          />
+          {viewControl}
           <DockerCleanupFlow flow={cleanup} />
           {storageView ? (
             <DockerStorage

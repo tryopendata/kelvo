@@ -421,3 +421,19 @@ Typography, accents, surfaces, spacing and horizontal table scrolling match the
 existing design; there are no intentional visible design differences. The narrow
 Disk document remains exactly 360 px wide after motion settles. Captures are in
 `target/qa/history-remote-landing/screenshots/containment-*`.
+
+The next normal push was blocked by Containers at 35.41 ms/s; a focused repeat
+was 36.97 ms/s, both without long tasks. A fresh CPU profile identified the
+unchanged Activity/Storage switcher rebuilding Radix and measuring layout on
+metric-only updates. Its existing JSX is now cached by selected view and the
+Router callback. A real-transport regression observed three layout reads per
+metric tick before the fix and none afterward, while both view transitions still
+update and remeasure. All 14 route tests pass. Review approved the complete memo
+dependencies, hook order and navigation behavior. The unchanged focused gate
+then passed at 32.69 ms/s with no long tasks; the normal push repeat remains
+required. No table rows, action guards or performance budgets changed.
+
+The switcher follow-up passed the full frontend check: 194 files / 1,275 tests,
+type checks and lint. All 120 affected Docker Chromium/WebKit checks passed.
+Current light/dark storage screenshots preserve the existing layout and styling;
+there are no visible design differences from caching the unchanged subtree.

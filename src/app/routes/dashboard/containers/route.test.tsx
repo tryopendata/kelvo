@@ -10,6 +10,38 @@ import { renderWithProviders } from "@tests/test-utils";
 import { expect, it, vi } from "vitest";
 import ContainersRoute from "./route";
 
+it("does not remeasure the view switcher on metric ticks but updates on selection", async () => {
+  const transport = createMockTransport({
+    scenarios: ["docker-11"],
+    historyRows: 1,
+  });
+  const result = renderWithProviders(<ContainersRoute />, { transport });
+  try {
+    await screen.findByRole("table", { name: "Containers now" });
+    const switcher = screen.getByLabelText("Containers view");
+    const activity = within(switcher).getByRole("radio", { name: "Activity" });
+    const measure = vi.fn(() => 60);
+    Object.defineProperty(activity, "offsetWidth", {
+      configurable: true,
+      get: measure,
+    });
+    await act(async () => transport.tick());
+    expect(measure).not.toHaveBeenCalled();
+
+    await result.user.click(
+      within(switcher).getByRole("radio", { name: "Storage & cleanup" })
+    );
+    await screen.findByRole("table", { name: "Storage resources" });
+    await result.user.click(activity);
+    await screen.findByRole("table", { name: "Containers now" });
+    expect(activity).toBeChecked();
+    expect(measure).toHaveBeenCalled();
+  } finally {
+    result.unmount();
+    transport.dispose();
+  }
+});
+
 it("pins the clicked history bucket without requiring a preceding hover", async () => {
   const transport = createMockTransport({
     scenarios: ["docker-11"],
