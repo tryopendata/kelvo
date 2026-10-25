@@ -16,18 +16,27 @@ import { type HostLiveState, useHost, useHostId } from "~/stores/host-store";
 const held = (s: HostLiveState, key: string) => s.held[key] ?? null;
 
 /**
- * Every battery series' current value (catalog 6.1), for the Battery page and
- * the Power & Sensors battery section. `null` is no current value, never 0.
+ * Battery summary values displayed beside the hourly history.
+ * `null` is no current value, never 0.
  */
-export const selectBatteryDetail = (s: HostLiveState) => ({
+const selectBatterySummary = (s: HostLiveState) => ({
   charge: held(s, "battery.charge"),
-  charging: held(s, "battery.charging"),
-  external: held(s, "battery.external"),
   timeRemainingMin: held(s, "battery.time_remaining"),
   health: held(s, "battery.health"),
   cycles: held(s, "battery.cycles"),
   capacityWh: held(s, "battery.capacity_wh"),
   designWh: held(s, "battery.design_wh"),
+});
+
+export function useBatterySummary() {
+  return useHost(useShallow(selectBatterySummary));
+}
+
+/** Every battery series' current value (catalog 6.1), for the Battery page. */
+export const selectBatteryDetail = (s: HostLiveState) => ({
+  ...selectBatterySummary(s),
+  charging: held(s, "battery.charging"),
+  external: held(s, "battery.external"),
   powerW: held(s, "battery.power"),
   tempC: held(s, "battery.temp"),
   systemW: held(s, "power.system"),

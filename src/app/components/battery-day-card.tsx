@@ -1,7 +1,7 @@
 import { formatHoursMinutes, formatPercent, MISSING } from "@core/format";
 import { CommandFailure } from "@core/transport";
 import type { ReactNode } from "react";
-import { useBatteryDetail, useBatteryHours } from "~/hooks/use-battery";
+import { useBatteryHours, useBatterySummary } from "~/hooks/use-battery";
 import { useHistoryHealth } from "~/hooks/use-history-health";
 import { BatteryHistoryBars } from "~/widgets/battery-history-bars";
 import type { Corner } from "~/widgets/lib/accent";
@@ -24,7 +24,7 @@ export function BatteryDayCard({
   origin?: Corner;
   aside?: ReactNode;
 }) {
-  const b = useBatteryDetail();
+  const b = useBatterySummary();
   const { hours, error } = useBatteryHours();
   // With the store unavailable the bars still come back, from the engine's
   // last hour (D-092): the banner is the store's state, not the read's.
