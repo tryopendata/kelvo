@@ -385,3 +385,39 @@ The hosted-failure follow-up passed the full local `make check`: 1,070 Rust test
 (48 ignored scenarios), all 1,274 frontend tests, type checks, Clippy and
 architecture checks. The reviewer also approved the unchanged catalog extraction.
 The normal push repeat and the next hosted run still need to complete.
+
+Hosted follow-up `40144587371` at `8c67e81` passed Linux and native tests,
+including the comparison that previously expired its snapshot. Ubuntu Chromium
+passed, but WebKit disproved the readiness-only Disk explanation: both narrow
+cases still had persistent document overflow despite a fitting main scrollport.
+Linux WebKit reproduced the cause. Absolutely positioned `sr-only` volume-table
+headings escaped static scrolling ancestors after entrance transforms ended.
+Making the two volume scrollers relative containing blocks removes that overflow
+without changing visible layout. Reduced-motion versions of the existing narrow
+cases fail before the fix and pass afterward, while keeping the same zero-
+overflow and accessibility assertions.
+
+The light picker contrast failure in that run came from stale-state dimming,
+confirmed by `main[data-stale]` in the trace and its blended foreground/background
+colors. The accessibility flows had frozen mock ticks long enough for the stale
+watchdog to fire on hosted WebKit. They now keep frames running while Axe checks
+the live state. The selected ink token and production stale behavior are unchanged.
+All three targeted Linux WebKit checks passed after these changes; review approved.
+
+WebKit completed 205 cases before its existing ten-minute cap, with three failed
+cases, two retry recoveries and five cases unrun. Its invocation is now split with
+Playwright's standard `--shard` flag. Listing proves 108 and 107 disjoint cases
+cover the complete 215-case project. Individual timeouts, assertions, retries,
+suite caps and job limits remain unchanged. The next hosted run must complete.
+
+The same hosted macOS run exposed stale dimming in the frozen Docker Storage
+accessibility fixture. That flow now also keeps live frames. Local follow-up
+passed all 1,274 frontend tests, all 50 affected range/Disk/gallery browser checks,
+all eight Disk Space checks and all four Docker Storage accessibility checks.
+The two scroller classes introduce no intended visible design differences.
+
+Compared current Disk/Volumes, Space and gallery screenshots in both themes.
+Typography, accents, surfaces, spacing and horizontal table scrolling match the
+existing design; there are no intentional visible design differences. The narrow
+Disk document remains exactly 360 px wide after motion settles. Captures are in
+`target/qa/history-remote-landing/screenshots/containment-*`.

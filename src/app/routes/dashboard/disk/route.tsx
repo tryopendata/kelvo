@@ -329,7 +329,7 @@ function DiskActivity({
           aria-label="Volume capacity"
           // biome-ignore lint/a11y/noNoninteractiveTabindex: the horizontally scrollable volume table needs keyboard access
           tabIndex={0}
-          className="min-w-0 max-w-full overflow-x-auto rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="relative min-w-0 max-w-full overflow-x-auto rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           <VolumeTable
             rows={volumeRows(vols, held, mounts)}

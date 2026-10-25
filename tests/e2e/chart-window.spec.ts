@@ -86,9 +86,7 @@ test("a window picked on CPU carries to Memory and Power", async ({ page }) => {
 
 for (const theme of ["dark", "light"] as const) {
   test(`long and fixed ranges in ${theme}`, async ({ page }) => {
-    await page.goto(
-      `/?window=dashboard&route=/dashboard/cpu&theme=${theme}&ticks=0`
-    );
+    await page.goto(`/?window=dashboard&route=/dashboard/cpu&theme=${theme}`);
     await page.getByRole("button", { name: "Time range: 15m" }).click();
     await expect(
       page.getByRole("button", { name: "Last 90 days" })

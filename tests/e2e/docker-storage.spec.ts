@@ -69,7 +69,9 @@ for (const theme of ["dark", "light"] as const) {
   }, info) => {
     await page.setViewportSize({ width: 1280, height: 1000 });
     await page.emulateMedia({ reducedMotion: "reduce" });
-    await page.goto(`${overview}&theme=${theme}`);
+    await page.goto(
+      `/?route=/dashboard/containers&scenario=docker-32&theme=${theme}`
+    );
     await page.getByRole("radio", { name: "Storage & cleanup" }).click();
     await expect(
       page.getByRole("table", { name: "Storage resources" })

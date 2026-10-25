@@ -7,8 +7,11 @@ for (const theme of ["dark", "light"] as const) {
       page,
     }, info) => {
       await page.setViewportSize({ width, height: 900 });
+      if (width === 360) {
+        await page.emulateMedia({ reducedMotion: "reduce" });
+      }
       await page.goto(
-        `/?window=dashboard&route=/dashboard/disk&theme=${theme}&ticks=0&scenario=disk-io-comparison`
+        `/?window=dashboard&route=/dashboard/disk&theme=${theme}&scenario=disk-io-comparison`
       );
       await expect(
         page.getByRole("img", { name: /^Average request time:/ })
