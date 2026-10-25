@@ -169,19 +169,23 @@ function useComparisonPaint({
     slotCache.current = slots;
     slotEngine.current = engine;
   });
-  const series = (comparisonPage?.series ?? []).flatMap((line) => {
-    const row = line.container;
-    return slots[row.id] &&
-      (project === null || (row.project ?? "") === project)
-      ? [
-          {
-            container: row,
-            slot: slots[row.id] ?? 1,
-            points: line.points,
-          },
-        ]
-      : [];
-  });
+  const series = useMemo(
+    () =>
+      (comparisonPage?.series ?? []).flatMap((line) => {
+        const row = line.container;
+        return slots[row.id] &&
+          (project === null || (row.project ?? "") === project)
+          ? [
+              {
+                container: row,
+                slot: slots[row.id] ?? 1,
+                points: line.points,
+              },
+            ]
+          : [];
+      }),
+    [comparisonPage?.series, slots, project]
+  );
   // A re-ranked selection becomes visible atomically when its comparison read arrives.
   const previousPaint = useRef<{ scope: string; series: ComparisonSeries[] }>({
     scope: "",

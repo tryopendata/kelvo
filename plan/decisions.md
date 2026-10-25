@@ -3634,16 +3634,29 @@ per-session process is 20.8 MB of the total. Most agent CPU is the 5 s cgroup wa
 now 0.4% and 50 MB combined, a sanity bound rather than a gate. Unbounded growth past the
 in-memory hour would still be a bug.
 
-Memory limits (amended 2026-10-21): the units set `MemoryHigh=96M`, `MemoryMax=256M` and
-`MemorySwapMax=0` in place of a hard `MemoryMax=96M`. The cgroup is charged for the page
-cache and dentries the agent's reads pull in. On the M1 server a space scan of `/` (D-117)
-filled the cgroup to 983 MB under a temporary 1G cap: 728 MB file cache and 181 MB
-reclaimable slab against 23 MB anon (the scan tree itself peaked at 38 MB anon and was
-freed when the scan finished). Under the hard 96M cap, reclaim also swapped the agent's
-own pages out, 36 MB of them, with 1,261 `memory.max` events. With the new limits the
-cgroup holds at 89 to 94 MB with no memory pressure. Not yet measured: a full scan under
-the new limits, and an earlier instance's 81 MB resident anon plus 36 MB swap, which the
-scan alone does not explain.
+Memory limits (amended 2026-10-24): both units set `MemoryHigh=128M`,
+`MemoryMax=256M` and `MemorySwapMax=0`. The cgroup is charged for page cache and
+dentries as well as the agent's anonymous working set. The original hard 96M cap
+swapped out 36 MB of agent pages during a root scan, with 1,261 `memory.max`
+events. A 96M soft limit avoided those hard-limit events but did not provide
+enough anonymous-memory headroom once the history rings warmed.
+
+On the M1 Fedora Asahi QA server, the same agent reached 104 MB anonymous memory
+with no remaining file cache after more than three hours. Under 96M high / 256M
+max / zero swap, a root scan reached a full-memory-pressure `avg10` of about
+67%. Raising only the runtime high limit to 128M let that scan complete;
+a fresh scan on the same PID then completed in 33 s (1,370,269 items), with 29
+distinct measured live-frame timestamps and successful report/cancel release.
+Its sampled anonymous peak was 116 MB and the cgroup peak was 139.4 MB. This is
+working-set headroom, not an increase to the hard leak backstop. The 50 MB
+combined sanity bound above was a summary-only measurement; it does not describe
+continuous detail demand with a warm ring and a space scan.
+
+The persisted update and a continuous-detail retention-hour soak are required
+before treating these limits as accepted for the warm workload. Frame/query
+progress, PSI counter deltas, anonymous memory and restart/OOM/swap counters are
+recorded separately: a passing query test alone does not establish normal 1 Hz
+cadence or bounded long-term memory.
 
 Two container models coexist: the local Docker page keeps its own clock and history
 (D-103); a Linux host's Containers page reads `cgroup.*` series. Converging them is a

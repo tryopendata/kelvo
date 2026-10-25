@@ -213,7 +213,11 @@ jobs:
 
       # Run after the functional browser suite, without competing workers.
       - name: Frontend performance gates
-        run: make e2e-perf
+        run: |
+          uptime
+          vm_stat
+          ps -axo pid,ppid,pcpu,pmem,rss,comm | sort -k3,3nr | sed -n '1,21p'
+          make e2e-perf
 
       - name: Upload Playwright report
         if: failure()

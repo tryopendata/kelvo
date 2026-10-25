@@ -150,8 +150,10 @@ impl AgentLayout {
     ///
     /// The cgroup is charged for the page cache and dentries the agent's reads pull in,
     /// and a space scan of `/` pulls in close to 1 GB of them. `MemoryHigh` reclaims that
-    /// cache past 96M; `MemorySwapMax=0` keeps reclaim from swapping out the agent's own
-    /// pages instead, which a hard 96M cap did. `MemoryMax` is the backstop for a leak.
+    /// cache while leaving headroom for the warmed history rings and scan report: 96M
+    /// caused sustained reclaim stalls once anonymous memory reached that threshold.
+    /// `MemorySwapMax=0` keeps reclaim from swapping out the agent's own pages instead.
+    /// `MemoryMax` is the backstop for a leak. See D-116 for measured working sets.
     pub fn unit_text(self, paths: &AgentPaths) -> String {
         let exec = unit_quote(&paths.binary.to_string_lossy());
         let data = unit_quote(&paths.data_dir.to_string_lossy());
@@ -174,7 +176,7 @@ impl AgentLayout {
                  Nice=10\n\
                  IOSchedulingClass=best-effort\n\
                  IOSchedulingPriority=7\n\
-                 MemoryHigh=96M\n\
+                 MemoryHigh=128M\n\
                  MemoryMax=256M\n\
                  MemorySwapMax=0\n\
                  Restart=on-failure\n\
@@ -194,7 +196,7 @@ impl AgentLayout {
                  Nice=10\n\
                  IOSchedulingClass=best-effort\n\
                  IOSchedulingPriority=7\n\
-                 MemoryHigh=96M\n\
+                 MemoryHigh=128M\n\
                  MemoryMax=256M\n\
                  MemorySwapMax=0\n\
                  Restart=on-failure\n\
@@ -329,7 +331,7 @@ mod tests {
              StateDirectory=kelvo-agent\nRuntimeDirectory=kelvo-agent\nRuntimeDirectoryMode=0700\n\
              ProtectSystem=strict\nProtectHome=read-only\nPrivateTmp=yes\nNoNewPrivileges=yes\n\
              Nice=10\nIOSchedulingClass=best-effort\nIOSchedulingPriority=7\n\
-             MemoryHigh=96M\nMemoryMax=256M\nMemorySwapMax=0\nRestart=on-failure\nRestartSec=5s\n\n[Install]\nWantedBy=multi-user.target\n"
+             MemoryHigh=128M\nMemoryMax=256M\nMemorySwapMax=0\nRestart=on-failure\nRestartSec=5s\n\n[Install]\nWantedBy=multi-user.target\n"
         );
     }
 
@@ -358,7 +360,7 @@ mod tests {
         assert!(text.contains("WantedBy=default.target"));
         assert!(
             text.contains("NoNewPrivileges=yes")
-                && text.contains("MemoryHigh=96M\nMemoryMax=256M\nMemorySwapMax=0\n")
+                && text.contains("MemoryHigh=128M\nMemoryMax=256M\nMemorySwapMax=0\n")
         );
         for root_only in [
             "ProtectSystem",

@@ -79,14 +79,23 @@ async function measure(page: Page, url: string, ready: () => Promise<void>) {
   // The dev server reloads every open page when another spec makes it
   // optimize a new dependency. A reload resets the counters, so a sample
   // that spans one is thrown away and taken again.
-  for (let attempt = 0; ; attempt++) {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const origin = await timeOrigin(page);
     await ready();
     await page.waitForTimeout(budget.warmupMs);
-    const origin = await timeOrigin(page);
+    if ((await timeOrigin(page)) !== origin) {
+      console.log(
+        "[perf] the page reloaded during warm-up; establishing readiness again"
+      );
+      continue;
+    }
     const sample = await sampleOnce(page, cdp);
-    if ((await timeOrigin(page)) === origin || attempt === 2) return sample;
+    if ((await timeOrigin(page)) === origin) return sample;
     console.log("[perf] the page reloaded during the sample; measuring again");
   }
+  throw new Error(
+    "The page reloaded during every performance measurement attempt"
+  );
 }
 
 async function sampleOnce(page: Page, cdp: CDPSession) {
@@ -111,11 +120,71 @@ async function sampleOnce(page: Page, cdp: CDPSession) {
   );
   return {
     seconds: Math.round(seconds * 10) / 10,
+    warmEndMs: Math.round(warmEnd),
     perSec,
     mainThreadMsPerSec: Math.round(total * 100) / 100,
     longTasks,
   };
 }
+
+test.describe("performance gate measurement harness", () => {
+  test.skip(
+    ({ browserName }) => browserName !== "chromium",
+    "CDP metrics are Chromium-only"
+  );
+  test.setTimeout(6 * (budget.warmupMs + budget.sampleMs) + 30_000);
+  test("measurement restores readiness after a warm-up reload", async ({
+    page,
+  }) => {
+    let readyCalls = 0;
+    const result = await measure(
+      page,
+      "/?window=dashboard&route=/dashboard/cpu&theme=dark",
+      async () => {
+        readyCalls++;
+        await page.getByRole("radio", { name: "1h", exact: true }).click();
+        await expect(
+          page.getByRole("img", { name: /CPU total and system, last hour/ })
+        ).toBeVisible();
+        if (readyCalls === 1) {
+          await page.evaluate(() => {
+            setTimeout(() => location.reload(), 2000);
+          });
+        }
+      }
+    );
+    expect(readyCalls).toBeGreaterThan(1);
+    expect(result.warmEndMs).toBeGreaterThanOrEqual(budget.warmupMs);
+    await expect(
+      page.getByRole("radio", { name: "1h", exact: true })
+    ).toBeChecked();
+    await expect(
+      page.getByRole("img", { name: /CPU total and system, last hour/ })
+    ).toBeVisible();
+  });
+
+  test("measurement rejects repeated warm-up reloads", async ({ page }) => {
+    let readyCalls = 0;
+    await expect(
+      measure(
+        page,
+        "/?window=dashboard&route=/dashboard/cpu&theme=dark",
+        async () => {
+          readyCalls++;
+          await expect(
+            page.getByRole("heading", { name: "CPU", exact: true })
+          ).toBeVisible();
+          await page.evaluate(() => {
+            setTimeout(() => location.reload(), 2000);
+          });
+        }
+      )
+    ).rejects.toThrow(
+      "The page reloaded during every performance measurement attempt"
+    );
+    expect(readyCalls).toBe(3);
+  });
+});
 
 test.describe("performance gate", () => {
   test.skip(

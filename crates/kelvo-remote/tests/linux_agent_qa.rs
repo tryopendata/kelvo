@@ -304,7 +304,8 @@ async fn update_the_installed_agent() {
 /// Remote queries (D-117) against an agent already installed: per-app use over the last
 /// ten minutes, then a space scan of `/` explored the way the dashboard does, then
 /// cleared. Prints the agent's memory before and after; the scan's report is dropped at
-/// the end.
+/// the end. Set `KELVO_QA_DETAIL_SOAK_SECS=3600` to hold continuous detail demand for
+/// the retention horizon before scanning, with live/query and memory observations.
 ///
 /// ```sh
 /// KELVO_QA_ALIAS=linux-tailscale \
@@ -361,6 +362,80 @@ async fn queries_answer_on_a_real_host() {
             "systemctl show kelvo-agent -p MemoryCurrent -p MemoryPeak",
         )
     };
+
+    // Opt in to a full retention horizon with detail demand held continuously.
+    // This does not install, restart, reset identity, or replace history.
+    let soak_secs = std::env::var("KELVO_QA_DETAIL_SOAK_SECS")
+        .map(|value| {
+            value
+                .parse::<u64>()
+                .expect("detail soak seconds must be an integer")
+        })
+        .unwrap_or(0);
+    if soak_secs > 0 {
+        assert!(matches!(
+            call(Query::SpaceVolumes).await,
+            Answer::SpaceVolumes(_)
+        ));
+        let started = std::time::Instant::now();
+        let mut frames = std::collections::BTreeSet::new();
+        let mut previous_count = 0;
+        let mut next_check = Duration::ZERO;
+        while started.elapsed() < Duration::from_secs(soak_secs) {
+            if let Some(frame) = hub.latest_frame()
+                && frame.values.iter().any(|value| value.is_finite())
+            {
+                frames.insert(frame.ts_ms);
+            }
+            if started.elapsed() >= next_check {
+                let now = kelvo_engine::wall_ms();
+                let Answer::UsageByApp(usage) = call(Query::UsageByApp {
+                    from_ms: now - 600_000,
+                    to_ms: now,
+                    by: kelvo_schema::usage::UsageKey::Memory,
+                    limit: 5,
+                })
+                .await
+                else {
+                    panic!("expected usage during detail soak")
+                };
+                if next_check > Duration::ZERO {
+                    assert!(
+                        frames.len() > previous_count,
+                        "detail stopped advancing during soak"
+                    );
+                    assert!(usage.covered_ms > 0 && !usage.apps.is_empty());
+                }
+                previous_count = frames.len();
+                println!(
+                    "detail soak: {} s, {} distinct measured frames",
+                    started.elapsed().as_secs(),
+                    frames.len()
+                );
+                sh(
+                    &alias,
+                    "date -u; systemctl show kelvo-agent -p MainPID -p NRestarts \
+                     -p MemoryCurrent -p MemoryPeak -p MemoryHigh -p MemoryMax \
+                     -p MemorySwapMax -p MemorySwapCurrent; \
+                     cat /sys/fs/cgroup/system.slice/kelvo-agent.service/memory.pressure; \
+                     cat /sys/fs/cgroup/system.slice/kelvo-agent.service/memory.events; \
+                     grep '^anon ' /sys/fs/cgroup/system.slice/kelvo-agent.service/memory.stat",
+                )
+                .await;
+                next_check += Duration::from_secs(60);
+            }
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        }
+        assert!(
+            frames.len() > previous_count,
+            "detail stopped advancing in the final soak interval"
+        );
+        println!(
+            "detail soak complete: {} s, {} distinct measured frames",
+            started.elapsed().as_secs(),
+            frames.len()
+        );
+    }
 
     let now = kelvo_engine::wall_ms();
     let Answer::UsageByApp(usage) = call(Query::UsageByApp {

@@ -9,7 +9,13 @@ import type {
   DockerCoverage,
   DockerHistoryPoint,
 } from "@core/generated/bindings";
-import { type ComponentProps, type ReactNode, useState } from "react";
+import {
+  type ComponentProps,
+  type ReactNode,
+  useCallback,
+  useMemo,
+  useState,
+} from "react";
 import { brushScopeProps } from "~/components/brush-overlay";
 import { SectionCard } from "~/components/section-card";
 import { SelectionSummary } from "~/components/selection-summary";
@@ -84,25 +90,35 @@ function ComparisonPlot({
     (["minimum", "average", "maximum"] as const)
       .map((statistic) => format(pointValue(point, metric, statistic)))
       .join(" / ");
-  const metricGaps = coverage.filter((gap) => !eventCoverage(gap));
-  const series = sourceSeries.map((s) => ({
-    ...s,
-    points: s.points
-      .filter((point) => point.time_ms >= from && point.time_ms < to)
-      .map((point) =>
-        metricGaps.some(
-          (gap) =>
-            (gap.container_id === null ||
-              gap.container_id === s.container.id) &&
-            gap.start_ms < point.time_ms + point.duration_ms &&
-            (gap.end_ms ?? to) > point.time_ms
-        )
-          ? { ...point, cpu_measured_ms: 0, memory_measured_ms: 0 }
-          : point
-      ),
-  }));
-  const displayName = (container: DockerContainer) =>
-    `${container.name}${series.filter((s) => s.container.name === container.name).length > 1 ? ` · ${container.id.slice(0, 6)}` : ""}`;
+  const metricGaps = useMemo(
+    () => coverage.filter((gap) => !eventCoverage(gap)),
+    [coverage]
+  );
+  const series = useMemo(
+    () =>
+      sourceSeries.map((s) => ({
+        ...s,
+        points: s.points
+          .filter((point) => point.time_ms >= from && point.time_ms < to)
+          .map((point) =>
+            metricGaps.some(
+              (gap) =>
+                (gap.container_id === null ||
+                  gap.container_id === s.container.id) &&
+                gap.start_ms < point.time_ms + point.duration_ms &&
+                (gap.end_ms ?? to) > point.time_ms
+            )
+              ? { ...point, cpu_measured_ms: 0, memory_measured_ms: 0 }
+              : point
+          ),
+      })),
+    [sourceSeries, from, to, metricGaps]
+  );
+  const displayName = useCallback(
+    (container: DockerContainer) =>
+      `${container.name}${series.filter((s) => s.container.name === container.name).length > 1 ? ` · ${container.id.slice(0, 6)}` : ""}`,
+    [series]
+  );
   const plot = useComparisonPlotState(
     series,
     metric,
@@ -130,6 +146,24 @@ function ComparisonPlot({
       minute: "2-digit",
       second: duration < 60_000 ? "2-digit" : undefined,
     });
+  const legend = useMemo(
+    () => (
+      <Legend
+        items={series.map((s) => ({
+          label: displayName(s.container),
+          value: "",
+          step: "none",
+          color: seriesColor(s.slot),
+          pressed: pinnedFocus === s.container.id,
+          onFocus: () => onFocus(s.container.id),
+          onBlur: () => onFocus(null),
+          onClick: () =>
+            onPinFocus(pinnedFocus === s.container.id ? null : s.container.id),
+        }))}
+      />
+    ),
+    [series, displayName, pinnedFocus, onFocus, onPinFocus]
+  );
   return (
     <div {...brushScopeProps}>
       <SectionCard
@@ -173,21 +207,7 @@ function ComparisonPlot({
           )}
         </div>
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-          <Legend
-            items={series.map((s) => ({
-              label: displayName(s.container),
-              value: "",
-              step: "none",
-              color: seriesColor(s.slot),
-              pressed: pinnedFocus === s.container.id,
-              onFocus: () => onFocus(s.container.id),
-              onBlur: () => onFocus(null),
-              onClick: () =>
-                onPinFocus(
-                  pinnedFocus === s.container.id ? null : s.container.id
-                ),
-            }))}
-          />
+          {legend}
           <Button
             variant="ghost"
             size="sm"

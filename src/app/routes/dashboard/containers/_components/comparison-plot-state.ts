@@ -68,18 +68,22 @@ export function useComparisonPlotState(
     metric === "cpu" ? 0.1 : 1024 * 1024
   );
   const active = pinnedFocus ?? focused;
-  const plotSeries = series.map((s) => ({
-    ...s,
-    geometry: buildSeriesRuns(
-      s.points,
-      metric,
-      from,
-      to,
-      1000,
-      HEIGHT - 2,
-      ceiling
-    ),
-  }));
+  const plotSeries = useMemo(
+    () =>
+      series.map((s) => ({
+        ...s,
+        geometry: buildSeriesRuns(
+          s.points,
+          metric,
+          from,
+          to,
+          1000,
+          HEIGHT - 2,
+          ceiling
+        ),
+      })),
+    [series, metric, from, to, ceiling]
+  );
   const rows = series
     .map((s) => {
       const point = s.points.find((p) => p.time_ms === cursor);

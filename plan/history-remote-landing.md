@@ -145,14 +145,17 @@ properties. Preserve the QA host's identity and history.
   packaged `Contents/Resources/agent/kelvo-agent-<triple>` resources exist and match
   the built bytes and compiled digests. `build-app.sh` can succeed without agents
   when pinned build tools are missing, so its exit status is insufficient.
-- [ ] Use an explicit same-version agent update for the existing QA host, through
+- [x] Use an explicit same-version agent update for the existing QA host, through
   the filtered `update_the_installed_agent` acceptance path. Current `0.1.0` builds
   do not offer an automatic update to another `0.1.0`. Do not add an update subsystem
-  or bump a public release solely for this source landing. Test the native Update
-  offer on a disposable host with an older-version fixture.
-- [ ] Verify the saved unit and effective systemd properties:
-  `MemoryHigh=100663296`, `MemoryMax=268435456`, `MemorySwapMax=0`. Confirm daemon
-  reload/restart applies them and that reboot preserves them.
+  or bump a public release solely for this source landing.
+- [ ] Test the native Update offer on a disposable host with an older-version
+  fixture.
+- [x] Verify the saved unit and effective systemd properties:
+  `MemoryHigh=134217728`, `MemoryMax=268435456`, `MemorySwapMax=0`. Confirm daemon
+  reload/restart applies them without a task-owned runtime override.
+- [ ] Verify that reboot preserves the saved limits. Reboot authorization has
+  not arrived; leave the designated QA server running.
 - [x] Complete a full `/` space scan under those persisted limits while remote
   detail is visible. Record scan completion, sampler responsiveness, restart count,
   cgroup `memory.current`, anon/file/slab from `memory.stat`, swap, pressure,
@@ -175,10 +178,12 @@ properties. Preserve the QA host's identity and history.
 
 ## 6 Review and verify the final candidate
 
-- [ ] Capture fresh light/dark screenshots of the affected modules, custom range
+- [x] Capture fresh light/dark screenshots of the affected modules, custom range
   controls, long/fixed charts and gallery. Compare with the design system and
   neighboring screens, including narrow layouts, keyboard use and reduced motion.
-  Record each intentional difference. Verify the picker in native WKWebView too.
+  Record each intentional difference.
+- [ ] Verify the picker in native WKWebView too. Native UI automation timed out;
+  browser WebKit evidence does not complete this check.
 - [x] Dispatch fresh CE code-reviewer passes over the final range diff and native
   lifecycle diff, including all new files and regressions. Resolve each finding or
   disprove it with evidence. Earlier reviews are findings to address, not approval.
@@ -437,3 +442,101 @@ The switcher follow-up passed the full frontend check: 194 files / 1,275 tests,
 type checks and lint. All 120 affected Docker Chromium/WebKit checks passed.
 Current light/dark storage screenshots preserve the existing layout and styling;
 there are no visible design differences from caching the unchanged subtree.
+
+
+### Warm Linux working-set correction (2026-10-24)
+
+The late warm check disproved the 96M soft-limit acceptance: after more than
+three hours the agent held about 104 MB of anonymous memory and no file cache.
+A full root scan reached a full-memory-pressure `avg10` of about 67%.
+Raising only the runtime high limit to 128M let the active scan finish; a fresh
+scan on the same PID completed in 33 seconds, with 29 distinct measured frames
+and three successful cancel/release cycles. No hard-limit/OOM or swap event
+occurred. These observations establish reclaim pressure, not a missed-sample
+count or a proven long-term memory plateau.
+
+Both generated units now use a 128M soft limit for working-set headroom; the 256M hard
+backstop and zero swap are unchanged. Their two assertions fail against the old
+96M templates and pass after the change. The complete remote crate suite passes.
+The independent native reviewer approved the templates and the opt-in acceptance
+helper. D-116 distinguishes summary-only footprint measurements from the warm
+detail workload.
+
+Both static musl agents were rebuilt and passed ELF alignment checks. The normal
+installed-agent update preserved host `570924aa-dc29-4105-9ef2-7df7ec34d84f`, epoch
+`63c4ee6e-4b36-4aad-8c11-6305e16db53d` and history. The exact task-owned runtime
+MemoryHigh override was removed; saved and effective limits are now 128M / 256M /
+zero swap with only vendor drop-ins remaining. Continuous detail demand through
+the full retention hour, another full scan and repeated post-release observations
+are still running. The acceptance helper checks frame/query progress; its printed
+PID, memory, swap/OOM counters and PSI deltas must be assessed separately.
+
+Hosted run `40148227337` at `d85447b` passed all 430 functional browser checks on
+both Ubuntu and macOS, native/Linux suites and bindings. The Ubuntu run had two
+recovered first-attempt timeouts; macOS functional cases all passed first try.
+The macOS performance step failed broad ScriptDuration/long-task checks and hit
+the existing 600-second suite cap after retries. The local normal push hook had
+passed all ten unchanged gates. A fresh-runner retry and performance review are
+underway; the hosted gate is not accepted merely from local results.
+
+
+The multi-controller acceptance review found the same counted-demand defect in
+`AgentHost` that had already been repaired in the app shell. Repeated merged
+`detail=true` values incremented the engine counter, so disconnecting controllers
+could leave detail collection active. The agent now forwards only aggregate
+boolean transitions under the existing interest lock. A real-engine regression
+covers repeated requests, overlapping sessions, unrelated process interest,
+local/remote overlap and the final release back to background mode. Removing
+the guard fails with two demands instead of one; the restored agent suite passes
+all 19 unit tests. The test waits for the following engine command before checking
+the asynchronously published background status.
+
+Both agent binaries were rebuilt with that repair, and the normal QA update again
+preserved identity, epoch and history. The previous partial soak was intentionally
+interrupted and retained only as diagnostic evidence. A fresh full retention-hour
+run started at 01:53 UTC on October 25 against the corrected aarch64 binary,
+with the saved 128M / 256M / zero-swap unit and no task-owned runtime override.
+
+A separate temporary diagnostic branch ran unchanged Containers, Overview and
+CPU 1h gates in baseline/candidate/candidate/baseline order on one hosted runner.
+Both baseline Containers samples failed (45.75 / 60.27 ms/s), as did the improved
+candidate (43.87 / 39.15). CPU varied within both revisions, so these samples do
+not establish a systematic new range regression. Provisioning and Spotlight work
+were present at sample boundaries, but that alone does not explain each failure.
+The diagnostic retains every nonzero gate result separately from collection-job
+success; it changes no production assertions or budgets.
+
+Candidate profiles identified chart geometry, paths and legend work repeating at
+1 Hz while the displayed Containers history range advances every 10 seconds.
+Derived series and geometry now retain their identity when their inputs are
+unchanged; the existing line and legend subtrees are cached at those boundaries.
+Controls and notices still receive live updates. The real-component/transport
+regression verifies idle history while live table values change, then verifies
+bucket, hover, pin and metric changes. It fails on the old rendering path and
+also fails when legend caching is deliberately invalidated. Review approved the
+complete cache inputs. All 136 Containers unit/integration tests and all 120
+Chromium/WebKit Docker checks passed, including custom lines, brush interactions,
+coverage, tooltip and resize behavior. Full performance measurement is pending.
+
+The performance helper also accepted reloads during warm-up without repeating
+readiness or the full warm-up, and returned its third sample even if that sample
+spanned another reload. Two real-browser regressions reproduce these failures:
+one accepted only about three seconds of warm-up, and repeated reloads returned
+a result instead of rejecting it. The helper now checks document identity across
+readiness, warm-up and measurement, retries readiness after a reload, and rejects
+three invalid attempts. Both regressions pass after the fix. Budgets, sample
+lengths, retries and suite caps are unchanged. CI prints read-only runner load and
+process diagnostics before performance measurement; this does not establish that
+runner contention caused any particular failed sample.
+
+The complete local check and bindings gate passed with 1,071 Rust tests (48
+ignored) and 1,276 frontend tests in 195 files. Final dark/light Containers and
+gallery captures match existing typography, surfaces, spacing and chart styling;
+there are no intentional visual differences from caching the existing subtrees.
+
+The final local performance run passed all 12 cases, including both reload
+regressions and all ten existing gates. Containers measured 32.66 ms/s, CPU 1h
+26.64, GPU 1h 26.95 and Power 1h 33.42, with no long tasks in those samples.
+Overview measured 33.79 ms/s; Performance mode measured 16.05 against 34.07
+plain. Opening and hidden-window resume also passed. The helper discarded and
+repeated a sample that spanned a reload. The separate final typecheck passed.

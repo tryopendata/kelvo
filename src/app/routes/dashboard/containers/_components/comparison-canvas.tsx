@@ -8,6 +8,7 @@ import type {
   DockerCoverage,
   DockerHistoryPoint,
 } from "@core/generated/bindings";
+import { useMemo } from "react";
 import { BrushOverlay } from "~/components/brush-overlay";
 import {
   ChartFrame,
@@ -73,6 +74,17 @@ export function ComparisonCanvas({
     rows,
     link,
   } = plot;
+  const lines = useMemo(
+    () => (
+      <ComparisonLines
+        plotSeries={plotSeries}
+        active={active}
+        onFocus={onFocus}
+        plotWidth={plotWidth}
+      />
+    ),
+    [plotSeries, active, onFocus, plotWidth]
+  );
   return (
     <ChartFrame
       height={HEIGHT}
@@ -113,12 +125,7 @@ export function ComparisonCanvas({
           ceiling={ceiling}
           height={HEIGHT}
         />
-        <ComparisonLines
-          plotSeries={plotSeries}
-          active={active}
-          onFocus={onFocus}
-          plotWidth={plotWidth}
-        />
+        {lines}
         {cursor !== null && (
           <line
             x1={((cursor - from) / (to - from)) * 1000}
