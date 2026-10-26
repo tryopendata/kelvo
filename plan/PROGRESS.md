@@ -4,13 +4,52 @@ This file tracks where Kelvo is against the plan. Task-level checkboxes live in 
 
 Agents update this file whenever a phase starts or finishes. Each update adds a log entry: what changed, how it was verified, and anything left open. They also tick the matching checkboxes in the version doc.
 
-## Release 0.3.0 (2026-10-26, preparing)
+## Release 0.3.0 (2026-10-26, verified draft)
 
-Preparing the minor release from main with Timeline investigation, durable app/process
-history, compact tray cards, issue #1 fixes and host-owned automatic updates.
-The release notes, changelog and public usage documentation are being updated with
-`ce:writer`. Native packaging and signing run locally; hosted validation uses Linux.
-Release verification and publication results will be recorded here when complete.
+Prepared [Kelvo 0.3.0](https://github.com/tryopendata/kelvo/releases/tag/untagged-684773399e4def6a3bc8)
+from `484c6036bee4b197a4ed30a26ee97ea3b80e693d` on main. The matching tag is
+pushed. The nine-asset draft remains unpublished pending manual acceptance.
+Versions, changelog, release notes, README usage/storage/update guidance and release
+examples are updated using `ce:writer`.
+
+Normal local push hooks passed: 1,355 frontend tests, 1,191 Rust test executions
+(55 ignored), generated bindings and all 13 browser-performance cases. The functional
+browser suite passed all 476 cases on a full rerun; the first run had seven Chromium
+container click/navigation timeouts, preserved without an established root cause.
+One push attempt completed every check but detected an unrelated documentation edit
+made during the hook. A retry measured 10.04 core allocations/tick against the limit
+of 10; an isolated diagnostic measured 9.39, and the final full gate passed without
+changing limits or test selection.
+
+A separate Linux CI run exposed a clock-dependent Docker rollback fixture: during
+the first 20 seconds of a quarter hour, its simulated samples could exceed the real
+shutdown timestamp. The fixture now starts one quarter hour earlier. A deliberate
+future-anchor simulation reproduced the same batch-validation failure, and the
+corrected test passed. Production validation is unchanged.
+
+[Release validation](https://github.com/tryopendata/kelvo/actions/runs/40321924097)
+passed on Linux. [Exact-tag CI](https://github.com/tryopendata/kelvo/actions/runs/40321923700)
+passed all five Linux-only jobs: 1,355 frontend tests, 476 browser cases (three
+WebKit cases passed on retry), and 939 Rust executions including packaged-agent
+and history checks (33 ignored). The WebKit retries involved click stability/page
+closure in host selection, Linux setup and Clear history; their cause is unresolved.
+These results verify the tagged source, not this later documentation-only record.
+Native packaging ran locally with the existing updater key. Verified the signed
+catalog, protocol range, archive version, every advertised binary, bundled agents,
+Mac code signature and system-only runtime dependencies. Tampering was rejected
+without changing the old temporary app, and the valid updater archive installed
+successfully into an isolated bundle. The DMG internal checksum passed. Downloaded
+all nine draft files, matched the eight advertised checksums and the checksum file,
+and verified the app signature inside the downloaded DMG.
+
+Isolated native restart acceptance passed ordinary, background and remote-setup
+launches, including persistent identity/history and shutdown. A fresh-account or
+second-Mac installation, a real update from 0.2.0 preserving user settings/history,
+and a genuine login-session launch remain unverified. The user has been asked
+whether to defer these manual acceptance checks before publication. Existing
+installed apps and user data were not replaced during release verification.
+Evidence is retained under `target/qa/release-0.3.0/` and
+`target/qa/pre-push/20261026T121312Z-T7tsEE/`.
 
 ## Product UX updates (2026-10-26, landed)
 
