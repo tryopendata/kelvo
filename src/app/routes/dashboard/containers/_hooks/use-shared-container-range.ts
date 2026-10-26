@@ -17,7 +17,7 @@ export function useSharedContainerRange(nowMs: number, prefix = "") {
   const { apply, range } = navigation;
   const settings = useSettingsStore();
   const [params, setParams] = useSearchParams();
-  const { key } = useLocation();
+  const { key, state } = useLocation();
   const attempted = useRef("");
   // A retained-browser link is more specific than legacy main-chart parameters.
   const retainedLink = params.has("retainedRange") || params.has("retainedEnd");
@@ -60,6 +60,7 @@ export function useSharedContainerRange(nowMs: number, prefix = "") {
         : [rangeKey, endKey, ...(linkPrefix ? [] : ["at"])];
       setParams((current) => consumeRangeLink(current, params, consumed), {
         replace: true,
+        state,
       });
     });
   }, [
@@ -78,6 +79,7 @@ export function useSharedContainerRange(nowMs: number, prefix = "") {
     settings,
     setParams,
     params,
+    state,
   ]);
   const windowMs = navigation.range?.windowMs ?? 900_000;
   const endMs = navigation.range?.endMs ?? null;

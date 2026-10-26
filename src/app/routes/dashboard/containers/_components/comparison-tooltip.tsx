@@ -13,6 +13,7 @@ import {
   SeriesSwatch,
 } from "~/components/charts/chart-tooltip";
 import type { useBrushRange } from "~/stores/brush-store";
+import { useSettingsStore } from "~/stores/settings-store";
 import {
   containerReturnState,
   isContainerDetailClick,
@@ -52,6 +53,7 @@ export function ComparisonTooltip({
 }) {
   const navigate = useNavigate();
   const location = useLocation();
+  const settings = useSettingsStore();
   return (
     <ChartTooltipShell
       className={`top-2 ${pinned ? "pointer-events-auto" : ""} ${(selection?.fromMs ?? cursor) > (from + to) / 2 ? "left-2" : "right-2"} max-w-full text-[11px]`}
@@ -71,7 +73,12 @@ export function ComparisonTooltip({
                 if (!isContainerDetailClick(event)) return;
                 event.preventDefault();
                 void navigate(link(row.container, row.point), {
-                  state: containerReturnState(location),
+                  state: {
+                    ...containerReturnState(location),
+                    chartWindow:
+                      settings.getState().snapshot?.settings.general
+                        .chart_window,
+                  },
                 });
               }}
             >

@@ -1,5 +1,5 @@
 import { mockContainer, mockHistoryPoints } from "@core/mock/docker";
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { renderWithProviders } from "@tests/test-utils";
 import { expect, it } from "vitest";
 import { ComparisonChart } from "./comparison-chart";
@@ -93,6 +93,7 @@ for (const via of ["tooltip", "keyboard"] as const) {
     if (!main || !scroller) throw new Error("Missing scroll surfaces");
     main.scrollTop = 119;
     scroller.scrollTop = 81;
+    await act(async () => {});
     if (via === "tooltip")
       fireEvent.click(screen.getByRole("link", { name: "api" }));
     else {
@@ -102,6 +103,7 @@ for (const via of ["tooltip", "keyboard"] as const) {
     await waitFor(() =>
       expect(result.router.state.location.state).toEqual({
         back: route,
+        chartWindow: "15m",
         scroll: 119,
         tableScroll: 81,
       })

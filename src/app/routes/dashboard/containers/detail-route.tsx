@@ -1,4 +1,8 @@
-import type { DockerContainer, DockerSnapshot } from "@core/generated/bindings";
+import type {
+  ChartWindow,
+  DockerContainer,
+  DockerSnapshot,
+} from "@core/generated/bindings";
 import { dockerKeys } from "@core/query-keys";
 import { unwrap } from "@core/transport";
 import { useQuery } from "@tanstack/react-query";
@@ -6,6 +10,7 @@ import { useEffect, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router";
 import { PageHeader } from "~/components/page-header";
 import { Button } from "~/components/ui/button";
+import { useRangeNavigation } from "~/hooks/use-range-navigation";
 import { useTransport } from "~/lib/transport-context";
 import { useHostId } from "~/stores/host-store";
 import {
@@ -44,6 +49,7 @@ function LocalContainerDetailRoute() {
   const host = useHostId();
   const navigate = useNavigate();
   const location = useLocation();
+  const navigation = useRangeNavigation();
   const { snapshot } = useDocker();
   const now = Math.floor((snapshot?.now_ms ?? Date.now()) / 10_000) * 10_000;
   const sharedRange = useSharedContainerRange(now);
@@ -94,6 +100,7 @@ function LocalContainerDetailRoute() {
     back?: string;
     scroll?: number;
     tableScroll?: number;
+    chartWindow?: ChartWindow;
   } | null;
   return (
     <ContainerActionProvider snapshot={snapshot}>
@@ -102,14 +109,22 @@ function LocalContainerDetailRoute() {
           variant="ghost"
           size="sm"
           className="self-start"
-          onClick={() =>
-            navigate(back?.back ?? "/dashboard/containers", {
+          disabled={navigation.pending}
+          onClick={async () => {
+            if (
+              back?.chartWindow &&
+              JSON.stringify(back.chartWindow) !==
+                JSON.stringify(navigation.range?.window)
+            ) {
+              if (!(await navigation.apply(back.chartWindow))) return;
+            }
+            void navigate(back?.back ?? "/dashboard/containers", {
               state: {
                 scroll: back?.scroll ?? 0,
                 tableScroll: back?.tableScroll ?? 0,
               },
-            })
-          }
+            });
+          }}
         >
           ← Containers
         </Button>

@@ -388,7 +388,7 @@ test("task script identifies top CPU and memory, links chart focus and scopes a 
     page.getByRole("img", { name: /^Memory by container/ })
   ).toHaveAttribute(
     "aria-label",
-    /^Memory by container, 15m, (api, worker|worker, api)$/
+    /^Memory by container, 15 minutes, (api, worker|worker, api)$/
   );
 });
 
@@ -878,7 +878,9 @@ for (const via of ["table", "tooltip", "keyboard"] as const) {
     );
     const table = page.getByRole("table", { name: /^Containers ·/ });
     const scroller = table.locator("..");
-    const chart = page.getByRole("img", { name: /^Memory by container, 1h/ });
+    const chart = page.getByRole("img", {
+      name: /^Memory by container, selected dates/,
+    });
     await expect(chart).toHaveAttribute("aria-label", /service-4, service-9$/);
     const title = await table.getAttribute("aria-label");
     await scroller.evaluate((element) => {
