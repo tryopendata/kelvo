@@ -217,3 +217,39 @@ fn restarted_recorder_excludes_the_prior_partial_bucket_and_disabled_resources()
     recorder.drop_after(12_000);
     assert!(recorder.snapshots().is_empty());
 }
+
+#[test]
+fn a_partial_gpu_read_never_turns_an_unobserved_process_into_measured_zero() {
+    let mut recorder = UsageRecorder::default();
+    let mut buf = buf(10_000);
+    buf.set_process_gpu_measured(10_000);
+    buf.set_usage_observation(
+        1,
+        UsageObservation {
+            span_ms: 10_000,
+            causes: [Some(UsageIncompleteCause::ReadFailed), None, None, None],
+        },
+    );
+    let mut unknown = row(1, 10.0, 100, 10.0);
+    unknown.gpu_pct = None;
+    let measured = row(2, 10.0, 100, 10.0);
+    recorder.record(
+        tick(10_000),
+        &[unknown, measured],
+        &buf,
+        [true; 5],
+        [true; 5],
+    );
+    let b = recorder.snapshots().remove(0);
+    let unknown = b.processes.iter().find(|p| p.pid == 1).unwrap();
+    assert_eq!(unknown.facts.coverage[1].measured_ms, 0);
+    assert_eq!(b.apps[0].facts.gpu_seconds, 1.0);
+    assert_ne!(
+        b.apps[0].facts.coverage[1].causes & cause_mask(UsageIncompleteCause::ReadFailed),
+        0
+    );
+    assert_ne!(
+        b.source[1].causes & cause_mask(UsageIncompleteCause::ReadFailed),
+        0
+    );
+}

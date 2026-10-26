@@ -265,7 +265,10 @@ impl UsageRecorder {
                 for (start, from, to) in self.ranges(ts.saturating_sub(span), ts) {
                     let slot = self.slot(start);
                     let source = slot.bucket.source.get(1).copied().unwrap_or_default();
-                    let pct = f64::from(row.gpu_pct.unwrap_or(0.0));
+                    let Some(pct) = row.gpu_pct else {
+                        continue;
+                    };
+                    let pct = f64::from(pct);
                     let (facts, coverage) = slot.process(row, &app);
                     add_gpu(facts, coverage, pct, from, to, source);
                     let (facts, coverage) = slot.app(&app);

@@ -13,6 +13,7 @@ use kelvo_schema::{Capabilities, Entitlement, Module};
 use kelvo_store::usage::{UsageBucket, cause_mask};
 
 struct Processes {
+    partial_gpu: bool,
     previous: Option<u64>,
     reset_during_read: Option<std::sync::Arc<std::sync::Mutex<Option<kelvo_engine::LiveHub>>>>,
 }
@@ -36,6 +37,7 @@ impl Collector for Processes {
     fn fill_capabilities(&self, caps: &mut Capabilities) {
         caps.process_energy = true;
         caps.process_network = true;
+        caps.process_gpu = self.partial_gpu;
     }
     fn sample(&mut self, t: &Tick, out: &mut SampleBuf) -> Result<(), CollectError> {
         let Some(previous) = self.previous.replace(t.continuous_ns) else {
@@ -74,6 +76,17 @@ impl Collector for Processes {
             });
         }
         out.observe_processes((secs * 1000.0).round() as u64, 33, 32, true);
+        if self.partial_gpu {
+            out.set_process_gpu_measured((secs * 1000.0).round() as u64);
+            out.set_usage_observation(
+                1,
+                UsageObservation {
+                    span_ms: (secs * 1000.0).round() as u64,
+                    causes: [Some(UsageIncompleteCause::ReadFailed), None, None, None],
+                },
+            );
+            out.push_process_gpu(kelvo_collect::ProcessGpu { pid: 0, pct: 10.0 });
+        }
         if let Some(live) = self
             .reset_during_read
             .as_ref()
@@ -103,6 +116,7 @@ fn harness(name: &str) -> Harness {
     let mut h = Harness::new(
         name,
         vec![Box::new(Processes {
+            partial_gpu: false,
             previous: None,
             reset_during_read: None,
         })],
@@ -273,6 +287,7 @@ fn reset_during_a_collector_read_discards_that_batch_including_old_session_late_
     let mut h = Harness::new(
         "durable-reset-during-read",
         vec![Box::new(Processes {
+            partial_gpu: false,
             previous: None,
             reset_during_read: Some(reset.clone()),
         })],
@@ -352,4 +367,83 @@ fn failed_commit_keeps_recent_facts_and_retry_does_not_double_count() {
     let after = read();
     assert_eq!(after.apps, before.apps);
     assert_eq!(after.range, before.range);
+}
+
+#[test]
+fn public_partial_gpu_queries_keep_unknown_children_unavailable_and_observed_app_lower_bound() {
+    let (gpu, _) = fake(
+        "gpu_per_process",
+        Cadence::OnDemand(Interest::GpuProcesses),
+        &[Module::Gpu],
+        &[],
+    );
+    let mut h = Harness::new(
+        "durable-partial-gpu",
+        vec![
+            gpu,
+            Box::new(Processes {
+                previous: None,
+                partial_gpu: true,
+                reset_during_read: None,
+            }),
+        ],
+        &settings_all_on(),
+    );
+    h.visible();
+    h.ctl.set_process_interest(Some(0));
+    h.ticks(12);
+    let store = h.store.as_ref().unwrap();
+    let request = HistoricalUsageRequest {
+        host: h.host,
+        from_ms: T0,
+        to_ms: T0 + 20_000,
+        by: HistoricalUsageMetric::Gpu,
+        app_names: Vec::new(),
+    };
+    let apps = store
+        .reader()
+        .unwrap()
+        .historical_usage_after(&request, || {
+            h.live.recent_usage_apps(request.from_ms, request.to_ms)
+        })
+        .unwrap();
+    assert!(!apps.ranking_complete);
+    assert_eq!(apps.apps[0].figures.gpu_avg_pct, Some(10.0));
+    let request = kelvo_schema::durable_usage::UsageProcessRequest {
+        host: h.host,
+        from_ms: T0,
+        to_ms: T0 + 20_000,
+        by: HistoricalUsageMetric::Gpu,
+        app_name: "App".into(),
+        page_size: 100,
+        cursor: None,
+    };
+    let reply = store
+        .reader()
+        .unwrap()
+        .usage_processes_after(&request, || {
+            h.live
+                .recent_usage_processes(request.from_ms, request.to_ms, "App")
+        })
+        .unwrap();
+    assert_eq!(
+        reply
+            .processes
+            .iter()
+            .find(|p| p.pid == 1)
+            .unwrap()
+            .figures
+            .gpu_avg_pct,
+        None
+    );
+    assert_eq!(
+        reply
+            .processes
+            .iter()
+            .find(|p| p.pid == 0)
+            .unwrap()
+            .figures
+            .gpu_avg_pct,
+        Some(10.0)
+    );
 }

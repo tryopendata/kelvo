@@ -321,7 +321,17 @@ impl Engine {
                 self.buf.sort_process_gpu();
                 for p in &mut procs {
                     // Absent from the GPU batch: no GPU time over the interval.
-                    p.gpu_pct = Some(self.buf.gpu_of(p.pid).map_or(0.0, |g| g.pct));
+                    let complete = self
+                        .buf
+                        .usage_observations()
+                        .get(1)
+                        .and_then(Option::as_ref)
+                        .is_none_or(|o| o.causes.iter().all(Option::is_none));
+                    p.gpu_pct = self
+                        .buf
+                        .gpu_of(p.pid)
+                        .map(|g| g.pct)
+                        .or_else(|| complete.then_some(0.0));
                 }
             }
             procs
