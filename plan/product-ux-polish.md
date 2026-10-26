@@ -473,3 +473,17 @@ shared native presentation alignment in ab0d5f6. Four focused integration files
 passed all 16 tests after combining the lanes. Agent verification covers 1,299
 frontend tests and 74 Chromium/WebKit cases; see [ux-timeline-execution.md](ux-timeline-execution.md).
 Durable attribution, comparison, final integrated acceptance and landing remain pending.
+
+Integrated recorder checkpoint: durable store/query commits 91afd2d and 8deb33a
+and engine commit 09c9565 are integrated. The real collector-to-recorder-to-store
+hour measured 3,596 rows, 5.721 MB payload and 15.079 MB WAL. Rows pass, but bytes
+exceed the approved 4 MB / 12 MB ceilings. This supersedes the passing synthetic
+write fixture as production feasibility evidence. Lossless five-minute batch
+compression is being implemented while preserving each ten-second fact and the
+independent app/process query paths. Dependent UI can proceed against unchanged
+contracts; landing remains blocked on repeated actual storage and CPU gates.
+
+Fixed historical selections cache their returned result and expose Refresh. They
+continue to show measured coverage and uncertainty. There is no inferred finality
+timestamp: late ownership discoveries can amend old uncertainty, so elapsed age
+alone cannot prove a selected interval final. Live refresh follows bucket changes.

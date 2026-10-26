@@ -18,9 +18,12 @@ UI and issue #1 fixes are integrated on the feature branch (0bef7ff), with focus
 evidence in [ux-native-execution.md](ux-native-execution.md). Nothing is landed yet.
 Shared Timeline range navigation, animation, annotations and historical lane summaries
 are integrated (fe3d029, ab0d5f6); focused evidence is in
-[ux-timeline-execution.md](ux-timeline-execution.md). Storage/performance feasibility
-still blocks dependent attribution and comparison work. Final integrated acceptance
-and review remain gates; prototype storage measurements are not app verification.
+[ux-timeline-execution.md](ux-timeline-execution.md). Durable store/query and engine
+recording are integrated (f1c9d4a, 02af8ff, b16d1cb). Attribution and comparison UI
+are underway against those contracts. The actual collector-to-store write gate
+failed despite a passing synthetic fixture; lossless batch compression is being
+implemented before repeating the gate. Final storage/performance acceptance,
+integrated verification and review remain blocking; fixtures are not app verification.
 
 ## Automatic updates (2026-10-25, landed; rollout acceptance pending)
 
