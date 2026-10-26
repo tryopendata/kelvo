@@ -45,17 +45,18 @@ test("Settings: interval, size limit and history notices", async ({
   await expect(page.getByText("to 60s")).toBeVisible();
 
   await page.getByRole("combobox", { name: "Keep history" }).click();
-  // Each option shows what it costs. With 15-minute buckets past 7 days
-  // (D-076), 90 days fits under 150 MB at the mock's series count; the
-  // "Limited to" copy is covered by the history-projection unit tests.
+  // Usage identities grow with retention, so the measured 90-day request
+  // exceeds the default 750 MB cap and discloses its shorter effective span.
   await expect(
     page.getByRole("option", { name: /^7 days about/ })
   ).toBeVisible();
   await expect(
-    page.getByRole("option", { name: /^90 days about \d+ MB/ })
+    page.getByRole("option", { name: /^90 days 750 MB, about \d+ days/ })
   ).toBeVisible();
   await page.getByRole("option", { name: /^90 days/ }).click();
-  await expect(page.getByText(/Limited to about/)).toBeHidden();
+  await expect(
+    page.getByText(/Limited to about.*by the 750 MB limit/)
+  ).toBeVisible();
   await shot(page, "settings-history-limit", info.project.name);
   expect(errors).toEqual([]);
 });

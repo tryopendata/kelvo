@@ -1,5 +1,10 @@
 import AxeBuilder from "@axe-core/playwright";
-import { expect, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
+
+const moduleHeader = (page: Page) =>
+  page
+    .locator("header")
+    .filter({ has: page.getByRole("heading", { level: 1 }) });
 
 test("fixed dates and Live work across Disk, Network and Power", async ({
   page,
@@ -7,7 +12,9 @@ test("fixed dates and Live work across Disk, Network and Power", async ({
   await page.goto(
     "/?window=dashboard&route=/dashboard/disk&theme=dark&ticks=0"
   );
-  await page.getByRole("button", { name: "Time range: 15m" }).click();
+  await moduleHeader(page)
+    .getByRole("button", { name: "Time range: 15m" })
+    .click();
   await page.getByRole("radio", { name: "Date range", exact: true }).click();
   await page.getByLabel("From", { exact: true }).fill("2026-10-01 10:00");
   await page.getByLabel("To", { exact: true }).fill("2026-10-03 10:00");
@@ -25,9 +32,11 @@ test("fixed dates and Live work across Disk, Network and Power", async ({
   await live.click();
   await expect(live).toHaveAttribute("aria-pressed", "true");
   await expect(
-    page.getByRole("button", { name: "Time range: 2d" })
+    moduleHeader(page).getByRole("button", { name: "Time range: 2d" })
   ).toBeVisible();
-  await page.getByRole("button", { name: "Time range: 2d" }).click();
+  await moduleHeader(page)
+    .getByRole("button", { name: "Time range: 2d" })
+    .click();
   await page.getByRole("radio", { name: "Date range", exact: true }).click();
   await page.getByLabel("From", { exact: true }).fill("2026-10-01 10:00");
   await page.getByLabel("To", { exact: true }).fill("2026-10-03 10:00");
@@ -44,10 +53,17 @@ test("fixed dates and Live work across Disk, Network and Power", async ({
   await expect(
     page.getByText("App power lines are available for ranges up to 1 hour.")
   ).toBeVisible();
-  await page.getByRole("radio", { name: "5m", exact: true }).click();
+  await moduleHeader(page)
+    .getByRole("radio", { name: "5m", exact: true })
+    .click();
   await expect(
     page.getByRole("heading", { name: "Power draw, last 5 minutes" })
   ).toBeVisible();
+  await expect(
+    page
+      .getByRole("region", { name: "Battery charge" })
+      .getByRole("radio", { name: "5m", exact: true })
+  ).toBeChecked();
 });
 
 /**
@@ -57,10 +73,12 @@ test("fixed dates and Live work across Disk, Network and Power", async ({
  */
 test("a window picked on CPU carries to Memory and Power", async ({ page }) => {
   await page.goto("/?window=dashboard&route=/dashboard/cpu&theme=dark");
-  await page.getByRole("button", { name: "Time range: 15m" }).click();
+  await moduleHeader(page)
+    .getByRole("button", { name: "Time range: 15m" })
+    .click();
   await page.getByRole("button", { name: "Last 30 minutes" }).click();
   await expect(
-    page.getByRole("button", { name: "Time range: 30m" })
+    moduleHeader(page).getByRole("button", { name: "Time range: 30m" })
   ).toBeVisible();
 
   await page.locator("[data-sidebar-item][href='/dashboard/memory']").click();
@@ -68,7 +86,7 @@ test("a window picked on CPU carries to Memory and Power", async ({ page }) => {
     page.getByRole("heading", { name: "Memory", exact: true })
   ).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "Time range: 30m" })
+    moduleHeader(page).getByRole("button", { name: "Time range: 30m" })
   ).toBeVisible();
   await expect(page.getByText("Swap, last 30 minutes")).toBeVisible();
 
@@ -77,17 +95,24 @@ test("a window picked on CPU carries to Memory and Power", async ({ page }) => {
     page.getByRole("heading", { name: "Power & Sensors", exact: true })
   ).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "Time range: 30m" })
+    moduleHeader(page).getByRole("button", { name: "Time range: 30m" })
   ).toBeVisible();
   await expect(
     page.getByRole("heading", { name: "Power draw, last 30 minutes" })
+  ).toBeVisible();
+  await expect(
+    page
+      .getByRole("region", { name: "Battery charge" })
+      .getByRole("button", { name: "Time range: 30m" })
   ).toBeVisible();
 });
 
 for (const theme of ["dark", "light"] as const) {
   test(`long and fixed ranges in ${theme}`, async ({ page }) => {
     await page.goto(`/?window=dashboard&route=/dashboard/cpu&theme=${theme}`);
-    await page.getByRole("button", { name: "Time range: 15m" }).click();
+    await moduleHeader(page)
+      .getByRole("button", { name: "Time range: 15m" })
+      .click();
     await expect(
       page.getByRole("button", { name: "Last 90 days" })
     ).toBeVisible();
@@ -113,29 +138,37 @@ for (const theme of ["dark", "light"] as const) {
     const cells = await heatmap.locator(".h-2\\.5").count();
     expect(cells).toBeGreaterThan(0);
     expect(cells).toBeLessThanOrEqual(14 * 61);
-    await page.getByRole("button", { name: "Time range: 90d" }).click();
+    await moduleHeader(page)
+      .getByRole("button", { name: "Time range: 90d" })
+      .click();
     await page.getByRole("button", { name: "Last 7 days" }).click();
     await expect(
       page.getByRole("heading", { name: "Per-core load, last 7 days" })
     ).toBeVisible();
     await expect(page.getByText("Loading chart history…")).toHaveCount(0);
-    await page.getByRole("button", { name: "Time range: 7d" }).click();
+    await moduleHeader(page)
+      .getByRole("button", { name: "Time range: 7d" })
+      .click();
     await page.getByRole("radio", { name: "Date range", exact: true }).click();
     await page.getByLabel("From", { exact: true }).fill("2026-10-01 10:00");
     await page.getByLabel("To", { exact: true }).fill("2026-10-01 16:00");
     await page.getByRole("button", { name: "Apply", exact: true }).click();
     await expect(
-      page.getByRole("button", { name: "Time range: Custom" })
+      moduleHeader(page).getByRole("button", { name: "Time range: Custom" })
     ).toBeVisible();
     await expect(
       page.getByRole("heading", { name: "Per-core load, selected dates" })
     ).toBeVisible();
     await expect(
-      page.getByText(/2026-10-01 10:00 to 2026-10-01 16:00/)
+      page.getByRole("status").filter({
+        hasText: /2026-10-01 10:00 to 2026-10-01 16:00/,
+      })
     ).toBeVisible();
-    await page.getByRole("radio", { name: "5m", exact: true }).click();
+    await moduleHeader(page)
+      .getByRole("radio", { name: "5m", exact: true })
+      .click();
     await expect(
-      page.getByRole("radio", { name: "5m", exact: true })
+      moduleHeader(page).getByRole("radio", { name: "5m", exact: true })
     ).toBeChecked();
     await expect(
       page.getByRole("heading", { name: "Per-core load, last 5 minutes" })

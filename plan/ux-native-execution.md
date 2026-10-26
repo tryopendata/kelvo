@@ -203,3 +203,35 @@ and main is 600 px, also without overflow; the table scrolls internally to the
 remaining columns and its footer. The module-memory-day-card-820-dark screenshot
 records this intentional narrow-layout behavior. Only the existing favicon 404
 appeared in the browser console. This follow-up changes no native geometry.
+
+## Final integration regression follow-up
+
+Release identity selection initially used cfg!, which still typechecks the debug
+branch and referenced a debug-only constant in release. Commit d610ac5 replaces
+that with compile-time cfg branches, including the regression expectation. The
+debug identity test passes in the app crate; the exact extracted function and test
+also compile and pass with debug assertions disabled. Normal Rust hooks pass.
+The orchestrator owns rebuilding the full release candidate. No app was launched.
+
+Performance-log review found no new heap work in process observation: it writes
+fixed arrays of optional enum evidence. The existing first-seen identity path
+allocates a path, optional argv buffer and String, app identity, Arc identities,
+and sometimes path-component storage. The emitted-new-row counter only counts
+processes that survive long enough to produce rates; short-lived processes may
+allocate identities without ever appearing in this count. Commit 98f5157 corrects
+the misleading one-name-allocation wording. SelfCpu and libproc implementation
+are unchanged from main. Thread-local accounting excludes other threads directly;
+external builds can change the measured workload through process churn. The
+aggregate log cannot assign the residual tray engine-core excess to one source;
+quiet baseline/candidate measurement remains required. No ceiling changed.
+
+Browser integration assertions now target the module header range controls and
+the range-status summary rather than matching every repeated date/control on a
+page. Power explicitly checks that its Battery card follows both 30m and 5m.
+The history Settings scenario now proves 90 days discloses shortening under
+the measured 750 MB cap. All 18 cases in chart-window.spec.ts and
+interval-history.spec.ts pass across Chromium and WebKit, including both themes
+and existing axe checks. They ran against an explicitly started integration-tree
+Vite server on port 1421, because this lane predates the measured-growth source;
+no stale server was adopted. The server was stopped immediately after the run.
+The Settings screenshot visibly shows 750 MB and limiting to about 45 days.
