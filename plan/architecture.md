@@ -1141,7 +1141,7 @@ libraries automatically enter the check. The helper receives a separate Linux
 `cargo check --all-targets`; Linux helper runtime support is not a product promise.
 Stable hosted macOS CI checks the native shell, collectors, bindings and packaging on
 push/PR; preview macOS is manual and advisory. Local pre-push checks remain useful
-feedback. Workflow triggers do not establish branch-protection requirements. The macOS collectors are `cfg(target_os = "macos")`; the Linux module is a stub until v4.1 that returns `Unsupported`. Running natively on Linux is simpler than `--target x86_64-unknown-linux-gnu` from macOS, because bundled SQLite runs a C build script that would need a cross compiler. The job's purpose is to catch a macOS-only API leaking into a shared crate years before the agent needs to build there.
+feedback. Workflow triggers do not establish branch-protection requirements. The macOS collectors are `cfg(target_os = "macos")`; the Linux module now supplies native `/proc`, sysfs and cgroup collectors for the headless agent (D-116). Running natively on Linux is simpler than `--target x86_64-unknown-linux-gnu` from macOS, because bundled SQLite runs a C build script that would need a cross compiler. The job checks portable crates and the Linux agent, catching macOS-only APIs leaking into shared code.
 
 ## Deliberately deferred
 

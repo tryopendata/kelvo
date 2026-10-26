@@ -30,7 +30,7 @@ gallery at `/?route=/dev/gallery`), and compare. Name every difference you leave
 crates/                    Rust workspace
   kelvo-schema/           metric catalog, series keys, HostInfo, Capabilities, Snapshot view
   kelvo-proto/            framing, CBOR codec, handshake, message types
-  kelvo-collect/          Collector trait; macos/ (sysinfo, IOReport, SMC/HID, IOKit); linux/ stub
+  kelvo-collect/          Collector trait; macos/ (sysinfo, IOReport, SMC/HID, IOKit); linux/ (/proc, sysfs, cgroups)
   kelvo-store/            SQLite: series interning, tiered rollups, gaps, cursors, pruning
   kelvo-engine/           sampler loop, rollups, detectors, bus, history lifecycle and queries
   kelvo-remote/           SSH sessions, protocol server/client, isolated history mirrors

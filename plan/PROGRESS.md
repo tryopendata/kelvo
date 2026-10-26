@@ -8,7 +8,11 @@ Agents update this file whenever a phase starts or finishes. Each update adds a 
 
 Preparing the next minor release from main: synchronized application/workspace
 versions and refreshed release notes for Linux hosts, history ranges, space reports
-and power charts. Release checks and publication evidence will follow here.
+and power charts. Added CHANGELOG.md; updated README setup/features, Linux architecture
+and roadmap status, generated agent guidance and the release procedure. Release
+manifest validation and its 3 tests passed; functional Chromium/WebKit: 432 passed
+in 1.9 minutes. The normal push hook supplies the full gate; hosted build and
+publication evidence will follow here.
 
 ## Start here (handoff, 2026-10-25, history/remote landing and QA)
 

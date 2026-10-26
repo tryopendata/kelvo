@@ -1,6 +1,6 @@
 # Kelvo plan
 
-This folder is the plan for Kelvo, from the first installable build through remote host monitoring. Start here, then read the doc for the version you are working on. Kelvo 0.1.0 is available through GitHub Releases; use [PROGRESS.md](PROGRESS.md) to distinguish implemented work, QA follow-ups and future plans.
+This folder is the plan for Kelvo, from the first installable build through remote host monitoring. Start here, then read the doc for the version you are working on. Kelvo releases are available through GitHub Releases; [CHANGELOG.md](../CHANGELOG.md) records the public versions; use [PROGRESS.md](PROGRESS.md) to distinguish implemented work, QA follow-ups and future plans.
 
 | Doc | What it covers |
 |---|---|

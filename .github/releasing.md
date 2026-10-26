@@ -20,7 +20,7 @@ are outside this release workflow.
 
 ## Publish
 
-1. Update the three versions and `RELEASE_NOTES.md`. Run `make check`,
+1. Update the three versions and `RELEASE_NOTES.md` plus `CHANGELOG.md`. Run `make check`,
    `bun run test:e2e`, and `python3 scripts/test-release-manifest.py`.
 2. Commit, push main, then create and push the matching `vMAJOR.MINOR.PATCH` tag.
 3. The Release workflow validates version agreement, checks the frontend, builds
@@ -46,7 +46,7 @@ With the signing key stored at the path above:
 TAURI_SIGNING_PRIVATE_KEY="$HOME/.config/kelvo/release/updater.key" \
 TAURI_SIGNING_PRIVATE_KEY_PASSWORD='' \
 bun run build:app --config src-tauri/tauri.release.conf.json --bundles app,dmg
-python3 scripts/release-manifest.py v0.1.0 --stage
+python3 scripts/release-manifest.py v0.2.0 --stage
 ```
 
 Use the actual version tag. `target/release-assets` must be empty before staging;

@@ -5,6 +5,7 @@ A menu bar system monitor for Apple Silicon Macs that keeps history.
 Kelvo shows CPU, GPU, memory, power and sensors, network, disk and battery once a second, and stores 30 days of it on disk. When the fans spun up at 3pm, you can scroll back and see which process did it.
 
 Kelvo is free and open source. Download the app below; no build tools are needed.
+See the [changelog](CHANGELOG.md) for release history.
 
 ![The Kelvo dashboard switching between modules](https://raw.githubusercontent.com/tryopendata/kelvo/assets/media/dashboard.webp)
 
@@ -72,9 +73,9 @@ rm -rf ~/.kelvo
 | CPU | Total and per-core load, efficiency and performance clusters, top processes |
 | GPU | Utilization, frequency, GPU time per process |
 | Memory | App, wired, compressed and cached memory, pressure, swap |
-| Power & Sensors | Package, CPU, GPU and Neural Engine power, temperatures, fan speeds, thermal state |
+| Power & Sensors | Power draw with per-app lines, thermal zone history, temperatures, fan speeds and thermal state |
 | Network | Rates per interface, download and upload per process |
-| Disk | Read and write rates, free space, top processes by disk activity |
+| Disk | Read and write rates, free space, top processes and an on-demand space report with a treemap |
 | Battery | Charge, health, cycle count, power in or out, time remaining |
 | Processes | Every process, with CPU, memory, disk, network and GPU columns |
 | Containers (opt-in) | Local Docker CPU, memory and I/O, history, logs, storage inventory and reviewed cleanup |
@@ -105,6 +106,10 @@ promise of immediately recovered Mac disk space. See the
 The Timeline puts every module on one chart covering the last hour, 24 hours, 7 days or 30 days, and marks events on it: fans ramping, thermal state changes, a process pinning the CPU, power spikes. A heatmap shows CPU load or temperature by hour across 30 days. Any range exports to CSV.
 
 ![The Timeline](https://raw.githubusercontent.com/tryopendata/kelvo/assets/media/timeline.webp)
+
+CPU, GPU, Memory, Power, Network and Disk also support rolling durations and fixed
+date ranges. Return to Live to resume a moving window; brush Network or Disk charts
+to inspect activity within a selection.
 
 The menu bar can show one combined item or one item per module, each as a number, a graph or a per-core strip.
 
@@ -137,7 +142,29 @@ access-test commands, save any address changes, then use **Retry** in Hosts.
 
 See the [setup and troubleshooting notes](plan/remote-macs-execution.md#setup-behavior)
 for recovery behavior and the [remaining real-device checks](plan/remote-macs-execution.md#outstanding-real-device-gates).
-Linux hosts are not supported yet.
+### Monitor a Linux host
+
+In **Hosts**, add the Linux server using its SSH alias or `user@address`, then
+choose **Check connection**. The same SSH key and host verification requirements
+apply. Kelvo bundles static agents for x86_64 and aarch64 Linux; the Mac app
+remains the controller. Linux setup requires systemd.
+
+Review the detected system, installation path, service account and history budget
+before installing. A normal account uses a systemd user service; a root SSH
+account uses a system service. If lingering is off, setup shows the command needed
+to keep a user service running after logout. Sensor, power and container details
+depend on the host's hardware and read permissions.
+
+Select the host to view live metrics, stored history, per-app usage and disk space
+reports. Linux memory charts show used and cached memory. Containers show cgroup
+services and containers where available; the local Docker cleanup workflow above
+is separate. Use **Update agent** when offered. If a server is reinstalled or
+replaced, **Re-pair…** adds its new identity and keeps the old mirrored history as
+an offline host. Host settings also provide agent removal.
+
+Remote alerts and remote menu-bar metrics remain future work. See the
+[implementation and acceptance record](plan/history-remote-landing.md) for measured
+coverage and remaining native checks.
 
 ## Resource use
 
@@ -178,7 +205,7 @@ History and settings are in `~/Library/Application Support/com.tryopendata.kelvo
 logs in `~/Library/Logs/com.tryopendata.kelvo/`. Local monitoring keeps that data on
 your Mac. If you enable remote monitoring, authorized SSH clients can read its
 metrics and history; a controller keeps a separate local history mirror for each
-remote Mac. This sharing uses SSH directly, with no Kelvo backend.
+remote host. This sharing uses SSH directly, with no Kelvo backend.
 
 ### Is there a Homebrew or Mac App Store version?
 

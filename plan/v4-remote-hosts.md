@@ -1,8 +1,13 @@
 # v4: Remote hosts
 
-> The first Mac-to-Mac milestone now follows [D-104](decisions.md#d-104-remote-macs-reuse-the-app-and-isolate-mirrored-history) and [the execution plan](remote-macs-execution.md). It reuses the installed macOS app with a bundled SSH helper, brings the host list/switcher forward, and defers Linux, remote alerts/menu-bar metrics and historical process attribution. The broader roadmap below remains future scope where it differs.
+> The first Mac-to-Mac milestone now follows [D-104](decisions.md#d-104-remote-macs-reuse-the-app-and-isolate-mirrored-history) and [the execution plan](remote-macs-execution.md). It reuses the installed macOS app with a bundled SSH helper, brings the host list/switcher forward, and originally deferred Linux, remote alerts/menu-bar metrics and historical process attribution. The broader roadmap below remains future scope where it differs.
 
-> Implementation status: the first Mac milestone is merged into main. Automated checks and code review passed; real two-Mac acceptance and overhead measurements remain open in the execution plan. The later roadmap below is not marked complete.
+> Implementation status (0.2.0): Mac monitoring and the Linux agent milestone are
+> merged, including native Linux collectors, install/update/removal, cgroup views,
+> remote per-app history and space reports. See [the landing record](history-remote-landing.md)
+> for current verification and remaining native checks. Remote alerts and menu-bar
+> metrics remain future scope. The unchecked roadmap below describes the original
+> broader plan and is not the release acceptance record.
 
 > Testing follow-up (2026-10-11): expanded real socket/SQLite, heartbeat, host recovery and
 > history-isolation coverage passes and is merged into main at `9e69367` following
