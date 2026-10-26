@@ -1,7 +1,8 @@
 # Automatic updates
 
-Status: implemented and code-reviewed on `codex/automatic-updates`. A real macOS
-login-session smoke check remains before merge/publication. This is not a release claim.
+Status: implemented and code-reviewed. The user authorized landing on main with the
+real macOS login-session check outstanding. That check remains release acceptance;
+this is not a release claim.
 
 ## Tasks and dependencies
 
@@ -10,7 +11,7 @@ login-session smoke check remains before merge/publication. This is not a releas
 - [x] Mac idle installation, durable staging and noninteractive authorization policy (depends on catalog).
 - [x] Host-owned controls, protocol compatibility and UI (depends on platform interfaces).
 - [x] Full checks, signed package verification, native restart harness and code review.
-- [ ] Fresh-account/login-session rollout acceptance before merge/publication.
+- [ ] Fresh-account/login-session rollout acceptance before publication.
 
 ## Agreed behavior
 
@@ -90,5 +91,14 @@ boards do not yet exist, so ambient-board/editing behavior cannot be exercised i
 version. Future board editors must participate in the existing maintenance gate.
 
 Existing installations need one initial manual upgrade. Incompatible releases require
-the documented coordinated external reinstall. Keep this branch unmerged until the
-remaining login-session acceptance is completed; no release was created or published.
+the documented coordinated external reinstall. The user subsequently authorized pushing
+to main despite the remaining login-session acceptance; no release is authorized by
+that instruction.
+
+## Landing
+
+Reviewed implementation: `c434a4e18d27b561fa7309cbd5eaf29dcac7d18f`. Integrated the
+main release-documentation commit `448dc3b8c03ecf9b9efc7a4a588de1cb2c716773` without
+changing implementation code. Normal pre-push gates and exact-revision hosted Linux
+CI are pending for this landing; the verification above describes the implementation
+revision and is not a claim that those new runs have completed.
