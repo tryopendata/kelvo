@@ -243,14 +243,18 @@ mirroring of the new usage data is outside this batch and must be explicit in UI
 
 Collector cadence and permission boundaries stay unchanged. New storage must pass
 existing idle/performance and storage gates with real measurements, including high
-process churn. No budget increase is authorized by this plan. If full retention cannot
-fit, report the measured tradeoff before cutting process detail or changing budgets.
+process churn. The user approved storage-write ceilings of 4 MB payload/hour, 12 MB WAL/hour
+and 10,000 rows/hour during execution after the original limits failed feasibility
+probes. CPU budgets, collection cadence and permissions remain unchanged. If full
+retention cannot fit, measure a larger disk cap and ask before changing it or cutting
+process detail. The user chose this measurement over accepting shorter retention.
 
 The existing store-volume gate enumerates tables: extend its row/payload accounting to
 all new usage, identity and coverage tables, rather than let new tables evade it.
 Measure payload/WAL growth, restart recovery and long-range query latency under steady
-and high-churn workloads before dependent Timeline implementation. Existing ceilings
-include 1.2 MB payload/hour and 6 MB WAL/hour; the source budget file remains authoritative.
+and high-churn workloads before dependent Timeline implementation. The original ceilings of 1.2 MB payload/hour and 6 MB WAL/hour failed the
+feasibility probe. Approved execution ceilings are 4 MB payload/hour, 12 MB WAL/hour
+and 10,000 rows/hour; the source budget file remains authoritative.
 This feasibility gate is blocking. If full-horizon process detail cannot satisfy the
 unchanged budgets, return a concrete measured retention/cardinality tradeoff for the
 user; do not label the whole batch implementable or silently drop identities.
@@ -411,4 +415,33 @@ agents own implementation in isolated managed worktrees.
 - [ ] Integrated browser/native verification, independent code review and fixes.
 - [ ] Normal hooks, exact-revision Linux CI, landing and task-owned cleanup.
 
-No performance budget changes or reduced process retention are authorized.
+Only the storage-write ceiling increases recorded below are authorized. CPU budgets
+and process-detail retention requirements are unchanged; a larger disk cap awaits
+measurement and a separate user decision.
+
+Execution checkpoint: native settings/temperature contracts compile and generated
+bindings are produced. Independent Timeline navigation is in progress. The history
+lane measured an existing native store baseline of 936 rows/hour, 769,392 payload
+bytes/hour and 4,331,712 WAL bytes/hour. Candidate packed SQLite usage fixtures exceed
+the unchanged storage gates under process churn even with lossless batch compression.
+These are feasibility probes, not completed production implementation; authoritative
+measurements and any required user decision will be recorded before attribution UI.
+
+2026-10-25 user decision: raise storage-write ceilings to 4,000,000 payload bytes/hour,
+12,000,000 WAL bytes/hour and 10,000 rows/hour. The prototype suggested these could
+cover 1,000 processes with moderate churn, but production must pass them. CPU budgets,
+sampling cadence and permissions remain unchanged. The user requested a measured
+larger disk cap needed for 30 days before deciding; neither a cap increase nor
+silently shorter retention is approved. Storage lane owns the decision entry and
+authoritative budget update.
+
+Additional execution requirements confirmed by the user:
+
+- Keep approximately 24 hours at the finest recorded resolution, then progressively
+  coarsen older buckets. Preserve accurate integrals, averages, concurrent RAM peaks
+  and coverage; show retained granularity and uncovered partial boundaries. Sampling
+  cadence is unchanged. Evaluate this policy in the 30-day disk-cap measurement.
+- Apply ce:writing-tests throughout. Prefer behavior-focused integration and complete
+  workflow tests, real internal modules and SQLite, with mocks only at repository-
+  approved transport/collector/time boundaries. Cover visible outcomes, persistence,
+  failures and correct rollups. Prove regression tests fail without their fixes.
