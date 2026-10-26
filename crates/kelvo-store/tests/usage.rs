@@ -428,6 +428,8 @@ fn usage_only_cap_reclaims_churn_identities_without_dangling_retained_details() 
     let store = open(&dir, "h.sqlite");
     let w = store.writer();
     w.upsert_host(host(1)).unwrap();
+    w.flush().unwrap();
+    let base = w.prune(T0, Retention::default()).unwrap().size_bytes;
     for day in 0..8 {
         let mut b = one(T0 + day * DAY, 1.0);
         for id in 0..2000 {
@@ -448,7 +450,7 @@ fn usage_only_cap_reclaims_churn_identities_without_dangling_retained_details() 
         .prune(
             now,
             Retention {
-                max_bytes: full.size_bytes * 4 / 5,
+                max_bytes: base + full.size_bytes.saturating_sub(base) / 2,
                 ..Retention::default()
             },
         )
