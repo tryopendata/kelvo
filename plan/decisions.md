@@ -3762,3 +3762,17 @@ SSH session to their own controller; they are still never logged above debug.
 
 Revisit with request cancellation (a call the caller gave up on still runs to the end on
 the host) or a query whose answer outgrows one frame.
+
+
+## D-118: Linux-only hosted CI; native checks and releases stay local
+
+Date: 2026-10-25. User decision, superseding D-111's hosted macOS lane.
+
+GitHub CI must not allocate macOS runners because of their credit cost. All
+hosted jobs use Linux. Native macOS tests, App Store feature checks, bindings
+freshness and performance gates remain in the local Git-hook workflow. Release
+tags trigger Linux version/manifest validation only; signing, packaging and
+updater verification run on the maintainer's Mac before draft publication.
+
+This trades hosted native coverage for local verification evidence. Do not add
+macOS CI jobs, including manual preview or release jobs, without a new user decision.

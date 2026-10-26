@@ -22,9 +22,16 @@ are outside this release workflow.
 
 1. Update the three versions and `RELEASE_NOTES.md` plus `CHANGELOG.md`. Run `make check`,
    `bun run test:e2e`, and `python3 scripts/test-release-manifest.py`.
-2. Commit, push main, then create and push the matching `vMAJOR.MINOR.PATCH` tag.
-3. The Release workflow validates version agreement, checks the frontend, builds
-   the bundled remote helper and app, and creates a **draft** release containing:
+2. Commit and push main through the normal Git hooks, then create and push the
+   matching `vMAJOR.MINOR.PATCH` tag. Hosted CI uses Linux only; the Release
+   workflow validates version agreement and manifest tests, without macOS runners.
+3. Build locally using the command below after `make agent-linux` succeeds.
+   Verify the app with `codesign --verify --deep --strict`, confirm the bundled
+   helper and both Linux agents, and run `scripts/check-deps.sh` against the app
+   and helper executables. Stage with `python3 scripts/release-manifest.py TAG --stage`
+   and run `cargo run -p kelvo --example verify_release -- target/release-assets`.
+   Create the draft with `gh release create TAG target/release-assets/* --verify-tag
+   --draft --title "Kelvo TAG" --notes-file RELEASE_NOTES.md`. It must contain
    `Kelvo_aarch64.dmg`, `Kelvo.app.tar.gz`, its `.sig`, `latest.json` and `SHA256SUMS`.
 4. Download the draft DMG. Verify the signature with `codesign --verify --deep
    --strict Kelvo.app`, install and launch it on a fresh account/second Mac, and
@@ -36,7 +43,7 @@ are outside this release workflow.
 
 Never replace published updater archives or reuse a version. Fix a bad release
 with a higher version. A failed draft can be deleted and rebuilt from its existing
-tag using the workflow's manual dispatch. Do not move published tags.
+tag using the local build procedure. Do not move published tags.
 
 ## Local release build
 

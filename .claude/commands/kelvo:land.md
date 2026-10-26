@@ -35,8 +35,8 @@ host reboot, identity reset or history deletion.
   finds candidates; `gh run view <run-id> --json headSha,status,conclusion,jobs,url`
   reports the actual revision and job state. Use the connected GitHub tools when
   available. Back off while unchanged; fetch completed job logs after completion.
-- Check the required jobs defined in `.github/workflows/ci.yml`: frontend, Linux,
-  stable macOS and dependency bans/licenses/sources. Advisory audit jobs and manual
+- Check the required jobs defined in `.github/workflows/ci.yml`: frontend, Linux
+  and dependency bans/licenses/sources. Advisory audit jobs and manual
   preview/hardware steps follow that file and `.github/dependency-audits.md`.
   Report advisory failures separately; do not disable them to make a run green.
 - Record nonzero actual test counts, skips/retries, runtime and relevant metrics.

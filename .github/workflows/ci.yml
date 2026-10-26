@@ -17,15 +17,14 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
-# The repository is public: stable macOS checks run on every PR and main push.
-# Preview OS coverage is manual and advisory. Hosted VM checks do not replace
-# real hardware acceptance or the local pre-push checks.
+# Hosted CI uses Linux only. Native macOS checks, bindings, packaging and
+# performance gates run locally through Git hooks and release verification.
 jobs:
   # ---------------------------------------------------------------------------
   # Frontend: Biome, typecheck, Vitest and Playwright against the mock transport.
   # None of it needs macOS or the Rust build; the generated bindings are
   # committed. The Playwright perf gates are skipped here: their budgets are
-  # macOS Chromium numbers, so macOS CI and the pre-push hook run them separately.
+  # macOS Chromium numbers, so the local pre-push hook runs them separately.
   # ---------------------------------------------------------------------------
   frontend:
     runs-on: ubuntu-latest
@@ -42,7 +41,7 @@ jobs:
         with:
           bun-version-file: package.json
 
-      # After setup-bun so real node outranks ~/.bun/bin in PATH (see the macos job).
+      # After setup-bun so real node outranks ~/.bun/bin in PATH.
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .node-version
@@ -86,168 +85,6 @@ jobs:
           name: playwright-report-linux
           path: playwright-report/
           retention-days: 7
-
-  # ---------------------------------------------------------------------------
-  # macOS: stable native coverage on PRs; preview only on manual dispatch (D-028).
-  #   macos-26  GA arm64 image.
-  #   xcode-27  GitHub's preview image; its base OS is macOS 27 since
-  #             2026-09-16. There is no `macos-27` label yet. Preview capacity
-  #             queues and its software can be unstable, so a failure there
-  #             does not fail the run; it is still visible on the run page.
-  # ---------------------------------------------------------------------------
-  macos:
-    name: macos (${{ matrix.runner }})
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 45
-    continue-on-error: ${{ matrix.preview }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include: ${{ fromJSON(github.event_name == 'workflow_dispatch' && '[{"runner":"macos-26","preview":false},{"runner":"xcode-27","preview":true}]' || '[{"runner":"macos-26","preview":false}]') }}
-
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
-
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
-        with:
-          bun-version-file: package.json
-
-      # Runs AFTER setup-bun so real node outranks ~/.bun/bin in PATH. A
-      # `node -> bun` shim would make vitest's `#!/usr/bin/env node` resolve to
-      # Bun's runtime.
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version-file: .node-version
-
-      - name: Install Rust toolchain
-        # rustup reads and installs rust-toolchain.toml, including components.
-        run: rustup show active-toolchain
-
-      - name: Cache bun dependencies
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.bun/install/cache
-          key: bun-${{ matrix.runner }}-${{ hashFiles('bun.lock') }}
-          restore-keys: |
-            bun-${{ matrix.runner }}-
-
-      - name: Cache cargo
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: cargo-${{ matrix.runner }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
-          restore-keys: |
-            cargo-${{ matrix.runner }}-
-
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-
-      # tauri::generate_context! embeds frontendDist, which must exist at
-      # compile time even for clippy and tests. `bun tauri build` fills it.
-      - name: Stub frontend dist
-        run: mkdir -p dist
-
-      - name: cargo fmt
-        run: cargo fmt --all --check
-
-      - name: cargo clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
-
-      # The sandboxed App Store edition (D-065): the `appstore` feature drops the
-      # private-API collectors at registration, compiles out the responsible-PID lookup
-      # and turns process signals off. Check it still builds and lints; it is not run or
-      # signed until v3.2.
-      - name: cargo check + clippy (appstore edition)
-        run: make appstore-check
-
-      # The engine perf gates run in the next step, where their output is shown.
-      - name: cargo test
-        run: >-
-          cargo test --workspace --
-          --skip tray_only_ticks_stay_within_allocation_and_call_budgets
-          --skip window_open_ticks_stay_within_allocation_and_call_budgets
-          --skip store_write_volume_per_hour_at_one_second
-
-      # Engine perf gates (D-062, D-067): allocations, OS calls, store volume, and
-      # samples per collector. Hosted runners are VMs, where the hardware collectors
-      # cannot be checked; the test says so and this step turns that into a notice,
-      # so a skipped coverage check is visible on the run page rather than a silent pass.
-      - name: Engine perf gates
-        shell: bash
-        run: |
-          cargo test -p kelvo-engine --test perf_gates -- --nocapture 2>&1 | tee perf-gates.log
-          grep '\[perf\] skipped: no hardware' perf-gates.log | sort -u | sed 's/^/::notice title=perf_gates::/' || true
-
-      # Regenerate the tauri-specta bindings and fail if they differ from the
-      # commit (including new, untracked files).
-      - name: Bindings drift
-        run: |
-          make bindings
-          if [ -n "$(git status --porcelain -- src/core/generated)" ]; then
-            git status --porcelain -- src/core/generated
-            git diff -- src/core/generated
-            echo "::error::src/core/generated is stale. Run 'make bindings' and commit the result."
-            exit 1
-          fi
-
-      # Biome check (format, imports, Tailwind class order, lint incl. the
-      # boundary rules), typecheck, Vitest.
-      - name: bun run check
-        run: bun run check
-
-      - name: Install Playwright browsers
-        run: bunx playwright install chromium webkit
-
-      - name: Playwright Chromium
-        run: bun run test:e2e --project chromium
-
-      - name: Playwright WebKit (1/2)
-        run: bun run test:e2e --project webkit --shard 1/2
-
-      - name: Playwright WebKit (2/2)
-        run: bun run test:e2e --project webkit --shard 2/2
-
-      # Run after the functional browser suite, without competing workers.
-      - name: Frontend performance gates
-        run: |
-          uptime
-          vm_stat
-          ps -axo pid,ppid,pcpu,pmem,rss,comm | sort -k3,3nr | sed -n '1,21p'
-          make e2e-perf
-
-      - name: Upload Playwright report
-        if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: playwright-report-${{ matrix.runner }}
-          path: playwright-report/
-          retention-days: 7
-
-      - name: Tauri debug build
-        run: bun run build:app --debug
-
-      # Kelvo has no runtime dependencies to install (D-058): fail if the app links
-      # anything outside /System/Library/ and /usr/lib/.
-      - name: Runtime dependency check
-        run: make check-deps
-
-      # Engine CPU (D-062, D-067): the release engine for 120 s tray-only at 1 s
-      # against perf-budget.json's baseline, printing its share of the whole-app
-      # target. Hosted runners are VMs without most sensors and with noisy neighbours,
-      # so this step is advisory: a failure shows on the run page but does not fail the
-      # job. `make perf` blocks locally, and the allocation, call-count and store-volume
-      # gates above fail the job.
-      - name: Engine CPU (advisory, manual hardware diagnostic)
-        if: github.event_name == 'workflow_dispatch'
-        continue-on-error: true
-        shell: bash
-        run: |
-          make perf 2>&1 | tee perf.log
-          grep 'whole-app target' perf.log | sed 's/^perf: /::notice title=Engine CPU::/' || true
 
   # ---------------------------------------------------------------------------
   # Dependency audit: cargo-deny (deny.toml) and bun audit. Licenses, bans and

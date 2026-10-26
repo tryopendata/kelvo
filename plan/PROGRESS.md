@@ -4,6 +4,15 @@ This file tracks where Kelvo is against the plan. Task-level checkboxes live in 
 
 Agents update this file whenever a phase starts or finishes. Each update adds a log entry: what changed, how it was verified, and anything left open. They also tick the matching checkboxes in the version doc.
 
+## CI runner policy (2026-10-25)
+
+At the user's direction, hosted CI uses Linux only to avoid macOS runner charges.
+Removed the native macOS CI lane and replaced hosted release packaging with Linux
+manifest validation. Native checks remain in local Git hooks; signed release builds
+and package verification run on the maintainer's Mac. Cancelled active hosted
+macOS CI/release runs. This supersedes the hosted macOS policy in D-111 and older
+execution records; their historical results remain evidence for those revisions.
+
 ## Release 0.2.0 (2026-10-25, in progress)
 
 Preparing the next minor release from main: synchronized application/workspace

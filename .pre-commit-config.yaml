@@ -92,7 +92,7 @@ repos:
         files: (\.rs|Cargo\.toml|Cargo\.lock|clippy\.toml)$
         pass_filenames: false
 
-  # Local feedback alongside stable hosted macOS push/PR checks (D-111): the whole
+  # Native macOS verification stays local; hosted CI uses Linux only. The whole
   # `make check` (fmt, clippy, the appstore edition, cargo test with the engine
   # perf gates, Biome, typecheck, Vitest), the bindings freshness check and the
   # Playwright frontend perf gates, whose budgets are macOS numbers. Only

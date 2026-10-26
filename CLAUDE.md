@@ -93,7 +93,7 @@ generated `.agents/skills` links; see `scripts/agent-config/README.md`.
 - **Bun** at the version in `package.json`; Node tooling uses `.node-version`.
 - **Rust** at the version in `rust-toolchain.toml`, including `rustfmt` and `clippy`.
 - **Xcode Command Line Tools** (macOS SDK for the collectors)
-- **pre-commit** (via `uvx pre-commit` or `brew install pre-commit`), then `make hooks`. The pre-push hook provides local feedback; hosted stable macOS CI also checks pushes and PRs (D-111)
+- **pre-commit** (via `uvx pre-commit` or `brew install pre-commit`), then `make hooks`. Git hooks run native macOS checks locally; hosted CI uses Linux only
 
 ## Debugging Budget
 

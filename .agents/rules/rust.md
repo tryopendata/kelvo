@@ -60,7 +60,7 @@ Zero runtime dependencies (D-058): the app links only `/System/Library/` framewo
 `/usr/lib/` libraries. A crate with a C library must use its bundled or vendored build
 (like `rusqlite`'s `bundled`); never require a Homebrew or system install. Dev-only tools
 (macmon for the accuracy script) stay optional. `make check-deps` enforces this on
-the built binary locally and in stable hosted macOS CI (D-111).
+the built binary locally before release.
 
 ## Error handling
 

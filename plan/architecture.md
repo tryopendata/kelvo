@@ -1087,7 +1087,7 @@ Follow opendata's rules: stable keys, one flat keyed array per list, `inert` on 
 
 There is no automated end-to-end test of the packaged app's webview. tauri-driver relies on WebDriver, and there is no WebDriver for WKWebView on macOS. Rust integration tests plus the mock-transport Playwright suite cover the two halves, and the scripted checklist covers the seam.
 
-Kelvo supports the current macOS major and the one before it (D-028; today macOS 27 and 26, `minimumSystemVersion` "26.0"). The macOS CI job and, before each release, the accuracy script and the packaged-app checklist run on both. The private-interface collectors (IOReport, SMC, HID) are the part most likely to differ between the two.
+Kelvo supports the current macOS major and the one before it (D-028; today macOS 27 and 26, `minimumSystemVersion` "26.0"). Before each release, native tests, the accuracy script and the packaged-app checklist are local checks on both; hosted CI uses Linux only. The private-interface collectors (IOReport, SMC, HID) are the part most likely to differ between the two.
 
 ## Performance budget
 
@@ -1139,9 +1139,9 @@ CI runs `make rust-portable-check rust-portable-test` for the six portable libra
 selects the workspace with only the macOS app and remote helper excluded, so new
 libraries automatically enter the check. The helper receives a separate Linux
 `cargo check --all-targets`; Linux helper runtime support is not a product promise.
-Stable hosted macOS CI checks the native shell, collectors, bindings and packaging on
-push/PR; preview macOS is manual and advisory. Local pre-push checks remain useful
-feedback. Workflow triggers do not establish branch-protection requirements. The macOS collectors are `cfg(target_os = "macos")`; the Linux module now supplies native `/proc`, sysfs and cgroup collectors for the headless agent (D-116). Running natively on Linux is simpler than `--target x86_64-unknown-linux-gnu` from macOS, because bundled SQLite runs a C build script that would need a cross compiler. The job checks portable crates and the Linux agent, catching macOS-only APIs leaking into shared code.
+Hosted CI uses Linux runners only. Native shell, collector, bindings, packaging
+and performance checks run locally through Git hooks and release verification.
+Workflow triggers do not establish branch-protection requirements. The macOS collectors are `cfg(target_os = "macos")`; the Linux module now supplies native `/proc`, sysfs and cgroup collectors for the headless agent (D-116). Running natively on Linux is simpler than `--target x86_64-unknown-linux-gnu` from macOS, because bundled SQLite runs a C build script that would need a cross compiler. The job checks portable crates and the Linux agent, catching macOS-only APIs leaking into shared code.
 
 ## Deliberately deferred
 
