@@ -11,6 +11,7 @@ impl State {
     pub(super) fn discard_from(&mut self, host: HostId, from: i64) -> Result<()> {
         let host_ref = self.host_ref(host)?;
         self.docker_discard(host_ref, from)?;
+        self.usage_discard(host_ref, from)?;
         for table in db::HISTORY_TABLES {
             let Some(col) = table.discard_col else {
                 continue;

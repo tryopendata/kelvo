@@ -26,6 +26,7 @@ mod growth;
 mod heatmap;
 mod net;
 mod stats;
+mod usage;
 
 pub use export::{ExportQuery, ExportSummary};
 pub use growth::{HistoryGrowth, MIN_MEASURED_MS};

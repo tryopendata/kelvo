@@ -135,3 +135,36 @@ The schema validation tests were mutation-verified: raising the membership cap a
 relaxing the page-size bound each caused the corresponding behavioral test to fail
 with its expected assertion. Both mutations were restored. Production pagination
 round trips and process-detail queries remain part of the pending store implementation.
+
+
+## Production store API handoff (D-120)
+
+The production SQLite reader/writer and tier lifecycle are implemented, separately
+from acceptance of their write or retained-size budgets. The current physical
+layout compresses each finest bucket independently, with separate app and process
+blobs. It must be measured rather than substituting the earlier batched prototype.
+
+Public methods:
+
+- `Writer::write_usage_bucket(HostId, UsageBucket) -> kelvo_store::Result<()>`
+- `Reader::historical_usage_after(&HistoricalUsageRequest, impl FnOnce() -> Vec<UsageBucket>) -> Result<HistoricalUsageReply>`
+- `Reader::usage_processes_after(&UsageProcessRequest, impl FnOnce() -> Vec<UsageBucket>) -> Result<UsageProcessReply>`
+
+Invalid requests and stale continuations return `StoreError::Usage`; malformed
+stored payloads return `StoreError::Corrupt`. The read transaction establishes its
+SQLite snapshot before the recent callback runs. A persisted retention edge filters
+recent buckets so pruning cannot be undone by the ring. Process reads are paged;
+app reads do not decode the separate process blobs. Continuations bind process
+facts, source coverage, bucket spans, uncertainty, selection, and store epoch.
+
+The complete nonignored kelvo-store suite passes, including ten public SQLite
+usage behavior tests. Clippy and architecture checks pass. Removing source coverage
+from the continuation revision made the source-only-change regression fail at the
+expected stale-cursor assertion; the implementation was restored. The usage-only
+cap fixture records 16,000 churn instances and verifies reclaiming old identities
+while retained process details remain queryable. Unresolved uncertainty replay is
+idempotent, and network-only app facts do not advertise process expansion.
+
+Still pending: actual production hourly payload/WAL/rows, production 30-day fill
+including every new table/index and source completeness, retained query timing,
+and recorder/allocation/CPU checks. The storage gate and dependent UI remain closed.

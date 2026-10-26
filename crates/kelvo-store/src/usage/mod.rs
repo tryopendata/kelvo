@@ -1,6 +1,11 @@
 //! Durable interval usage facts (D-120). Recorder inputs precede any floor or ranking.
 //! Resource arrays consistently use CPU, GPU, RAM, CPU energy, network order.
 
+pub(crate) mod codec;
+pub(crate) mod query;
+
+pub(crate) const SCHEMA: &str = include_str!("schema.sql");
+
 use std::sync::Arc;
 
 use kelvo_schema::durable_usage::{UsageIncompleteCause, UsageNetworkUncertainty};
@@ -115,6 +120,50 @@ pub fn causes(mask: u32) -> Vec<UsageIncompleteCause> {
     .into_iter()
     .filter(|cause| mask & cause_mask(*cause) != 0)
     .collect()
+}
+
+/// Reject malformed input before queuing a write; invalid observations never become zeros.
+pub(crate) fn validate_bucket(bucket: &UsageBucket) -> crate::Result<()> {
+    use crate::StoreError;
+    if bucket.from_ms.rem_euclid(USAGE_BUCKET_MS) != 0
+        || bucket.to_ms.checked_sub(bucket.from_ms) != Some(USAGE_BUCKET_MS)
+        || !kelvo_schema::is_js_safe(bucket.from_ms)
+        || !kelvo_schema::is_js_safe(bucket.to_ms)
+    {
+        return Err(StoreError::Usage(
+            "usage bucket must be one aligned ten-second interval".into(),
+        ));
+    }
+    for facts in bucket
+        .apps
+        .iter()
+        .map(|a| &a.facts)
+        .chain(bucket.processes.iter().map(|p| &p.facts))
+    {
+        if [
+            facts.cpu_seconds,
+            facts.gpu_seconds,
+            facts.energy_j,
+            facts.mem_byte_ms,
+        ]
+        .iter()
+        .any(|v| !v.is_finite() || *v < 0.0)
+            || facts
+                .coverage
+                .iter()
+                .any(|c| c.measured_ms > USAGE_BUCKET_MS as u64)
+        {
+            return Err(StoreError::Usage("invalid usage facts or duration".into()));
+        }
+    }
+    if bucket
+        .source
+        .iter()
+        .any(|c| c.measured_ms > USAGE_BUCKET_MS as u64)
+    {
+        return Err(StoreError::Usage("invalid source duration".into()));
+    }
+    Ok(())
 }
 
 #[cfg(test)]

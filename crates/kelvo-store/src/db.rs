@@ -11,7 +11,7 @@ use uuid::Uuid;
 use crate::error::{Result, StoreError};
 
 /// The schema version this build writes. Bump it with a new step in [`MIGRATIONS`].
-pub const SCHEMA_VERSION: i64 = 7;
+pub const SCHEMA_VERSION: i64 = 8;
 
 /// Page size of new databases. 16 KiB packs wide M1 blobs (250 series = 3,000 B) five to
 /// a page instead of one; measured in D-057.
@@ -240,7 +240,16 @@ ALTER TABLE events ADD COLUMN source_seq INTEGER;
 CREATE UNIQUE INDEX events_source ON events(host_id, source_epoch, source_id);
 ";
 const V7: &str = "DELETE FROM docker_coverage WHERE reason IN ('write_failed', 'loss_scope_overflow') AND entity_id IS NULL;";
-const MIGRATIONS: &[&str] = &[V1, V2, V3, V4, V5, crate::docker::SCHEMA, V7];
+const MIGRATIONS: &[&str] = &[
+    V1,
+    V2,
+    V3,
+    V4,
+    V5,
+    crate::docker::SCHEMA,
+    V7,
+    crate::usage::SCHEMA,
+];
 
 /// Opens or creates the database for writing and brings its schema up to date. Returns
 /// the connection and the `db_instance_uuid`.
@@ -432,6 +441,33 @@ pub(crate) const HISTORY_TABLES: &[HistoryTable] = &[
     HistoryTable::both("proc_net_15m", HistoryKind::Net, "bucket_ts"),
     HistoryTable::both("proc_net_1m", HistoryKind::Net, "bucket_ts"),
     HistoryTable::both("proc_net_10s", HistoryKind::Net, "bucket_ts"),
+    HistoryTable::both("usage_app_buckets", HistoryKind::Proc, "bucket_ts"),
+    HistoryTable::both("usage_process_buckets", HistoryKind::Proc, "bucket_ts"),
+    HistoryTable::both("usage_coverage", HistoryKind::Proc, "bucket_ts"),
+    HistoryTable {
+        name: "usage_uncertain",
+        kind: HistoryKind::Proc,
+        discard_col: Some("possible_to_ms"),
+        trim_col: Some("possible_to_ms"),
+    },
+    HistoryTable {
+        name: "usage_processes",
+        kind: HistoryKind::Proc,
+        discard_col: None,
+        trim_col: None,
+    },
+    HistoryTable {
+        name: "usage_apps",
+        kind: HistoryKind::Proc,
+        discard_col: None,
+        trim_col: None,
+    },
+    HistoryTable {
+        name: "usage_recording_start",
+        kind: HistoryKind::Proc,
+        discard_col: None,
+        trim_col: None,
+    },
     // Sync progress into the host's remote history: cleared with it, never cut by time.
     HistoryTable {
         name: "cursors",
@@ -499,6 +535,19 @@ mod tests {
         }
         conn.execute_batch("PRAGMA foreign_keys=ON").unwrap();
     }
+    fn drop_usage(conn: &Connection) {
+        let tables: Vec<String> = conn
+            .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'usage_%'")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        for table in tables {
+            conn.execute_batch(&format!("DROP TABLE {table}")).unwrap();
+        }
+    }
+
     #[test]
     fn docker_migration_failure_rolls_back_and_retries() {
         for version in [4, 5] {
@@ -506,6 +555,7 @@ mod tests {
             let path = dir.path().join("h.sqlite");
             let (conn, _) = open_writer(&path, 0).unwrap();
             drop_docker(&conn);
+            drop_usage(&conn);
             if version == 4 {
                 strip_v5(&conn);
             }
@@ -605,6 +655,7 @@ mod tests {
         let conn = Connection::open(&path).unwrap();
         strip_v5(&conn);
         drop_docker(&conn);
+        drop_usage(&conn);
         conn.execute_batch(
             "DROP TABLE tier_15m;
              DROP TABLE proc_top_15m;
@@ -648,6 +699,7 @@ mod tests {
         let conn = Connection::open(&path).unwrap();
         strip_v5(&conn);
         drop_docker(&conn);
+        drop_usage(&conn);
         conn.execute_batch(
             "DROP TABLE tier_15m;
              DROP TABLE proc_top_15m;
@@ -703,6 +755,7 @@ mod tests {
         let conn = Connection::open(&path).unwrap();
         strip_v5(&conn);
         drop_docker(&conn);
+        drop_usage(&conn);
         conn.execute_batch(
             "DROP TABLE proc_net_10s;
              DROP TABLE proc_net_1m;

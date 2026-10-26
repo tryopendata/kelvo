@@ -47,12 +47,15 @@ mod prune;
 mod rows;
 mod sync;
 mod txn;
+mod usage;
+mod usage_prune;
 
 pub use intern::NET_NEW_NAMES_PER_HOUR;
 
 type Reply<T> = mpsc::SyncSender<Result<T>>;
 
 enum Op {
+    Usage(HostId, crate::usage::UsageBucket),
     Docker(Box<docker::Pending>),
     ResetDocker(HostId, i64, Reply<()>),
     UpsertHost(HostRecord, Reply<()>),
@@ -596,6 +599,15 @@ impl State {
             }
             Op::BeginSession(host, now, r) => {
                 let _ = r.send(self.apply(|s| s.begin_session(host, now)));
+            }
+            Op::Usage(host, bucket) => {
+                let from = bucket.from_ms;
+                let to = bucket.to_ms;
+                let res = self.apply(|s| s.write_usage(host, &bucket));
+                if res.is_ok() {
+                    widen(&mut self.batch_span, host, from, to);
+                }
+                log_queued("usage", res);
             }
             Op::Bucket(row) => {
                 let res = self.apply(|s| s.write_bucket(&row).map(|_| ()));

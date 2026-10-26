@@ -934,7 +934,10 @@ fn v7_removes_only_legacy_engine_wide_save_loss_records() {
     }
     let conn = rusqlite::Connection::open(&path).unwrap();
     conn.execute_batch(
-        "PRAGMA user_version=6; UPDATE meta SET value=6 WHERE key='schema_version';",
+        "DROP TABLE usage_apps; DROP TABLE usage_processes; DROP TABLE usage_app_buckets;
+         DROP TABLE usage_process_buckets; DROP TABLE usage_coverage; DROP TABLE usage_uncertain;
+         DROP TABLE usage_recording_start;
+         PRAGMA user_version=6; UPDATE meta SET value=6 WHERE key='schema_version';",
     )
     .unwrap();
     drop(conn);

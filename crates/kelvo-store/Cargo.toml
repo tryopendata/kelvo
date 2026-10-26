@@ -16,7 +16,11 @@ write-stats = []
 kelvo-schema.workspace = true
 rusqlite.workspace = true
 ciborium.workspace = true
+# Pure Rust lossless compression; no additional runtime dylib.
+flate2 = { version = "1.1.10", default-features = false, features = ["rust_backend"] }
 serde.workspace = true
+# Opaque bounded process continuation; clients do not interpret this JSON.
+serde_json.workspace = true
 sha2 = "0.10.9"
 uuid = { workspace = true, features = ["v4"] }
 thiserror.workspace = true
@@ -28,8 +32,6 @@ rustix.workspace = true
 # Test-only edge: the in-process sync test (tests/sync.rs) carries pages through the
 # real proto message types and codec. The library itself stays proto-free.
 kelvo-proto.workspace = true
-# The read-performance test in tests/fill.rs reads its thresholds from perf-budget.json.
-serde_json.workspace = true
 # examples/seed.rs (`bun run seed`) is a binary and reports errors with anyhow.
 anyhow.workspace = true
 # The write-failure test makes COMMIT fail with a commit hook.

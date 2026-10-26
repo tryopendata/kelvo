@@ -31,7 +31,7 @@ const CAP_TRIM_MAX_ROUNDS: usize = 64;
 impl State {
     // --- pruning --------------------------------------------------------------------------
 
-    fn host_refs(&self) -> Result<Vec<i64>> {
+    pub(super) fn host_refs(&self) -> Result<Vec<i64>> {
         Ok(self
             .conn
             .prepare("SELECT id FROM hosts")?
@@ -77,6 +77,7 @@ impl State {
     pub(super) fn prune(&mut self, now: i64, retention: Retention) -> Result<PruneReport> {
         self.commit()?;
         self.docker_prune(now, retention.history_ms, retention.max_bytes)?;
+        self.usage_prune(now, &retention)?;
         let mut report = PruneReport::default();
         let history_cut = now - retention.history_ms;
         // Whole 15-minute buckets only, so a bucket is never split across two passes.
@@ -180,25 +181,7 @@ impl State {
             if used <= low_water {
                 break;
             }
-            let range_sql = if mirror {
-                "SELECT min(t), max(t) FROM (
-                   SELECT min(bucket_ts) AS t FROM tier_10s UNION ALL
-                   SELECT max(bucket_ts) FROM tier_10s UNION ALL
-                   SELECT min(bucket_ts) FROM tier_1m UNION ALL
-                   SELECT max(bucket_ts) FROM tier_1m UNION ALL
-                   SELECT min(bucket_ts) FROM tier_15m UNION ALL
-                   SELECT max(bucket_ts) FROM tier_15m UNION ALL
-                   SELECT min(ts) FROM events UNION ALL SELECT max(ts) FROM events UNION ALL
-                   SELECT min(end_ts) FROM gaps UNION ALL SELECT max(end_ts) FROM gaps
-                 )"
-            } else {
-                "SELECT min(t), max(t) FROM (
-                   SELECT min(bucket_ts) AS t FROM tier_1m UNION ALL
-                   SELECT max(bucket_ts) FROM tier_1m UNION ALL
-                   SELECT min(bucket_ts) FROM tier_15m UNION ALL
-                   SELECT max(bucket_ts) FROM tier_15m
-                 )"
-            };
+            let range_sql = cap_range_sql(mirror);
             let (oldest, newest): (Option<i64>, Option<i64>) =
                 self.conn
                     .query_row(range_sql, [], |r| Ok((r.get(0)?, r.get(1)?)))?;
@@ -257,6 +240,8 @@ impl State {
                         HistoryKind::Cursors => {}
                     }
                 }
+                self.apply(|s| s.usage_trim_identities(host_ref, cutoff))?;
+                self.commit()?;
                 self.mark_pruned(host_ref, Tier::M1, m1, cutoff)?;
                 self.mark_pruned(host_ref, Tier::M15, m15, cutoff)?;
                 self.mark_pruned(host_ref, Tier::S10, s10, cutoff)?;
@@ -652,6 +637,30 @@ fn top_of_group(snapshots: &[Vec<PackedProc>]) -> Vec<PackedProc> {
     rows.sort_by(|a, b| b.cpu.total_cmp(&a.cpu).then(a.name_id.cmp(&b.name_id)));
     rows.truncate(TOP_PER_MINUTE);
     rows
+}
+
+fn cap_range_sql(mirror: bool) -> &'static str {
+    if mirror {
+        "SELECT min(t), max(t) FROM (
+                   SELECT min(bucket_ts) AS t FROM tier_10s UNION ALL
+                   SELECT max(bucket_ts) FROM tier_10s UNION ALL
+                   SELECT min(bucket_ts) FROM tier_1m UNION ALL
+                   SELECT max(bucket_ts) FROM tier_1m UNION ALL
+                   SELECT min(bucket_ts) FROM tier_15m UNION ALL
+                   SELECT max(bucket_ts) FROM tier_15m UNION ALL
+                   SELECT min(ts) FROM events UNION ALL SELECT max(ts) FROM events UNION ALL
+                   SELECT min(end_ts) FROM gaps UNION ALL SELECT max(end_ts) FROM gaps
+                 )"
+    } else {
+        "SELECT min(t), max(t) FROM (
+                   SELECT min(bucket_ts) AS t FROM tier_1m UNION ALL
+                   SELECT max(bucket_ts) FROM tier_1m UNION ALL
+                   SELECT min(bucket_ts) FROM tier_15m UNION ALL
+                   SELECT max(bucket_ts) FROM tier_15m UNION ALL
+                   SELECT min(bucket_ts) FROM usage_coverage UNION ALL
+                   SELECT max(bucket_ts) FROM usage_coverage
+                 )"
+    }
 }
 
 #[cfg(test)]
