@@ -331,8 +331,13 @@ fn load(
             }
         }
     }
-    add_recent(&mut out, conn, host, from, to, process_app, recent)?;
-    let mut uncertain=conn.prepare_cached("SELECT a.name,min(u.possible_from_ms),max(u.possible_to_ms),sum(u.rx_bytes),sum(u.tx_bytes),sum(u.records) FROM usage_uncertain u LEFT JOIN usage_apps a ON a.id=u.app_id WHERE u.host_id=?1 AND u.possible_from_ms<?3 AND u.possible_to_ms>?2 GROUP BY u.app_id")?;
+    add_recent(&mut out, from, to, process_app, recent)?;
+    let excluded = recent
+        .iter()
+        .map(|b| b.from_ms.to_string())
+        .collect::<Vec<_>>()
+        .join(",");
+    let mut uncertain=conn.prepare_cached(&format!("SELECT a.name,min(u.possible_from_ms),max(u.possible_to_ms),sum(u.rx_bytes),sum(u.tx_bytes),sum(u.records) FROM usage_uncertain u LEFT JOIN usage_apps a ON a.id=u.app_id WHERE u.host_id=?1 AND u.possible_from_ms<?3 AND u.possible_to_ms>?2 AND u.discovery_bucket_ts NOT IN ({excluded}) GROUP BY u.app_id"))?;
     out.uncertainty.extend(
         uncertain
             .query_map(params![host, from, to], |r| {
@@ -362,21 +367,15 @@ fn nonnegative(row: &rusqlite::Row<'_>, index: usize) -> rusqlite::Result<u64> {
 
 fn add_recent(
     out: &mut QueryFacts,
-    conn: &Connection,
-    host: i64,
     from: i64,
     to: i64,
     process_app: Option<&str>,
     recent: &[UsageBucket],
 ) -> Result<()> {
     for b in recent {
-        for u in &b.uncertain_network {
-            if u.possible_from_ms >= to || u.possible_to_ms <= from {
-                continue;
-            }
-            let exists:bool=conn.query_row("SELECT EXISTS(SELECT 1 FROM usage_uncertain u LEFT JOIN usage_apps a ON a.id=u.app_id WHERE u.host_id=?1 AND a.name IS ?2 AND u.possible_from_ms=?3 AND u.possible_to_ms=?4 AND u.rx_bytes=?5 AND u.tx_bytes=?6)",params![host,&u.app_name,u.possible_from_ms,u.possible_to_ms,i64::try_from(u.rx_bytes).map_err(|_|StoreError::Usage("uncertainty count out of range".into()))?,i64::try_from(u.tx_bytes).map_err(|_|StoreError::Usage("uncertainty count out of range".into()))?],|r|r.get(0))?;
-            if !exists && !out.uncertainty.contains(u) {
-                out.uncertainty.push(u.clone());
+        for u in crate::usage::grouped_uncertainty(&b.uncertain_network)? {
+            if u.possible_from_ms < to && u.possible_to_ms > from {
+                out.uncertainty.push(u);
             }
         }
         if b.from_ms < from || b.to_ms > to {

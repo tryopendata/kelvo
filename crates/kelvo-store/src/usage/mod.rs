@@ -122,6 +122,38 @@ pub fn causes(mask: u32) -> Vec<UsageIncompleteCause> {
     .collect()
 }
 
+/// A discovery bucket is replayed as a whole; identical observations within it
+/// are legitimate multiplicity, rather than duplicate delivery.
+pub(crate) fn grouped_uncertainty(
+    items: &[UsageNetworkUncertainty],
+) -> crate::Result<Vec<UsageNetworkUncertainty>> {
+    let mut grouped = std::collections::BTreeMap::new();
+    for u in items {
+        let key = (u.app_name.clone(), u.possible_from_ms, u.possible_to_ms);
+        let value = grouped
+            .entry(key)
+            .or_insert_with(|| UsageNetworkUncertainty {
+                rx_bytes: 0,
+                tx_bytes: 0,
+                records: 0,
+                ..u.clone()
+            });
+        value.rx_bytes = value
+            .rx_bytes
+            .checked_add(u.rx_bytes)
+            .ok_or_else(|| crate::StoreError::Usage("uncertainty overflow".into()))?;
+        value.tx_bytes = value
+            .tx_bytes
+            .checked_add(u.tx_bytes)
+            .ok_or_else(|| crate::StoreError::Usage("uncertainty overflow".into()))?;
+        value.records = value
+            .records
+            .checked_add(u.records)
+            .ok_or_else(|| crate::StoreError::Usage("uncertainty overflow".into()))?;
+    }
+    Ok(grouped.into_values().collect())
+}
+
 /// Reject malformed input before queuing a write; invalid observations never become zeros.
 pub(crate) fn validate_bucket(bucket: &UsageBucket) -> crate::Result<()> {
     use crate::StoreError;

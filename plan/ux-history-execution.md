@@ -168,3 +168,30 @@ idempotent, and network-only app facts do not advertise process expansion.
 Still pending: actual production hourly payload/WAL/rows, production 30-day fill
 including every new table/index and source completeness, retained query timing,
 and recorder/allocation/CPU checks. The storage gate and dependent UI remain closed.
+
+
+## Production hourly storage fixture
+
+The real Writer, production lossless codec, SQLite schema and five-minute commits
+were exercised for one synthetic hour: 1,000 concurrent processes, 350 apps,
+50 replaced process instances per 30 seconds, partial per-process GPU durations,
+source identity incompleteness, and six late uncertainty discoveries. All seven
+new tables are counted, including identity and recording/retention metadata.
+
+Usage-only first-hour totals: 8,387 inserted rows, 1,651,344 logical payload bytes,
+and 6,907,768 actual WAL bytes. Together with the separately measured unchanged
+baseline (936 rows, 769,392 payload, 4,331,712 WAL) this is 9,323 rows,
+2,420,736 payload bytes and 11,239,480 WAL bytes. These pass the approved
+10,000 / 4,000,000 / 12,000,000 ceilings. The initial 1,350 app/process identity
+population is one-time; recurring churn and fact rows are separate costs.
+This addition is a headroom check, not a single integrated engine run. Whole-engine
+and real-host checks still need to include recorder overhead and actual collection.
+The production 30-day retained fill is running separately, with the real schema and
+unchanged production codec; older tiers are seeded directly, while real Writer
+rollup behavior is covered by the lifecycle regression tests.
+
+Late uncertainty identity now belongs to a discovery bucket and app/possible interval.
+Identical legitimate observations within a bucket sum their records and bytes.
+Replaying that bucket replaces its earlier uncertainty rather than adding to it.
+A behavior test proves two identical observations remain two after replay and a
+revised open bucket becomes three both in recent and durable queries.

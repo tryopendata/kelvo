@@ -27,11 +27,11 @@ CREATE TABLE usage_coverage (
 );
 CREATE TABLE usage_uncertain (
  id INTEGER PRIMARY KEY, host_id INTEGER NOT NULL REFERENCES hosts(id),
- app_id INTEGER, possible_from_ms INTEGER NOT NULL, possible_to_ms INTEGER NOT NULL,
+ app_id INTEGER, discovery_bucket_ts INTEGER NOT NULL, possible_from_ms INTEGER NOT NULL, possible_to_ms INTEGER NOT NULL,
  rx_bytes INTEGER NOT NULL, tx_bytes INTEGER NOT NULL, records INTEGER NOT NULL, seq INTEGER NOT NULL,
- UNIQUE(host_id,app_id,possible_from_ms,possible_to_ms,rx_bytes,tx_bytes)
+ UNIQUE(host_id,discovery_bucket_ts,app_id,possible_from_ms,possible_to_ms)
 );
-CREATE UNIQUE INDEX usage_uncertain_identity ON usage_uncertain(host_id,coalesce(app_id,0),possible_from_ms,possible_to_ms,rx_bytes,tx_bytes);
+CREATE UNIQUE INDEX usage_uncertain_identity ON usage_uncertain(host_id,discovery_bucket_ts,coalesce(app_id,0),possible_from_ms,possible_to_ms);
 CREATE INDEX usage_uncertain_range ON usage_uncertain(host_id,possible_to_ms,possible_from_ms);
 CREATE TABLE usage_recording_start (
  host_id INTEGER PRIMARY KEY REFERENCES hosts(id), from_ms INTEGER NOT NULL, retained_from_ms INTEGER NOT NULL DEFAULT 0

@@ -41,7 +41,11 @@ impl State {
             let blob = codec::encode(&rows)?;
             self.usage_upsert(table, host, 10_000, bucket.from_ms, &blob)?;
         }
-        for u in &bucket.uncertain_network {
+        self.conn.execute(
+            "DELETE FROM usage_uncertain WHERE host_id=?1 AND discovery_bucket_ts=?2",
+            params![host, bucket.from_ms],
+        )?;
+        for u in crate::usage::grouped_uncertainty(&bucket.uncertain_network)? {
             if u.possible_to_ms <= u.possible_from_ms || u.records == 0 {
                 return Err(StoreError::Usage(
                     "invalid uncertain network interval".into(),
@@ -53,7 +57,7 @@ impl State {
                 .map(|n| self.usage_app_id(host, n, bucket.to_ms))
                 .transpose()?;
             let seq = self.alloc_seq();
-            self.conn.prepare_cached("INSERT OR IGNORE INTO usage_uncertain(host_id,app_id,possible_from_ms,possible_to_ms,rx_bytes,tx_bytes,records,seq) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)")?.execute(params![host,app,u.possible_from_ms,u.possible_to_ms,signed(u.rx_bytes)?,signed(u.tx_bytes)?,signed(u.records)?,seq])?;
+            self.conn.prepare_cached("INSERT INTO usage_uncertain(host_id,app_id,discovery_bucket_ts,possible_from_ms,possible_to_ms,rx_bytes,tx_bytes,records,seq) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9)")?.execute(params![host,app,bucket.from_ms,u.possible_from_ms,u.possible_to_ms,signed(u.rx_bytes)?,signed(u.tx_bytes)?,signed(u.records)?,seq])?;
         }
         Ok(())
     }

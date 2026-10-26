@@ -476,3 +476,38 @@ fn usage_only_cap_reclaims_churn_identities_without_dangling_retained_details() 
             .contains(&UsageIncompleteCause::Pruned)
     );
 }
+
+#[test]
+fn identical_late_observations_preserve_multiplicity_and_open_bucket_replacement() {
+    let dir = temp_dir("usage-uncertain-multiplicity");
+    let store = open(&dir, "h.sqlite");
+    let w = store.writer();
+    w.upsert_host(host(1)).unwrap();
+    let mut b = one(T0, 1.0);
+    let u = UsageNetworkUncertainty {
+        app_name: Some("Editor".into()),
+        possible_from_ms: T0,
+        possible_to_ms: T0 + 10_000,
+        rx_bytes: 12,
+        tx_bytes: 3,
+        records: 1,
+    };
+    b.uncertain_network = vec![u.clone(), u.clone()];
+    w.write_usage_bucket(host(1).id, b.clone()).unwrap();
+    w.flush().unwrap();
+    w.write_usage_bucket(host(1).id, b.clone()).unwrap();
+    w.flush().unwrap();
+    let q = request(T0, T0 + 10_000, HistoricalUsageMetric::Network);
+    let mut r = store.reader().unwrap();
+    let reply = r.historical_usage_after(&q, || vec![b.clone()]).unwrap();
+    assert_eq!(reply.network_uncertainty[0].records, 2);
+    assert_eq!(reply.network_uncertainty[0].rx_bytes, 24);
+    b.uncertain_network.push(u);
+    let recent = r.historical_usage_after(&q, || vec![b.clone()]).unwrap();
+    assert_eq!(recent.network_uncertainty[0].records, 3);
+    assert_eq!(recent.network_uncertainty[0].rx_bytes, 36);
+    w.write_usage_bucket(host(1).id, b).unwrap();
+    w.flush().unwrap();
+    let stored = r.historical_usage_after(&q, Vec::new).unwrap();
+    assert_eq!(stored.network_uncertainty, recent.network_uncertainty);
+}

@@ -392,7 +392,7 @@ export function defaultSettings(flags: ScenarioFlags): Settings {
       slow_on_battery: false,
       performance_mode: flags.performanceMode,
     },
-    history: { retention_days: 30, size_limit_mb: 150, network_history: true },
+    history: { retention_days: 30, size_limit_mb: 750, network_history: true },
     units: {
       // °C, not the app's °F default (D-093): the sample figures are in °C.
       temperature: "celsius",
