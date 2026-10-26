@@ -4,7 +4,7 @@ This file tracks where Kelvo is against the plan. Task-level checkboxes live in 
 
 Agents update this file whenever a phase starts or finishes. Each update adds a log entry: what changed, how it was verified, and anything left open. They also tick the matching checkboxes in the version doc.
 
-## Automatic updates (2026-10-25, implemented; rollout acceptance pending)
+## Automatic updates (2026-10-25, landed; rollout acceptance pending)
 
 Implemented the [approved automatic-update plan](automatic-updates.md) on
 `codex/automatic-updates`: signed standalone releases, independent Linux transaction
@@ -17,7 +17,14 @@ for both architectures/scopes (x86 through container-local emulation).
 
 The user authorized landing on main with the real macOS login-session/fresh-account
 check still outstanding as release acceptance. The reviewed source revision is
-`c434a4e18d27b561fa7309cbd5eaf29dcac7d18f`; landing verification is in progress.
+`c434a4e18d27b561fa7309cbd5eaf29dcac7d18f`. Source landed as
+`6931c0843e86ed010655792260705c051edeecd0`; [exact-source CI](https://github.com/tryopendata/kelvo/actions/runs/40266417306)
+passed all five jobs. Normal pre-push checks, bindings and 13 performance cases passed.
+Hosted tests passed 1,289 frontend cases, 436 browser cases without retries, 877 portable
+Rust executions (26 ignored), 11 native x86 musl pipe cases and both history-fill/read
+cases. The fixture Git-environment isolation defect found during push is fixed and
+mutation-verified. This documentation entry records historical verification of that
+source revision, not a separate run for the documentation-only record.
 Native packaging stays local under D-118. Existing hosts need one initial manual upgrade.
 
 ## CI runner policy (2026-10-25)

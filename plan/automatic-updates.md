@@ -1,6 +1,6 @@
 # Automatic updates
 
-Status: implemented and code-reviewed. The user authorized landing on main with the
+Status: landed on main and verified. The user authorized landing with the
 real macOS login-session check outstanding. That check remains release acceptance;
 this is not a release claim.
 
@@ -97,8 +97,35 @@ that instruction.
 
 ## Landing
 
-Reviewed implementation: `c434a4e18d27b561fa7309cbd5eaf29dcac7d18f`. Integrated the
-main release-documentation commit `448dc3b8c03ecf9b9efc7a4a588de1cb2c716773` without
-changing implementation code. Normal pre-push gates and exact-revision hosted Linux
-CI are pending for this landing; the verification above describes the implementation
-revision and is not a claim that those new runs have completed.
+Implementation `c434a4e18d27b561fa7309cbd5eaf29dcac7d18f` was reviewed and integrated
+with main's release documentation. Source landed on main as
+`6931c0843e86ed010655792260705c051edeecd0` through the normal push hooks.
+[Exact-source CI](https://github.com/tryopendata/kelvo/actions/runs/40266417306)
+passed all five jobs, including Linux, frontend and both advisory audits. Frontend
+unit tests passed 1,289 cases in 99.38 seconds. Browser checks passed 218 Chromium
+cases in 6.3 minutes and two WebKit shards of 109 cases in 4.4 and 4.7 minutes,
+respectively: 436 total, with no retries or flaky results.
+
+The local push ran `make check bindings-check e2e-perf`: 1,109 workspace Rust tests,
+26 updater-patch tests, 1,289 frontend tests, and 13 performance cases passed. The
+workspace retained 48 ignored tests. Performance cases took 5.0 minutes, recorded
+no long tasks in the measured product scenarios, and retained all existing budgets.
+
+Hosted Linux passed 877 portable test executions (26 ignored), 11 native x86 musl
+pipe tests, and both release history-fill/read tests. Both static architectures passed
+ELF alignment checks. The 150-series history used 90.2 MB against the 150 MB budget;
+30-day reads completed in 93.5 ms, heatmap in 9.7 ms and CSV export in 117.5 ms.
+Frontend audit found no vulnerabilities across 271 packages. Rust advisories and
+bans/licenses/sources checks passed.
+
+The first push exposed an existing fixture isolation bug: inherited Git hook variables
+made a temporary-repository test target its caller. Restored the caller's bare-mode flag,
+verified both checkout states, and isolated fixture Git commands from `GIT_*` variables.
+All nine hook tests passed; removing the isolation in a disposable copy made the new
+regression fail by staging into its caller. The successful push reran every local gate.
+
+Local main was advanced while preserving the unrelated UX planning changes. Acceptance
+logs, screenshots, temporary-package evidence and a recovery copy of those planning edits
+were retained under `target/qa/automatic-updates-6931c08/` in the primary checkout.
+These results describe source revision `6931c08`; the subsequent documentation-only
+landing record does not claim a separate source-verification run.
