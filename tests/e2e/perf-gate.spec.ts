@@ -202,6 +202,23 @@ test.describe("performance gate measurement harness", () => {
   });
 });
 
+async function powerHourReady(page: Page) {
+  const header = page
+    .locator("header")
+    .filter({ has: page.getByRole("heading", { level: 1 }) });
+  await expect(
+    header.getByRole("radio", { name: "1h", exact: true })
+  ).toBeChecked();
+  await expect(
+    page
+      .getByRole("region", { name: "Battery charge" })
+      .getByRole("radio", { name: "1h", exact: true })
+  ).toBeChecked();
+  await expect(
+    page.getByRole("heading", { name: "Power draw, last hour" })
+  ).toBeVisible();
+}
+
 test.describe("performance gate", () => {
   test.skip(
     ({ browserName }) => browserName !== "chromium",
@@ -343,14 +360,7 @@ test.describe("performance gate", () => {
     const r = await measure(
       page,
       "/?window=dashboard&route=/dashboard/power&theme=dark&chart_window=1h",
-      async () => {
-        await expect(
-          page.getByRole("radio", { name: "1h", exact: true })
-        ).toBeChecked();
-        await expect(
-          page.getByRole("heading", { name: "Power draw, last hour" })
-        ).toBeVisible();
-      }
+      () => powerHourReady(page)
     );
     console.log(`[perf] power1h ${JSON.stringify(r)}`);
     expect(r.seconds).toBeGreaterThan(budget.sampleMs / 1000 - 1);
