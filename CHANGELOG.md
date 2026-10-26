@@ -1,5 +1,39 @@
 # Changelog
 
+## [0.3.0](https://github.com/tryopendata/kelvo/compare/v0.2.0...v0.3.0) - 2026-10-26
+
+### Added
+
+- Automatic installation of signed releases on Macs and Linux hosts, with
+  per-host controls and update results. Macs wait until interactive windows are
+  closed; Linux agents update independently through systemd.
+- Timeline range selection, animated zoom and Back navigation, shared with module
+  charts, plus focused event annotations.
+- Recorded app usage for historical ranges, with top-ten app groups, expandable
+  process details and comparison with the previous interval. Groups can be sorted
+  by CPU, GPU, RAM, estimated CPU power or network usage.
+- Saved compact popover cards, individual collapse controls and Collapse all /
+  Expand all. The popover resizes to fit its content.
+
+### Changed
+
+- Stored app attribution and coverage alongside resource history, with older
+  intervals kept at progressively coarser resolution. App attribution starts
+  recording after the upgrade; earlier unrecorded app usage is unavailable.
+- Raised the default history size limit to 750 MB. Existing valid saved limits
+  are preserved; retention still depends on recorded activity and the size cap.
+
+### Fixed
+
+- Temperature defaults now follow macOS regional preferences while preserving
+  saved choices. Battery history respects the module toggle, and unavailable
+  Battery routes return to a supported page. ([#1](https://github.com/tryopendata/kelvo/issues/1))
+- Memory pressure, usage and swap sections now use the full content width.
+- Short and ongoing pauses no longer cover charts with prominent captions;
+  pause details remain available on hover and keyboard focus.
+- Historical selections retain their dates as live data arrives, recover after
+  failed reads, and survive returning from container details.
+
 ## [0.2.0](https://github.com/tryopendata/kelvo/compare/v0.1.0...v0.2.0) - 2026-10-25
 
 ### Added

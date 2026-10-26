@@ -24,7 +24,7 @@ This folder is the plan for Kelvo, from the first installable build through remo
 
 ## 1. What Kelvo is
 
-Kelvo is an open-source macOS system monitor for Apple Silicon. It lives in the menu bar, opens a popover with live CPU, GPU, memory, power, network and battery cards, and has a dashboard window with per-module pages and a Timeline that keeps 30 days of history. The thing that sets it apart is that it remembers: when the fans spun up at 3pm, Kelvo can show what the machine was doing and which processes were responsible. It is built on Tauri 2 with a Rust engine and a React 19 and Tailwind v4 frontend, and it is meant to cost less CPU than the tools it replaces. It supports the current macOS release and the one before it (macOS 27 and 26 today, D-028).
+Kelvo is an open-source macOS system monitor for Apple Silicon. It lives in the menu bar, opens a popover with live CPU, GPU, memory, power, network and battery cards, and has a dashboard window with per-module pages and a Timeline that retains up to 30 days of history within the configured disk cap. The thing that sets it apart is that it remembers: when the fans spun up at 3pm, Kelvo can show what the machine was doing and which processes were responsible. It is built on Tauri 2 with a Rust engine and a React 19 and Tailwind v4 frontend, and it is meant to cost less CPU than the tools it replaces. It supports the current macOS release and the one before it (macOS 27 and 26 today, D-028).
 
 ## 2. Problem and first users
 
@@ -44,7 +44,7 @@ Watch my machines: "Show me my other Macs and Linux boxes the same way, includin
 
 ## 4. Differentiators
 
-History with attribution comes first. Kelvo keeps tiered history for 30 days, stores process snapshots alongside it, and marks events automatically (fans ramped, thermal state changed, a process ran hot for minutes, a power spike) with the process responsible.
+History with attribution comes first. Kelvo keeps tiered history for up to 30 days, stores app and process usage alongside it, and marks events automatically (fans ramped, thermal state changed, a process ran hot for minutes, a power spike) with the process responsible.
 
 Apple Silicon metrics are first-class: P and E cluster frequency and residency, CPU, GPU, ANE and DRAM power in watts, and the SoC thermal state, drawn from IOReport and SMC the way macmon does it.
 
@@ -84,7 +84,7 @@ Each row is a major version. Minor versions inside each are listed in the versio
 
 | Version | Theme | Headline features | Infra it lays | Exit criteria |
 |---|---|---|---|---|
-| v1.x | Local monitor | Tray (combined and values styles), popover, dashboard with Overview and module pages, Timeline 1h/24h (7d/30d and heatmap in v1.1), Settings, onboarding, per-process network and GPU and auto-annotations (v1.2) | Series data model, host UUID, CBOR proto with handshake and skew test, `seq` and DB epoch on every row, `Source` trait, `Ticker`/`PowerSignals` seams, collector entitlement declarations, single-writer settings, dynamic capabilities, Linux cross-check CI | Idle CPU at or below Stats and under 0.5%; accuracy within ±5% and ±2 °C of macmon; 30-day history under 150 MB; installable unsigned DMG plus Homebrew tap |
+| v1.x | Local monitor | Tray (combined and values styles), popover, dashboard with Overview and module pages, Timeline 1h/24h (7d/30d and heatmap in v1.1), Settings, onboarding, per-process network and GPU and auto-annotations (v1.2) | Series data model, host UUID, CBOR proto with handshake and skew test, `seq` and DB epoch on every row, `Source` trait, `Ticker`/`PowerSignals` seams, collector entitlement declarations, single-writer settings, dynamic capabilities, Linux cross-check CI | Idle CPU at or below Stats and under 0.5%; accuracy within ±5% and ±2 °C of macmon; 750 MB default history cap (D-120); ad-hoc-signed GitHub DMG (Homebrew deferred) |
 | v2.x | Customization and widgets | v2.0 widget manifest and popover composer; v2.1 floating desktop widgets; v2.2 WidgetKit dev build (personal use); v2.3 alert editor, configurable Overview, per-widget history | Widget manifest with generated TS and Swift types, `WidgetFeedSink` trait with a file implementation, board window lifecycle | Popover renders from saved layouts; board windows within the per-display budget; WidgetKit widgets survive rebuilds on the dev's own Mac |
 | v3.x | Native distribution | Developer ID signing and notarization in CI, hardened runtime, official Homebrew cask, signed updates, public WidgetKit via Team-ID-prefixed App Group, App Store evaluation | `AppGroupWidgetFeed`, signing pipeline, `appstore` edition build | Notarized builds from CI; WidgetKit installs for users with no prompts; go/no-go on the App Store recorded in D-015 |
 | v4.x | Remote hosts | `kelvo-agent` for macOS and Linux, Add-host flow over SSH, live stream and cursor sync, Linux collectors (cgroups, containers), fleet view and host switcher, remote alerts | `RemoteSource`, per-host mirrors with disk budgets, `HostSummary` in use | Agent under 0.3% CPU and 30 MB; sync survives drops, reinstalls and pruning without interpolating; fleet view works for offline hosts |

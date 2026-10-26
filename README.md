@@ -2,7 +2,7 @@
 
 A menu bar system monitor for Apple Silicon Macs that keeps history.
 
-Kelvo shows CPU, GPU, memory, power and sensors, network, disk and battery once a second, and stores 30 days of it on disk. When the fans spun up at 3pm, you can scroll back and see which process did it.
+Kelvo shows CPU, GPU, memory, power and sensors, network, disk and battery once a second, and keeps local history, with up to 30 days available depending on your size limit and recorded activity. When the fans spun up at 3pm, you can scroll back and see which process did it.
 
 Kelvo is free and open source. Download the app below; no build tools are needed.
 See the [changelog](CHANGELOG.md) for release history.
@@ -31,13 +31,20 @@ Open **Settings → General → Check now**. When a new release is available, ch
 installing it, restarts, and keeps your history and settings.
 
 With **Check for updates automatically** enabled, Kelvo checks GitHub shortly after
-launch and every 24 hours while running. It never installs an update without your
-click. Turning this off stops background checks; **Check now** still works.
-Checks contact GitHub; Kelvo sends no metrics, history or machine identifier.
+launch and roughly daily while running, with up to 30 minutes of jitter. **Install updates automatically** defaults
+on: Kelvo verifies signed downloads, waits until interactive windows are closed and
+maintenance has finished, then installs and restarts. Automatic installation never
+requests administrator privileges; Settings offers a manual installation when
+needed. Turn off automatic installation to review each release yourself.
+
+Turning off automatic checks also stops automatic installation; **Check now** still
+works. Existing check opt-outs stay disabled. Checks contact GitHub; Kelvo sends no
+metrics, history or machine identifier. Versions before 0.3.0 need one manual update
+through **Install and restart** to gain automatic installation.
 
 If an update fails, use **Check now** to retry or download the latest DMG and replace
 the app after quitting Kelvo. Run Kelvo from Applications, not from the mounted DMG.
-Source-built older versions need this first DMG installation to gain the updater.
+Older source builds without updater support need this first DMG installation.
 Quit the old copy and replace it in its existing Applications folder (the source
 installer used `~/Applications`) so you do not keep two copies.
 
@@ -103,7 +110,7 @@ promise of immediately recovered Mac disk space. See the
 
 ![The Network page](https://raw.githubusercontent.com/tryopendata/kelvo/assets/media/network.webp)
 
-The Timeline puts every module on one chart covering the last hour, 24 hours, 7 days or 30 days, and marks events on it: fans ramping, thermal state changes, a process pinning the CPU, power spikes. A heatmap shows CPU load or temperature by hour across 30 days. Any range exports to CSV.
+The Timeline puts every module on one chart covering the last hour, 24 hours, 7 days or 30 days, and marks events on it: fans ramping, thermal state changes, a process pinning the CPU, power spikes. Select an interval to zoom in, inspect its events and carry the range into module charts; Back restores the previous range. Recorded app usage shows the top ten app groups, sortable by CPU, GPU, RAM, estimated CPU power or network usage, with expandable process details and comparison with the previous interval. A heatmap shows CPU load or temperature by hour across available history. Any range exports to CSV.
 
 ![The Timeline](https://raw.githubusercontent.com/tryopendata/kelvo/assets/media/timeline.webp)
 
@@ -111,7 +118,7 @@ CPU, GPU, Memory, Power, Network and Disk also support rolling durations and fix
 date ranges. Return to Live to resume a moving window; brush Network or Disk charts
 to inspect activity within a selection.
 
-The menu bar can show one combined item or one item per module, each as a number, a graph or a per-core strip.
+The menu bar can show one combined item or one item per module, each as a number, a graph or a per-core strip. Popover cards collapse individually or together, keep their saved presentation, and resize the popover to fit.
 
 ## Monitor another Mac
 
@@ -158,8 +165,11 @@ depend on the host's hardware and read permissions.
 Select the host to view live metrics, stored history, per-app usage and disk space
 reports. Linux memory charts show used and cached memory. Containers show cgroup
 services and containers where available; the local Docker cleanup workflow above
-is separate. Use **Update agent** when offered. If a server is reinstalled or
-replaced, **Re-pair…** adds its new identity and keeps the old mirrored history as
+is separate. Older agents need one **Update agent** action to gain automatic updates.
+After that, each Linux host checks and installs signed compatible releases
+independently through systemd. Host settings show its update preferences and results.
+
+If a server is reinstalled or replaced, **Re-pair…** adds its new identity and keeps the old mirrored history as
 an offline host. Host settings also provide agent removal.
 
 Remote alerts and remote menu-bar metrics remain future work. See the
@@ -197,7 +207,15 @@ macOS only shows an app the network traffic of processes owned by the same user.
 
 ### How much disk does the history use?
 
-About 150 MB for 30 days. History older than 7 days is stored in 15-minute buckets, and you can set a size limit in Settings.
+The default history size limit is 750 MB; valid limits saved by older versions stay
+unchanged. Kelvo records app attribution and coverage alongside resource history,
+and keeps resource aggregates in 10-second buckets for 24 hours, one-minute
+buckets through 7 days and 15-minute buckets through 30 days. The amount of
+activity and your size limit determine how much history fits, so 30 days is not
+guaranteed. Change the limit in Settings.
+
+Durable app attribution starts recording after upgrading to 0.3.0. Earlier
+unrecorded app usage is unavailable; upgrading cannot reconstruct it.
 
 ### Where does Kelvo keep its data?
 

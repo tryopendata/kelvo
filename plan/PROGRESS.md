@@ -4,6 +4,14 @@ This file tracks where Kelvo is against the plan. Task-level checkboxes live in 
 
 Agents update this file whenever a phase starts or finishes. Each update adds a log entry: what changed, how it was verified, and anything left open. They also tick the matching checkboxes in the version doc.
 
+## Release 0.3.0 (2026-10-26, preparing)
+
+Preparing the minor release from main with Timeline investigation, durable app/process
+history, compact tray cards, issue #1 fixes and host-owned automatic updates.
+The release notes, changelog and public usage documentation are being updated with
+`ce:writer`. Native packaging and signing run locally; hosted validation uses Linux.
+Release verification and publication results will be recorded here when complete.
+
 ## Product UX updates (2026-10-26, landed)
 
 The [approved UX plan](product-ux-polish.md) is implemented and landed through

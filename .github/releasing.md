@@ -62,10 +62,10 @@ With the signing key stored at the path above:
 TAURI_SIGNING_PRIVATE_KEY="$HOME/.config/kelvo/release/updater.key" \
 TAURI_SIGNING_PRIVATE_KEY_PASSWORD='' \
 bun run build:app --config src-tauri/tauri.release.conf.json --bundles app,dmg
-python3 scripts/release-manifest.py v0.2.0 --stage
+python3 scripts/release-manifest.py v0.3.0 --stage
 bun run tauri signer sign --private-key-path "$HOME/.config/kelvo/release/updater.key" \
-  --password '' --app-version 0.2.0 target/release-assets/release.json
-python3 scripts/release-manifest.py v0.2.0 --checksums
+  --password '' --app-version 0.3.0 target/release-assets/release.json
+python3 scripts/release-manifest.py v0.3.0 --checksums
 cargo run -p kelvo --example verify_release -- target/release-assets
 ```
 
