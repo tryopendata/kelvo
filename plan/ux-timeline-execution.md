@@ -65,3 +65,14 @@ network10.92, tray9.81, history-off9.15, window10.81 core allocations/tick. Log:
 /tmp/kelvo-usage-allocation-modes.log. The engine write-volume gate still needs all seven
 usage tables included; quiet release CPU and full integration gates remain parent-owned.
 Storage source contracts integrated through 8deb33a. No user history files were modified.
+
+Actual combined write gate follow-up: all seven usage tables now count integer metadata
+and text/blob payload, and the final open recorder state is flushed before measurement.
+The ten-minute real-collector run exceeds approved limits: 10,818 extrapolated rows/hour,
+5,899,374 payload bytes/hour and 17,425,296 WAL bytes/hour. A full fake hour separates
+startup population from churn: 3,596 rows, 5,720,878 payload bytes and 15,078,952 WAL bytes.
+Thus row growth passes at one hour, while payload and WAL remain blocked. No threshold
+was changed. Storage owner received /tmp/kelvo-usage-real-host-hour.sqlite and its WAL,
+with full output in /tmp/kelvo-usage-combined-hour-volume.log. The temporary full-hour
+measurement override was restored. Dependent attribution UI is gated again while the
+storage owner investigates lossless compression of the actual facts.

@@ -695,6 +695,8 @@ fn store_run(name: &str, minutes: u64, commit_s: u64) -> (Harness, u64, WalVolum
             writer.flush().unwrap();
         }
     }
+    h.ctl.set_paused(true);
+    h.pump();
     writer.flush().unwrap();
     let w1 = writer.write_stats().unwrap();
     let file1 = size(&path) + size(&path.with_extension("sqlite-wal"));
@@ -774,6 +776,24 @@ fn store_write_volume_per_hour_at_one_second() {
         rows_h += rows as f64 * scale;
         bytes_h += bytes as f64 * scale;
     }
+    for table in [
+        "usage_apps",
+        "usage_processes",
+        "usage_app_buckets",
+        "usage_process_buckets",
+        "usage_coverage",
+        "usage_uncertain",
+        "usage_recording_start",
+    ] {
+        let (rows, bytes) = usage_table_volume(&db, table);
+        println!(
+            "[perf] store {table:<24} {:.0} rows/h {:.0} payload bytes/h",
+            rows as f64 * scale,
+            bytes as f64 * scale
+        );
+        rows_h += rows as f64 * scale;
+        bytes_h += bytes as f64 * scale;
+    }
     let growth_h = growth as f64 * scale;
     println!(
         "[perf] store total {rows_h:.0} rows/h, {bytes_h:.0} payload bytes/h, file growth {growth_h:.0} bytes/h ({minutes} min run)"
@@ -793,4 +813,33 @@ fn store_write_volume_per_hour_at_one_second() {
         "{:.0} WAL bytes/h > {max_wal}",
         wal.wal_bytes_h
     );
+}
+
+/// Same logical payload convention as the production usage fixture: every non-null
+/// integer contributes eight bytes, text/blob columns their stored length.
+fn usage_table_volume(db: &rusqlite::Connection, table: &str) -> (i64, i64) {
+    let columns: Vec<(String, String)> = db
+        .prepare(&format!("PRAGMA table_info({table})"))
+        .unwrap()
+        .query_map([], |r| Ok((r.get(1)?, r.get(2)?)))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    let expression = columns
+        .iter()
+        .map(|(name, ty)| {
+            if ty == "INTEGER" {
+                format!("CASE WHEN {name} IS NULL THEN 0 ELSE 8 END")
+            } else {
+                format!("coalesce(length({name}),0)")
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("+");
+    db.query_row(
+        &format!("SELECT count(*),coalesce(sum({expression}),0) FROM {table}"),
+        [],
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    )
+    .unwrap()
 }
