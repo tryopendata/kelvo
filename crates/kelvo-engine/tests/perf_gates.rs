@@ -499,11 +499,12 @@ fn check(mode: Mode) {
             per_tick(s.allocs),
             calls.join(", ")
         );
-        // The processes collector allocates one name per process it has not seen, so
-        // its count follows how many processes the machine started during the run.
+        // First-seen processes allocate identity data before they have a rate row.
+        // This emitted-row count misses processes that exit before a second sample;
+        // it is not a count of every identity lookup or its allocations.
         if s.new_rows > 0 {
             println!(
-                "[perf]   {:<14} {} new process rows (one name allocation each)",
+                "[perf]   {:<14} {} new emitted process rows (first-seen identity work may include unreported transient processes)",
                 "", s.new_rows
             );
         }
