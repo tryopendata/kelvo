@@ -7,7 +7,8 @@
  * buckets, 72 h of process snapshots), the last 7 days at 1-minute
  * resolution, and anything older at 15 minutes (D-076). A day of quarters
  * is 96 rows against a minute day's 1,440 of the same width, so it is
- * costed at a fifteenth of a minute day.
+ * costed at a fifteenth of a minute day. Durable usage uses separate measured
+ * tier costs, plus process identities that remain linear in retained days.
  *
  * The model comes from two pairs of fill tests with 16 KiB pages, size
  * after close, at 150 and 250 series:
@@ -138,7 +139,15 @@ export function projectedHistoryBytes(
   growth?: HistoryGrowth | null
 ): number {
   const m = model(series, growth);
-  return m.fixed + minuteDayEquivalents(days) * m.perDay;
+  const usage = growth?.usage ?? HISTORY_PROJECTION.usage_fill;
+  const usageBytes = usage
+    ? usage.fixed_identity_bytes +
+      Math.min(days, 1) * usage.finest_day_bytes +
+      Math.max(0, Math.min(days, MINUTE_DAYS) - 1) * usage.minute_day_bytes +
+      Math.max(0, days - MINUTE_DAYS) * usage.quarter_day_bytes +
+      days * usage.identity_day_bytes
+    : 0;
+  return m.fixed + minuteDayEquivalents(days) * m.perDay + usageBytes;
 }
 
 /**
@@ -152,13 +161,18 @@ export function daysUnderLimit(
   series = DEFAULT_SERIES,
   growth?: HistoryGrowth | null
 ): number {
-  const { fixed, perDay } = model(series, growth);
-  const room = limitBytes * LIMIT_FILL - fixed;
-  const minuteRoom = MINUTE_DAYS * perDay;
-  if (room < minuteRoom) return Math.max(1, Math.floor(room / perDay));
-  return (
-    MINUTE_DAYS + Math.floor(((room - minuteRoom) * QUARTER_FACTOR) / perDay)
-  );
+  // Projection costs are monotonic, including identities that never roll down.
+  let low = 1;
+  let high = 1;
+  const fits = (days: number) =>
+    projectedHistoryBytes(days, series, growth) <= limitBytes * LIMIT_FILL;
+  while (high < 1_000_000 && fits(high)) high *= 2;
+  while (low + 1 < high) {
+    const middle = Math.floor((low + high) / 2);
+    if (fits(middle)) low = middle;
+    else high = middle;
+  }
+  return low;
 }
 
 export interface RetentionProjection {

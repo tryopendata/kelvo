@@ -5,6 +5,7 @@ import type {
   HistoryHealth,
   Settings,
 } from "@core/generated/bindings";
+import { HISTORY_PROJECTION } from "@core/generated/bindings";
 import type { MockTransport, MockTransportOptions } from "./contracts";
 import type { MockEmitters } from "./emitters";
 import { mockEvents } from "./events";
@@ -35,6 +36,7 @@ export class MockStore {
             measured_ms: 7 * 86_400_000,
             fixed_bytes: 36_000_000,
             minute_day_bytes: 2_050_000,
+            usage: { ...HISTORY_PROJECTION.usage_fill },
           }
         : options.historyGrowth;
     this.health = {

@@ -57,8 +57,8 @@ pub use perms::{
 };
 pub use reader::{
     BATTERY_CHARGE, BATTERY_CHARGING, BatteryCell, ExportQuery, ExportSummary, HistoryGrowth,
-    MIN_MEASURED_MS, MetricStats, RangeStats, Reader, fill_battery_hours, history_recent,
-    net_by_app_recent, range_stats,
+    MIN_MEASURED_MS, MetricStats, RangeStats, Reader, UsageHistoryGrowth, fill_battery_hours,
+    history_recent, net_by_app_recent, range_stats,
 };
 pub use rolldown::NET_TOP_APPS;
 /// The `rusqlite` behind [`StoreError::Sqlite`], so callers can match its error codes

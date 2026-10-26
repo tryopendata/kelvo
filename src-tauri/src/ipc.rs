@@ -43,6 +43,7 @@ pub struct HistoryGrowth {
     pub fixed_bytes: ByteCount,
     /// Bytes one day of 1-minute history costs.
     pub minute_day_bytes: ByteCount,
+    pub usage: Option<UsageHistoryGrowth>,
 }
 
 impl From<kelvo_store::HistoryGrowth> for HistoryGrowth {
@@ -51,6 +52,32 @@ impl From<kelvo_store::HistoryGrowth> for HistoryGrowth {
             measured_ms: g.measured_ms,
             fixed_bytes: ByteCount(g.fixed_bytes),
             minute_day_bytes: ByteCount(g.minute_day_bytes),
+            usage: g.usage.map(UsageHistoryGrowth::from),
+        }
+    }
+}
+
+/// Usage bucket tiers and process churn have independent retained costs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, specta::Type)]
+pub struct UsageHistoryGrowth {
+    #[specta(type = JsSafeInt)]
+    pub measured_ms: i64,
+    pub finest_day_bytes: ByteCount,
+    pub minute_day_bytes: ByteCount,
+    pub quarter_day_bytes: ByteCount,
+    pub identity_day_bytes: ByteCount,
+    pub fixed_identity_bytes: ByteCount,
+}
+
+impl From<kelvo_store::UsageHistoryGrowth> for UsageHistoryGrowth {
+    fn from(g: kelvo_store::UsageHistoryGrowth) -> Self {
+        Self {
+            measured_ms: g.measured_ms,
+            finest_day_bytes: ByteCount(g.finest_day_bytes),
+            minute_day_bytes: ByteCount(g.minute_day_bytes),
+            quarter_day_bytes: ByteCount(g.quarter_day_bytes),
+            identity_day_bytes: ByteCount(g.identity_day_bytes),
+            fixed_identity_bytes: ByteCount(g.fixed_identity_bytes),
         }
     }
 }

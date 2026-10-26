@@ -141,6 +141,8 @@ pub struct HistoryProjection {
     pub fill_minutes: Vec<FillRun>,
     /// The fill test with the roll-down.
     pub fill_rolled: Vec<FillRun>,
+    /// Conservative initial usage estimate from the production retained fixture.
+    pub usage_fill: crate::ipc::UsageHistoryGrowth,
 }
 
 pub fn history_projection() -> HistoryProjection {
@@ -159,6 +161,14 @@ pub fn history_projection() -> HistoryProjection {
         trim_low_water: cap.low_water_bytes() as f64 / cap.max_bytes as f64,
         fill_minutes: FILL_MINUTES.iter().map(run).collect(),
         fill_rolled: FILL_ROLLED.iter().map(run).collect(),
+        usage_fill: crate::ipc::UsageHistoryGrowth {
+            measured_ms: Retention::DAY_MS * 30,
+            finest_day_bytes: crate::ipc::ByteCount(35_000_000),
+            minute_day_bytes: crate::ipc::ByteCount(6_750_000),
+            quarter_day_bytes: crate::ipc::ByteCount(1_360_000),
+            identity_day_bytes: crate::ipc::ByteCount(11_550_000),
+            fixed_identity_bytes: crate::ipc::ByteCount(200_000),
+        },
     }
 }
 

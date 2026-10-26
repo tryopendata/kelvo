@@ -43,6 +43,7 @@ pub struct HistoryGrowth {
     pub fixed_bytes: u64,
     /// Bytes one day of 1-minute history costs.
     pub minute_day_bytes: u64,
+    pub usage: Option<super::UsageHistoryGrowth>,
 }
 
 /// One table's pages in `dbstat`.
@@ -106,17 +107,25 @@ impl Reader {
             .filter_map(|n| tables.get(*n))
             .map(|t| t.bytes)
             .sum();
+        let usage = self.usage_growth(fill)?;
+        let usage_pages: u64 = tables
+            .iter()
+            .filter(|(name, _)| name.starts_with("usage_"))
+            .map(|(_, t)| t.bytes)
+            .sum();
         let other = tables
             .values()
             .map(|t| t.bytes)
             .sum::<u64>()
-            .saturating_sub(classed_pages);
+            .saturating_sub(classed_pages)
+            .saturating_sub(if usage.is_some() { usage_pages } else { 0 });
         let minute_day_bytes = (sum(MINUTE_TABLES) as f64 * Retention::DAY_MS as f64
             / measured_ms.min(minute_window) as f64) as u64;
         Ok(Some(HistoryGrowth {
             measured_ms,
             fixed_bytes: other + s10 + snap,
             minute_day_bytes,
+            usage,
         }))
     }
 

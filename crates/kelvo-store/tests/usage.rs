@@ -511,3 +511,52 @@ fn identical_late_observations_preserve_multiplicity_and_open_bucket_replacement
     let stored = r.historical_usage_after(&q, Vec::new).unwrap();
     assert_eq!(stored.network_uncertainty, recent.network_uncertainty);
 }
+
+#[test]
+fn young_usage_growth_projects_tiers_and_identity_churn_independently() {
+    let dir = temp_dir("usage-growth");
+    let store = open(&dir, "h.sqlite");
+    let w = store.writer();
+    w.upsert_host(host(1)).unwrap();
+    let layout = layout(&["cpu.load"]);
+    for tick in 0..360_i64 {
+        let at = T0 + tick * 10_000;
+        let mut b = one(at, 0.125);
+        for p in &mut b.processes {
+            p.start_time_us = (T0 + tick / 3 * 30_000) * 1000;
+        }
+        w.write_usage_bucket(host(1).id, b).unwrap();
+        if tick % 6 == 0 {
+            w.write_bucket(bucket(host(1).id, kelvo_schema::Tier::M1, at, &layout, 2.0))
+                .unwrap();
+        }
+        if tick == 59 {
+            w.flush().unwrap();
+            assert!(
+                store
+                    .reader()
+                    .unwrap()
+                    .history_growth(at + 10_000, &Retention::default())
+                    .unwrap()
+                    .is_none()
+            );
+        }
+    }
+    w.flush().unwrap();
+    let growth = store
+        .reader()
+        .unwrap()
+        .history_growth(T0 + HOUR, &Retention::default())
+        .unwrap()
+        .unwrap();
+    let usage = growth.usage.unwrap();
+    assert_eq!(usage.measured_ms, HOUR);
+    assert!(usage.identity_day_bytes > 0);
+    assert!(usage.fixed_identity_bytes > 0);
+    assert!(usage.finest_day_bytes > usage.minute_day_bytes);
+    assert!(usage.minute_day_bytes > usage.quarter_day_bytes);
+    assert!(
+        usage.quarter_day_bytes * 15 > usage.minute_day_bytes,
+        "coarse process membership cannot be costed as one fifteenth under churn"
+    );
+}

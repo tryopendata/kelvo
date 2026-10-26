@@ -1,3 +1,4 @@
+import { HISTORY_PROJECTION } from "@core/generated/bindings";
 import { MOCK_HOST_ID } from "@core/mock/fixtures";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import { renderWithProviders } from "../../../../../tests/test-utils";
@@ -230,19 +231,28 @@ describe("Settings sampling and history", () => {
     );
   });
 
-  it("fits 90 days of the mock's series under the default limit", async () => {
+  it("includes retained process identities when a cap shortens requested history", async () => {
     const { transport } = renderWithProviders(<SettingsRoute />);
     await screen.findByText("Keep history");
     expect(screen.queryByText(LIMITED)).toBeNull();
 
-    // Past 7 days history is 15-minute buckets (D-076): 90 days of a
-    // typical host's series is well under 150 MB.
-    await transport.updateSettings({ history: { retention_days: 90 } });
+    // Process identities remain retained when older samples use coarse buckets.
+    await act(async () => {
+      await transport.updateSettings({ history: { retention_days: 90 } });
+    });
     await waitFor(() =>
       expect(screen.getByText("90 days")).toBeInTheDocument()
     );
-    expect(screen.queryByText(LIMITED)).toBeNull();
-    expect(screen.getByText(/^about [1-9]0 MB$/)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/Limited to about \d+ days by the 750 MB limit/)
+    ).toBeInTheDocument();
+    expect(screen.getByText("about 750 MB")).toBeInTheDocument();
+    await act(async () => {
+      await transport.updateSettings({
+        history: { retention_days: 30, size_limit_mb: 150 },
+      });
+    });
+    expect(await screen.findByText(LIMITED)).toBeInTheDocument();
   });
 
   it("projects history from what this Mac's history measured", async () => {
@@ -252,11 +262,12 @@ describe("Settings sampling and history", () => {
           measured_ms: 12 * 3_600_000,
           fixed_bytes: 36_000_000,
           minute_day_bytes: 2_050_000,
+          usage: { ...HISTORY_PROJECTION.usage_fill },
         },
       },
     });
-    // 30 days: 36 MB, 7 minute days and 23 quarter days (D-076), about 54 MB.
-    expect(await screen.findByText("about 50 MB")).toBeInTheDocument();
+    // Measured series growth plus durable usage tiers and identity retention.
+    expect(await screen.findByText("about 510 MB")).toBeInTheDocument();
   });
 
   it("falls back to the fill-test model before an hour is recorded", async () => {
@@ -266,8 +277,10 @@ describe("Settings sampling and history", () => {
     await waitFor(() =>
       expect(transport.calls.map((c) => c.command)).toContain("history_growth")
     );
-    // 30 days of the mock's series at the fill tests' rates.
-    expect(await screen.findByText("about 60 MB")).toBeInTheDocument();
+    // Before local measurements, include the retained usage fixture estimate.
+    expect((await screen.findByText(/^about \d+ MB$/)).textContent).toBe(
+      "about 520 MB"
+    );
   });
 
   it("measures Kelvo's CPU again after the interval changes", async () => {

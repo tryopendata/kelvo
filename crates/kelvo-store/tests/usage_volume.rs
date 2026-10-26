@@ -338,3 +338,73 @@ fn production_retained_fill() {
         "usage plus unchanged existing 150 MB scope exceeds approved default"
     );
 }
+
+#[test]
+#[ignore = "requires retained fixture, release build and coordinated quiet timing slot"]
+fn production_retained_query_latency() {
+    use kelvo_schema::durable_usage::*;
+    let path = std::env::var_os("KELVO_USAGE_FILL_PATH").expect("retained fixture path");
+    let store = kelvo_store::Store::open(kelvo_store::StoreConfig::new(std::path::PathBuf::from(
+        path,
+    )))
+    .unwrap();
+    for by in [
+        HistoricalUsageMetric::Cpu,
+        HistoricalUsageMetric::Gpu,
+        HistoricalUsageMetric::Memory,
+        HistoricalUsageMetric::Energy,
+        HistoricalUsageMetric::Network,
+    ] {
+        let q = HistoricalUsageRequest {
+            host: host(1).id,
+            from_ms: T0,
+            to_ms: T0 + 30 * DAY,
+            by,
+            app_names: vec![],
+        };
+        let mut reader = store.reader().unwrap();
+        for phase in ["connection-cold", "warm"] {
+            let start = std::time::Instant::now();
+            let reply = reader.historical_usage_after(&q, Vec::new).unwrap();
+            let elapsed = start.elapsed();
+            println!(
+                "[production query] app {by:?} {phase} {}ms {} rows",
+                elapsed.as_millis(),
+                reply.apps.len()
+            );
+            assert_eq!(reply.apps.len(), 10);
+            assert!(
+                elapsed.as_secs_f64() < 15.0,
+                "remote query timeout exceeded"
+            );
+        }
+    }
+    let mut q = UsageProcessRequest {
+        host: host(1).id,
+        from_ms: T0,
+        to_ms: T0 + 30 * DAY,
+        app_name: "Application 000".into(),
+        by: HistoricalUsageMetric::Cpu,
+        page_size: 100,
+        cursor: None,
+    };
+    let mut reader = store.reader().unwrap();
+    for phase in ["connection-cold-first-page", "warm-next-page"] {
+        let start = std::time::Instant::now();
+        let reply = reader.usage_processes_after(&q, Vec::new).unwrap();
+        let elapsed = start.elapsed();
+        println!(
+            "[production query] process {phase} {}ms {} rows continued={}",
+            elapsed.as_millis(),
+            reply.processes.len(),
+            reply.next_cursor.is_some()
+        );
+        assert_eq!(reply.processes.len(), 100);
+        assert!(reply.next_cursor.is_some());
+        q.cursor = reply.next_cursor;
+        assert!(
+            elapsed.as_secs_f64() < 15.0,
+            "remote query timeout exceeded"
+        );
+    }
+}

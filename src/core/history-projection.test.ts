@@ -1,15 +1,42 @@
 import {
   approxSize,
   bytesPerMinuteDay,
-  daysUnderLimit,
+  daysUnderLimit as daysForAllHistory,
   FILL_TEST,
   fixedBytes,
-  projectedHistoryBytes,
-  retentionProjection,
+  projectedHistoryBytes as projectAllHistory,
+  retentionProjection as projectRetention,
   sizeLimitLabel,
 } from "./history-projection";
 
 const MB = 1e6;
+
+// Existing fill measurements cover series history; pass an explicit series-only
+// measured model to preserve those regressions independently of durable usage.
+const zeroUsage = {
+  measured_ms: 3_600_000,
+  finest_day_bytes: 0,
+  minute_day_bytes: 0,
+  quarter_day_bytes: 0,
+  identity_day_bytes: 0,
+  fixed_identity_bytes: 0,
+};
+const seriesOnly = (series = 150) => ({
+  measured_ms: 3_600_000,
+  fixed_bytes: fixedBytes(series),
+  minute_day_bytes: bytesPerMinuteDay(series),
+  usage: zeroUsage,
+});
+const projectedHistoryBytes = (days: number, series = 150) =>
+  projectAllHistory(days, series, seriesOnly(series));
+const daysUnderLimit = (limit: number, series = 150) =>
+  daysForAllHistory(limit, series, seriesOnly(series));
+const retentionProjection: typeof projectRetention = (
+  days,
+  limit,
+  series = 150,
+  growth
+) => projectRetention(days, limit, series, growth ?? seriesOnly(series));
 
 describe("projectedHistoryBytes", () => {
   it("reproduces the D-076 fill test runs (7 days of minutes, then quarters)", () => {
@@ -99,6 +126,7 @@ describe("with this Mac's measured growth", () => {
     measured_ms: 12 * 3_600_000,
     fixed_bytes: 36 * MB,
     minute_day_bytes: 2 * MB,
+    usage: zeroUsage,
   };
 
   it("replaces the fill tests' numbers, whatever the series count", () => {
@@ -123,5 +151,35 @@ describe("labels", () => {
     expect(approxSize(1_234 * MB)).toBe("1.2 GB");
     expect(sizeLimitLabel(150)).toBe("150 MB");
     expect(sizeLimitLabel(1000)).toBe("1 GB");
+  });
+});
+
+describe("durable usage retained cost", () => {
+  it("includes identity churn before this machine has an hour of measurements", () => {
+    expect(projectAllHistory(30)).toBeGreaterThan(450 * MB);
+    expect(projectRetention(30, 150 * MB).limitedDays).toBeLessThan(30);
+    expect(projectRetention(30, 750 * MB).limitedDays).toBeNull();
+  });
+  it("keeps identity cost linear when older process facts use coarser buckets", () => {
+    const growth = {
+      measured_ms: 3_600_000,
+      fixed_bytes: 36 * MB,
+      minute_day_bytes: 2 * MB,
+      usage: {
+        measured_ms: 3_600_000,
+        finest_day_bytes: 35 * MB,
+        minute_day_bytes: 7 * MB,
+        quarter_day_bytes: 1.5 * MB,
+        identity_day_bytes: 12 * MB,
+        fixed_identity_bytes: MB,
+      },
+    };
+    expect(
+      projectAllHistory(31, 150, growth) - projectAllHistory(30, 150, growth)
+    ).toBeCloseTo(13.5 * MB + (2 * MB) / 15);
+    expect(
+      projectRetention(30, 150 * MB, 150, growth).limitedDays
+    ).toBeLessThan(30);
+    expect(projectRetention(30, 750 * MB, 150, growth).limitedDays).toBeNull();
   });
 });

@@ -195,3 +195,62 @@ Identical legitimate observations within a bucket sum their records and bytes.
 Replaying that bucket replaces its earlier uncertainty rather than adding to it.
 A behavior test proves two identical observations remain two after replay and a
 revised open bucket becomes three both in recent and durable queries.
+
+
+## Retained production bytes and release queries
+
+The production-schema fill has 4,320,950 process instances and 19,488 retained
+buckets across 10 s / 1 min / 15 min tiers. The unchanged production codec encodes
+all app/process sufficient stats and per-resource coverage. The database after
+checkpoint is **455,245,824 bytes**, all tables and indexes included. Major allocated
+costs: process identities 346,324,992; process buckets 68,567,040; app buckets
+36,503,552; source coverage 1,622,016; uncertainty 344,064. With the existing
+150,000,000-byte history allowance, the total is 605,245,824 bytes, within 750 MB.
+The fixture seeds older tiers directly through the production codec/schema;
+Writer recording/restart/rollup behavior is tested separately. It is synthetic
+retained-size evidence, not a month-long recording/CPU measurement.
+
+Root coordinated a quiet window with the other agents' builds held. The release
+binary queried this database through public Reader APIs. App rankings across all
+five resource sorts: connection-cold 1,477–1,509 ms; warm 1,472–1,503 ms. The first
+100 process rows for a selected app took 2,105 ms; the next 100 took 1,397 ms with
+visible continuation. All queries were below the 15-second remote timeout. These
+are connection-cold, OS-cache-warm reads: no global cache purge was performed.
+The 12-query harness measured 18.50 s real, 17.30 s user + 0.47 s system CPU, 31.1 MB
+maximum RSS, zero block input operations. One 30-day sort costs about 1.5 source
+CPU seconds; consumers should cache the loaded interval, not refetch per render.
+
+The public codec regression covers unsupported versions, truncated compressed
+payloads, oversized declared counts and nonfinite integrals. Fractional CPU/GPU/
+energy integrals and nonzero RAM/network facts survive restart. Removing nonfinite
+validation made the corrupt-integral public-reader assertion fail as expected;
+validation was restored. Truncated compression now maps to typed stored corruption.
+
+
+## Settings projection
+
+`HistoryGrowth.usage` now publishes separate finest/minute/quarter daily costs,
+linear retained identity/uncertainty cost, and fixed initial identity cost.
+For a young database, Rust folds an hour of recorded facts with the production
+codec to estimate older tiers, rather than assigning process detail a 1/15 ratio.
+Before enough local recording exists, the Rust-owned production fill estimate
+includes usage and identity costs. All displayed sizes remain rounded estimates;
+actual retained dates continue to come from history queries.
+
+Behavior regressions cover young recording, identity churn, independent coarse
+tier costs, saved 150 MB shortening and default 750 MB retaining 30 days. The initial
+mock estimate is about 520 MB; this Mac's example series measurements plus the
+same usage fixture are about 510 MB. The former series-only 50 MB assumption no
+longer persists when usage evidence is unavailable.
+
+
+## Integrated real-host gate correction
+
+The later integrated real-collector 10-minute run failed: reported 5.899 MB/h
+payload and 17.425 MB/h WAL exceed the approved 4 MB/h and 12 MB/h. The synthetic
+production fixture above was too compressible; its result does not establish
+whole-engine acceptance. The 10,818 rows/h extrapolation repeats startup app/process
+identities 6 times and needs a first-hour/recurring split, but byte failures are real.
+The storage gate remains closed. Next diagnostic is the actual recorded fact-value
+distribution and lossless whole-commit compression preserving each 10-second fact.
+No budget, cadence or detail reduction is authorized by this failure.

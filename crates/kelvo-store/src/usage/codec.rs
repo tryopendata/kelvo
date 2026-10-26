@@ -86,7 +86,8 @@ pub(crate) fn decode_selected(
     let mut raw = Vec::new();
     ZlibDecoder::new(blob.get(5..).unwrap_or_default())
         .take(expected as u64 + 1)
-        .read_to_end(&mut raw)?;
+        .read_to_end(&mut raw)
+        .map_err(|e| corrupt(&format!("invalid compressed facts: {e}")))?;
     if raw.len() != expected {
         return Err(corrupt("facts length mismatch"));
     }
