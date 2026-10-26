@@ -18,6 +18,13 @@ import type {
 import { trayStyleMenuBar } from "@core/settings-patch";
 import { LINUX_HOST_NAME, linuxCapabilities, linuxHostInfo } from "./linux";
 
+export const BLOCKED_REMOTE_UPDATE = {
+  status: "compatibility_blocked",
+  version: "9.0.0",
+  message:
+    "This release needs a coordinated upgrade. Update connected controllers, then reinstall this agent while keeping its data. Update agent cannot apply it.",
+};
+
 export type ScenarioName =
   | "disk-io-comparison"
   | "disk-io-no-ops"
@@ -29,6 +36,7 @@ export type ScenarioName =
   | "ssh-no-config"
   | "ssh-untrusted"
   | "multi-host"
+  | "remote-update-blocked"
   | "linux"
   | "linux-host"
   | "linux-agent-update"
@@ -87,6 +95,7 @@ export const SCENARIOS: readonly ScenarioName[] = [
   "ssh-untrusted",
   "ssh-no-config",
   "multi-host",
+  "remote-update-blocked",
   "linux",
   "linux-host",
   "linux-agent-update",
@@ -396,6 +405,7 @@ export function defaultSettings(flags: ScenarioFlags): Settings {
       show_menu_bar: true,
       appearance: "system",
       check_updates: true,
+      auto_install_updates: true,
       chart_window: "15m",
     },
     remote_access: { enabled: false },

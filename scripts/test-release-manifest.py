@@ -34,15 +34,30 @@ class ReleaseTests(unittest.TestCase):
             (bundle / "dmg/Kelvo.dmg").write_bytes(b"dmg")
             (bundle / "macos/Kelvo.app.tar.gz").write_bytes(b"archive")
             (bundle / "macos/Kelvo.app.tar.gz.sig").write_text("signature")
+            agents = root / "agents"
+            agents.mkdir()
+            for name in release.AGENTS.values():
+                (agents / name).write_bytes(b"linux-agent")
             out = root / "out"
-            release.stage("0.1.0", bundle, out)
+            release.stage("0.1.0", bundle, out, agents)
             self.assertEqual(json.loads((out / "latest.json").read_text())["version"], "0.1.0")
-            self.assertEqual(len((out / "SHA256SUMS").read_text().splitlines()), 4)
+            catalog = json.loads((out / "release.json").read_text())
+            self.assertEqual(set(catalog["artifacts"]), {"darwin-aarch64", *release.AGENTS})
+            self.assertEqual(catalog["protocol"], release.protocol_range())
             with self.assertRaises(ValueError):
-                release.stage("0.1.0", bundle, out)
+                release.checksums(out)
+            (out / "release.json.sig").write_text("signature")
+            release.checksums(out)
+            self.assertEqual(len((out / "SHA256SUMS").read_text().splitlines()), 8)
+            for target in release.AGENTS:
+                entry = catalog["artifacts"][target]
+                self.assertEqual(entry["size"], len(b"linux-agent"))
+                self.assertEqual(entry["sha256"], release.hashlib.sha256(b"linux-agent").hexdigest())
+            with self.assertRaises(ValueError):
+                release.stage("0.1.0", bundle, out, agents)
             (bundle / "macos/Kelvo.app.tar.gz.sig").unlink()
             with self.assertRaises(ValueError):
-                release.stage("0.1.0", bundle, root / "missing")
+                release.stage("0.1.0", bundle, root / "missing", agents)
 
 
 if __name__ == "__main__":

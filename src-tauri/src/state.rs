@@ -347,6 +347,7 @@ impl AppState {
         app: &AppHandle,
         patch: &crate::settings::SettingsPatch,
     ) -> Result<SettingsSnapshot, CommandError> {
+        let _maintenance = crate::updates::maintenance(app)?;
         self.settings
             .update(patch, &ShellEffects { app, state: self })
     }

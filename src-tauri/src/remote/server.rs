@@ -84,16 +84,44 @@ fn control_response(app: &AppHandle, ok: bool, message: String) -> ControlRespon
         allow_remote_monitoring: Some(settings.remote_access.enabled),
         show_menu_bar_icon: Some(settings.general.show_menu_bar),
         launch_at_login: Some(settings.general.launch_at_login),
+        updates: Some(super::update_controls::local_status(app)),
     }
 }
 fn control(app: &AppHandle, request: ControlRequest) -> ControlResponse {
     match request {
-        ControlRequest::Status => control_response(app, true, "Kelvo is running".into()),
+        ControlRequest::Status | ControlRequest::UpdateStatus => {
+            control_response(app, true, "Kelvo is running".into())
+        }
+        ControlRequest::UpdatePolicy {
+            check_updates,
+            auto_install_updates,
+        } => {
+            let _maintenance = match crate::updates::maintenance(app) {
+                Ok(guard) => guard,
+                Err(error) => return control_response(app, false, error.to_string()),
+            };
+            let patch = crate::settings::SettingsPatch {
+                general: Some(crate::settings::GeneralPatch {
+                    check_updates: Some(check_updates),
+                    auto_install_updates: Some(auto_install_updates),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            };
+            match app.state::<AppState>().update_settings(app, &patch) {
+                Ok(_) => control_response(app, true, "Update policy saved".into()),
+                Err(error) => control_response(app, false, error.to_string()),
+            }
+        }
         ControlRequest::Configure {
             allow_remote_monitoring,
             show_menu_bar_icon,
             launch_at_login,
         } => {
+            let _maintenance = match crate::updates::maintenance(app) {
+                Ok(guard) => guard,
+                Err(error) => return control_response(app, false, error.to_string()),
+            };
             let (tx, rx) = std::sync::mpsc::sync_channel(1);
             let handle = app.clone();
             if let Err(e) = app.run_on_main_thread(move || {

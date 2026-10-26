@@ -16,6 +16,9 @@ pub const AGENT_NOT_RUNNING: &str = "kelvo-agent: not running";
 
 /// The unit name in both layouts.
 pub const UNIT_NAME: &str = "kelvo-agent.service";
+pub const UPDATE_UNIT: &str = "kelvo-agent-update.service";
+pub const UPDATE_TIMER: &str = "kelvo-agent-update.timer";
+pub const RECOVERY_UNIT: &str = "kelvo-agent-recovery.service";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AgentLayout {
@@ -158,7 +161,7 @@ impl AgentLayout {
         let exec = unit_quote(&paths.binary.to_string_lossy());
         let data = unit_quote(&paths.data_dir.to_string_lossy());
         let socket = unit_quote(&paths.socket.to_string_lossy());
-        match self {
+        let text = match self {
             Self::System => format!(
                 "[Unit]\n\
                  Description=Kelvo agent\n\
@@ -169,16 +172,6 @@ impl AgentLayout {
                  StateDirectory=kelvo-agent\n\
                  RuntimeDirectory=kelvo-agent\n\
                  RuntimeDirectoryMode=0700\n\
-                 ProtectSystem=strict\n\
-                 ProtectHome=read-only\n\
-                 PrivateTmp=yes\n\
-                 NoNewPrivileges=yes\n\
-                 Nice=10\n\
-                 IOSchedulingClass=best-effort\n\
-                 IOSchedulingPriority=7\n\
-                 MemoryHigh=128M\n\
-                 MemoryMax=256M\n\
-                 MemorySwapMax=0\n\
                  Restart=on-failure\n\
                  RestartSec=5s\n\
                  \n\
@@ -192,20 +185,97 @@ impl AgentLayout {
                  \n\
                  [Service]\n\
                  ExecStart={exec} run --data-dir {data} --socket {socket}\n\
-                 NoNewPrivileges=yes\n\
-                 Nice=10\n\
-                 IOSchedulingClass=best-effort\n\
-                 IOSchedulingPriority=7\n\
-                 MemoryHigh=128M\n\
-                 MemoryMax=256M\n\
-                 MemorySwapMax=0\n\
                  Restart=on-failure\n\
                  RestartSec=5s\n\
                  \n\
                  [Install]\n\
                  WantedBy=default.target\n"
             ),
+        };
+        let text = text.replacen(
+            "[Service]\n",
+            &format!("[Service]\n{}\n", self.collector_properties().join("\n")),
+            1,
+        );
+        text.replacen(
+            "StartLimitIntervalSec=0\n",
+            &format!("StartLimitIntervalSec=0\nRequires={RECOVERY_UNIT}\nAfter={RECOVERY_UNIT}\n"),
+            1,
+        )
+    }
+
+    /// Apply the collector's resource limits and supported sandbox to private trials too.
+    pub fn collector_properties(self) -> Vec<&'static str> {
+        let mut properties = vec![
+            "NoNewPrivileges=yes",
+            "Nice=10",
+            "IOSchedulingClass=best-effort",
+            "IOSchedulingPriority=7",
+            "MemoryHigh=128M",
+            "MemoryMax=256M",
+            "MemorySwapMax=0",
+        ];
+        if self == Self::System {
+            properties.extend([
+                "ProtectSystem=strict",
+                "ProtectHome=read-only",
+                "PrivateTmp=yes",
+            ]);
         }
+        properties
+    }
+
+    /// Separate from the collector sandbox; recovery stops the private trial unit
+    /// before restoring history, including when the updater is killed.
+    pub fn update_units(self, paths: &AgentPaths) -> [(PathBuf, String); 3] {
+        let binary = unit_quote(&paths.binary.to_string_lossy());
+        let recovery = unit_quote(
+            &paths
+                .binary
+                .with_file_name(".kelvo-agent-recovery")
+                .to_string_lossy(),
+        );
+        let data = unit_quote(&paths.data_dir.to_string_lossy());
+        let socket = unit_quote(&paths.socket.to_string_lossy());
+        let system = if self == Self::System {
+            " --system"
+        } else {
+            ""
+        };
+        let args = format!("{system} --data-dir {data} --socket {socket}");
+        let dir = paths.unit.parent().unwrap_or(Path::new("."));
+        let environment = if self == Self::User {
+            let config = dir
+                .parent()
+                .and_then(Path::parent)
+                .unwrap_or(Path::new("."));
+            format!(
+                "Environment={}\n",
+                unit_quote(&format!("XDG_CONFIG_HOME={}", config.display()))
+            )
+        } else {
+            String::new()
+        };
+        [
+            (
+                dir.join(UPDATE_UNIT),
+                format!(
+                    "[Unit]\nDescription=Kelvo agent automatic update\nAfter=network-online.target\nWants=network-online.target\n\n[Service]\nType=oneshot\n{environment}ExecStart={binary} update --scheduled{args}\nExecStopPost={recovery} recover-update --restart{args}\nKillMode=control-group\nTimeoutStartSec=15min\nTimeoutStopSec=90s\nNice=10\nIOSchedulingClass=idle\nUMask=0077\n"
+                ),
+            ),
+            (
+                dir.join(UPDATE_TIMER),
+                format!(
+                    "[Unit]\nDescription=Check for Kelvo agent releases daily\n\n[Timer]\nOnBootSec=30s\nOnCalendar=daily\nPersistent=true\nRandomizedDelaySec=30min\nUnit={UPDATE_UNIT}\n\n[Install]\nWantedBy=timers.target\n"
+                ),
+            ),
+            (
+                dir.join(RECOVERY_UNIT),
+                format!(
+                    "[Unit]\nDescription=Recover interrupted Kelvo agent updates\nBefore={UNIT_NAME}\n\n[Service]\nType=oneshot\n{environment}ExecStart={recovery} recover-update{args}\nTimeoutStartSec=5min\nUMask=0077\n"
+                ),
+            ),
+        ]
     }
 }
 
@@ -326,12 +396,14 @@ mod tests {
         let text = AgentLayout::System.unit_text(&paths);
         assert_eq!(
             text,
-            "[Unit]\nDescription=Kelvo agent\nStartLimitIntervalSec=0\n\n[Service]\n\
+            "[Unit]\nDescription=Kelvo agent\nStartLimitIntervalSec=0\n\
+             Requires=kelvo-agent-recovery.service\nAfter=kelvo-agent-recovery.service\n\n[Service]\n\
+             NoNewPrivileges=yes\nNice=10\nIOSchedulingClass=best-effort\nIOSchedulingPriority=7\n\
+             MemoryHigh=128M\nMemoryMax=256M\nMemorySwapMax=0\n\
+             ProtectSystem=strict\nProtectHome=read-only\nPrivateTmp=yes\n\
              ExecStart=/usr/local/bin/kelvo-agent run --system\n\
              StateDirectory=kelvo-agent\nRuntimeDirectory=kelvo-agent\nRuntimeDirectoryMode=0700\n\
-             ProtectSystem=strict\nProtectHome=read-only\nPrivateTmp=yes\nNoNewPrivileges=yes\n\
-             Nice=10\nIOSchedulingClass=best-effort\nIOSchedulingPriority=7\n\
-             MemoryHigh=128M\nMemoryMax=256M\nMemorySwapMax=0\nRestart=on-failure\nRestartSec=5s\n\n[Install]\nWantedBy=multi-user.target\n"
+             Restart=on-failure\nRestartSec=5s\n\n[Install]\nWantedBy=multi-user.target\n"
         );
     }
 
@@ -371,6 +443,30 @@ mod tests {
             "--system",
         ] {
             assert!(!text.contains(root_only), "{root_only} in the user unit");
+        }
+    }
+
+    #[test]
+    fn update_timer_is_daily_persistent_and_recovery_runs_before_public_serving() {
+        for layout in [AgentLayout::System, AgentLayout::User] {
+            let paths = layout.paths(&env("/home/a", "", "", "")).unwrap();
+            let units = layout.update_units(&paths);
+            let service = &units[0].1;
+            let timer = &units[1].1;
+            let recovery = &units[2].1;
+            assert!(
+                timer.contains("OnCalendar=daily\nPersistent=true\nRandomizedDelaySec=30min\n")
+            );
+            assert!(timer.contains("OnBootSec=30s"));
+            assert!(service.contains("KillMode=control-group"));
+            assert!(service.contains("ExecStopPost=") && service.contains(".kelvo-agent-recovery"));
+            assert!(recovery.contains("Before=kelvo-agent.service"));
+            assert!(
+                layout
+                    .unit_text(&paths)
+                    .contains("Requires=kelvo-agent-recovery.service")
+            );
+            assert!(!service.contains("ProtectSystem=strict"));
         }
     }
 

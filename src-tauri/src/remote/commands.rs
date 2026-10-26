@@ -110,6 +110,7 @@ pub async fn update_remote_host(
     app: AppHandle,
     config: RemoteHostConfig,
 ) -> Result<RemoteHostRecord, CommandError> {
+    let _maintenance = crate::updates::maintenance(&app)?;
     validate(&config)?;
     let state = app.state::<AppState>();
     let _guard = state.remotes.operation.lock().await;
@@ -235,6 +236,7 @@ pub async fn remove_remote_host(
     uninstall_agent: bool,
     purge_agent: bool,
 ) -> Result<Option<String>, CommandError> {
+    let _maintenance = crate::updates::maintenance(&app)?;
     let state = app.state::<AppState>();
     let _guard = state.remotes.operation.lock().await;
     let id = host_id(&id)?;
@@ -310,6 +312,7 @@ pub async fn repair_remote_host(
     app: AppHandle,
     id: String,
 ) -> Result<RemoteHostRecord, CommandError> {
+    let _maintenance = crate::updates::maintenance(&app)?;
     let state = app.state::<AppState>();
     let _guard = state.remotes.operation.lock().await;
     let id = host_id(&id)?;

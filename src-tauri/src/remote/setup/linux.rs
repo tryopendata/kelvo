@@ -53,10 +53,10 @@ pub(in crate::remote) fn preparation(
     Ok(RemoteHostPreparation {
         kind: RemoteHostKind::Linux,
         installed: existing.is_some(),
-        // This build's version or newer: either connects without an update.
-        compatible: existing_version
-            .as_deref()
-            .is_some_and(|v| !older_version(v, env!("CARGO_PKG_VERSION"))),
+        // Release age does not determine wire compatibility.
+        compatible: existing
+            .and_then(|e| e.version.as_ref())
+            .is_some_and(|v| kelvo_remote::control::protocol_compatible(v.min_compatible, v.proto)),
         newer_installed: is_newer(existing_version.as_deref()),
         host_id: existing_id.map(|id| id.to_string()),
         name: probe.hostname.clone().unwrap_or_else(|| alias.to_owned()),

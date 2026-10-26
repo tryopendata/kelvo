@@ -1,4 +1,4 @@
-//! Durable interval attribution (D-119). Separate from the recent live usage ring.
+//! Durable interval attribution (D-120). Separate from the recent live usage ring.
 //! Storage integration must pass the independent feasibility and lifecycle gates.
 
 use serde::{Deserialize, Serialize};

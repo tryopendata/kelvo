@@ -77,6 +77,19 @@ export function GeneralPanel({ general }: { general: Settings["general"] }) {
           onCheckedChange={(on) => write({ general: { check_updates: on } })}
         />
       </SettingsRow>
+      <SettingsRow
+        label="Install updates automatically"
+        sub="Kelvo restarts when the dashboard and popover are closed and no changes are in progress."
+      >
+        <Switch
+          checked={general.auto_install_updates ?? true}
+          disabled={!general.check_updates}
+          aria-label="Install updates automatically"
+          onCheckedChange={(on) =>
+            write({ general: { auto_install_updates: on } })
+          }
+        />
+      </SettingsRow>
       <UpdateRow />
     </SettingsPanel>
   );

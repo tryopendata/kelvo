@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "version": "9.0.0",
+  "notes": "Test release",
+  "protocol": {
+    "min": 1,
+    "max": 2
+  },
+  "artifacts": {
+    "linux-aarch64": {
+      "url": "https://github.com/tryopendata/kelvo/releases/download/v9.0.0/kelvo-agent-aarch64-unknown-linux-musl",
+      "size": 4,
+      "sha256": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+    }
+  }
+}

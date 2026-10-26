@@ -1,4 +1,4 @@
-//! Durable interval usage facts (D-119). Recorder inputs precede any floor or ranking.
+//! Durable interval usage facts (D-120). Recorder inputs precede any floor or ranking.
 //! Resource arrays consistently use CPU, GPU, RAM, CPU energy, network order.
 
 use std::sync::Arc;

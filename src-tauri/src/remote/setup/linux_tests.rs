@@ -123,7 +123,10 @@ fn an_installed_agent_is_compared_with_this_build_and_its_id_with_saved_hosts() 
 
     let old = with_agent(asahi_probe(), "0.0.1", id);
     let prep = preparation("linux-tailscale", &old, &BTreeMap::new()).unwrap();
-    assert!(prep.installed && !prep.compatible, "an older agent updates");
+    assert!(
+        prep.installed && prep.compatible,
+        "an older release with the same protocol connects"
+    );
     assert!(!prep.newer_installed);
 
     // A newer agent connects as it is: offering "Update" would be a downgrade.
@@ -610,4 +613,25 @@ async fn live_frames(
         started.elapsed(),
         frame.layout.series.len()
     ))
+}
+
+#[test]
+fn newer_release_with_incompatible_protocol_cannot_connect() {
+    let id = HostId(Uuid::new_v4());
+    let mut probe = with_agent(asahi_probe(), "999.0.0", id);
+    let version = probe
+        .system_agent
+        .as_mut()
+        .unwrap()
+        .version
+        .as_mut()
+        .unwrap();
+    version.proto = kelvo_proto::PROTO_VERSION + 1;
+    version.min_compatible = version.proto;
+    let prep = preparation("box", &probe, &BTreeMap::new()).unwrap();
+    assert!(!prep.compatible);
+    assert!(
+        prep.newer_installed,
+        "incompatibility must not offer a downgrade"
+    );
 }

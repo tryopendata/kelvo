@@ -70,6 +70,15 @@ pub(crate) async fn update_with(
         });
     }
     let words = target.words()?;
+    if probe
+        .existing()
+        .and_then(|agent| agent.version.as_ref())
+        .is_some_and(|version| version.automatic_updates)
+    {
+        return running(
+            &run_script(remote, &unit::request_update(&words), None, STEP_TIMEOUT).await?,
+        );
+    }
     let attempt = async {
         run_script(remote, &unit::stop_and_back_up(&words), None, STEP_TIMEOUT).await?;
         upload_with(remote, &target, bytes, sha256_hex).await?;
@@ -193,15 +202,23 @@ impl UninstallReport {
         let steps = text
             .lines()
             .filter_map(|line| line.split_once('='))
-            .map(|(name, outcome)| UninstallStep {
-                name: name.into(),
-                outcome: match outcome {
-                    "ok" => StepOutcome::Ok,
-                    "absent" => StepOutcome::Absent,
-                    other => StepOutcome::Failed(
-                        other.strip_prefix("failed: ").unwrap_or(other).to_string(),
-                    ),
-                },
+            .flat_map(|(name, outcome)| {
+                if name == "agent-report" {
+                    return match serde_json::from_str::<Self>(outcome) {
+                        Ok(report) if !report.steps.is_empty() => report.steps,
+                        _ => Self::failed("agent", "invalid or empty uninstall report").steps,
+                    };
+                }
+                vec![UninstallStep {
+                    name: name.into(),
+                    outcome: match outcome {
+                        "ok" => StepOutcome::Ok,
+                        "absent" => StepOutcome::Absent,
+                        other => StepOutcome::Failed(
+                            other.strip_prefix("failed: ").unwrap_or(other).to_string(),
+                        ),
+                    },
+                }]
             })
             .collect();
         Self { steps }

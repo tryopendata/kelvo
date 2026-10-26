@@ -70,7 +70,7 @@ source metadata and real collector values still require the production gate.
 
 The original 1.2 MB/6 MB/1,400 limits fail. The user approved storage-write ceilings
 of 4,000,000 payload bytes/hour, 12,000,000 WAL bytes/hour and 10,000 rows/hour.
-`perf-budget.json` and D-119 record only that approval. CPU, collection cadence,
+`perf-budget.json` and D-120 record only that approval. CPU, collection cadence,
 permissions and the retained-file cap were not changed.
 
 ## Retained process details and tiers

@@ -116,6 +116,8 @@ impl DigestTool {
 /// `kelvo-agent version --json`.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AgentVersion {
+    #[serde(default)]
+    pub automatic_updates: bool,
     pub version: String,
     #[serde(default)]
     pub proto: u16,

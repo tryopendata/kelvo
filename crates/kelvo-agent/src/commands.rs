@@ -7,6 +7,7 @@ use std::time::Duration;
 use anyhow::Context;
 use kelvo_engine::identity;
 use kelvo_proto::{Message, RemoteInterest};
+use kelvo_remote::agent_install::{StepOutcome, UninstallReport, UninstallStep};
 use kelvo_remote::{AgentLayout, AgentPaths, ServedHost};
 use kelvo_schema::{HostId, Settings};
 use serde_json::{Value, json};
@@ -19,6 +20,7 @@ pub fn version() -> Value {
         "version": env!("CARGO_PKG_VERSION"),
         "proto": kelvo_proto::PROTO_VERSION,
         "min_compatible": kelvo_proto::MIN_COMPATIBLE,
+        "automatic_updates": true,
     })
 }
 
@@ -78,43 +80,86 @@ fn stored_host_id(data_dir: &Path) -> Option<String> {
 /// `install-unit`: writes the unit only when its text changed. Returns `"written"` or
 /// `"unchanged"`; starting it is the controller's `systemctl` call.
 pub fn install_unit(layout: AgentLayout, paths: &AgentPaths) -> anyhow::Result<&'static str> {
-    let text = layout.unit_text(paths);
-    if std::fs::read_to_string(&paths.unit).is_ok_and(|current| current == text) {
-        return Ok("unchanged");
+    let mut changed = false;
+    for (path, text) in std::iter::once((paths.unit.clone(), layout.unit_text(paths)))
+        .chain(layout.update_units(paths))
+    {
+        if std::fs::read_to_string(&path).is_ok_and(|current| current == text) {
+            continue;
+        }
+        let dir = path.parent().context("unit has no directory")?;
+        std::fs::create_dir_all(dir).context("creating systemd unit directory")?;
+        let tmp = path.with_extension("service.tmp");
+        std::fs::write(&tmp, text).context("writing systemd unit")?;
+        std::fs::File::open(&tmp)?.sync_all()?;
+        std::fs::rename(&tmp, &path).context("replacing systemd unit")?;
+        std::fs::File::open(dir)?.sync_all()?;
+        changed = true;
     }
-    let dir = paths
-        .unit
-        .parent()
-        .context("the unit path has no directory")?;
-    std::fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
-    let tmp = paths.unit.with_extension("service.tmp");
-    std::fs::write(&tmp, text).with_context(|| format!("writing {}", tmp.display()))?;
-    std::fs::rename(&tmp, &paths.unit)
-        .with_context(|| format!("renaming to {}", paths.unit.display()))?;
-    Ok("written")
+    let recovery = crate::update::transaction::recovery_binary(paths);
+    if !recovery.exists() {
+        let executable = std::env::current_exe().context("locating recovery executable")?;
+        std::fs::create_dir_all(recovery.parent().context("recovery has no directory")?)?;
+        crate::update::transaction::replace(&executable, &recovery)?;
+        changed = true;
+    }
+    Ok(if changed { "written" } else { "unchanged" })
 }
 
 /// `uninstall [--purge]`: removes the unit file and, with `purge`, the data directory.
 /// Already-missing pieces are fine, and a failure is reported without stopping the
 /// rest (D-105: removal never blocks on the remote side).
-pub fn uninstall(paths: &AgentPaths, purge: bool) -> Value {
-    let unit = remove(&paths.unit, false);
-    let data = purge.then(|| remove(&paths.data_dir, true));
-    json!({ "unit": unit, "data_dir": data })
+pub fn uninstall(paths: &AgentPaths, purge: bool) -> UninstallReport {
+    let mut steps = vec![];
+    for path in crate::update::transaction::unit_paths(paths) {
+        steps.push(UninstallStep {
+            name: path
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .into_owned(),
+            outcome: remove(&path, false),
+        });
+    }
+    for (name, path, directory) in [
+        (
+            "recovery",
+            crate::update::transaction::recovery_binary(paths),
+            false,
+        ),
+        (
+            "update_state",
+            crate::update::transaction::directory(paths),
+            true,
+        ),
+        ("binary", paths.binary.clone(), false),
+    ] {
+        steps.push(UninstallStep {
+            name: name.into(),
+            outcome: remove(&path, directory),
+        });
+    }
+    if purge {
+        steps.push(UninstallStep {
+            name: "data_dir".into(),
+            outcome: remove(&paths.data_dir, true),
+        });
+    }
+    UninstallReport { steps }
 }
 
-fn remove(path: &Path, dir: bool) -> String {
+fn remove(path: &Path, dir: bool) -> StepOutcome {
     let removed = if dir {
         std::fs::remove_dir_all(path)
     } else {
         std::fs::remove_file(path)
     };
     match removed {
-        Ok(()) => "removed".into(),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => "absent".into(),
+        Ok(()) => StepOutcome::Ok,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => StepOutcome::Absent,
         Err(e) => {
             tracing::warn!(path = %path.display(), "removing: {e}");
-            format!("failed: {e}")
+            StepOutcome::Failed(e.to_string())
         }
     }
 }
@@ -228,19 +273,41 @@ mod tests {
     fn uninstall_tolerates_missing_pieces() {
         let dir = tempfile::tempdir().unwrap();
         let paths = paths(dir.path());
-        assert_eq!(
-            uninstall(&paths, true),
-            json!({"unit": "absent", "data_dir": "absent"})
+        let report = uninstall(&paths, true);
+        assert_eq!(report.steps.len(), 8);
+        assert!(
+            report
+                .steps
+                .iter()
+                .all(|step| step.outcome == StepOutcome::Absent)
         );
         install_unit(AgentLayout::User, &paths).unwrap();
         std::fs::create_dir_all(paths.data_dir.join("x")).unwrap();
-        assert_eq!(
-            uninstall(&paths, false),
-            json!({"unit": "removed", "data_dir": null})
-        );
+        assert!(uninstall(&paths, false).is_clean());
         assert!(paths.data_dir.exists());
-        assert_eq!(uninstall(&paths, true)["data_dir"], "removed");
+        assert!(uninstall(&paths, true).is_clean());
         assert!(!paths.data_dir.exists());
+    }
+
+    #[test]
+    fn uninstall_reports_each_filesystem_failure_and_continues() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = paths(dir.path());
+        install_unit(AgentLayout::User, &paths).unwrap();
+        // Real filesystem failures, including under root: a directory cannot be
+        // unlinked as a file, nor a regular file purged as a directory.
+        std::fs::create_dir(&paths.binary).unwrap();
+        std::fs::write(&paths.data_dir, "unexpected file").unwrap();
+        let timer = paths.unit.with_file_name("kelvo-agent-update.timer");
+        std::fs::remove_file(&timer).unwrap();
+        std::fs::create_dir(&timer).unwrap();
+        let report = uninstall(&paths, true);
+        assert!(!report.is_clean());
+        for name in ["binary", "data_dir", "kelvo-agent-update.timer"] {
+            assert!(report.steps.iter().any(|step| step.name == name && matches!(step.outcome, StepOutcome::Failed(_))), "{report:?}");
+        }
+        assert!(!paths.unit.exists(), "other cleanup must continue");
+        assert!(!crate::update::transaction::recovery_binary(&paths).exists());
     }
 
     #[tokio::test]

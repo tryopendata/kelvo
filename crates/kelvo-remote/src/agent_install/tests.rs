@@ -333,6 +333,48 @@ fn q(path: &Path) -> String {
     shell_quote(&path.to_string_lossy())
 }
 
+#[tokio::test]
+async fn capable_uninstall_preserves_structured_failures_over_the_shell() {
+    let shell = Shell::local();
+    let target = shell.probe().await.target().unwrap();
+    for report in [
+        r#"{"steps":[{"name":"binary","outcome":{"outcome":"failed","detail":"Permission denied"}},{"name":"data_dir","outcome":{"outcome":"failed","detail":"Read-only file system"}}]}"#,
+        "{}",
+    ] {
+        let agent = format!(
+            "#!/bin/sh\ncase $1 in\nversion) echo '{{\"automatic_updates\":true}}';;\nuninstall) echo 'warning: Permission denied' >&2; printf '%s\\n' {};;\nesac\n",
+            shell_quote(report)
+        );
+        shell.setup(&format!(
+            "mkdir -p {}; printf '%s' {} > {}; chmod 755 {}",
+            q(shell.paths.binary.parent().unwrap()),
+            shell_quote(&agent),
+            q(&shell.paths.binary),
+            q(&shell.paths.binary)
+        ));
+        let result = super::flows::uninstall_target(&shell, &target, true).await;
+        assert!(!result.is_clean(), "{result:?}");
+        if report != "{}" {
+            assert!(
+                result.steps.iter().any(|step| step.name == "data_dir"
+                    && step.outcome == StepOutcome::Failed("Read-only file system".into())),
+                "{result:?}"
+            );
+            assert!(
+                result.steps.iter().any(|step| step.name == "binary"
+                    && step.outcome == StepOutcome::Failed("Permission denied".into())),
+                "{result:?}"
+            );
+        }
+        assert!(
+            result
+                .steps
+                .iter()
+                .any(|step| step.name == "reload" && step.outcome == StepOutcome::Ok)
+        );
+    }
+}
+
 /// Install, a rejected upload, a failed update that rolls back, a good update, an
 /// identity reset and two uninstalls, on one shell.
 async fn lifecycle(shell: Shell, layout: AgentLayout) {

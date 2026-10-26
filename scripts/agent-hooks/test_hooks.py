@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -17,8 +18,10 @@ class HookTests(unittest.TestCase):
         self.root = Path(self.temp.name).resolve()
         self.hooks = self.root / ".claude/hooks"
         shutil.copytree(ROOT / ".claude/hooks", self.hooks)
-        subprocess.run(["git", "init", "-q", str(self.root)], check=True)
-        self.env = dict(os.environ, CLAUDE_CODE_SESSION_ID="hook-test")
+        # Git hooks export repository paths; fixtures must never inherit them.
+        self.env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+        self.env["CLAUDE_CODE_SESSION_ID"] = "hook-test"
+        subprocess.run(["git", "init", "-q", str(self.root)], env=self.env, check=True)
         self.env["TMPDIR"] = str(self.root)
         self.marker = Path("/tmp/.wt-anchored-" + str(self.root).replace("/", "-") + "-hook-test")
         self.addCleanup(self.marker.unlink, missing_ok=True)
@@ -161,7 +164,7 @@ class HookTests(unittest.TestCase):
         source.mkdir()
         for name in ["mine.ts", "other.ts", "preexisting.ts"]:
             (source / name).write_text("export const value = 1;\n")
-        subprocess.run(["git", "add", "src/preexisting.ts"], cwd=self.root, check=True)
+        subprocess.run(["git", "add", "src/preexisting.ts"], cwd=self.root, env=self.env, check=True)
         (source / "preexisting.ts").write_text("export const value=2;\n")
         binary = self.root / "bin"
         binary.mkdir()
@@ -182,6 +185,25 @@ class HookTests(unittest.TestCase):
         log.write_text("")
         self.hook("format-changed.sh", {})
         self.assertEqual(log.read_text(), "")
+
+
+class HookEnvironmentTests(unittest.TestCase):
+    def test_fixture_does_not_reinitialize_the_hook_callers_repository(self):
+        clean = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+        with tempfile.TemporaryDirectory(prefix="kelvo-hook-caller-") as directory:
+            caller = Path(directory)
+            subprocess.run(["git", "init", "-q", directory], env=clean, check=True)
+            config = caller / ".git/config"
+            before = config.read_bytes()
+            with patch.dict(os.environ, {
+                "GIT_DIR": str(caller / ".git"),
+                "GIT_INDEX_FILE": str(caller / ".git/index"),
+            }):
+                result = unittest.TestResult()
+                HookTests("test_stop_formats_only_files_written_by_that_session").run(result)
+            self.assertEqual(config.read_bytes(), before, "fixture changed its caller's Git config")
+            self.assertFalse((caller / ".git/index").exists(), "fixture staged into its caller")
+            self.assertTrue(result.wasSuccessful(), result.errors + result.failures)
 
 
 if __name__ == "__main__":

@@ -8,7 +8,7 @@ import { version } from "../../../../../../package.json";
 function updateMessage(status: UpdateStatus): string {
   switch (status.kind) {
     case "idle":
-      return "Updates install only when you choose.";
+      return "Kelvo checks for releases according to your update settings.";
     case "not_configured":
       return "Use a release build to check for updates.";
     case "checking":
@@ -21,6 +21,14 @@ function updateMessage(status: UpdateStatus): string {
       return status.percent === null
         ? "Downloading update…"
         : `Downloading update… ${status.percent}%`;
+    case "downloaded":
+      return `Kelvo ${status.version} is downloaded and ready to install.`;
+    case "waiting":
+      return `Kelvo ${status.version} is ready. ${status.reason}`;
+    case "compatibility_blocked":
+      return `Kelvo ${status.version} is waiting: ${status.message}`;
+    case "needs_authorization":
+      return `Kelvo ${status.version} needs your permission to install. Choose Install and restart.`;
     case "installing":
       return "Installing update…";
     case "ready":
@@ -60,7 +68,10 @@ export function UpdateRow() {
     setPending(true);
     try {
       const result =
-        status.kind === "available"
+        status.kind === "available" ||
+        status.kind === "downloaded" ||
+        status.kind === "waiting" ||
+        status.kind === "needs_authorization"
           ? await transport.installUpdate(status.version)
           : await transport.checkForUpdates();
       if (result.status === "error") {
@@ -107,7 +118,9 @@ export function UpdateRow() {
         disabled={busy || status.kind === "not_configured"}
         onClick={act}
       >
-        {status.kind === "available"
+        {["available", "downloaded", "waiting", "needs_authorization"].includes(
+          status.kind
+        )
           ? "Install and restart"
           : busy
             ? "Please wait…"

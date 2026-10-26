@@ -13,12 +13,12 @@ repos:
     hooks:
       - id: trailing-whitespace
         # Binary protocol fixtures, captured /proc and /sys trees and upstream font
-        # licenses are byte-preserved.
-        exclude: '(^src/core/generated/|^src-tauri/fonts/|\.cbor$|/linux/fixtures/)'
+        # licenses and vendored sources are byte-preserved.
+        exclude: '(^src/core/generated/|^src-tauri/fonts/|^vendor/|\.cbor$|/linux/fixtures/)'
       - id: end-of-file-fixer
         # Binary protocol fixtures, captured /proc and /sys trees and upstream font
-        # licenses are byte-preserved.
-        exclude: '(^src/core/generated/|^src-tauri/fonts/|\.cbor$|/linux/fixtures/)'
+        # licenses and vendored sources are byte-preserved.
+        exclude: '(^src/core/generated/|^src-tauri/fonts/|^vendor/|\.cbor$|/linux/fixtures/)'
       - id: check-yaml
       - id: check-toml
       - id: check-json

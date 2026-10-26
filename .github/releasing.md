@@ -29,17 +29,26 @@ are outside this release workflow.
    Verify the app with `codesign --verify --deep --strict`, confirm the bundled
    helper and both Linux agents, and run `scripts/check-deps.sh` against the app
    and helper executables. Stage with `python3 scripts/release-manifest.py TAG --stage`
-   and run `cargo run -p kelvo --example verify_release -- target/release-assets`.
+   then sign `release.json` and generate checksums using the commands below. Run
+   `cargo run -p kelvo --example verify_release -- target/release-assets`. This verifies
+   the catalog signature, protocol/version agreement, and every advertised binary
+   before exercising the Mac archive installation.
+   Run `cargo build -p kelvo --example verify_update_restart` followed by
+   `python3 scripts/verify-update-restart.py` for isolated native restart acceptance.
+   It checks ordinary, background and remote-setup launches with real shutdown,
+   persistent identity/history and no restarted windows; a real login-session launch
+   remains part of the fresh-account check below.
    Create the draft with `gh release create TAG target/release-assets/* --verify-tag
    --draft --title "Kelvo TAG" --notes-file RELEASE_NOTES.md`. It must contain
-   `Kelvo_aarch64.dmg`, `Kelvo.app.tar.gz`, its `.sig`, `latest.json` and `SHA256SUMS`.
+   `Kelvo_aarch64.dmg`, `Kelvo.app.tar.gz`, its `.sig`, `latest.json`, `release.json`,
+   `release.json.sig`, both standalone Linux musl agents, and `SHA256SUMS`.
 4. Download the draft DMG. Verify the signature with `codesign --verify --deep
    --strict Kelvo.app`, install and launch it on a fresh account/second Mac, and
    check a real update from the previous release when one exists. Confirm history
    and settings survive and note any Gatekeeper prompts. Browser tests cannot
    establish native installation or restart behavior.
 5. Publish the complete draft as the latest stable release. Only then does the
-   fixed `/releases/latest/download/latest.json` endpoint advertise it to clients.
+   fixed `/releases/latest/download/latest.json` and `release.json` endpoints advertise it to clients.
 
 Never replace published updater archives or reuse a version. Fix a bad release
 with a higher version. A failed draft can be deleted and rebuilt from its existing
@@ -54,6 +63,10 @@ TAURI_SIGNING_PRIVATE_KEY="$HOME/.config/kelvo/release/updater.key" \
 TAURI_SIGNING_PRIVATE_KEY_PASSWORD='' \
 bun run build:app --config src-tauri/tauri.release.conf.json --bundles app,dmg
 python3 scripts/release-manifest.py v0.2.0 --stage
+bun run tauri signer sign --private-key-path "$HOME/.config/kelvo/release/updater.key" \
+  --password '' --app-version 0.2.0 target/release-assets/release.json
+python3 scripts/release-manifest.py v0.2.0 --checksums
+cargo run -p kelvo --example verify_release -- target/release-assets
 ```
 
 Use the actual version tag. `target/release-assets` must be empty before staging;
@@ -62,14 +75,62 @@ Ordinary local builds do not create signed updater archives and need no private 
 
 ## Update behavior
 
-Rust owns a single in-memory update candidate and serializes checks/installations
-across windows. Explicit checks work with automatic checks disabled. Background
-checks run 30 seconds after launch and every 24 hours, only with completed
-onboarding and the update preference enabled. Debug, benchmark and App Store
-builds do not run automatic checks; debug/App Store builds cannot self-update.
+Automatic checking and installation are host-owned preferences. Existing disabled
+checks remain disabled. Stable releases install automatically only when their signed
+protocol range retains every protocol version supported by the installed release.
+Explicit checks still work with automatic checks disabled.
 
-Installation requires approval of the displayed version, verifies the downloaded
-archive's signature and version, then installs off the async executor. Tauri's
-restart lifecycle flushes history and shuts down remote services. Errors are
-visible in Settings; the user can check again or replace the app using a DMG.
-No background download, silent installation, telemetry or paid service is added.
+The Mac app downloads verified releases and waits until interactive windows are hidden
+and maintenance has finished before installing and restarting. Ambient boards do not
+block installation; editing does. Automatic installation never elevates privileges;
+Settings offers manual installation when authorization is required. Debug, benchmark
+and App Store builds keep their existing exclusions. The app flushes history through
+its normal restart lifecycle.
+
+Linux system/user installations include a daily systemd update timer with startup
+checking and jitter. The updater verifies and stages before stopping collection,
+tests the candidate privately, then commits before exposing history to controllers.
+Interrupted trials restore the previous installation; committed updates never roll
+history back. Update policy and results are visible through the agent CLI and Hosts.
+The collector sandbox and service limits remain in effect.
+
+Existing Macs need one update through Install and restart, and legacy Linux agents
+need one Update agent action to acquire this capability. Hosts need outbound HTTPS
+access. Incompatible releases wait for a coordinated manual upgrade. Do not run an
+older controller's direct install scripts concurrently with the host-owned updater;
+only updater-capable controllers share its transaction lock.
+
+## Coordinated protocol upgrades
+
+When a release drops a protocol that an installed host supports, Kelvo leaves it
+pending. Repeating **Update agent** does not override this protection. Upgrade the
+controllers first, and schedule a monitoring interruption for each affected host.
+
+For a remote Mac, quit Kelvo and install the newer signed release from its DMG.
+Its existing app data remains in place. Open it and confirm the host reconnects.
+
+For Linux, use the updated controller's bundled agent through Add host:
+
+1. On the host, disable and stop `kelvo-agent-update.timer`, stop
+   `kelvo-agent-update.service` (allow its recovery to finish), then stop
+   `kelvo-agent.service`. Use `systemctl --user` for a user installation or
+   `systemctl` as root for a system installation.
+2. Keep an offline backup of the entire data directory, installed executable and
+   service units. System data is `/var/lib/kelvo-agent`; user data is normally
+   `~/.local/state/kelvo-agent` and may follow `XDG_STATE_HOME`. Record the host
+   identity, history epoch and configured paths before proceeding.
+3. Run `kelvo-agent uninstall` in its installation account, with `--system` for a
+   system installation. **Do not pass `--purge`.** Confirm that uninstallation
+   succeeds and the data, settings and `host-id` remain. Keep the backup outside
+   the installation's data directory.
+4. Remove the saved connection from the controller with all removal options
+   unchecked, keeping the mirrored history. Use Add host and install the newer bundled agent
+   under the same account and scope. The installer reuses the retained data and
+   identity. Confirm the identity, history, settings and connection before
+   re-enabling the desired automatic-update preferences.
+
+This explicit reinstall is outside the automatic transaction's rollback guarantee.
+If the new daemon has exposed public history, never restore an older database under
+the same history epoch: controllers may already hold newer cursors. Resolve a
+post-start failure with a forward fix. Keep the offline backup for investigation;
+do not silently overwrite the current database with it.

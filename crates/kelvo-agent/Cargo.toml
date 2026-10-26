@@ -10,11 +10,14 @@ publish.workspace = true
 kelvo-engine.workspace = true
 kelvo-proto.workspace = true
 kelvo-remote.workspace = true
+kelvo-update.workspace = true
 kelvo-schema.workspace = true
 kelvo-store.workspace = true
 anyhow.workspace = true
 serde_json.workspace = true
-tokio = { workspace = true, features = ["rt-multi-thread", "macros", "signal", "sync", "time", "net", "io-util"] }
+serde.workspace = true
+rustix = { workspace = true, features = ["process"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "signal", "sync", "time", "net", "io-util", "process"] }
 tracing.workspace = true
 tracing-subscriber = { version = "0.3.23", default-features = false, features = ["env-filter", "fmt", "std"] }
 uuid.workspace = true

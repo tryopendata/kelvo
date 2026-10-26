@@ -114,6 +114,8 @@ See [README](README.md) for the roadmap and [architecture.md](architecture.md) f
 | D-115 | Per-app usage series over the in-memory usage ring | Accepted |
 | D-116 | Linux agent: a headless collector, its identity binding and the wire additions it needs | Accepted |
 | D-117 | Remote queries: one request/reply call on the session, for per-app usage and space reports | Accepted |
+| D-119 | Independent signed automatic updates with isolated Linux trials | Implemented; login-session acceptance pending |
+| D-120 | Durable interval usage keeps facts before ranking | Implementation in progress |
 
 ---
 
@@ -3777,8 +3779,42 @@ updater verification run on the maintainer's Mac before draft publication.
 This trades hosted native coverage for local verification evidence. Do not add
 macOS CI jobs, including manual preview or release jobs, without a new user decision.
 
+## D-119: Independent signed automatic updates with isolated Linux trials
 
-## D-119: Durable interval usage keeps facts before ranking
+**Date:** 2026-10-25. **Status:** Implemented and reviewed; login-session acceptance pending.
+
+The app and remote installations check for stable releases and install them independently,
+with per-installation opt-outs. Preserve existing disabled checks. Macs restart only when
+interactive windows and maintenance are idle; ambient boards are not interactive editors.
+Linux uses a separate systemd updater, retaining the collector's sandbox and service limits.
+The first updater-capable version must be installed through the existing manual workflow.
+
+A signed `release.json` authenticates version, protocol range and every target's artifact
+URL, size and digest. A portable `kelvo-update` library owns catalog verification and
+bounded downloads; only the app shell and agent depend on it. Installation remains with
+the platform owner. The existing Tauri archive signature/version check remains required.
+Automatic upgrades preserve the entire installed protocol interval. Incompatible releases
+require a coordinated manual upgrade; newer remote installations are never downgraded.
+The catalog does not change the CBOR metrics protocol or series/host identity model.
+
+Linux holds a host-owned transaction lock and tests the candidate on a private endpoint.
+No controller can receive candidate history until the commit is durable. Recovery before
+commit restores the old binary and database; recovery after commit must never restore an
+older database with the same epoch, which would invalidate mirror cursors. Persist recovery
+code independently of the replaced executable. Updater-capable SSH clients submit work
+through the host service; legacy direct update scripts are excluded from concurrent use.
+
+Tauri's native updater is vendored at its existing pinned version for an elevation-policy
+option. Automatic calls return an actionable permission error instead of opening an admin
+prompt; manual installation keeps its existing authorization behavior. Third-party sources
+are excluded from application formatting. Remove this patch once upstream exposes the same
+policy with equivalent tested behavior.
+
+This adds updater scheduling, signed catalog maintenance and crash-recovery code. Revisit
+if distribution changes to a package manager or Apple-managed installation. Native build,
+signing and acceptance stay local under D-118; this does not authorize hosted macOS jobs.
+
+## D-120: Durable interval usage keeps facts before ranking
 
 Date: 2026-10-25. Product UX polish implementation; feasibility remains a blocking gate.
 

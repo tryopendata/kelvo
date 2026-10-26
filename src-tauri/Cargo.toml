@@ -33,6 +33,7 @@ kelvo-store.workspace = true
 kelvo-engine.workspace = true
 kelvo-proto.workspace = true
 kelvo-remote.workspace = true
+kelvo-update.workspace = true
 # `specta` implements specta::Type for `tauri::ipc::Channel`, so `subscribe_live` exports.
 tauri = { version = "2.12.1", features = ["specta", "tray-icon"] }
 tauri-plugin-opener = "2.7.0"

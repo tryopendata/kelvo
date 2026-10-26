@@ -22,6 +22,29 @@ are integrated (fe3d029, ab0d5f6); focused evidence is in
 still blocks dependent attribution and comparison work. Final integrated acceptance
 and review remain gates; prototype storage measurements are not app verification.
 
+## Automatic updates (2026-10-25, landed; rollout acceptance pending)
+
+Implemented the [approved automatic-update plan](automatic-updates.md) on
+`codex/automatic-updates`: signed standalone releases, independent Linux transaction
+recovery, idle Mac installation without automatic elevation, and per-host policy/results.
+The independent CE code review approved after six findings were corrected. Final
+`make check` passed (1,109 workspace Rust, 26 updater-patch, 1,289 frontend tests);
+Chromium/WebKit passed 436 cases and frontend performance passed 13 cases. Signed Mac
+archive installation and native restart checks passed, as did real systemd acceptance
+for both architectures/scopes (x86 through container-local emulation).
+
+The user authorized landing on main with the real macOS login-session/fresh-account
+check still outstanding as release acceptance. The reviewed source revision is
+`c434a4e18d27b561fa7309cbd5eaf29dcac7d18f`. Source landed as
+`6931c0843e86ed010655792260705c051edeecd0`; [exact-source CI](https://github.com/tryopendata/kelvo/actions/runs/40266417306)
+passed all five jobs. Normal pre-push checks, bindings and 13 performance cases passed.
+Hosted tests passed 1,289 frontend cases, 436 browser cases without retries, 877 portable
+Rust executions (26 ignored), 11 native x86 musl pipe cases and both history-fill/read
+cases. The fixture Git-environment isolation defect found during push is fixed and
+mutation-verified. This documentation entry records historical verification of that
+source revision, not a separate run for the documentation-only record.
+Native packaging stays local under D-118. Existing hosts need one initial manual upgrade.
+
 ## CI runner policy (2026-10-25)
 
 At the user's direction, hosted CI uses Linux only to avoid macOS runner charges.

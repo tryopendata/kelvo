@@ -130,6 +130,7 @@ pub async fn reset_remote_host_identity(
     lan: Option<String>,
     tailscale: Option<String>,
 ) -> Result<RemoteHostPreparation, CommandError> {
+    let _maintenance = crate::updates::maintenance(&app)?;
     let state = app.state::<AppState>();
     let _guard = state.remotes.operation.lock().await;
     let (alias, probe) = linux_probe(lan.clone(), tailscale.clone(), ProbeFor::Install).await?;
@@ -144,6 +145,7 @@ pub async fn reset_remote_host_identity(
 #[tauri::command]
 #[specta::specta]
 pub async fn update_remote_agent(app: AppHandle, id: String) -> Result<(), CommandError> {
+    let _maintenance = crate::updates::maintenance(&app)?;
     linux::update_saved(app, id).await
 }
 
@@ -254,6 +256,7 @@ pub async fn add_remote_host(
     show_menu_bar: bool,
     setup_id: String,
 ) -> Result<RemoteHostRecord, CommandError> {
+    let _maintenance = crate::updates::maintenance(&app)?;
     validate(&config)?;
     let state = app.state::<AppState>();
     Uuid::parse_str(&setup_id).map_err(failure)?;

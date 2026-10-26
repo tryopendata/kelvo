@@ -16,6 +16,9 @@ use tokio::process::{Child, ChildStdin, ChildStdout, Command};
 
 const AGENT: &str = env!("CARGO_BIN_EXE_kelvo-agent");
 
+#[path = "support/update_reconnect.rs"]
+mod update_reconnect;
+
 struct Daemon {
     child: Child,
     socket: PathBuf,

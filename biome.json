@@ -11,6 +11,7 @@
       "!**/src/core/generated",
       "!**/dist",
       "!**/target",
+      "!**/vendor",
       "!**/src-tauri/gen",
       "!**/public",
       "!**/plan",

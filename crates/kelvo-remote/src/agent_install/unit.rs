@@ -1,7 +1,7 @@
 //! The systemd side: the scripts that write the unit through the agent, start and stop
 //! it, and wait for the daemon. Each takes a target's [`Words`].
 use super::Words;
-use crate::agent_layout::UNIT_NAME;
+use crate::agent_layout::{UNIT_NAME, UPDATE_TIMER};
 
 /// The history files an update copies aside: the database and its WAL and shared
 /// memory. The `.lock` file is not history.
@@ -34,6 +34,7 @@ pub(crate) fn activate(w: &Words, configure_json: &str) -> String {
 {bin} configure {configure_json}{data_only} >/dev/null
 {systemctl} daemon-reload
 {systemctl} enable --now {UNIT_NAME}
+{systemctl} enable --now {UPDATE_TIMER}
 set +e
 {wait}"#,
         bin = w.bin,
@@ -76,6 +77,7 @@ pub(crate) fn restart(w: &Words) -> String {
 {bin} install-unit{all} >/dev/null
 {systemctl} daemon-reload
 {systemctl} start {UNIT_NAME}
+{systemctl} enable --now {UPDATE_TIMER}
 set +e
 {wait}"#,
         bin = w.bin,
@@ -138,6 +140,13 @@ pub(crate) fn drop_backup(w: &Words) -> String {
 pub(crate) fn reset_identity(w: &Words) -> String {
     format!(
         r#"set -u
+cap=$({bin} version --json 2>/dev/null)
+case "$cap" in *automatic_updates?:true*)
+  {bin} reset-identity{data_only} >/dev/null
+  rc=$?
+  {wait}exit $rc
+  ;;
+esac
 {systemctl} stop {UNIT_NAME}
 {bin} reset-identity{data_only} >/dev/null
 rc=$?
@@ -174,6 +183,15 @@ data={data}
 unit={unit}
 sock={socket}
 dir=${{bin%/*}}
+cap=$("$bin" version --json 2>/dev/null) || cap=
+case "$cap" in *automatic_updates?:true*)
+  if out=$("$bin" uninstall{purge_flag}{data_only}); then
+    printf "agent-report=%s\n" "$out"
+    step reload {systemctl} daemon-reload
+  else printf "agent=failed: uninstall command failed: %s\n" "$out"; fi
+  exit 0
+  ;;
+esac
 if [ -e "$unit" ]; then step stop {systemctl} disable --now {UNIT_NAME}; else echo stop=absent; fi
 if [ -x "$bin" ]; then step agent "$bin" uninstall{purge_flag}{data_only}; else echo agent=absent; fi
 if [ -e "$unit" ]; then step unit rm -f "$unit"; else echo unit=absent; fi
@@ -191,5 +209,16 @@ exit 0
         socket = w.socket,
         systemctl = w.systemctl,
         data_only = w.data_only,
+    )
+}
+
+/// New agents submit the work to their own service. SSH only queues and observes;
+/// ending this connection cannot interrupt replacement or recovery.
+pub(crate) fn request_update(w: &Words) -> String {
+    format!(
+        "set -eu\n{} update --request{}\n{}",
+        w.bin,
+        w.all,
+        wait_running(w, 10)
     )
 }

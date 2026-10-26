@@ -5,6 +5,7 @@ pub mod agent_layout;
 mod calls;
 mod clock;
 mod codec;
+pub mod control;
 mod host_queries;
 mod host_server;
 pub mod install;

@@ -29,6 +29,13 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         println!("{}", env!("CARGO_PKG_VERSION"));
         return Ok(());
     }
+    if args.first().map(String::as_str) == Some("version") {
+        println!(
+            "{}",
+            serde_json::to_string(&kelvo_remote::control::HelperVersion::current())?
+        );
+        return Ok(());
+    }
     let paths = SocketPaths::for_current_user()?;
     match args.first().map(String::as_str) {
         Some("serve") if args.get(1).map(String::as_str) == Some("--stdio") => {
@@ -42,10 +49,21 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 )?
             );
         }
+        Some("update-status") => {
+            println!(
+                "{}",
+                serde_json::to_string(
+                    &control_request(&paths.control, &ControlRequest::UpdateStatus).await?
+                )?
+            );
+        }
         Some("configure") => {
             let request: ControlRequest =
                 serde_json::from_str(args.get(1).ok_or("configure requires a JSON request")?)?;
-            if !matches!(request, ControlRequest::Configure { .. }) {
+            if !matches!(
+                request,
+                ControlRequest::Configure { .. } | ControlRequest::UpdatePolicy { .. }
+            ) {
                 return Err("configure requires configuration request".into());
             }
             println!(
@@ -55,7 +73,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         _ => {
             return Err(
-                "usage: kelvo-remote-helper serve --stdio | status | configure '<json>'".into(),
+                "usage: kelvo-remote-helper serve --stdio | version --json | status | update-status --json | configure '<json>'".into(),
             );
         }
     }
