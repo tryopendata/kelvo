@@ -22,6 +22,7 @@ pub use popover::{CardDensity, PopoverSettings};
 
 use crate::alert::AlertRule;
 use crate::catalog::Module;
+pub use crate::history::HistorySettings;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, specta::Type)]
 pub struct Settings {
@@ -425,39 +426,6 @@ impl SamplingSettings {
     pub const INTERVALS_MS: [u32; 7] = [500, 1000, 2000, 5000, 10_000, 30_000, 60_000];
     /// The longest base tick, which is also the cap on the battery back-off.
     pub const MAX_INTERVAL_MS: u32 = 60_000;
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
-pub struct HistorySettings {
-    /// Retention of `tier_1m`, gaps and events; one of [`HistorySettings::RETENTION_DAYS`].
-    pub retention_days: u16,
-    /// Cap on the history file, WAL included, in MB (10^6 bytes); one of
-    /// [`HistorySettings::SIZE_LIMITS_MB`]. The oldest history is trimmed to stay under
-    /// it, so it can shorten `retention_days` (D-057, D-059).
-    pub size_limit_mb: u32,
-    /// "Network history" (D-089): record which apps moved how many bytes, every 10 s
-    /// even with no window open. On by default; off, per-process network rates are
-    /// sampled only while a view shows them (D-082) and nothing new is recorded. The
-    /// `appstore` build never records it. Absent from settings files written before it
-    /// existed: on.
-    #[serde(default = "network_history_default")]
-    pub network_history: bool,
-}
-
-const fn network_history_default() -> bool {
-    true
-}
-
-impl HistorySettings {
-    pub const RETENTION_DAYS: [u16; 3] = [7, 30, 90];
-    /// "History size limit" options; 750 MB is the D-119 default.
-    pub const SIZE_LIMITS_MB: [u32; 5] = [150, 300, 500, 750, 1000];
-    pub const DEFAULT_SIZE_LIMIT_MB: u32 = 750;
-
-    /// The size limit in bytes.
-    pub const fn size_limit_bytes(&self) -> u64 {
-        self.size_limit_mb as u64 * 1_000_000
-    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, specta::Type)]

@@ -10,6 +10,39 @@ use uuid::Uuid;
 
 use crate::catalog::Module;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+pub struct HistorySettings {
+    /// Retention of `tier_1m`, gaps and events; one of [`HistorySettings::RETENTION_DAYS`].
+    pub retention_days: u16,
+    /// Cap on the history file, WAL included, in MB (10^6 bytes); one of
+    /// [`HistorySettings::SIZE_LIMITS_MB`]. The oldest history is trimmed to stay under
+    /// it, so it can shorten `retention_days` (D-057, D-059).
+    pub size_limit_mb: u32,
+    /// "Network history" (D-089): record which apps moved how many bytes, every 10 s
+    /// even with no window open. On by default; off, per-process network rates are
+    /// sampled only while a view shows them (D-082) and nothing new is recorded. The
+    /// `appstore` build never records it. Absent from settings files written before it
+    /// existed: on.
+    #[serde(default = "network_history_default")]
+    pub network_history: bool,
+}
+
+const fn network_history_default() -> bool {
+    true
+}
+
+impl HistorySettings {
+    pub const RETENTION_DAYS: [u16; 3] = [7, 30, 90];
+    /// "History size limit" options; 750 MB is the D-120 default.
+    pub const SIZE_LIMITS_MB: [u32; 5] = [150, 300, 500, 750, 1000];
+    pub const DEFAULT_SIZE_LIMIT_MB: u32 = 750;
+
+    /// The size limit in bytes.
+    pub const fn size_limit_bytes(&self) -> u64 {
+        self.size_limit_mb as u64 * 1_000_000
+    }
+}
+
 /// A resolution of data. [`Tier::S10`], [`Tier::M1`] and [`Tier::M15`] are persisted and
 /// synced; [`Tier::Live1s`] is the in-memory ring buffer and the live stream. M1 keeps the
 /// last 7 days; older minutes are rolled down into M15 for the rest of the retention.
