@@ -166,7 +166,8 @@ fn population_changes_keep_prior_segments_and_exact_revisions() {
 #[test]
 fn review_clock_rollback_reseeds_unchanged_metadata_and_population() {
     let (_dir, store, r) = setup();
-    let t = wall_ms().div_euclid(900000) * 900000;
+    // Keep the simulated samples before the real shutdown clock, even just after a boundary.
+    let t = wall_ms().div_euclid(900000) * 900000 - 900000;
     let mut s = fixture(t + 1000);
     r.record(&s);
     at(&mut s, t + 61000, 1000);
