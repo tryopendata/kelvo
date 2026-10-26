@@ -12,6 +12,9 @@ manifest validation. Native checks remain in local Git hooks; signed release bui
 and package verification run on the maintainer's Mac. Cancelled active hosted
 macOS CI/release runs. This supersedes the hosted macOS policy in D-111 and older
 execution records; their historical results remain evidence for those revisions.
+Canonical agent instructions now explicitly forbid starting, adding, restoring or
+rerunning hosted macOS jobs, including historical workflows, and direct agents to
+local hooks and release packaging. Generated AGENTS.md carries the same policy.
 
 ## Release 0.2.0 (2026-10-25, in progress)
 

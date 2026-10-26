@@ -97,6 +97,21 @@ generated `.agents/skills` links; see `scripts/agent-config/README.md`.
 - **Xcode Command Line Tools** (macOS SDK for the collectors)
 - **pre-commit** (via `uvx pre-commit` or `brew install pre-commit`), then `make hooks`. Git hooks run native macOS checks locally; hosted CI uses Linux only
 
+## Hosted runner policy (D-118)
+
+**Never start, add or restore a GitHub-hosted macOS job from this repository.**
+This includes push/PR CI, manual dispatch, preview OS checks, release packaging
+and rerunning historical workflows that still contain macOS jobs. Hosted workflows
+must use Linux runners only; macOS runners consume the user's GitHub credits.
+
+Run native macOS checks locally through the existing Git hooks (`make check
+bindings-check e2e-perf` in pre-push), and build/sign/verify release packages locally
+using `.github/releasing.md`. Do not bypass those hooks. Before dispatching or
+rerunning a workflow, inspect the workflow at its target revision: the current
+Linux-only file does not make an old revision safe to rerun. If a running job is
+found using a hosted macOS runner, cancel it and report it. Changing this policy
+requires an explicit new user decision.
+
 ## Debugging Budget
 
 If a fix doesn't resolve the issue after 2 attempts without running a new diagnostic step in between, stop. Write "2-attempt limit reached. What I learned: [summary]", list 2-3 alternative root cause hypotheses, and ask which to investigate. Running a new diagnostic step between attempts resets the count, not evidence-based iteration.
