@@ -1,4 +1,5 @@
 import { formatHistoryTime } from "@core/format";
+import { gapExplanation } from "@core/history-state";
 import { type RefObject, useLayoutEffect, useRef } from "react";
 import {
   ChartTooltipShell,
@@ -26,7 +27,7 @@ function gapAt(
   fromMs: number,
   toMs: number
 ): string | null {
-  return gaps?.find((g) => g.fromMs < toMs && g.toMs > fromMs)?.label ?? null;
+  return gapExplanation(gaps?.find((g) => g.fromMs < toMs && g.toMs > fromMs));
 }
 
 export interface MirrorHoverProps {

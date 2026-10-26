@@ -16,7 +16,9 @@ use serde::{Deserialize, Serialize};
 
 mod agent;
 mod chart_window;
+mod popover;
 pub use chart_window::ChartWindow;
+pub use popover::{CardDensity, PopoverSettings};
 
 use crate::alert::AlertRule;
 use crate::catalog::Module;
@@ -27,6 +29,8 @@ pub struct Settings {
     pub remote_access: RemoteAccessSettings,
     #[serde(default)]
     pub docker: crate::docker::DockerSettings,
+    #[serde(default)]
+    pub popover: PopoverSettings,
     /// One entry per settings module: every [`Module`] except `Sensors`. An entry for a
     /// module this build does not know (a settings file from a newer build) is dropped on
     /// decode (D-040).
@@ -570,6 +574,7 @@ impl Default for Settings {
             .collect();
         Self {
             docker: crate::docker::DockerSettings::default(),
+            popover: PopoverSettings::default(),
             modules,
             remote_access: RemoteAccessSettings::default(),
             menu_bar: MenuBarSettings::default(),

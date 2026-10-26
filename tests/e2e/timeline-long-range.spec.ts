@@ -87,7 +87,11 @@ for (const theme of THEMES) {
       await expect(
         page.getByRole("note", { name: /^Asleep 1d 10h/ })
       ).toHaveCount(1);
-      await expect(page.getByRole("note", { name: "Paused" })).toHaveCount(1);
+      await expect(
+        page.getByRole("note", {
+          name: "Recording was paused during this interval. No samples were collected.",
+        })
+      ).toHaveCount(1);
 
       const cursor = page.getByRole("slider", { name: "Timeline cursor" });
       const box = await cursor.boundingBox();

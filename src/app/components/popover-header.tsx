@@ -21,6 +21,7 @@ export interface PopoverHeaderProps {
   scrolled?: boolean;
   onPause: () => void;
   onSettings: () => void;
+  options?: React.ReactNode;
 }
 
 /** Popover header: app title, host and uptime, interval pill, pause, settings. */
@@ -33,9 +34,11 @@ export function PopoverHeader({
   scrolled = false,
   onPause,
   onSettings,
+  options,
 }: PopoverHeaderProps) {
   return (
     <header
+      data-popover-size
       className={cn(
         "flex items-center gap-2 border-b py-2.5 pr-3 pl-4 transition-colors duration-(--motion-fast)",
         scrolled ? "border-border" : "border-transparent"
@@ -71,14 +74,16 @@ export function PopoverHeader({
       >
         {paused ? <Play strokeWidth={1.5} /> : <Pause strokeWidth={1.5} />}
       </Button>
-      <Button
-        variant="outline"
-        size="icon"
-        aria-label="Settings"
-        onClick={onSettings}
-      >
-        <SlidersHorizontal strokeWidth={1.5} />
-      </Button>
+      {options ?? (
+        <Button
+          variant="outline"
+          size="icon"
+          aria-label="Settings"
+          onClick={onSettings}
+        >
+          <SlidersHorizontal strokeWidth={1.5} />
+        </Button>
+      )}
     </header>
   );
 }

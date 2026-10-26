@@ -24,12 +24,17 @@ use serde::Deserialize;
 use crate::error::CommandError;
 use crate::ipc::SettingsSnapshot;
 
+mod popover;
+pub use popover::PopoverPatch;
+
 /// A partial change. Every field is optional; absent fields keep their value.
 #[derive(Clone, Debug, Default, PartialEq, Deserialize, specta::Type)]
 #[serde(default)]
 pub struct SettingsPatch {
     #[specta(optional)]
     pub remote_access: Option<RemoteAccessPatch>,
+    #[specta(optional)]
+    pub popover: Option<PopoverPatch>,
     #[specta(optional)]
     pub docker: Option<kelvo_schema::docker::DockerSettings>,
     #[specta(optional)]
@@ -205,6 +210,9 @@ impl SettingsPatch {
     /// Unknown) is rejected here rather than silently dropped.
     pub fn apply(&self, base: &Settings) -> Result<Settings, CommandError> {
         let mut s = base.clone();
+        if let Some(p) = self.popover {
+            p.apply(&mut s.popover);
+        }
         if let Some(modules) = &self.modules {
             for (module, p) in modules {
                 let entry =
@@ -391,21 +399,26 @@ impl SettingsOwner {
     /// enum value this build does not know, D-040, or a hand-edited file) also starts from
     /// defaults, with a warning, and is overwritten on the next change.
     pub fn load(file: Box<dyn SettingsFile>) -> Self {
+        Self::load_with_defaults(file, Settings::default())
+    }
+
+    /// Platform defaults only apply when stored settings cannot be used.
+    pub fn load_with_defaults(file: Box<dyn SettingsFile>, defaults: Settings) -> Self {
         let stored = file.load();
         let first_run = stored.is_none();
         let settings = match stored {
-            None => Settings::default(),
+            None => defaults.clone(),
             Some(value) => match serde_json::from_value::<Settings>(value) {
                 Ok(s) => match s.validate() {
                     Ok(()) => s,
                     Err(e) => {
                         tracing::warn!("stored settings are invalid ({e}); using defaults");
-                        Settings::default()
+                        defaults.clone()
                     }
                 },
                 Err(e) => {
                     tracing::warn!("stored settings do not decode ({e}); using defaults");
-                    Settings::default()
+                    defaults.clone()
                 }
             },
         };
@@ -600,6 +613,46 @@ mod tests {
         fn committed(&self, _old: &Settings, _now: &SettingsSnapshot) {
             let _ = self.0.settings();
         }
+    }
+
+    #[test]
+    fn injected_temperature_default_never_overrides_valid_saved_units() {
+        for unit in [TemperatureUnit::Celsius, TemperatureUnit::Fahrenheit] {
+            let mut defaults = Settings::default();
+            defaults.units.temperature = unit;
+            let owner =
+                SettingsOwner::load_with_defaults(Box::new(MemFile::default()), defaults.clone());
+            assert_eq!(owner.settings().units.temperature, unit);
+            let mut stored = Settings::default();
+            stored.units.temperature = if unit == TemperatureUnit::Celsius {
+                TemperatureUnit::Fahrenheit
+            } else {
+                TemperatureUnit::Celsius
+            };
+            let file = MemFile::default();
+            file.save(serde_json::to_value(&stored).unwrap()).unwrap();
+            let owner = SettingsOwner::load_with_defaults(Box::new(file), defaults);
+            assert_eq!(owner.settings().units.temperature, stored.units.temperature);
+        }
+    }
+
+    #[test]
+    fn popover_partial_patch_preserves_other_cards_and_engine_settings() {
+        let mut before = Settings::default();
+        before.popover.gpu = kelvo_schema::settings::CardDensity::Compact;
+        let patch: SettingsPatch =
+            serde_json::from_value(serde_json::json!({"popover":{"cpu":"compact"}})).unwrap();
+        let after = patch.apply(&before).unwrap();
+        assert_eq!(
+            after.popover.cpu,
+            kelvo_schema::settings::CardDensity::Compact
+        );
+        assert_eq!(after.popover.gpu, before.popover.gpu);
+        assert_eq!(after.modules, before.modules);
+        assert_eq!(after.menu_bar, before.menu_bar);
+        assert!(!engine_affecting(&before, &after));
+        let saved = serde_json::to_value(&after).unwrap();
+        assert_eq!(serde_json::from_value::<Settings>(saved).unwrap(), after);
     }
 
     #[test]

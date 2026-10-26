@@ -55,8 +55,8 @@ export function UsedCard({
   const v = useHeld(KEYS);
   const endMs = useModuleRange()?.endMs ?? null;
   const series = useModuleSeries(KEYS, windowMs, { brush: true });
-  const brush = useAreaBrush(series, HEIGHT);
   const gaps = useGapBands("memory");
+  const brush = useAreaBrush(series, HEIGHT, true, gaps);
   const used = series.values[USED] ?? [];
   const fmt = (x: number | null | undefined) =>
     formatBytes(x, { units: units.bytes });
@@ -70,7 +70,7 @@ export function UsedCard({
         headerAlign="baseline"
         compactHeader
         headerWrap={false}
-        className="col-span-2 gap-3"
+        className="gap-3"
         aside={
           <Legend
             items={[

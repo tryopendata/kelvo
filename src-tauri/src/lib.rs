@@ -125,7 +125,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             updates::get_update_status,
             updates::install_update,
             commands::get_window_appearance,
-            commands::report_popover_paint,
+            commands::report_popover_paint, popover::commands::report_popover_content_height,
         ])
         .events(collect_events![
             updates::UpdateStatusChanged,
@@ -294,15 +294,10 @@ pub fn run() {
     let app = app
         .plugin(tauri_nspanel::init())
         .on_web_content_process_terminate(popover::web_content_terminated);
-    #[allow(unused_mut, reason = "only debug builds change the context")]
     let mut context = tauri::generate_context!();
-    // Debug builds are a different app to macOS and to Kelvo: their own data directory
-    // (history, host id, settings, logs) and single-instance socket, so `tauri dev` never
-    // opens the installed app's history or hands its launch to it.
-    #[cfg(debug_assertions)]
-    {
-        context.config_mut().identifier = DEV_IDENTIFIER.into();
-    }
+    // Bench bundles keep their explicit isolated identity even in debug builds.
+    let identifier = runtime_identifier(&context.config().identifier).to_owned();
+    context.config_mut().identifier = identifier;
     let app = app.build(context);
     let app = match app {
         Ok(app) => app,
@@ -350,5 +345,28 @@ mod tests {
         ] {
             assert!(deferred_ui_launch(args));
         }
+    }
+}
+
+/// Development builds are isolated from installed data; bench builds supply their own ID.
+fn runtime_identifier(configured: &str) -> &str {
+    if cfg!(all(debug_assertions, not(feature = "bench"))) {
+        DEV_IDENTIFIER
+    } else {
+        configured
+    }
+}
+
+#[cfg(test)]
+mod identity_tests {
+    #[test]
+    fn bench_keeps_the_configured_identity_and_normal_debug_uses_dev_data() {
+        let configured = "com.tryopendata.kelvo.bench.ux-native";
+        let expected = if cfg!(all(debug_assertions, not(feature = "bench"))) {
+            super::DEV_IDENTIFIER
+        } else {
+            configured
+        };
+        assert_eq!(super::runtime_identifier(configured), expected);
     }
 }

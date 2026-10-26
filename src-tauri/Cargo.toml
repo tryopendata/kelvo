@@ -70,7 +70,7 @@ libc = "0.2.190"
 core-foundation = "0.10.1"
 block2 = "0.6.2"
 objc2 = "0.6.4"
-objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "block2", "NSAppleEventManager", "NSAppleEventDescriptor", "NSGeometry", "NSNotification", "NSObject", "NSOperation", "NSString"] }
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "block2", "NSFormatter", "NSMeasurementFormatter", "NSMeasurement", "NSUnit", "NSLocale", "NSAppleEventManager", "NSAppleEventDescriptor", "NSGeometry", "NSNotification", "NSObject", "NSOperation", "NSString"] }
 objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "block2", "objc2-core-foundation", "NSAccessibility", "NSAccessibilityProtocols", "NSBitmapImageRep", "NSButton", "NSControl", "NSEvent", "NSGraphics", "NSImage", "NSImageRep", "NSPanel", "NSResponder", "NSRunningApplication", "NSScreen", "NSStatusBar", "NSStatusBarButton", "NSStatusItem", "NSView", "NSWindow", "NSWorkspace"] }
 # The popover panel (D-033) and its material (D-034). Exact pins: what the spike verified.
 tauri-nspanel = "=2.1.0"

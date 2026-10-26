@@ -9,10 +9,12 @@
 //! animation frame after the panel is shown (the first frame painted with the panel on
 //! screen), which the page reports back with `report_popover_paint`.
 
+pub mod commands;
+
 #[cfg(target_os = "macos")]
 mod panel;
 #[cfg(target_os = "macos")]
-pub use panel::{create, hide, toggle, web_content_terminated};
+pub use panel::{create, hide, report_content_height, toggle, web_content_terminated};
 
 use std::collections::VecDeque;
 use std::sync::{Mutex, MutexGuard};
@@ -48,9 +50,16 @@ pub struct Rect {
 /// the menu bar, beside the Dock) is `screen`: centred under the item, kept `MARGIN_PT`
 /// inside the screen edges, and shortened if the screen is too short for 680 pt.
 pub fn place(anchor: Rect, screen: Rect) -> Rect {
+    place_content(anchor, screen, HEIGHT_PT)
+}
+
+pub fn place_content(anchor: Rect, screen: Rect, content_height: f64) -> Rect {
     let w = WIDTH_PT.min(screen.w - 2.0 * MARGIN_PT).max(1.0);
     let top = anchor.y.min(screen.y + screen.h) - GAP_PT;
-    let h = HEIGHT_PT.min(top - screen.y - MARGIN_PT).max(1.0);
+    let h = content_height
+        .clamp(1.0, HEIGHT_PT)
+        .min(top - screen.y - MARGIN_PT)
+        .max(1.0);
     let min_x = screen.x + MARGIN_PT;
     let max_x = (screen.x + screen.w - MARGIN_PT - w).max(min_x);
     let x = (anchor.x + anchor.w / 2.0 - w / 2.0).clamp(min_x, max_x);
@@ -118,6 +127,9 @@ struct Inner {
     /// (D-035).
     reload_on_hide: bool,
     latency: OpenLatency,
+    content_height: Option<f64>,
+    tray_id: Option<String>,
+    pending_open: Option<Instant>,
 }
 
 /// Popover state managed by Tauri.
@@ -143,7 +155,25 @@ impl Popover {
     fn hidden(&self, now: Instant) -> bool {
         let mut i = self.lock();
         i.hidden_at = Some(now);
+        i.pending_open = None;
         std::mem::take(&mut i.reload_on_hide)
+    }
+
+    fn invalidate_content(&self) {
+        self.lock().content_height = None;
+    }
+
+    /// A second click while the first page is loading cancels the pending open.
+    fn opening_height(&self, clicked: Instant, tray_id: &str) -> Option<f64> {
+        let mut inner = self.lock();
+        inner.tray_id = Some(tray_id.to_owned());
+        if let Some(height) = inner.content_height {
+            return Some(height);
+        }
+        if inner.pending_open.take().is_none() {
+            inner.pending_open = Some(clicked);
+        }
+        None
     }
 
     fn set_reload_on_hide(&self) {
@@ -186,6 +216,31 @@ mod tests {
             w: 40.0,
             h: 33.0,
         }
+    }
+
+    #[test]
+    fn content_height_keeps_top_edge_and_screen_clamps() {
+        for height in [56.0, 418.0, 680.0, 900.0] {
+            let frame = place_content(item(1000.0), SCREEN, height);
+            assert_eq!(frame.y + frame.h, 945.0);
+            assert_eq!(frame.h, height.min(680.0));
+        }
+    }
+
+    #[test]
+    fn hidden_startup_and_reloaded_content_wait_and_cancel_on_second_click() {
+        let p = Popover::default();
+        let now = Instant::now();
+        assert_eq!(p.opening_height(now, "cpu"), None);
+        assert!(p.lock().pending_open.is_some());
+        assert_eq!(p.opening_height(now, "cpu"), None);
+        assert!(p.lock().pending_open.is_none());
+        p.lock().content_height = Some(418.0);
+        assert_eq!(p.opening_height(now, "gpu"), Some(418.0));
+        p.invalidate_content();
+        assert_eq!(p.opening_height(now, "gpu"), None);
+        p.hidden(now);
+        assert!(p.lock().pending_open.is_none());
     }
 
     #[test]

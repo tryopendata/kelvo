@@ -44,8 +44,8 @@ export function UsageCard({ windowMs }: { windowMs: number }) {
   const v = useHeld(HELD);
   const endMs = useModuleRange()?.endMs ?? null;
   const series = useModuleSeries(CHART, windowMs, { brush: true });
-  const brush = useAreaBrush(series, HEIGHT);
   const gaps = useGapBands("gpu");
+  const brush = useAreaBrush(series, HEIGHT, true, gaps);
   const util = v["gpu.util"] ?? null;
 
   return (

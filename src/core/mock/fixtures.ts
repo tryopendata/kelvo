@@ -33,6 +33,8 @@ export type ScenarioName =
   | "linux-host"
   | "linux-agent-update"
   | "linux-identity-changed"
+  | "popover-compact"
+  | "power-disabled"
   | "default"
   | "sleep-gap"
   | "unknown-chip"
@@ -89,6 +91,8 @@ export const SCENARIOS: readonly ScenarioName[] = [
   "linux-host",
   "linux-agent-update",
   "linux-identity-changed",
+  "popover-compact",
+  "power-disabled",
   "default",
   "sleep-gap",
   "unknown-chip",
@@ -206,6 +210,8 @@ export interface ScenarioFlags {
    * `linux-host` adds it as a remote host beside the Mac instead.
    */
   linux: boolean;
+  compactPopover: boolean;
+  powerDisabled: boolean;
 }
 
 export function scenarioFlags(names: readonly ScenarioName[]): ScenarioFlags {
@@ -224,6 +230,8 @@ export function scenarioFlags(names: readonly ScenarioName[]): ScenarioFlags {
     sleepGap: has("sleep-gap"),
     unknownChip: has("unknown-chip"),
     noBattery: has("no-battery"),
+    compactPopover: has("popover-compact"),
+    powerDisabled: has("power-disabled"),
     noFans: has("no-fans"),
     paused: has("paused"),
     stale: has("stale"),
@@ -343,6 +351,15 @@ export function capabilities(
 /** Plan 6.4 defaults, with every module on so the mock shows all of them. */
 export function defaultSettings(flags: ScenarioFlags): Settings {
   return {
+    popover: {
+      cpu: flags.compactPopover ? "compact" : "expanded",
+      memory: flags.compactPopover ? "compact" : "expanded",
+      gpu: flags.compactPopover ? "compact" : "expanded",
+      power: flags.compactPopover ? "compact" : "expanded",
+      network: flags.compactPopover ? "compact" : "expanded",
+      battery: flags.compactPopover ? "compact" : "expanded",
+      containers: flags.compactPopover ? "compact" : "expanded",
+    },
     docker: {
       enabled: false,
       selected_engine: null,
@@ -353,7 +370,7 @@ export function defaultSettings(flags: ScenarioFlags): Settings {
       cpu: { enabled: true },
       gpu: { enabled: true },
       memory: { enabled: true },
-      power: { enabled: true },
+      power: { enabled: !flags.powerDisabled },
       network: { enabled: true },
       disk: { enabled: true },
       battery: { enabled: !flags.noBattery && !flags.linux },

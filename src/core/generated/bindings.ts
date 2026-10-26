@@ -317,6 +317,8 @@ export const commands = {
 	 *  Rust injects the call itself (`popover::toggle`); pages never need to call it.
 	 */
 	reportPopoverPaint: (token: number) => __TAURI_INVOKE<void>("report_popover_paint", { token }),
+	/**  Only the popover shell may report its intrinsic content size. */
+	reportPopoverContentHeight: (height: number | null) => __TAURI_INVOKE<void>("report_popover_content_height", { height }),
 };
 
 /** Events */
@@ -545,6 +547,8 @@ export type CapabilitiesChanged = {
 	host: HostId,
 	capabilities: Capabilities,
 };
+
+export type CardDensity = "expanded" | "compact";
 
 /**  The dashboard chart window. Longer and fixed ranges read retained history. */
 export type ChartWindow = "5m" | "15m" | "30m" | "1h" |
@@ -2054,6 +2058,26 @@ export type PlanFigures = {
 	background_temperatures_ms: number,
 };
 
+export type PopoverPatch = {
+	cpu?: CardDensity | null,
+	memory?: CardDensity | null,
+	gpu?: CardDensity | null,
+	power?: CardDensity | null,
+	network?: CardDensity | null,
+	battery?: CardDensity | null,
+	containers?: CardDensity | null,
+};
+
+export type PopoverSettings = {
+	cpu?: CardDensity,
+	memory?: CardDensity,
+	gpu?: CardDensity,
+	power?: CardDensity,
+	network?: CardDensity,
+	battery?: CardDensity,
+	containers?: CardDensity,
+};
+
 export type PowerComponent = "package" | "ane";
 
 /**
@@ -2431,6 +2455,7 @@ export type SeriesStats = {
 export type Settings = {
 	remote_access?: RemoteAccessSettings,
 	docker?: DockerSettings,
+	popover?: PopoverSettings,
 	/**
 	 *  One entry per settings module: every [`Module`] except `Sensors`. An entry for a
 	 *  module this build does not know (a settings file from a newer build) is dropped on
@@ -2457,6 +2482,7 @@ export type SettingsChanged = {
 /**  A partial change. Every field is optional; absent fields keep their value. */
 export type SettingsPatch = {
 	remote_access?: RemoteAccessPatch | null,
+	popover?: PopoverPatch | null,
 	docker?: DockerSettings | null,
 	modules?: Partial<{ [key in Module]: ModulePatch }> | null,
 	menu_bar?: MenuBarPatch | null,

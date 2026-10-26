@@ -46,7 +46,7 @@ describe("gapLabel", () => {
     expect(gapLabel(gap({ reason: "app_not_running" }))).toBe(
       "Kelvo not running"
     );
-    expect(gapLabel(gap({ reason: "paused" }))).toBe("Paused");
+    expect(gapLabel(gap({ reason: "paused" }))).toBe("Recording paused here");
     expect(gapLabel(gap({ reason: "module_disabled", module: "gpu" }))).toBe(
       "GPU sampling off"
     );
@@ -92,7 +92,9 @@ describe("gapBands", () => {
   ];
 
   it("keeps host-wide gaps and this module's gaps, clipped to the range", () => {
-    expect(gapBands(gaps, at(10, 40), at(12, 0), { module: "cpu" })).toEqual([
+    expect(
+      gapBands(gaps, at(10, 40), at(12, 0), { module: "cpu" })
+    ).toMatchObject([
       {
         fromMs: at(10, 40),
         toMs: at(10, 50),
@@ -105,7 +107,12 @@ describe("gapBands", () => {
         label: "CPU sampling off",
         module: "cpu",
       },
-      { fromMs: at(11, 50), toMs: at(12, 0), label: "Paused", module: null },
+      {
+        fromMs: at(11, 50),
+        toMs: at(12, 0),
+        label: "Recording paused here",
+        module: null,
+      },
     ]);
   });
 
@@ -115,7 +122,7 @@ describe("gapBands", () => {
       "Asleep 10:00–10:50 · not interpolated",
       "GPU sampling off",
       "CPU sampling off",
-      "Paused",
+      "Recording paused here",
     ]);
   });
 
@@ -324,4 +331,29 @@ describe("historyHealthNotices", () => {
       },
     ]);
   });
+});
+
+it("suppresses only captions for original closed pauses shorter than five seconds", () => {
+  const paused = (duration: number | null) => ({
+    start_ms: 10_000,
+    end_ms: duration === null ? null : 10_000 + duration,
+    reason: "paused" as const,
+    module: null,
+  });
+  for (const [duration, shown] of [
+    [4_999, false],
+    [5_000, true],
+    [5_001, true],
+    [null, false],
+  ] as const) {
+    const bands = gapBands([paused(duration)], 12_000, 14_000);
+    expect(bands).toHaveLength(1);
+    expect(bands[0]).toMatchObject({
+      fromMs: 12_000,
+      toMs: 14_000,
+      closedDurationMs: duration,
+      reason: "paused",
+      showCaption: shown,
+    });
+  }
 });

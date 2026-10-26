@@ -12,3 +12,6 @@ pub use macos::*;
 mod other;
 #[cfg(not(target_os = "macos"))]
 pub use other::*;
+
+#[cfg(target_os = "macos")]
+pub mod temperature;

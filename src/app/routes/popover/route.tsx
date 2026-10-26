@@ -12,6 +12,8 @@ import { cn } from "~/lib/utils";
 import { DockerPopoverSummary } from "~/routes/dashboard/containers/_components/docker-surfaces";
 import { useHost } from "~/stores/host-store";
 import { useSampling } from "~/stores/live-selectors";
+import { useSettings, useSettingsStatus } from "~/stores/settings-store";
+import type { PresentationProps } from "./_components/popover-cards";
 import {
   LiveBatteryCard,
   LiveCpuCard,
@@ -20,11 +22,17 @@ import {
   LiveNetworkCard,
   LivePowerCard,
 } from "./_components/popover-cards";
+import { PopoverOptions } from "./_components/popover-options";
 import { PopoverScroll } from "./_components/popover-scroll";
+import { POPOVER_CARDS, usePopoverDensity } from "./_hooks/use-popover-density";
+import { usePopoverSize } from "./_hooks/use-popover-size";
 import { type PopoverCard, popoverSlots } from "./_lib/card-order";
 import { samplingPill } from "./_lib/sampling-pill";
 
-const CARDS: Record<PopoverCard, () => React.JSX.Element> = {
+const CARDS: Record<
+  PopoverCard,
+  (props: PresentationProps) => React.JSX.Element
+> = {
   cpu: LiveCpuCard,
   memory: LiveMemoryCard,
   gpu: LiveGpuCard,
@@ -65,9 +73,21 @@ export default function PopoverRoute() {
   const [scrolled, setScrolled] = useState(false);
   const now = useNow(60_000);
   const stale = sampling.stale && !sampling.paused;
+  const density = usePopoverDensity();
+  const ready = useSettingsStatus() !== "loading";
+  const dockerLayout = useSettings(
+    (settings) => `${settings.docker?.enabled}:${settings.docker?.show_popover}`
+  );
+  const root = usePopoverSize(
+    ready,
+    `${dockerLayout}:${slots.map((slot) => (slot.kind === "card" ? slot.card : slot.module)).join(":")}:${POPOVER_CARDS.map((card) => density.compact(card)).join(":")}`
+  );
 
   return (
-    <div className="surface-vibrant flex h-svh flex-col overflow-hidden rounded-card text-foreground">
+    <div
+      ref={root}
+      className="surface-vibrant flex h-svh flex-col overflow-hidden rounded-card text-foreground"
+    >
       <PopoverHeader
         hostName={host?.display_name ?? ""}
         uptimeMs={host ? now - host.info.boot_time_ms : 0}
@@ -77,6 +97,7 @@ export default function PopoverRoute() {
         scrolled={scrolled}
         onPause={() => void transport.setPaused(!sampling.paused)}
         onSettings={() => void transport.openDashboard("/dashboard/settings")}
+        options={<PopoverOptions setAll={density.setAll} />}
       />
       <PopoverScroll
         onScrolledChange={setScrolled}
@@ -85,20 +106,34 @@ export default function PopoverRoute() {
           stale && "opacity-50"
         )}
       >
-        <DockerPopoverSummary />
-        {slots.map((slot) => {
-          if (slot.kind === "unavailable") {
+        {ready && (
+          <DockerPopoverSummary
+            compact={density.compact("containers")}
+            onToggle={() => density.toggle("containers")}
+          />
+        )}
+        {ready &&
+          slots.map((slot) => {
+            if (slot.kind === "unavailable") {
+              return (
+                <UnavailableCard
+                  key={slot.module}
+                  module={slot.module}
+                  state={slot.state}
+                  compact={density.compact(slot.module as PopoverCard)}
+                  onToggle={() => density.toggle(slot.module as PopoverCard)}
+                />
+              );
+            }
+            const Card = CARDS[slot.card];
             return (
-              <UnavailableCard
-                key={slot.module}
-                module={slot.module}
-                state={slot.state}
+              <Card
+                key={slot.card}
+                compact={density.compact(slot.card)}
+                onToggle={() => density.toggle(slot.card)}
               />
             );
-          }
-          const Card = CARDS[slot.card];
-          return <Card key={slot.card} />;
-        })}
+          })}
       </PopoverScroll>
       <LiveFooter />
     </div>

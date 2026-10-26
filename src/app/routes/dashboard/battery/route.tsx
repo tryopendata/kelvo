@@ -26,7 +26,8 @@ const wh = (v: number | null) => (v === null ? MISSING : v.toFixed(1));
  * The page does not exist on a Mac without a battery.
  */
 export default function BatteryRoute() {
-  const cap = useHost((s) => s.capabilities?.modules.battery);
+  const caps = useHost((s) => s.capabilities);
+  const cap = caps?.modules.battery;
   const b = useBatteryDetail();
   const state = usePowerSource() ?? "unknown";
   const units = useUnits();
@@ -38,7 +39,7 @@ export default function BatteryRoute() {
   );
   const ceiling = useNiceCeiling(abs, series.tEndMs, 10);
 
-  if (cap === "not_present")
+  if (caps !== null && (cap === undefined || cap === "not_present"))
     return <Navigate to="/dashboard/overview" replace />;
 
   const time = timeField(b, state);

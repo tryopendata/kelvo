@@ -23,7 +23,10 @@ export function PopoverScroll({
         className="size-full outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
         onScroll={(e) => onScrolledChange(e.currentTarget.scrollTop > 0)}
       >
-        <div className={cn("flex flex-col gap-2 px-2.5 pb-2.5", className)}>
+        <div
+          data-popover-size
+          className={cn("flex flex-col gap-2 px-2.5 pb-2.5", className)}
+        >
           {children}
         </div>
       </ScrollArea.Viewport>

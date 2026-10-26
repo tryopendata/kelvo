@@ -71,6 +71,8 @@ export function createTauriTransport(label: string): Transport {
     historyHealth: (host) => commands.historyHealth(host),
     resetHistory: () => commands.resetHistory(),
     setPaused: (paused) => commands.setPaused(paused),
+    reportPopoverContentHeight: (height) =>
+      commands.reportPopoverContentHeight(height),
     openDashboard: (route) => commands.openDashboard(route),
     sensorDump: (host) => commands.sensorDump(host),
     processSignal: (host, pid, startTimeUs, kind) =>

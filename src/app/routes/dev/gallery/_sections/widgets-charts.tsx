@@ -122,7 +122,14 @@ export function WidgetsChartsSection() {
           </ChartCard>
           <GalleryItem name="GapBand · standalone" usedIn="Gap states">
             <div className="h-16">
-              <GapBand fromMs={0} toMs={1} label="Paused" />
+              <GapBand
+                fromMs={0}
+                toMs={5_000}
+                reason="paused"
+                closedDurationMs={5_000}
+                showCaption
+                label="Recording paused here"
+              />
             </div>
           </GalleryItem>
         </GalleryItem>

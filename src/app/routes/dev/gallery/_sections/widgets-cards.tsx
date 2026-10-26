@@ -63,6 +63,21 @@ export function WidgetsCardsSection() {
 
         <GalleryItem name="ModuleCard" usedIn="Popover" vibrant>
           <div className="flex flex-col gap-2" style={{ width: POPOVER_W }}>
+            <ModuleCard
+              compact
+              onToggle={() => {}}
+              accent="cpu"
+              title="CPU"
+              value="18%"
+            >
+              <StreamArea
+                {...POPOVER_CPU_STREAM}
+                height={14}
+                ceilingLabel=""
+                windowLabel=""
+                gridlines={[]}
+              />
+            </ModuleCard>
             <ModuleCard accent="cpu" title="CPU" value="18%">
               <StreamArea {...POPOVER_CPU_STREAM} />
               <div className="flex flex-col gap-[5px] pt-1.5">

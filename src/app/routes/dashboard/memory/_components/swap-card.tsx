@@ -32,8 +32,8 @@ export function SwapCard({ windowMs }: { windowMs: number }) {
   const span =
     endMs === null ? `last ${windowWords(windowMs)}` : "selected dates";
   const series = useModuleSeries([KEY], windowMs, { brush: true });
-  const brush = useAreaBrush(series, HEIGHT);
   const gaps = useGapBands("memory");
+  const brush = useAreaBrush(series, HEIGHT, true, gaps);
   const values = series.values[KEY] ?? [];
   const ceiling = useNiceCeiling(values, series.tEndMs, 100e6, windowMs);
   const fmt = (x: number | null | undefined) =>

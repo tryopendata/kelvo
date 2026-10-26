@@ -16,7 +16,10 @@ export function PopoverFooter({
   onActivity,
 }: PopoverFooterProps) {
   return (
-    <footer className="flex items-center gap-2.5 border-border border-t pt-2.5 pr-3 pb-3 pl-4">
+    <footer
+      data-popover-size
+      className="flex items-center gap-2.5 border-border border-t pt-2.5 pr-3 pb-3 pl-4"
+    >
       <Button className="h-[30px] px-3 text-[12px]" onClick={onOpenDashboard}>
         Open dashboard
         <ArrowUpRight strokeWidth={2} />

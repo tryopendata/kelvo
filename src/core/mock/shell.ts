@@ -21,6 +21,11 @@ export class MockShell {
   readonly requestNavigate: MockTransport["requestNavigate"] = (route) => {
     this.emitters.navigate.emit({ route });
   };
+  readonly reportPopoverContentHeight: MockTransport["reportPopoverContentHeight"] =
+    async (height) => {
+      if (Number.isFinite(height) && height > 0 && height <= 100_000)
+        this.commands.record("report_popover_content_height", height);
+    };
   readonly openDashboard: MockTransport["openDashboard"] = async (route) => {
     this.commands.record("open_dashboard", route);
     return ok(null);
@@ -79,6 +84,7 @@ export class MockShell {
   get methods() {
     return {
       requestNavigate: this.requestNavigate,
+      reportPopoverContentHeight: this.reportPopoverContentHeight,
       openDashboard: this.openDashboard,
       getEdition: this.getEdition,
       checkForUpdates: this.checkForUpdates,

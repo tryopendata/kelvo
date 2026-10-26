@@ -331,6 +331,8 @@ export interface Transport {
    */
   resetHistory(): Promise<CommandResult<ByteCount>>;
   setPaused(paused: boolean): Promise<void>;
+  /** Intrinsic popover shell height, in logical points. */
+  reportPopoverContentHeight(height: number): Promise<void>;
   openDashboard(route: string | null): Promise<CommandResult<null>>;
   sensorDump(host: HostId): Promise<CommandResult<SensorDump>>;
   /**

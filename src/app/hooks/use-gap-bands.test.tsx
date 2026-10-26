@@ -70,7 +70,11 @@ describe("gap bands on module page charts (plan 4.17)", () => {
   it("marks an open pause up to now", async () => {
     await renderCharts("1h", ["paused"]);
     await waitFor(() =>
-      expect(screen.getAllByRole("note", { name: "Paused" })).toHaveLength(2)
+      expect(
+        screen.getAllByRole("note", {
+          name: "Recording was paused during this interval. No samples were collected.",
+        })
+      ).toHaveLength(2)
     );
   });
 });

@@ -1,3 +1,5 @@
+import { PAUSE_EXPLANATION } from "@core/history-state";
+import { Pause } from "lucide-react";
 import { cn } from "~/lib/utils";
 
 export interface GapBandProps {
@@ -5,6 +7,9 @@ export interface GapBandProps {
   toMs: number;
   /** "Asleep 11:02–11:31 · not interpolated", "Paused", "Kelvo not running". */
   label: string;
+  reason?: string | undefined;
+  closedDurationMs?: number | null;
+  showCaption?: boolean | undefined;
   /**
    * The chart's x range. When given, the band positions itself absolutely
    * inside a `relative` plot box; without it, it fills its parent.
@@ -27,6 +32,8 @@ export function GapBand({
   rangeFromMs,
   rangeToMs,
   labelPosition = "bottom",
+  reason,
+  showCaption = true,
 }: GapBandProps) {
   let left: string | undefined;
   let width: string | undefined;
@@ -41,17 +48,25 @@ export function GapBand({
   return (
     <div
       role="note"
-      aria-label={label}
+      aria-label={reason === "paused" ? PAUSE_EXPLANATION : label}
       data-gap-from={fromMs}
       data-gap-to={toMs}
       className={cn(
-        "flex items-end justify-center border-border-strong border-x border-dashed bg-[repeating-linear-gradient(135deg,var(--color-grid)_0_1px,transparent_1px_7px)]",
+        "pointer-events-none flex items-end justify-center border-border-strong border-x border-dashed bg-[repeating-linear-gradient(135deg,var(--color-grid)_0_1px,transparent_1px_7px)]",
         positioned ? "absolute inset-y-0" : "relative h-full min-h-12 w-full"
       )}
       style={positioned ? { left, width } : undefined}
     >
-      {labelPosition === "bottom" && (
-        <span className="translate-y-1/2 whitespace-nowrap rounded-control border border-border bg-card px-2 py-1 text-[11px] text-fg-subtle">
+      {labelPosition === "bottom" && showCaption && (
+        <span
+          title={reason === "paused" ? PAUSE_EXPLANATION : label}
+          className={cn(
+            "inline-flex translate-y-1/2 items-center gap-1 whitespace-nowrap text-[11px] text-fg-subtle",
+            reason !== "paused" &&
+              "rounded-control border border-border bg-card px-2 py-1"
+          )}
+        >
+          {reason === "paused" && <Pause aria-hidden className="size-3" />}
           {label}
         </span>
       )}
@@ -64,6 +79,9 @@ export interface GapSpan {
   fromMs: number;
   toMs: number;
   label: string;
+  reason?: string | undefined;
+  closedDurationMs?: number | null;
+  showCaption?: boolean | undefined;
 }
 
 /**
@@ -89,6 +107,8 @@ export function GapBands({
         fromMs={g.fromMs}
         toMs={g.toMs}
         label={g.label}
+        reason={g.reason}
+        showCaption={g.showCaption}
         labelPosition={rangeToMs - rangeFromMs > 86_400_000 ? "none" : "bottom"}
         rangeFromMs={rangeFromMs}
         rangeToMs={rangeToMs}

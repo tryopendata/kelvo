@@ -91,6 +91,7 @@ export interface BrushOverlayProps {
   selectableToMs?: number | undefined;
   /** Distance from the positioned parent's left edge to the plot, px. */
   inset?: number;
+  gapExplanationAt?: (time: number) => string | null;
   /** Optional metric readout; selection and keyboard behavior stay shared. */
   onHoverTime?: (time: number | null, fractionY: number) => void;
 }
@@ -120,6 +121,7 @@ export function BrushOverlay({
   selectableToMs,
   inset = PLOT_INSET,
   onHoverTime,
+  gapExplanationAt,
 }: BrushOverlayProps) {
   const store = useBrushStore();
   const view = useBrush((s) => s.draft ?? s.range);
@@ -179,6 +181,7 @@ export function BrushOverlay({
   };
   const onPointerMove = (e: PointerEvent<HTMLDivElement>) => {
     const t = timeOf(e);
+    e.currentTarget.title = gapExplanationAt?.(t) ?? "";
     const rect = e.currentTarget.getBoundingClientRect();
     onHoverTime?.(t, (e.clientY - rect.top) / rect.height);
     showHover(t);
@@ -302,7 +305,10 @@ export function BrushOverlay({
       aria-valuemin={0}
       aria-valuemax={Math.max(0, (last - first) / BRUSH_STEP_MS)}
       aria-valuenow={(at - first) / BRUSH_STEP_MS}
-      aria-valuetext={valueText}
+      aria-valuetext={[valueText, gapExplanationAt?.(at)]
+        .filter(Boolean)
+        .join(". ")}
+      title={gapExplanationAt?.(at) ?? undefined}
       data-testid="brush"
       className="group absolute top-0 right-0 cursor-crosshair touch-none select-none rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
       style={{ height, left: inset }}

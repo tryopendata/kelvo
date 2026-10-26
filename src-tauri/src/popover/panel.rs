@@ -8,7 +8,7 @@ use tauri::{AppHandle, Manager, Webview, WebviewUrl, WebviewWindow, WebviewWindo
 use tauri_nspanel::{CollectionBehavior, ManagerExt, PanelLevel, StyleMask, WebviewWindowExt};
 use window_vibrancy::{NSVisualEffectMaterial, NSVisualEffectState};
 
-use super::{LABEL, Popover, ROUTE, Rect, place};
+use super::{LABEL, Popover, ROUTE, Rect, place_content};
 use crate::platform::{self, appkit};
 use crate::state::AppState;
 
@@ -147,8 +147,14 @@ pub fn toggle(app: &AppHandle, clicked: Instant, tray_id: &str) {
         // This click is what took the focus and hid the panel.
         return;
     }
+    let Some(content_height) = state.opening_height(clicked, tray_id) else {
+        return;
+    };
     if let Some((item, screen)) = anchor(app, tray_id) {
-        appkit::set_frame(panel.as_panel(), place(item, screen));
+        appkit::set_frame(
+            panel.as_panel(),
+            place_content(item, screen, content_height),
+        );
     } else {
         tracing::warn!("status item frame unavailable; showing the popover where it was");
     }
@@ -181,6 +187,9 @@ pub fn hide(app: &AppHandle) {
         .try_state::<Popover>()
         .is_some_and(|p| p.hidden(Instant::now()));
     if reload && let Some(w) = app.get_webview_window(LABEL) {
+        if let Some(state) = app.try_state::<Popover>() {
+            state.invalidate_content();
+        }
         tracing::info!("reloading the popover after its WebContent process ended");
         if let Err(e) = w.reload() {
             tracing::warn!("reloading the popover: {e}");
@@ -195,11 +204,48 @@ pub fn web_content_terminated(webview: &Webview) {
     let app = webview.app_handle();
     let showing = label == LABEL && app.get_webview_panel(LABEL).is_ok_and(|p| p.is_visible());
     tracing::warn!(label, showing, "WebContent process terminated");
+    if label == LABEL
+        && let Some(state) = app.try_state::<Popover>()
+    {
+        state.invalidate_content();
+    }
     if showing {
         if let Some(p) = app.try_state::<Popover>() {
             p.set_reload_on_hide();
         }
     } else if let Err(e) = webview.reload() {
         tracing::warn!(label, "reloading after WebContent termination: {e}");
+    }
+}
+
+/// Intrinsic content reports are bounded, deduplicated and applied on the main thread.
+/// Hidden reports update the next opening size without moving the hidden panel.
+pub fn report_content_height(app: &AppHandle, height: f64) {
+    if !height.is_finite() || !(1.0..=100_000.0).contains(&height) {
+        return;
+    }
+    let Some(state) = app.try_state::<Popover>() else {
+        return;
+    };
+    let height = height.ceil().min(super::HEIGHT_PT);
+    let (tray, pending, changed) = {
+        let mut inner = state.lock();
+        let changed = inner.content_height != Some(height);
+        inner.content_height = Some(height);
+        (inner.tray_id.clone(), inner.pending_open.take(), changed)
+    };
+    let Some(tray) = tray else {
+        return;
+    };
+    if let Some(clicked) = pending {
+        toggle(app, clicked, &tray);
+        return;
+    }
+    if changed
+        && let Ok(panel) = app.get_webview_panel(LABEL)
+        && panel.is_visible()
+        && let Some((item, screen)) = anchor(app, &tray)
+    {
+        appkit::set_frame(panel.as_panel(), place_content(item, screen, height));
     }
 }

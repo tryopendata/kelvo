@@ -96,9 +96,15 @@ impl AppState {
             "local host"
         );
 
-        let settings = SettingsOwner::load(crate::bench::settings_file(Box::new(
-            PluginStoreFile::open(app)?,
-        )));
+        let mut defaults = kelvo_schema::Settings::default();
+        #[cfg(target_os = "macos")]
+        if let Some(unit) = crate::platform::temperature::default_unit() {
+            defaults.units.temperature = unit;
+        }
+        let settings = SettingsOwner::load_with_defaults(
+            crate::bench::settings_file(Box::new(PluginStoreFile::open(app)?)),
+            defaults,
+        );
         // The benchmark's overrides (D-088) reach the engine and the first appearance
         // only, never the owner, so no later settings write can save them.
         let mut current = settings.settings();

@@ -1,9 +1,13 @@
 import { formatBytes, formatPercent } from "@core/format";
-import { useMemo } from "react";
+import { ChevronDown } from "lucide-react";
+import { useLayoutEffect, useMemo, useRef } from "react";
 import { Link } from "react-router";
 import { useIsLocalHost } from "~/hooks/use-is-local-host";
 import { useTransport } from "~/lib/transport-context";
+import type { PresentationProps } from "~/routes/popover/_components/popover-cards";
 import { useSettings } from "~/stores/settings-store";
+import { MeterTrack } from "~/widgets/meter-track";
+import { ModuleCard } from "~/widgets/module-card";
 import {
   useDocker,
   useDockerEvents,
@@ -16,7 +20,8 @@ import {
 } from "../_lib/presentation";
 import { ContainerHistory } from "./container-history";
 
-function LivePopoverSummary() {
+function LivePopoverSummary({ compact = false, onToggle }: PresentationProps) {
+  const toggle = useContainerDensityFocus(compact, onToggle);
   const { snapshot } = useDocker();
   const transport = useTransport();
   const rows = snapshot?.containers;
@@ -31,10 +36,47 @@ function LivePopoverSummary() {
     [rows]
   );
   if (!snapshot) return null;
+  if (compact)
+    return (
+      <ModuleCard
+        compact
+        onToggle={toggle}
+        accent="cpu"
+        title="Containers"
+        href="/dashboard/containers"
+        onOpen={(route) => void transport.openDashboard(route)}
+        value={`${snapshot.aggregate.running} running`}
+        notice={
+          [
+            snapshot.status !== "connected"
+              ? statusLabel[snapshot.status]
+              : null,
+            snapshot.aggregate.partial ? "Partial coverage" : null,
+          ]
+            .filter(Boolean)
+            .join(" · ") || undefined
+        }
+      >
+        <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+          <span className="figures whitespace-nowrap">
+            {snapshot.aggregate.cpu_cores?.toFixed(2) ?? "—"} cores ·{" "}
+            {formatBytes(snapshot.aggregate.working_set_bytes)}
+          </span>
+          <MeterTrack
+            fraction={
+              snapshot.containers.length
+                ? snapshot.aggregate.running / snapshot.containers.length
+                : null
+            }
+            className="min-w-6 flex-1"
+          />
+        </div>
+      </ModuleCard>
+    );
   return (
     <section
       aria-label="Container glance"
-      className="mx-2.5 rounded-card border border-border bg-card-vibrant p-3"
+      className="relative rounded-card border border-border bg-card-vibrant p-3"
     >
       <button
         type="button"
@@ -42,7 +84,7 @@ function LivePopoverSummary() {
         className="block w-full rounded-control text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         <span className="flex justify-between text-[12px]">
-          <span>Containers</span>
+          <span className="pl-5">Containers</span>
           <span className="figures">{snapshot.aggregate.running} running</span>
         </span>
         <span className="figures mt-1 block text-[11px] text-muted-foreground">
@@ -57,6 +99,17 @@ function LivePopoverSummary() {
           </span>
         </span>
       </button>
+      {toggle && (
+        <button
+          type="button"
+          onClick={toggle}
+          aria-label="Collapse Containers"
+          aria-expanded
+          className="absolute top-3 left-2 flex size-5 items-center justify-center rounded-control text-muted-foreground outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <ChevronDown className="size-3.5" />
+        </button>
+      )}
       {leader && (
         <button
           type="button"
@@ -77,12 +130,35 @@ function LivePopoverSummary() {
     </section>
   );
 }
-export function DockerPopoverSummary() {
+/** Expanded Docker's action buttons use a different shell, so restore its toggle after swapping. */
+function useContainerDensityFocus(
+  compact: boolean,
+  onToggle: (() => void) | undefined
+) {
+  const requested = useRef(false);
+  useLayoutEffect(() => {
+    if (!requested.current) return;
+    document
+      .querySelector<HTMLButtonElement>(
+        `button[aria-label="${compact ? "Expand" : "Collapse"} Containers"]`
+      )
+      ?.focus({ preventScroll: true });
+    requested.current = false;
+  }, [compact]);
+  return onToggle
+    ? () => {
+        requested.current = true;
+        onToggle();
+      }
+    : undefined;
+}
+
+export function DockerPopoverSummary(props: PresentationProps) {
   const local = useIsLocalHost();
   const shown = useSettings(
     (settings) => settings.docker?.enabled && settings.docker?.show_popover
   );
-  return local && shown ? <LivePopoverSummary /> : null;
+  return local && shown ? <LivePopoverSummary {...props} /> : null;
 }
 function LiveTimelineLane({ from, to }: { from: number; to: number }) {
   const { snapshot } = useDocker();

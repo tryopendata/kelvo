@@ -17,6 +17,7 @@ import {
 import { WindowControl } from "~/components/window-control";
 import { useChartWindow } from "~/hooks/use-chart-window";
 import { useHostRecord } from "~/hooks/use-host-record";
+import { useModuleStates } from "~/hooks/use-module-states";
 import { useProcessColumnCaps } from "~/hooks/use-process-interest";
 import { useHeld } from "~/hooks/use-ring";
 import { ChartRangeNotice, ChartRangeProvider } from "~/stores/chart-range";
@@ -61,8 +62,7 @@ export default function PowerRoute() {
   const info = useHostRecord()?.info;
   const caps = useHost((s) => s.capabilities);
   const [dumpOpen, setDumpOpen] = useState(false);
-  const hasBattery =
-    caps !== null && moduleState(caps, null, "battery") !== "absent";
+  const hasBattery = useModuleStates().battery === "on" && caps !== null;
   const unknownChip =
     caps !== null && moduleState(caps, null, "power") === "unknown_chip";
   const windowMs = useChartWindow()?.windowMs ?? null;

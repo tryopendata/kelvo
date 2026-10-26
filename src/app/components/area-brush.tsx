@@ -1,10 +1,12 @@
 import { rangeFractions } from "@core/brush";
 import { seriesRange } from "@core/chart-math";
+import { gapExplanation } from "@core/history-state";
 import type { ReactNode } from "react";
 import { BrushOverlay } from "~/components/brush-overlay";
 import { useChartBrush } from "~/hooks/use-chart-brush";
 import type { WindowSeries } from "~/hooks/use-window-series";
 import { useBrushStoreOptional } from "~/stores/brush-store";
+import type { GapSpan } from "~/widgets/gap-band";
 
 /**
  * The brush for a `StreamArea` (D-089, D-099): its `highlight` and its
@@ -16,7 +18,8 @@ import { useBrushStoreOptional } from "~/stores/brush-store";
 export function useAreaBrush(
   series: WindowSeries,
   height: number,
-  enabled = true
+  enabled = true,
+  gaps: readonly GapSpan[] = []
 ): {
   highlight: { left: number; width: number } | null;
   overlay: ReactNode;
@@ -39,6 +42,11 @@ export function useAreaBrush(
         selectableToMs={elapsedEdge ?? undefined}
         height={height}
         inset={0}
+        gapExplanationAt={(time) =>
+          gapExplanation(
+            gaps.find((gap) => gap.fromMs <= time && gap.toMs > time)
+          )
+        }
       />
     ),
   };

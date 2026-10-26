@@ -46,6 +46,13 @@ import { StackBar } from "~/widgets/stack-bar";
 import { StatGrid } from "~/widgets/stat-grid";
 import { StreamArea } from "~/widgets/stream-area";
 
+import { CompactBattery, CompactPower } from "./compact-battery";
+
+export interface PresentationProps {
+  compact?: boolean;
+  onToggle?: (() => void) | undefined;
+}
+
 /** Opens a card's module page in the dashboard window. */
 function useOpen() {
   const transport = useTransport();
@@ -56,7 +63,7 @@ function useOpen() {
 const WINDOW_MS = 60_000;
 const NET_WINDOW_MS = 48_000;
 
-export function LiveCpuCard() {
+export function LiveCpuCard({ compact = false, onToggle }: PresentationProps) {
   const open = useOpen();
   const cpu = useCpu();
   const windowMs = useScaledWindow(WINDOW_MS);
@@ -65,6 +72,8 @@ export function LiveCpuCard() {
   const notice = useReadFailure("cpu.total");
   return (
     <ModuleCard
+      compact={compact}
+      onToggle={onToggle}
       accent="cpu"
       title="CPU"
       href="/dashboard/cpu"
@@ -78,32 +87,41 @@ export function LiveCpuCard() {
         intervalMs={total.intervalMs}
         yMax={ceiling}
         accent="cpu"
-        height={52}
+        height={compact ? 14 : 52}
         ariaLabel={`CPU, last ${windowWords(windowMs)}, ${formatPercent(cpu.total)}`}
-        ceilingLabel={`${ceiling}%`}
-        windowLabel={windowLabel(windowMs)}
-        gridlines={[ceiling / 2]}
+        {...(compact
+          ? {}
+          : {
+              ceilingLabel: `${ceiling}%`,
+              windowLabel: windowLabel(windowMs),
+            })}
+        gridlines={compact ? [] : [ceiling / 2]}
       />
-      <div className="flex flex-col gap-[5px] pt-1.5">
-        <InlineBar
-          label="User"
-          value={formatPercent(cpu.user, { decimals: 1 })}
-          fraction={ratio(cpu.user, 100)}
-          layout="row"
-        />
-        <InlineBar
-          label="System"
-          value={formatPercent(cpu.system, { decimals: 1 })}
-          fraction={ratio(cpu.system, 100)}
-          rampStep={2}
-          layout="row"
-        />
-      </div>
+      {!compact && (
+        <div className="flex flex-col gap-[5px] pt-1.5">
+          <InlineBar
+            label="User"
+            value={formatPercent(cpu.user, { decimals: 1 })}
+            fraction={ratio(cpu.user, 100)}
+            layout="row"
+          />
+          <InlineBar
+            label="System"
+            value={formatPercent(cpu.system, { decimals: 1 })}
+            fraction={ratio(cpu.system, 100)}
+            rampStep={2}
+            layout="row"
+          />
+        </div>
+      )}
     </ModuleCard>
   );
 }
 
-export function LiveMemoryCard() {
+export function LiveMemoryCard({
+  compact = false,
+  onToggle,
+}: PresentationProps) {
   const open = useOpen();
   const mem = useMemory();
   const host = useHostRecord();
@@ -121,6 +139,8 @@ export function LiveMemoryCard() {
         : "normal";
   return (
     <ModuleCard
+      compact={compact}
+      onToggle={onToggle}
       accent="mem"
       title="Memory"
       href="/dashboard/memory"
@@ -134,30 +154,43 @@ export function LiveMemoryCard() {
       unit={total === null ? undefined : ` / ${marketingGb(total)} GB`}
       notice={notice}
     >
-      <InlineBar
-        label={`Pressure · ${level}`}
-        value={formatPercent(mem.pressure)}
-        fraction={ratio(mem.pressure, 100)}
-        layout="wide"
-      />
-      <StackBar
-        showLegend
-        legendColumns={2}
-        segments={[
-          seg("wired", "Wired", mem.wired, frac(mem.wired), 1),
-          seg("app", "App", mem.app, frac(mem.app), 2),
-          seg(
-            "compressed",
-            "Compressed",
-            mem.compressed,
-            frac(mem.compressed),
-            "hatch"
-          ),
-          seg("cached", "Cached files", mem.cached, frac(mem.cached), 4),
-          seg("free", "Free", mem.free, frac(mem.free), "track"),
-        ]}
-        extraLegend={[{ label: "Swap", value: formatBytes(mem.swapUsed) }]}
-      />
+      {compact ? (
+        <div className="flex items-center gap-2">
+          <MeterTrack fraction={frac(mem.used)} className="flex-1" />
+          {mem.hasPressure && (
+            <span className="whitespace-nowrap text-[10px] text-muted-foreground">
+              Pressure · {level}
+            </span>
+          )}
+        </div>
+      ) : (
+        <>
+          <InlineBar
+            label={`Pressure · ${level}`}
+            value={formatPercent(mem.pressure)}
+            fraction={ratio(mem.pressure, 100)}
+            layout="wide"
+          />
+          <StackBar
+            showLegend
+            legendColumns={2}
+            segments={[
+              seg("wired", "Wired", mem.wired, frac(mem.wired), 1),
+              seg("app", "App", mem.app, frac(mem.app), 2),
+              seg(
+                "compressed",
+                "Compressed",
+                mem.compressed,
+                frac(mem.compressed),
+                "hatch"
+              ),
+              seg("cached", "Cached files", mem.cached, frac(mem.cached), 4),
+              seg("free", "Free", mem.free, frac(mem.free), "track"),
+            ]}
+            extraLegend={[{ label: "Swap", value: formatBytes(mem.swapUsed) }]}
+          />
+        </>
+      )}
     </ModuleCard>
   );
 }
@@ -176,7 +209,7 @@ function seg(
  * GPU card. The third cell would be the GPU core count, but `HostInfo` has
  * no GPU core count yet, so the card shows the renderer utilization it can measure.
  */
-export function LiveGpuCard() {
+export function LiveGpuCard({ compact = false, onToggle }: PresentationProps) {
   const open = useOpen();
   const gpu = useGpu();
   const windowMs = useScaledWindow(WINDOW_MS);
@@ -184,6 +217,8 @@ export function LiveGpuCard() {
   const notice = useReadFailure("gpu.util");
   return (
     <ModuleCard
+      compact={compact}
+      onToggle={onToggle}
       accent="gpu"
       title="GPU"
       href="/dashboard/gpu"
@@ -197,16 +232,18 @@ export function LiveGpuCard() {
         intervalMs={util.intervalMs}
         yMax={100}
         accent="gpu"
-        height={40}
+        height={compact ? 14 : 40}
         ariaLabel={`GPU, last ${windowWords(windowMs)}, ${formatPercent(gpu.util)}`}
       />
-      <StatGrid
-        items={[
-          { label: "Freq", value: formatGhz(gpu.freqHz) },
-          { label: "Power", value: formatWatts(gpu.powerW) },
-          { label: "Render", value: formatPercent(gpu.render) },
-        ]}
-      />
+      {!compact && (
+        <StatGrid
+          items={[
+            { label: "Freq", value: formatGhz(gpu.freqHz) },
+            { label: "Power", value: formatWatts(gpu.powerW) },
+            { label: "Render", value: formatPercent(gpu.render) },
+          ]}
+        />
+      )}
     </ModuleCard>
   );
 }
@@ -215,7 +252,10 @@ export function LiveGpuCard() {
  * Power card: system watts, a stacked bar of CPU, GPU, ANE (hatched) and
  * DRAM with the rest of the system as track, and the four values with keys.
  */
-export function LivePowerCard() {
+export function LivePowerCard({
+  compact = false,
+  onToggle,
+}: PresentationProps) {
   const open = useOpen();
   const p = usePower();
   const showBattery = useModuleStates().battery === "on";
@@ -226,6 +266,8 @@ export function LivePowerCard() {
   const frac = (v: number | null) => ratio(v, p.system);
   return (
     <ModuleCard
+      compact={compact}
+      onToggle={onToggle}
       accent="power"
       title={showBattery ? "Power & battery" : "Power"}
       href="/dashboard/power"
@@ -234,33 +276,39 @@ export function LivePowerCard() {
       unit=" system"
       notice={notice}
     >
-      <StackBar
-        segments={[
-          seg2("cpu", "CPU", p.cpu, frac(p.cpu), 1),
-          seg2("gpu", "GPU", p.gpu, frac(p.gpu), 2),
-          seg2("ane", "ANE", p.ane, frac(p.ane), "hatch"),
-          seg2("dram", "DRAM", p.dram, frac(p.dram), 3),
-          seg2("rest", "Rest of system", rest, frac(rest), "track"),
-        ]}
-      />
-      <StatGrid
-        items={[
-          { label: "CPU", value: formatWatts(p.cpu), step: 1 },
-          { label: "GPU", value: formatWatts(p.gpu), step: 2 },
-          {
-            label: "ANE",
-            value: formatWatts(p.ane),
-            step: "hatch",
-            muted: !p.ane,
-          },
-          { label: "DRAM", value: formatWatts(p.dram), step: 3 },
-        ]}
-      />
-      {showBattery && <BatteryDetails />}
-      {cpuNote && (
-        <p className="m-0 font-normal text-[11px] text-muted-foreground">
-          {cpuNote}
-        </p>
+      {compact ? (
+        <CompactPower showBattery={showBattery} />
+      ) : (
+        <>
+          <StackBar
+            segments={[
+              seg2("cpu", "CPU", p.cpu, frac(p.cpu), 1),
+              seg2("gpu", "GPU", p.gpu, frac(p.gpu), 2),
+              seg2("ane", "ANE", p.ane, frac(p.ane), "hatch"),
+              seg2("dram", "DRAM", p.dram, frac(p.dram), 3),
+              seg2("rest", "Rest of system", rest, frac(rest), "track"),
+            ]}
+          />
+          <StatGrid
+            items={[
+              { label: "CPU", value: formatWatts(p.cpu), step: 1 },
+              { label: "GPU", value: formatWatts(p.gpu), step: 2 },
+              {
+                label: "ANE",
+                value: formatWatts(p.ane),
+                step: "hatch",
+                muted: !p.ane,
+              },
+              { label: "DRAM", value: formatWatts(p.dram), step: 3 },
+            ]}
+          />
+          {showBattery && <BatteryDetails />}
+          {cpuNote && (
+            <p className="m-0 font-normal text-[11px] text-muted-foreground">
+              {cpuNote}
+            </p>
+          )}
+        </>
       )}
     </ModuleCard>
   );
@@ -284,10 +332,13 @@ function seg2(
  * every interface's and names the one carrying the default route ("All
  * interfaces · en0"; "All interfaces" on a full-tunnel VPN).
  */
-export function LiveNetworkCard() {
+export function LiveNetworkCard({
+  compact = false,
+  onToggle,
+}: PresentationProps) {
   const open = useOpen();
   const iface = usePrimaryIface();
-  const { lan, publicIp } = useAddresses(iface);
+  const { lan, publicIp } = useAddresses(compact ? null : iface);
   const bits = useSettings((s) => s.units.network) === "bits_per_sec";
   const rxKey = "net.rx_total";
   const txKey = "net.tx_total";
@@ -301,36 +352,40 @@ export function LiveNetworkCard() {
     const q = rateParts(bps, { units: bits ? "Mbps" : "MBps" });
     return { value: q.value, unit: q.unit };
   };
+  const rxNotice = useReadFailure("net.rx_total");
+  const txNotice = useReadFailure("net.tx_total");
   return (
     <ModuleCard
+      compact={compact}
+      onToggle={onToggle}
+      notice={rxNotice ?? txNotice}
       accent="net"
       title="Network"
       href="/dashboard/network"
       onOpen={open}
-      subtitle={iface === null ? "All interfaces" : `All interfaces · ${iface}`}
-      subtitleStyle="text"
-      aside={
-        lan === null ? undefined : (
-          <>
-            <CopyValue value={lan} label="local IP address" />
-            {" · "}
-            {publicIp.data ? (
-              <CopyValue value={publicIp.data} label="public IP address" />
-            ) : publicIp.isError ? (
-              "public unavailable"
-            ) : (
-              "…"
-            )}
-          </>
-        )
+      value={
+        compact
+          ? `↑ ${rate(txNow).value} ${rate(txNow).unit ?? ""} · ↓ ${rate(rxNow).value} ${rate(rxNow).unit ?? ""}`
+          : undefined
       }
+      subtitle={
+        compact
+          ? undefined
+          : iface === null
+            ? "All interfaces"
+            : `All interfaces · ${iface}`
+      }
+      subtitleStyle="text"
+      aside={compact ? undefined : networkAddresses(lan, publicIp)}
     >
-      <StatGrid
-        items={[
-          { label: "↑ Upload", ...rate(txNow) },
-          { label: "↓ Download", ...rate(rxNow) },
-        ]}
-      />
+      {!compact && (
+        <StatGrid
+          items={[
+            { label: "↑ Upload", ...rate(txNow) },
+            { label: "↓ Download", ...rate(rxNow) },
+          ]}
+        />
+      )}
       <MirrorBars
         up={tx.values}
         down={rx.values}
@@ -338,24 +393,29 @@ export function LiveNetworkCard() {
         tEndMs={rx.tEndMs}
         accent="net"
         ariaLabel={`Upload above the line, download below, last ${windowWords(windowMs)}`}
-        upHeight={18}
-        downHeight={30}
+        upHeight={compact ? 6 : 18}
+        downHeight={compact ? 8 : 30}
       />
     </ModuleCard>
   );
 }
 
 /** Standalone battery when power monitoring is disabled or unavailable. */
-export function LiveBatteryCard() {
+export function LiveBatteryCard({
+  compact = false,
+  onToggle,
+}: PresentationProps) {
   const open = useOpen();
   return (
     <ModuleCard
+      compact={compact}
+      onToggle={onToggle}
       accent="battery"
       title="Battery"
       href="/dashboard/battery"
       onOpen={open}
     >
-      <BatteryDetails />
+      {compact ? <CompactBattery /> : <BatteryDetails />}
     </ModuleCard>
   );
 }
@@ -397,6 +457,25 @@ function BatteryDetails() {
           },
         ]}
       />
+    </>
+  );
+}
+
+function networkAddresses(
+  lan: string | null,
+  publicIp: { data?: string | undefined; isError: boolean }
+) {
+  if (lan === null) return undefined;
+  return (
+    <>
+      <CopyValue value={lan} label="local IP address" /> ·{" "}
+      {publicIp.data ? (
+        <CopyValue value={publicIp.data} label="public IP address" />
+      ) : publicIp.isError ? (
+        "public unavailable"
+      ) : (
+        "…"
+      )}
     </>
   );
 }

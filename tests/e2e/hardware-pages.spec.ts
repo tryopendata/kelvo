@@ -178,9 +178,24 @@ test("power stack and core heatmap label an open pause", async ({
       `/?window=dashboard&route=/dashboard/${route}&theme=dark&ticks=0&scenario=paused`
     );
     await expect(
-      page.getByRole("note", { name: "Paused" }).first(),
+      page
+        .getByRole("note", {
+          name: "Recording was paused during this interval. No samples were collected.",
+        })
+        .first(),
       route
     ).toBeVisible();
+    await expect(
+      page.getByText("Recording paused here", { exact: true })
+    ).toHaveCount(0);
+    const cursor = page
+      .getByRole("slider", { name: "Select a time range" })
+      .first();
+    await cursor.focus();
+    await expect(cursor).toHaveAttribute(
+      "aria-valuetext",
+      /Recording was paused during this interval. No samples were collected./
+    );
     await page.screenshot({
       path: `test-results/screens/${route}-paused-${info.project.name}.png`,
       fullPage: true,

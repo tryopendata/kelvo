@@ -89,7 +89,7 @@ export default function MemoryRoute() {
               totalBytes={info?.mem_total_bytes ?? null}
               windowMs={windowMs}
             />
-            <div className="grid grid-cols-[repeat(auto-fit,minmax(320px,1fr))] gap-4">
+            <div className="flex flex-col gap-4">
               {mac || !info ? (
                 <PressureCard windowMs={windowMs} />
               ) : (

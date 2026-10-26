@@ -1,5 +1,5 @@
 import type { ScenarioName } from "@core/mock/fixtures";
-import { act, screen } from "@testing-library/react";
+import { act, screen, waitFor } from "@testing-library/react";
 import { renderWithProviders } from "@tests/test-utils";
 import PowerRoute from "./route";
 
@@ -46,4 +46,26 @@ describe("Power page at 1 Hz", () => {
       expect(renders.n).toBe(settled);
     }
   );
+});
+
+it("Battery enablement also controls Power's battery history without removing system draw", async () => {
+  const r = renderWithProviders(<PowerRoute />, {
+    transportOptions: { now: () => NOW },
+  });
+  await screen.findByText("Battery, last 24 hours");
+  await act(async () => {
+    await r.transport.updateSettings({
+      modules: { battery: { enabled: false } },
+    });
+  });
+  await waitFor(() =>
+    expect(screen.queryByText("Battery, last 24 hours")).toBeNull()
+  );
+  expect(screen.getAllByText(/system draw/).length).toBeGreaterThan(0);
+  await act(async () => {
+    await r.transport.updateSettings({
+      modules: { battery: { enabled: true } },
+    });
+  });
+  await screen.findByText("Battery, last 24 hours");
 });

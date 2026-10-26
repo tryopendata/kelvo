@@ -25,6 +25,9 @@ export class MockSettings {
         (options.scenarios ?? []).some((s) => s.startsWith("docker-")) &&
         !(options.scenarios ?? []).includes("docker-retained");
 
+    if (baseSettings.docker?.enabled && flags.compactPopover)
+      baseSettings.docker.show_popover = true;
+
     const startInterval = options.intervalMs ?? 1000;
     this.snapshot = {
       revision: 1,
@@ -118,7 +121,9 @@ export function applyPatch(s: Settings, patch: SettingsPatch): Settings {
   const mb = patch.menu_bar;
   const base = menuBarOf(s);
   return {
+    ...s,
     modules,
+    popover: pick(s.popover ?? NO_POPOVER, patch.popover),
     menu_bar: {
       bars: pick(base.bars, mb?.bars),
       readouts: pick(base.readouts, mb?.readouts),
@@ -137,3 +142,13 @@ export function applyPatch(s: Settings, patch: SettingsPatch): Settings {
   };
 }
 const NO_ALERTS = { hot_process: false, thermal_serious: false };
+
+const NO_POPOVER = {
+  cpu: "expanded",
+  memory: "expanded",
+  gpu: "expanded",
+  power: "expanded",
+  network: "expanded",
+  battery: "expanded",
+  containers: "expanded",
+} as const;

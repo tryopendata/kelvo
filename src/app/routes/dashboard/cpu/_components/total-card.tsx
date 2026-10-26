@@ -101,8 +101,8 @@ export function TotalCard({ windowMs }: { windowMs: number }) {
   const { total, items } = useStripItems();
   const endMs = useModuleRange()?.endMs ?? null;
   const series = useModuleSeries(CHART, windowMs, { brush: true });
-  const brush = useAreaBrush(series, HEIGHT);
   const gaps = useGapBands("cpu");
+  const brush = useAreaBrush(series, HEIGHT, true, gaps);
 
   return (
     <div {...brushScopeProps} className="contents">

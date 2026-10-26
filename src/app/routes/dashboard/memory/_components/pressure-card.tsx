@@ -36,8 +36,8 @@ export function PressureCard({ windowMs }: { windowMs: number }) {
   const v = useHeld([...KEYS, "mem.pressure_level"]);
   const endMs = useModuleRange()?.endMs ?? null;
   const series = useModuleSeries(KEYS, windowMs, { brush: true });
-  const brush = useAreaBrush(series, HEIGHT);
   const gaps = useGapBands("memory");
+  const brush = useAreaBrush(series, HEIGHT, true, gaps);
   const pressure = v[KEY] ?? null;
   const state = pressureState(v["mem.pressure_level"] ?? null);
 
@@ -50,7 +50,7 @@ export function PressureCard({ windowMs }: { windowMs: number }) {
         headerAlign="baseline"
         compactHeader
         headerWrap={false}
-        className="col-span-2 gap-3"
+        className="gap-3"
         aside={
           <span className="flex items-baseline gap-3">
             {(state === "warn" || state === "critical") && (

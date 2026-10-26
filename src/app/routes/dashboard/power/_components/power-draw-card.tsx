@@ -84,8 +84,8 @@ export function PowerDrawCard({ windowMs }: { windowMs: number }) {
     endMs === null ? `last ${windowWords(windowMs)}` : "selected dates";
   const series = useModuleSeries(CHART, windowMs, { brush: true });
   const values = series.values[SYSTEM] ?? [];
-  const brush = useAreaBrush(series, HEIGHT);
   const gaps = useGapBands("power");
+  const brush = useAreaBrush(series, HEIGHT, true, gaps);
   const lines = useAppLines(windowMs, {
     tEndMs: series.tEndMs,
     intervalMs: series.intervalMs,

@@ -26,13 +26,22 @@ export const MODULE_ACCENT: Record<UiModule, Accent> = {
 export function UnavailableCard({
   module,
   state,
+  compact,
+  onToggle,
 }: {
   module: UiModule;
   state: ModuleState;
+  compact?: boolean;
+  onToggle?: (() => void) | undefined;
 }) {
   const noun = useHostNoun();
   return (
-    <ModuleCard accent={MODULE_ACCENT[module]} title={MODULE_NAMES[module]}>
+    <ModuleCard
+      compact={compact ?? false}
+      onToggle={onToggle}
+      accent={MODULE_ACCENT[module]}
+      title={MODULE_NAMES[module]}
+    >
       <p className="m-0 font-normal text-[12px] text-muted-foreground">
         {unavailableText(state, noun) ?? "Not available"}
       </p>

@@ -62,7 +62,7 @@ export function gapLabel(gap: Gap, style: GapLabelStyle = "clock"): string {
     case "app_not_running":
       return "Kelvo not running";
     case "paused":
-      return "Paused";
+      return "Recording paused here";
     case "module_disabled": {
       const name = gap.module ? MODULE_LABEL[gap.module] : undefined;
       return `${name ?? "Module"} sampling off`;
@@ -111,6 +111,10 @@ export interface GapBandSpec {
   toMs: number;
   /** Visible label and accessible name. */
   label: string;
+  reason: Gap["reason"];
+  /** Original duration before clipping; null while the gap is open. */
+  closedDurationMs: number | null;
+  showCaption: boolean;
   /** Set for a module-scoped gap (`module_disabled`): it covers that module only. */
   module: Module | null;
 }
@@ -146,6 +150,11 @@ export function gapBands(
       fromMs: start,
       toMs: end,
       label: gapLabel(g, style),
+      reason: g.reason,
+      closedDurationMs: g.end_ms === null ? null : g.end_ms - g.start_ms,
+      showCaption:
+        g.reason !== "paused" ||
+        (g.end_ms !== null && g.end_ms - g.start_ms >= 5_000),
       module: g.module,
     });
   }
@@ -338,4 +347,13 @@ export function historyHealthNotices(
     });
   }
   return out;
+}
+
+/** Gap explanations are presentation copy, shared by pointer and keyboard readouts. */
+export const PAUSE_EXPLANATION =
+  "Recording was paused during this interval. No samples were collected.";
+export function gapExplanation(
+  gap: { reason?: string | undefined; label: string } | undefined
+): string | null {
+  return gap ? (gap.reason === "paused" ? PAUSE_EXPLANATION : gap.label) : null;
 }

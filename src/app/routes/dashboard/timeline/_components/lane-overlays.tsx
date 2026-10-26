@@ -1,4 +1,5 @@
 import type { Event } from "@core/generated/bindings";
+import { Pause } from "lucide-react";
 import { cn } from "~/lib/utils";
 import { GapBand } from "~/widgets/gap-band";
 import type { LaneData } from "../_hooks/use-timeline-data";
@@ -59,16 +60,22 @@ export function LaneOverlays({
               fromMs={b.fromMs}
               toMs={b.toMs}
               label={b.label}
+              reason={b.reason}
               rangeFromMs={fromMs}
               rangeToMs={toMs}
               labelPosition="none"
             />
-            {wide && (
+            {wide && b.showCaption && (
               <span
                 aria-hidden
-                className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2 whitespace-nowrap rounded-control border border-border bg-card px-2 py-[3px] font-normal text-[11px] text-muted-foreground"
+                className={cn(
+                  "absolute top-1/2 inline-flex -translate-x-1/2 -translate-y-1/2 items-center gap-1 whitespace-nowrap font-normal text-[11px] text-muted-foreground",
+                  b.reason !== "paused" &&
+                    "rounded-control border border-border bg-card px-2 py-[3px]"
+                )}
                 style={{ left: `${mid * 100}%` }}
               >
+                {b.reason === "paused" && <Pause className="size-3" />}
                 {b.label}
               </span>
             )}
