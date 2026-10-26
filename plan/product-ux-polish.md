@@ -1,6 +1,7 @@
 # Product UX polish: defaults, Timeline investigation and compact popover
 
-Status: implementation in progress; authorized on 2026-10-25.
+Status: implementation integrated in PR #3; final whole-app acceptance and landing pending.
+Authorized on 2026-10-25. Current verification is in [PROGRESS.md](PROGRESS.md).
 Product choices and Devil's Advocate review corrections incorporated.
 
 ## Intent and agreed scope
@@ -416,10 +417,10 @@ The review did not establish runtime/storage feasibility or verify implementatio
 2026-10-25: execution authorized. Orchestrator owns integration and landing; Sol 6.1
 agents own implementation in isolated managed worktrees.
 
-- [x] Native/settings and compact popover, including issue #1 fixes (integrated; final review/gates pending).
-- [ ] Durable usage contracts and blocking storage feasibility measurements.
-- [ ] Durable usage lifecycle, local/remote queries and correctness checks.
-- [ ] Timeline/shared range, event navigation, attribution and comparison (depends on history gate).
+- [x] Native/settings and compact popover, including issue #1 fixes.
+- [x] Durable usage contracts and storage feasibility measurements.
+- [x] Durable usage lifecycle, local/remote queries and correctness checks.
+- [x] Timeline/shared range, event navigation, attribution and comparison.
 - [ ] Integrated browser/native verification, independent code review and fixes.
 - [ ] Normal hooks, exact-revision Linux CI, landing and task-owned cleanup.
 

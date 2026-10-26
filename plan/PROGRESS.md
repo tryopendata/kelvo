@@ -21,12 +21,30 @@ Durable lifecycle, local/remote queries and lossless batching are recorded in
 [ux-history-execution.md](ux-history-execution.md). The real-collector full-hour
 storage gate passes: 2,819 rows, 1,988,351 payload bytes and 9,647,904 WAL bytes.
 The retained 30-day fixture occupies 388,562,944 bytes before existing history.
-All 476 integrated Chromium/WebKit cases pass at `df464fb`, and independent CE
-code review approves that revision after failed-zoom and Container Back fixes.
-Quiet allocation checks pass all five modes after eliminating a redundant batch
-list allocation (`b91e02f`, reviewed): tray recorder 9.96 allocations per tick
-against the unchanged limit of 10. CPU measurements, final normal hooks and
-exact-source Linux CI remain blocking. Fixtures are not app verification.
+All 476 integrated Chromium/WebKit cases pass at `df464fb`. Independent CE review
+approves final source `aeff3d5f5e8db9bfc57357e4f97e619b2ff90b1a`, including the
+failed-zoom, Container Back and Power performance-test readiness corrections.
+Normal push checks pass: 1,355 frontend tests, 1,191 Rust test executions (55
+ignored), generated bindings and all 13 production browser-performance cases.
+Live-collector tests run serially to avoid process churn caused by overlapping
+tests; limits and test selection are unchanged. The separate serial performance
+run measured tray core 9.46 allocations/tick against the unchanged limit of 10.
+The real-history release engine pair measures 0.254% CPU on main and 0.318% on
+the candidate, below the unchanged 0.494% regression ceiling. Both six-minute
+runs delivered 172 frames and wrote history; the candidate also persisted app
+and process buckets. The reported-only 30-second interval measured 0.227%.
+Whole-app CPU remains unmeasured: the existing benchmark refused to launch with
+the lid closed and no external display. It requires an active display and
+nonzero tray frame counters. The PR stays draft until that acceptance passes.
+[Exact-source Linux CI](https://github.com/tryopendata/kelvo/actions/runs/40280327267)
+passed all five jobs: 1,355 frontend tests, 476 browser cases (three WebKit cases
+passed on retry), 926 portable Rust executions (33 ignored), 11 packaged-agent
+pipe cases and both history-fill/read cases. The WebKit retries were a Docker
+Monitoring screenshot timeout, Overview entrance opacity not yet at 1, and a
+remote-host connection-button click timeout. Their triage is recorded with the
+native execution evidence. [PR #3](https://github.com/tryopendata/kelvo/pull/3) is not merged.
+These are historical results for the stated source, not verification of this
+documentation update. Fixtures are not app verification.
 
 ## Automatic updates (2026-10-25, landed; rollout acceptance pending)
 

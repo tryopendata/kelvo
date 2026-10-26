@@ -235,3 +235,33 @@ and existing axe checks. They ran against an explicitly started integration-tree
 Vite server on port 1421, because this lane predates the measured-growth source;
 no stale server was adopted. The server was stopped immediately after the run.
 The Settings screenshot visibly shows 750 MB and limiting to about 45 days.
+
+## Integrated acceptance, 2026-10-26
+
+Final reviewed source is `aeff3d5f5e8db9bfc57357e4f97e619b2ff90b1a` on
+[PR #3](https://github.com/tryopendata/kelvo/pull/3). The normal push passed the
+full check, binding regeneration comparison and 13 production browser-performance
+cases. Power readiness now scopes its header selector and separately asserts the
+Battery card follows it; measurement duration and limits are unchanged. Power
+measured 12.75 ms/s, popover 11.79 ms/s; neither produced a long task. The full
+functional Chromium/WebKit run passed 476 cases without retries.
+
+Both final release benchmark binaries are built and the candidate app signature
+verified. The whole-app benchmark refused to launch because the lid was closed
+with no external display. No whole-app CPU or footprint result is claimed.
+An active display and measured tray frame counters are required before merge.
+The completed engine pair and native/browser evidence are preserved under
+`target/qa/product-ux/` in the integration and primary checkouts. The task-owned
+`run-whole-app-comparison.py` resumes only the baseline/candidate app pair;
+`run-cpu-comparison.py` must not be restarted over its completed engine databases.
+
+Exact-source Linux CI passed all five jobs. Chromium passed 238 cases; WebKit
+passed 235 on the first attempt and three on retry. Read-only Sol 6.1 triage
+found no demonstrated change-related product defect: the Monitoring screenshot
+timed out after its dialog assertions, Overview's unchanged settling test reads
+running animations and opacity in separate calls, and the unchanged remote-host
+dialog test stalled waiting for click actionability before invoking the connection
+check. No runner-load cause or baseline CI flake is claimed without telemetry.
+The local 476-case run had no retries. Source logs and job metadata are preserved
+alongside the local evidence; this records their actual result, not a retry-free
+hosted run.
