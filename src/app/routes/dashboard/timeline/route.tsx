@@ -223,7 +223,15 @@ export default function TimelineRoute() {
           className="rounded-tile border border-border bg-card px-4 py-3 font-normal text-[13px] text-fg-subtle"
         >
           History could not be read ({otherError.message}). Live values still
-          work.
+          work.{" "}
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={data.loading}
+            onClick={data.retry}
+          >
+            Retry recorded detail
+          </Button>
         </p>
       )}
 

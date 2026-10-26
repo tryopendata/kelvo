@@ -45,6 +45,7 @@ export interface TimelineData {
   gaps: Gap[];
   loading: boolean;
   error: CommandFailure | null;
+  retry: () => void;
 }
 
 /**
@@ -260,7 +261,10 @@ export function useTimelineData(
     resolution: resolutionLabel(bucketMs),
     lanes: data.laneData,
     gaps: data.gaps,
-    loading: queries.some((q) => q.isPending),
+    loading: queries.some((q) => q.isPending || (q.isError && q.isFetching)),
+    retry: () => {
+      for (const query of queries) if (query.isError) void query.refetch();
+    },
     error: (failed?.error as CommandFailure | undefined) ?? null,
   };
 }

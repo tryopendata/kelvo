@@ -36,6 +36,7 @@ export function useZoomPreview(
   }, []);
   const begin = (target: TimeRange) => {
     cancel();
+    if (failed) return;
     const source = plotRef.current?.querySelector<HTMLElement>(
       "[data-lane-content]"
     );
@@ -88,7 +89,10 @@ export function useZoomPreview(
       cancel();
       return;
     }
-    if (failed) return;
+    if (failed) {
+      cancel();
+      return;
+    }
     if (loading) {
       current.preview.sawLoading = true;
       return;
