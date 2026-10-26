@@ -723,3 +723,43 @@ fn production_retained_growth_setup() {
     store.writer().flush().unwrap();
     store.close().unwrap();
 }
+
+#[test]
+#[ignore = "rebuild only owned pre-release retained benchmark metadata to final schema"]
+fn production_retained_membership_setup() {
+    let path =
+        std::path::PathBuf::from(std::env::var_os("KELVO_USAGE_FILL_PATH").expect("task fixture"));
+    let mut db = rusqlite::Connection::open(&path).unwrap();
+    let before: (i64, i64) = db
+        .query_row("SELECT count(*),sum(id) FROM usage_processes", [], |r| {
+            Ok((r.get(0)?, r.get(1)?))
+        })
+        .unwrap();
+    let schema = include_str!("../src/usage/schema.sql");
+    let at = schema.find("CREATE TABLE usage_processes (").unwrap();
+    let end = at + schema[at..].find("\n);").unwrap() + 3;
+    let create = schema[at..end].replace("usage_processes (", "usage_processes_rebuilt (");
+    let tx = db.transaction().unwrap();
+    tx.execute_batch(&create).unwrap();
+    tx.execute_batch("INSERT INTO usage_processes_rebuilt SELECT id,host_id,app_id,pid,start_time_us,name,last_ms FROM usage_processes; DROP TABLE usage_processes; ALTER TABLE usage_processes_rebuilt RENAME TO usage_processes;").unwrap();
+    tx.commit().unwrap();
+    {
+        let mut stmt = db.prepare("PRAGMA incremental_vacuum").unwrap();
+        let mut rows = stmt.query([]).unwrap();
+        while rows.next().unwrap().is_some() {}
+    }
+    db.execute_batch("PRAGMA wal_checkpoint(TRUNCATE)").unwrap();
+    let after: (i64, i64) = db
+        .query_row("SELECT count(*),sum(id) FROM usage_processes", [], |r| {
+            Ok((r.get(0)?, r.get(1)?))
+        })
+        .unwrap();
+    assert_eq!(before, after);
+    let size = std::fs::metadata(path).unwrap().len();
+    println!(
+        "[membership retained] {} associations SQLite={size} baseline150MB-added={}",
+        after.0,
+        size + 150_000_000
+    );
+    assert!(size + 150_000_000 <= 750_000_000);
+}

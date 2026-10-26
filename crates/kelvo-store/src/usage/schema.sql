@@ -9,7 +9,6 @@ CREATE TABLE usage_processes (
  name TEXT NOT NULL, last_ms INTEGER NOT NULL,
  UNIQUE(host_id,app_id,pid,start_time_us)
 );
-CREATE INDEX usage_process_app ON usage_processes(host_id,app_id);
 CREATE TABLE usage_app_buckets (
  host_id INTEGER NOT NULL REFERENCES hosts(id), width_ms INTEGER NOT NULL,
  bucket_ts INTEGER NOT NULL, seq INTEGER NOT NULL, blob BLOB NOT NULL,
