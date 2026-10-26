@@ -36,6 +36,17 @@ pub fn load(data_dir: &Path) -> Settings {
     }
 }
 
+/// Updaters fail closed on unreadable or invalid preferences. Only absence means
+/// the default policy; daemon startup keeps its existing availability behavior.
+pub fn load_strict(data_dir: &Path) -> anyhow::Result<Settings> {
+    let path = data_dir.join(SETTINGS_FILE);
+    match std::fs::read(&path) {
+        Ok(bytes) => resolve(&serde_json::from_slice(&bytes).context("parsing update settings")?),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Settings::agent_default()),
+        Err(e) => Err(e).context("reading update settings"),
+    }
+}
+
 /// The agent defaults with `overlay`, a JSON object holding any subset of [`Settings`],
 /// merged over them, validated.
 pub fn resolve(overlay: &Value) -> anyhow::Result<Settings> {
@@ -101,6 +112,28 @@ mod tests {
     use super::*;
     use kelvo_schema::Module;
     use serde_json::json;
+
+    #[test]
+    fn automatic_updates_fail_closed_and_re_read_policy() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(
+            load_strict(dir.path())
+                .unwrap()
+                .general
+                .auto_install_updates
+        );
+        configure(
+            dir.path(),
+            r#"{"general":{"check_updates":false,"auto_install_updates":false}}"#,
+        )
+        .unwrap();
+        let disabled = load_strict(dir.path()).unwrap();
+        assert!(!disabled.general.check_updates && !disabled.general.auto_install_updates);
+        std::fs::write(dir.path().join(SETTINGS_FILE), "broken json").unwrap();
+        assert!(load_strict(dir.path()).is_err());
+        // The daemon still starts with defaults; the updater must never use that fallback.
+        assert_eq!(load(dir.path()), Settings::agent_default());
+    }
 
     #[test]
     fn missing_file_is_the_agent_defaults() {

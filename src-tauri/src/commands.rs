@@ -553,8 +553,10 @@ pub async fn history_growth(
 #[tauri::command]
 #[specta::specta]
 pub async fn clear_history(app: AppHandle, host: HostId) -> Result<ByteCount, CommandError> {
+    let maintenance = crate::updates::maintenance(&app)?;
     let app_handle = app.clone();
     blocking(app, move |state| {
+        let _maintenance = maintenance;
         let entry = state.local_host(host)?;
         let writer = state.history_for(host)?.writer()?;
         // The engine's rows not committed yet and its open buckets go too: before the
@@ -613,8 +615,10 @@ pub async fn history_health(app: AppHandle, host: HostId) -> Result<HistoryHealt
 #[tauri::command]
 #[specta::specta]
 pub async fn reset_history(app: AppHandle) -> Result<ByteCount, CommandError> {
+    let maintenance = crate::updates::maintenance(&app)?;
     let app_handle = app.clone();
     blocking(app, move |state| {
+        let _maintenance = maintenance;
         state.reset_history(&app_handle)?;
         Ok(ByteCount(state.history.size_on_disk()?))
     })

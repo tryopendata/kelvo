@@ -93,6 +93,7 @@ fn check_route(route: &str) -> Result<(), CommandError> {
 }
 
 pub fn open_dashboard(app: &AppHandle, route: Option<&str>) -> Result<(), CommandError> {
+    let _maintenance = crate::updates::maintenance(app)?;
     if let Some(r) = route {
         check_route(r)?;
     }
@@ -167,6 +168,7 @@ pub fn hide_dashboard(window: &Window) {
 
 /// Shows the onboarding window on a first run. Runs in `setup`.
 pub fn show_onboarding_if_needed(app: &AppHandle) -> anyhow::Result<()> {
+    let _maintenance = crate::updates::maintenance(app)?;
     let Some(state) = app.try_state::<AppState>() else {
         return Ok(());
     };

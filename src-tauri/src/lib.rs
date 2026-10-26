@@ -26,6 +26,7 @@ pub mod process_signal;
 pub mod remote;
 pub mod remote_network;
 pub mod settings;
+pub mod startup;
 pub mod state;
 pub mod tray;
 mod updates;
@@ -51,11 +52,7 @@ pub const BINDINGS_PATH: &str = concat!(
 #[cfg(debug_assertions)]
 pub const DEV_IDENTIFIER: &str = "com.tryopendata.kelvo.dev";
 
-/// Remote setup and background launches defer UI creation until a tray click.
-fn deferred_ui_launch(args: impl IntoIterator<Item = impl AsRef<str>>) -> bool {
-    args.into_iter()
-        .any(|arg| matches!(arg.as_ref(), "--remote-setup" | "--background"))
-}
+use startup::deferred_ui_launch;
 
 /// Every command and event the webview can reach. The same builder feeds the invoke
 /// handler and the bindings export, so the two cannot drift apart.
@@ -81,7 +78,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             disk_space::disk_space_largest_files, disk_space::disk_space_reveal,
             disk_space::disk_space_path,
             commands::list_hosts,
-            remote::list_remote_hosts,
+            remote::list_remote_hosts, remote::get_remote_update_status, remote::set_remote_update_policy,
             remote::remote_ssh_config_status,
             remote::inspect_remote_ssh_host,
             remote::accept_remote_ssh_host,
@@ -244,18 +241,19 @@ pub fn run() {
             );
             builder.mount_events(app);
             AppState::start(app.handle())?;
+            let background_restart = updates::take_background_restart(app.handle());
             updates::start(app.handle());
             app.manage(windows::DashboardLifecycle::default());
             tray::create(app.handle())?;
             #[cfg(target_os = "macos")]
-            if !deferred_ui_launch(std::env::args()) {
+            if !background_restart && !deferred_ui_launch(std::env::args()) {
                 popover::create(app.handle())?;
             }
             remote::start(app.handle())?;
             match bench::scenario() {
                 Some(scenario) => bench::start(app.handle(), scenario),
                 None => {
-                    if !deferred_ui_launch(std::env::args()) && !platform::launched_at_login() {
+                    if startup::show_initial_windows(background_restart, deferred_ui_launch(std::env::args()), platform::launched_at_login()) {
                         windows::show_onboarding_if_needed(app.handle())?;
                         if app.state::<AppState>().settings.settings().onboarding.completed {
                             windows::open_dashboard(app.handle(),None)?;

@@ -1195,3 +1195,17 @@ authentication or modify SSH files; the connection probe remains authoritative.
 Typed setup errors supply recovery guidance and diagnostics, with interactive trust
 verification kept separate from noninteractive access testing. See
 [setup and recovery](remote-macs-execution.md#ssh-setup-and-recovery).
+
+
+### Automatic release updates (D-119)
+
+`kelvo-update` authenticates release catalogs, checks version/protocol eligibility and
+streams bounded artifact downloads. It has no workspace-crate dependencies; the Mac
+shell and Linux agent consume it. Tauri owns Mac bundle installation. The agent owns the
+Linux systemd transaction, with layout/unit conventions shared through `kelvo-remote`.
+Each installation owns its preferences and update status. Controller UI accesses those
+facts over existing SSH control/status commands; update metadata does not enter metrics CBOR.
+
+A Linux trial is private until durable commit. Precommit recovery restores the previous
+installation before public serving, while postcommit recovery retains committed history.
+See [automatic updates](automatic-updates.md) for implementation and acceptance evidence.

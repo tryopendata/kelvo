@@ -23,6 +23,7 @@ import { useTransport } from "~/lib/transport-context";
 import { AddHostDialog, HOST_INPUT } from "./_components/add-host-dialog";
 import { HostAgentActions } from "./_components/host-agent-actions";
 import { RemoteSetupError } from "./_components/remote-setup-error";
+import { RemoteUpdateSettings } from "./_components/remote-update-settings";
 import {
   type RemoveChoices,
   RemoveHostOptions,
@@ -111,7 +112,7 @@ function HostSettings({
             ? linux
               ? "This disconnects the server. Unless you uninstall it, the agent keeps running and recording history there."
               : "This disconnects the Mac. Kelvo on that Mac keeps running and its start-at-login setting stays the same."
-            : "Connection and history stored on this Mac."}
+            : "Connection and mirrored history are saved on this Mac. Update preferences save immediately on the host."}
         </DialogDescription>
         {removing ? (
           <RemoveHostOptions
@@ -196,6 +197,7 @@ function HostSettings({
             </div>
           </fieldset>
         )}
+        {!removing && <RemoteUpdateSettings hostId={remote.config.id} />}
         {!removing && endpointError && (
           <p role="alert" className="text-[12px] text-destructive">
             {endpointError}

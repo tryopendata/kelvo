@@ -5,6 +5,41 @@ import { renderWithProviders } from "../../../../../../tests/test-utils";
 import { UpdateRow } from "./update-row";
 
 describe("app updates", () => {
+  it("offers an explicit install when automatic installation is waiting for authorization", async () => {
+    const { user } = renderWithProviders(<UpdateRow />, {
+      transportOptions: {
+        updateStatus: { kind: "needs_authorization", version: "0.3.0" },
+      },
+    });
+    expect(
+      await screen.findByText(/needs your permission to install/)
+    ).toBeVisible();
+    await user.click(
+      screen.getByRole("button", { name: "Install and restart" })
+    );
+    expect(
+      await screen.findByText("Update installed. Restarting Kelvo…")
+    ).toBeVisible();
+  });
+
+  it("explains compatibility deferral without offering a forced installation", async () => {
+    renderWithProviders(<UpdateRow />, {
+      transportOptions: {
+        updateStatus: {
+          kind: "compatibility_blocked",
+          version: "0.3.0",
+          message: "This release drops an existing remote protocol.",
+        },
+      },
+    });
+    expect(
+      await screen.findByText(/drops an existing remote protocol/)
+    ).toBeVisible();
+    expect(
+      screen.queryByRole("button", { name: "Install and restart" })
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Check now" })).toBeEnabled();
+  });
   it("checks manually even with automatic checks disabled", async () => {
     const transport = createMockTransport();
     await transport.updateSettings({ general: { check_updates: false } });

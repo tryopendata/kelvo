@@ -13,7 +13,9 @@ mod commands;
 mod container_names;
 mod daemon;
 mod host;
+mod maintenance;
 mod settings;
+mod update;
 
 use cli::Command;
 
@@ -62,7 +64,39 @@ async fn dispatch(command: Command) -> anyhow::Result<ExitCode> {
     match command {
         Command::Help => println!("{}", cli::USAGE),
         Command::Version => println!("{}", commands::version()),
-        Command::Run(at) => daemon::run(&at.resolve(&env)?, at.system).await?,
+        Command::Run(at) => {
+            let paths = at.resolve(&env)?;
+            update::transaction::public_starting(&paths)?;
+            daemon::run(&paths, at.system).await?;
+        }
+        Command::RunTrial(at) => {
+            let paths = at.resolve(&env)?;
+            anyhow::ensure!(
+                paths.socket == update::transaction::directory(&paths).join("trial.sock"),
+                "trial requires its private socket"
+            );
+            anyhow::ensure!(
+                update::transaction::read(&paths)?
+                    .is_some_and(|j| j.phase == update::transaction::Phase::Prepared),
+                "trial requires a prepared transaction"
+            );
+            daemon::run(&paths, at.system).await?;
+        }
+        Command::UpdateStatus(at) => println!(
+            "{}",
+            serde_json::to_string(&update::status(&at.resolve(&env)?)?)?
+        ),
+        Command::Update { at, scheduled } => {
+            let paths = at.resolve(&env)?;
+            if scheduled {
+                update::scheduled(at.layout(), &paths).await?;
+            } else {
+                update::request(at.layout(), &paths).await?;
+            }
+        }
+        Command::Recover { at, restart } => {
+            update::recover(at.layout(), &at.resolve(&env)?, restart).await?
+        }
         Command::Serve(at) => return daemon::serve(&at.resolve(&env)?.socket).await,
         Command::Status(at) => {
             println!(
@@ -72,6 +106,7 @@ async fn dispatch(command: Command) -> anyhow::Result<ExitCode> {
         }
         Command::Configure { at, json } => {
             let paths = at.resolve(&env)?;
+            let _lock = maintenance::lock(&paths)?;
             let applied = settings::configure(&paths.data_dir, &json)?;
             println!(
                 "{}",
@@ -82,20 +117,38 @@ async fn dispatch(command: Command) -> anyhow::Result<ExitCode> {
                 })
             );
         }
+        Command::UnitTemplates(at) => {
+            let paths = at.resolve(&env)?;
+            let templates: Vec<_> =
+                std::iter::once((paths.unit.clone(), at.layout().unit_text(&paths)))
+                    .chain(at.layout().update_units(&paths))
+                    .collect();
+            println!("{}", serde_json::to_string(&templates)?);
+        }
         Command::InstallUnit(at) => {
-            println!(
-                "{}",
-                commands::install_unit(at.layout(), &at.resolve(&env)?)?
-            );
+            let paths = at.resolve(&env)?;
+            let _lock = maintenance::lock(&paths)?;
+            println!("{}", commands::install_unit(at.layout(), &paths)?);
         }
         Command::Uninstall { at, purge } => {
-            println!("{}", commands::uninstall(&at.resolve(&env)?, purge));
-        }
-        Command::ResetIdentity(at) => {
+            let paths = at.resolve(&env)?;
+            update::disable(at.layout()).await?;
+            let _lock = maintenance::lock(&paths)?;
+            maintenance::systemctl(at.layout(), &["disable", "--now", "kelvo-agent.service"])
+                .await?;
             println!(
                 "{}",
-                commands::reset_identity(&at.resolve(&env)?, at.system)?
+                serde_json::to_string(&commands::uninstall(&paths, purge))?
             );
+        }
+        Command::ResetIdentity(at) => {
+            let paths = at.resolve(&env)?;
+            let lock = maintenance::lock(&paths)?;
+            maintenance::systemctl(at.layout(), &["stop", "kelvo-agent.service"]).await?;
+            let reset = commands::reset_identity(&paths, at.system);
+            drop(lock);
+            maintenance::systemctl(at.layout(), &["start", "kelvo-agent.service"]).await?;
+            println!("{}", reset?);
         }
         Command::Sample { seconds } => println!("{}", commands::sample(seconds).await?),
     }

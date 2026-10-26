@@ -1,6 +1,6 @@
 .PHONY: help install dev dev-web build test test-e2e test-fill test-read-perf lint format fix typecheck check rust-fmt rust-check rust-test rust-linux-check rust-linux-test remote-scripts-test rust-portable-check rust-portable-test appstore-check agent-linux agent-linux-tools check-deps deny perf bench bench-perf-mode bench-vs-stats bindings bindings-check e2e-perf hooks clean stub-dist
 .PHONY: agent-config agent-config-check agent-config-test agent-hooks-test architecture-check architecture-test
-.PHONY: verification-test
+.PHONY: verification-test updater-patch-test
 
 # All library crates are portable by default. New workspace crates enter this gate
 # automatically; only the macOS shell and separately checked helper are excluded.
@@ -115,8 +115,13 @@ typecheck: stub-dist
 	bun run typecheck
 	cargo check --workspace --all-targets
 
-check: agent-config-check agent-config-test agent-hooks-test verification-test architecture-check architecture-test rust-check appstore-check rust-test
+check: agent-config-check agent-config-test agent-hooks-test verification-test architecture-check architecture-test rust-check appstore-check rust-test updater-patch-test
 	bun run check
+
+# The patched dependency is outside the workspace; keep its native permission
+# regression in the local quality gate as well as release acceptance.
+updater-patch-test:
+	cargo test --manifest-path vendor/tauri-plugin-updater/Cargo.toml --lib
 
 rust-fmt:
 	cargo fmt --all

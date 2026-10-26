@@ -10,6 +10,9 @@
       "allow": [
         {
           "url": "https://github.com/tryopendata/kelvo/issues/new?labels=sensors&title=*"
+        },
+        {
+          "url": "https://github.com/tryopendata/kelvo/blob/main/.github/releasing.md#coordinated-protocol-upgrades"
         }
       ]
     },

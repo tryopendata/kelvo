@@ -4,6 +4,8 @@ import type { Transport } from "./contracts";
 export function nativeRemote(): Pick<
   Transport,
   | "listRemoteHosts"
+  | "getRemoteUpdateStatus"
+  | "setRemoteUpdatePolicy"
   | "inspectRemoteSshHost"
   | "remoteSshConfigStatus"
   | "acceptRemoteSshHost"
@@ -19,6 +21,9 @@ export function nativeRemote(): Pick<
 > {
   return {
     listRemoteHosts: () => commands.listRemoteHosts(),
+    getRemoteUpdateStatus: (id) => commands.getRemoteUpdateStatus(id),
+    setRemoteUpdatePolicy: (id, checkUpdates, autoInstallUpdates) =>
+      commands.setRemoteUpdatePolicy(id, checkUpdates, autoInstallUpdates),
     inspectRemoteSshHost: (alias) => commands.inspectRemoteSshHost(alias),
     remoteSshConfigStatus: () => commands.remoteSshConfigStatus(),
     acceptRemoteSshHost: (token) => commands.acceptRemoteSshHost(token),

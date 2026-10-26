@@ -175,6 +175,8 @@ pub struct GeneralPatch {
     #[specta(optional)]
     pub check_updates: Option<bool>,
     #[specta(optional)]
+    pub auto_install_updates: Option<bool>,
+    #[specta(optional)]
     pub chart_window: Option<ChartWindow>,
 }
 
@@ -272,6 +274,7 @@ impl SettingsPatch {
             set(&mut s.general.show_in_dock, p.show_in_dock);
             set(&mut s.general.appearance, p.appearance);
             set(&mut s.general.check_updates, p.check_updates);
+            set(&mut s.general.auto_install_updates, p.auto_install_updates);
             set(&mut s.general.chart_window, p.chart_window);
         }
         if let Some(p) = self.onboarding {

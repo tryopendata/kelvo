@@ -63,6 +63,8 @@ export const commands = {
 	/**  Every host, the local one first. */
 	listHosts: () => __TAURI_INVOKE<HostRecord[]>("list_hosts"),
 	listRemoteHosts: () => __TAURI_INVOKE<RemoteHostRecord[]>("list_remote_hosts"),
+	getRemoteUpdateStatus: (id: string) => typedError<RemoteUpdateStatus, CommandError>(__TAURI_INVOKE("get_remote_update_status", { id })),
+	setRemoteUpdatePolicy: (id: string, checkUpdates: boolean, autoInstallUpdates: boolean) => typedError<RemoteUpdateStatus, CommandError>(__TAURI_INVOKE("set_remote_update_policy", { id, checkUpdates, autoInstallUpdates })),
 	remoteSshConfigStatus: () => typedError<RemoteSshConfigStatus, CommandError>(__TAURI_INVOKE("remote_ssh_config_status")),
 	inspectRemoteSshHost: (alias: string) => typedError<RemoteSshHostTrust, CommandError>(__TAURI_INVOKE("inspect_remote_ssh_host", { alias })),
 	acceptRemoteSshHost: (token: string) => typedError<null, CommandError>(__TAURI_INVOKE("accept_remote_ssh_host", { token })),
@@ -302,7 +304,7 @@ export const commands = {
 	processSignal: (host: HostId, pid: number, startTimeUs: Micros, kind: SignalKind) => typedError<null, ProcessSignalError>(__TAURI_INVOKE("process_signal", { host, pid, startTimeUs, kind })),
 	/**  What this build can do (D-065). Fixed for the process; the UI reads it once. */
 	getEdition: () => __TAURI_INVOKE<Edition>("get_edition"),
-	/**  Explicit user checks work even when automatic checks are disabled. */
+	/**  Explicit checks work even when automatic checks are disabled. */
 	checkForUpdates: () => typedError<UpdateStatus, CommandError>(__TAURI_INVOKE("check_for_updates")),
 	getUpdateStatus: () => __TAURI_INVOKE<UpdateStatus>("get_update_status"),
 	/**  The caller approves the displayed version, never a URL, signature or file path. */
@@ -1266,6 +1268,7 @@ export type GeneralPatch = {
 	show_in_dock?: boolean | null,
 	appearance?: Appearance | null,
 	check_updates?: boolean | null,
+	auto_install_updates?: boolean | null,
 	chart_window?: ChartWindow | null,
 };
 
@@ -1274,8 +1277,10 @@ export type GeneralSettings = {
 	launch_at_login: boolean,
 	show_in_dock: boolean,
 	appearance: Appearance,
-	/**  The only network request Kelvo makes; off means none at all. */
+	/**  Whether this installation checks for releases automatically. */
 	check_updates: boolean,
+	/**  Install compatible stable releases automatically, when automatic checks are on. */
+	auto_install_updates?: boolean,
 	/**
 	 *  The span of every windowed chart on the module pages (D-091). Absent from a
 	 *  settings file written before it existed: 15m.
@@ -2337,6 +2342,15 @@ export type RemoteState = "connecting" | "connected" | "offline" | "disabled" | 
 
 export type RemoteSync = "idle" | "catching_up" | "current" | "unavailable";
 
+export type RemoteUpdateStatus = {
+	supported: boolean,
+	check_updates: boolean,
+	auto_install_updates: boolean,
+	status: string,
+	version: string | null,
+	message: string | null,
+};
+
 export type SamplingPatch = {
 	interval_ms?: number | null,
 	slow_on_battery?: boolean | null,
@@ -2727,7 +2741,7 @@ export type UnsupportedReason =
  */
 "unknown";
 
-export type UpdateStatus = { kind: "idle" } | { kind: "not_configured" } | { kind: "checking" } | { kind: "up_to_date" } | { kind: "available"; version: string; notes: string } | { kind: "downloading"; version: string; percent: number | null } | { kind: "installing"; version: string } | { kind: "ready"; version: string } | { kind: "failed"; message: string };
+export type UpdateStatus = { kind: "idle" } | { kind: "not_configured" } | { kind: "checking" } | { kind: "up_to_date" } | { kind: "available"; version: string; notes: string } | { kind: "downloading"; version: string; percent: number | null } | { kind: "downloaded"; version: string } | { kind: "waiting"; version: string; reason: string } | { kind: "compatibility_blocked"; version: string; message: string } | { kind: "needs_authorization"; version: string } | { kind: "installing"; version: string } | { kind: "ready"; version: string } | { kind: "failed"; message: string };
 
 export type UpdateStatusChanged = {
 	status: UpdateStatus,

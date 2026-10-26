@@ -62,6 +62,7 @@ import type {
   RemoteHostRecord,
   RemoteSshConfigStatus,
   RemoteSshHostTrust,
+  RemoteUpdateStatus,
   SensorDump,
   SeriesSelector,
   SeriesStats,
@@ -161,6 +162,12 @@ export interface Transport {
   dockerResume(): Promise<CommandResult<DockerSnapshot>>;
   listHosts(): Promise<HostRecord[]>;
   listRemoteHosts(): Promise<RemoteHostRecord[]>;
+  getRemoteUpdateStatus(id: string): Promise<CommandResult<RemoteUpdateStatus>>;
+  setRemoteUpdatePolicy(
+    id: string,
+    checkUpdates: boolean,
+    autoInstallUpdates: boolean
+  ): Promise<CommandResult<RemoteUpdateStatus>>;
   remoteSshConfigStatus(): Promise<CommandResult<RemoteSshConfigStatus>>;
   inspectRemoteSshHost(
     alias: string

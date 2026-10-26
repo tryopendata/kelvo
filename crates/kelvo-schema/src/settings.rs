@@ -493,8 +493,11 @@ pub struct GeneralSettings {
     pub launch_at_login: bool,
     pub show_in_dock: bool,
     pub appearance: Appearance,
-    /// The only network request Kelvo makes; off means none at all.
+    /// Whether this installation checks for releases automatically.
     pub check_updates: bool,
+    /// Install compatible stable releases automatically, when automatic checks are on.
+    #[serde(default = "default_auto_install_updates")]
+    pub auto_install_updates: bool,
     /// The span of every windowed chart on the module pages (D-091). Absent from a
     /// settings file written before it existed: 15m.
     #[serde(default)]
@@ -557,6 +560,10 @@ fn default_show_menu_bar() -> bool {
     true
 }
 
+fn default_auto_install_updates() -> bool {
+    true
+}
+
 impl Default for Settings {
     fn default() -> Self {
         let modules = SETTINGS_MODULES
@@ -594,6 +601,7 @@ impl Default for Settings {
                 show_in_dock: false,
                 appearance: Appearance::System,
                 check_updates: true,
+                auto_install_updates: true,
                 chart_window: ChartWindow::default(),
             },
             onboarding: OnboardingSettings { completed: false },
@@ -700,6 +708,19 @@ pub enum SettingsError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn old_settings_enable_installation_without_overriding_disabled_checks() {
+        let mut saved = serde_json::to_value(Settings::default()).unwrap();
+        saved["general"]
+            .as_object_mut()
+            .unwrap()
+            .remove("auto_install_updates");
+        saved["general"]["check_updates"] = serde_json::json!(false);
+        let settings: Settings = serde_json::from_value(saved).unwrap();
+        assert!(settings.general.auto_install_updates);
+        assert!(!settings.general.check_updates);
+    }
 
     #[test]
     fn default_is_valid_and_matches_plan() {

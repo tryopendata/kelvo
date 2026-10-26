@@ -11,6 +11,8 @@ commands:
   run [--system] [--data-dir P] [--socket P]   sample this host and serve it on the socket
   serve --stdio [--system] [--socket P]        bridge stdin/stdout to the running daemon
   status [--json] [--system] [--data-dir P] [--socket P]
+  update --request [--system]                 request a host-owned update
+  update-status --json [--system]              update policy and last result
   version [--json]
   configure '<json>' [--system] [--data-dir P] merge settings into settings.json (applies on restart)
   install-unit [--system] [--data-dir P] [--socket P]
@@ -59,11 +61,16 @@ impl Location {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Command {
     Run(Location),
+    RunTrial(Location),
+    Update { at: Location, scheduled: bool },
+    UpdateStatus(Location),
+    Recover { at: Location, restart: bool },
     Serve(Location),
     Status(Location),
     Version,
     Configure { at: Location, json: String },
     InstallUnit(Location),
+    UnitTemplates(Location),
     Uninstall { at: Location, purge: bool },
     ResetIdentity(Location),
     Sample { seconds: Option<u64> },
@@ -93,6 +100,9 @@ struct Parsed {
     at: Location,
     stdio: bool,
     purge: bool,
+    scheduled: bool,
+    request: bool,
+    restart: bool,
     positional: Vec<String>,
 }
 
@@ -101,12 +111,13 @@ pub fn parse(args: &[String]) -> anyhow::Result<Command> {
         return Ok(Command::Help);
     };
     let flags = match name.as_str() {
-        "run" => accepts(true, true, true, false),
+        "run" | "run-trial" | "recover-update" | "update" => accepts(true, true, true, false),
+        "update-status" => accepts(true, true, false, true),
         "serve" => accepts(true, false, true, false),
         "status" => accepts(true, true, true, true),
         "version" | "--version" => accepts(false, false, false, true),
         "configure" | "uninstall" | "reset-identity" => accepts(true, true, false, false),
-        "install-unit" => accepts(true, true, true, false),
+        "install-unit" | "unit-templates" => accepts(true, true, true, false),
         "sample" => accepts(false, false, false, true),
         "help" | "--help" | "-h" => return Ok(Command::Help),
         other => bail!("unknown command {other:?}\n\n{USAGE}"),
@@ -120,6 +131,31 @@ pub fn parse(args: &[String]) -> anyhow::Result<Command> {
         }
     };
     Ok(match name.as_str() {
+        "run-trial" => {
+            positional(0)?;
+            Command::RunTrial(p.at)
+        }
+        "update-status" => {
+            positional(0)?;
+            Command::UpdateStatus(p.at)
+        }
+        "recover-update" => {
+            positional(0)?;
+            Command::Recover {
+                at: p.at,
+                restart: p.restart,
+            }
+        }
+        "update" => {
+            positional(0)?;
+            if p.scheduled == p.request {
+                bail!("update: choose --request or --scheduled");
+            }
+            Command::Update {
+                at: p.at,
+                scheduled: p.scheduled,
+            }
+        }
         "run" => {
             positional(0)?;
             Command::Run(p.at)
@@ -140,6 +176,10 @@ pub fn parse(args: &[String]) -> anyhow::Result<Command> {
             let json = p.positional.into_iter().next().unwrap_or_default();
             Command::Configure { at: p.at, json }
         }
+        "unit-templates" => {
+            positional(0)?;
+            Command::UnitTemplates(p.at)
+        }
         "install-unit" => {
             positional(0)?;
             Command::InstallUnit(p.at)
@@ -155,22 +195,26 @@ pub fn parse(args: &[String]) -> anyhow::Result<Command> {
             positional(0)?;
             Command::ResetIdentity(p.at)
         }
-        "sample" => match p.positional.as_slice() {
-            [] => Command::Sample { seconds: None },
-            [s] => Command::Sample {
-                seconds: Some(
-                    s.parse()
-                        .ok()
-                        .filter(|&s| (1..=600).contains(&s))
-                        .with_context(|| format!("sample: {s:?} is not 1 to 600 seconds"))?,
-                ),
-            },
-            _ => bail!("sample: unexpected arguments {:?}", p.positional),
-        },
+        "sample" => parse_sample(&p.positional)?,
         _ => {
             positional(0)?;
             Command::Version
         }
+    })
+}
+
+fn parse_sample(positional: &[String]) -> anyhow::Result<Command> {
+    Ok(match positional {
+        [] => Command::Sample { seconds: None },
+        [s] => Command::Sample {
+            seconds: Some(
+                s.parse()
+                    .ok()
+                    .filter(|&s| (1..=600).contains(&s))
+                    .with_context(|| format!("sample: {s:?} is not 1 to 600 seconds"))?,
+            ),
+        },
+        _ => bail!("sample: unexpected arguments {positional:?}"),
     })
 }
 
@@ -191,6 +235,9 @@ fn parse_flags(name: &str, rest: &[String], flags: Accepts) -> anyhow::Result<Pa
             "--json" if flags.json => {}
             "--stdio" if name == "serve" => p.stdio = true,
             "--purge" if name == "uninstall" => p.purge = true,
+            "--scheduled" if name == "update" => p.scheduled = true,
+            "--request" if name == "update" => p.request = true,
+            "--restart" if name == "recover-update" => p.restart = true,
             flag if flag.starts_with("--") => bail!("{name}: unknown option {flag}"),
             _ => p.positional.push(arg.clone()),
         }

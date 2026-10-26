@@ -267,6 +267,7 @@ mod contracts;
 mod registration;
 mod server;
 mod setup;
+mod update_controls;
 pub use commands::*;
 pub use contracts::*;
 use registration::{discard_host_async, register};
@@ -275,6 +276,7 @@ use setup::probe_routes;
 pub use setup::*;
 #[cfg(test)]
 use setup::{most_actionable, setup_step};
+pub use update_controls::*;
 #[cfg(test)]
 #[path = "remote_tests.rs"]
 mod tests;
@@ -382,6 +384,7 @@ mod command_regressions {
                         allow_remote_monitoring: Some(sharing),
                         show_menu_bar_icon: None,
                         launch_at_login: Some(login),
+                        updates: None,
                     })
                 }),
                 async {

@@ -6,6 +6,7 @@ import type { MockCommands } from "./commands";
 import type { MockTransport, MockTransportOptions } from "./contracts";
 import type { MockEmitters } from "./emitters";
 import {
+  BLOCKED_REMOTE_UPDATE,
   hostRecord,
   MOCK_HOST_ID,
   type ScenarioFlags,
@@ -18,7 +19,12 @@ import type { MockRing } from "./ring";
 export class MockRemotes {
   readonly remotes = new Map<
     string,
-    { record: RemoteHostRecord; peer: MockTransport; flags: ScenarioFlags }
+    {
+      record: RemoteHostRecord;
+      peer: MockTransport;
+      flags: ScenarioFlags;
+      automaticUpdates: boolean;
+    }
   >();
   private trustedAliases = new Set<string>();
   private setups = new Map<string, () => void>();
@@ -81,6 +87,7 @@ export class MockRemotes {
     };
     this.remotes.set(saved.id, {
       record: remote,
+      automaticUpdates: true,
       flags: scenarioFlags(peerScenarios),
       peer: this.createPeer({
         ...this.options,
@@ -121,6 +128,53 @@ export class MockRemotes {
   readonly listRemoteHosts: MockTransport["listRemoteHosts"] = async () => {
     return [...this.remotes.values()].map((r) => r.record);
   };
+  readonly getRemoteUpdateStatus: MockTransport["getRemoteUpdateStatus"] =
+    async (id) => {
+      this.commands.record("get_remote_update_status", id);
+      const remote = this.remotes.get(id);
+      if (!remote) return err({ kind: "unknown_host", host: id });
+      if (remote.record.status.state === "error")
+        return err({
+          kind: "remote_unreachable",
+          message: remote.record.status.error ?? "Host is offline",
+        });
+      const { general } = (await remote.peer.getSettings()).settings;
+      const status = {
+        supported: remote.automaticUpdates,
+        check_updates: general.check_updates,
+        auto_install_updates: general.auto_install_updates ?? true,
+        status: remote.automaticUpdates ? "idle" : "unsupported",
+        version: remote.record.status.agent_version,
+        message: !remote.automaticUpdates
+          ? "Update this host once to enable automatic updates."
+          : null,
+      };
+      if (this.options.scenarios?.includes("remote-update-blocked")) {
+        Object.assign(status, BLOCKED_REMOTE_UPDATE);
+      }
+      return ok(status);
+    };
+  readonly setRemoteUpdatePolicy: MockTransport["setRemoteUpdatePolicy"] =
+    async (id, checkUpdates, autoInstallUpdates) => {
+      this.commands.record(
+        "set_remote_update_policy",
+        id,
+        checkUpdates,
+        autoInstallUpdates
+      );
+      const remote = this.remotes.get(id);
+      if (!remote) return err({ kind: "unknown_host", host: id });
+      if (!remote.automaticUpdates || remote.record.status.state === "error")
+        return this.getRemoteUpdateStatus(id);
+      const result = await remote.peer.updateSettings({
+        general: {
+          check_updates: checkUpdates,
+          auto_install_updates: autoInstallUpdates,
+        },
+      });
+      if (result.status === "error") return result;
+      return this.getRemoteUpdateStatus(id);
+    };
   readonly prepareRemoteHost: MockTransport["prepareRemoteHost"] = async (
     lan,
     tailscale
@@ -179,6 +233,7 @@ export class MockRemotes {
     this.commands.record("update_remote_agent", id);
     const remote = this.remotes.get(id);
     if (!remote) return err({ kind: "unknown_host", host: id });
+    remote.automaticUpdates = true;
     remote.record.status = {
       ...remote.record.status,
       agent_version: "0.1.0",
@@ -402,12 +457,15 @@ export class MockRemotes {
         },
         ["linux"]
       );
-      if (this.options.scenarios.includes("linux-agent-update"))
+      if (this.options.scenarios.includes("linux-agent-update")) {
+        const peer = this.remotes.get(linux.config.id);
+        if (peer) peer.automaticUpdates = false;
         linux.status = {
           ...linux.status,
           agent_version: "0.0.9",
           update_available: true,
         };
+      }
       if (this.options.scenarios.includes("linux-identity-changed"))
         linux.status = {
           ...linux.status,
@@ -431,6 +489,8 @@ export class MockRemotes {
       inspectRemoteSshHost: this.inspectRemoteSshHost,
       acceptRemoteSshHost: this.acceptRemoteSshHost,
       listRemoteHosts: this.listRemoteHosts,
+      getRemoteUpdateStatus: this.getRemoteUpdateStatus,
+      setRemoteUpdatePolicy: this.setRemoteUpdatePolicy,
       prepareRemoteHost: this.prepareRemoteHost,
       cancelRemoteSetup: this.cancelRemoteSetup,
       addRemoteHost: this.addRemoteHost,

@@ -12,6 +12,7 @@ fn main() -> anyhow::Result<()> {
             .context("pass the release-assets directory")?,
     );
     let config: serde_json::Value = serde_json::from_str(include_str!("../tauri.conf.json"))?;
+    let catalog = verify_catalog(&assets)?;
     let mut context = tauri::test::mock_context(tauri::test::noop_assets());
     context
         .config_mut()
@@ -32,7 +33,7 @@ fn main() -> anyhow::Result<()> {
         // This validates the current release, not a newer one.
         .version_comparator(|_, _| true)
         .build()?;
-    let metadata = serde_json::from_slice(&std::fs::read(assets.join("latest.json"))?)?;
+    let metadata = legacy_metadata(&assets, &catalog)?;
     let update = updater
         .restore_update(metadata)?
         .context("missing release")?;
@@ -61,6 +62,7 @@ fn main() -> anyhow::Result<()> {
         bundle.join("Contents/MacOS/kelvo-remote-helper").is_file(),
         "remote helper missing"
     );
+    verify_agents(&catalog, &bundle.join("Contents/Resources/agent"))?;
     ensure!(
         Command::new("codesign")
             .args(["--verify", "--deep", "--strict"])
@@ -78,5 +80,81 @@ fn main() -> anyhow::Result<()> {
         update.version,
         quarantine.status.success()
     );
+    Ok(())
+}
+
+fn verify_catalog(assets: &std::path::Path) -> anyhow::Result<kelvo_update::VerifiedRelease> {
+    let catalog = kelvo_update::verify_manifest(
+        &std::fs::read(assets.join("release.json"))?,
+        &std::fs::read_to_string(assets.join("release.json.sig"))?,
+    )?;
+    ensure!(
+        catalog.release().version == env!("CARGO_PKG_VERSION"),
+        "catalog version mismatch"
+    );
+    ensure!(
+        catalog.release().protocol
+            == kelvo_update::ProtocolRange {
+                min: kelvo_proto::MIN_COMPATIBLE,
+                max: kelvo_proto::PROTO_VERSION,
+            },
+        "catalog protocol mismatch"
+    );
+    ensure!(
+        catalog.release().artifacts.len() == 3,
+        "catalog must advertise exactly the three shipped targets"
+    );
+    for (target, filename) in [
+        ("darwin-aarch64", "Kelvo.app.tar.gz"),
+        ("linux-aarch64", "kelvo-agent-aarch64-unknown-linux-musl"),
+        ("linux-x86_64", "kelvo-agent-x86_64-unknown-linux-musl"),
+    ] {
+        let artifact = catalog
+            .release()
+            .artifacts
+            .get(target)
+            .context("missing release target")?;
+        kelvo_update::verify_artifact(artifact, &assets.join(filename))?;
+    }
+    Ok(catalog)
+}
+
+fn legacy_metadata(
+    assets: &std::path::Path,
+    catalog: &kelvo_update::VerifiedRelease,
+) -> anyhow::Result<serde_json::Value> {
+    let metadata: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(assets.join("latest.json"))?)?;
+    let artifact = catalog
+        .release()
+        .artifacts
+        .get("darwin-aarch64")
+        .context("missing Mac target")?;
+    let platform = &metadata["platforms"]["darwin-aarch64"];
+    ensure!(
+        metadata["version"].as_str() == Some(catalog.release().version.as_str())
+            && platform["url"].as_str() == Some(artifact.url.as_str())
+            && platform["signature"].as_str() == artifact.signature.as_deref(),
+        "legacy updater metadata disagrees with the signed catalog"
+    );
+    Ok(metadata)
+}
+
+fn verify_agents(
+    catalog: &kelvo_update::VerifiedRelease,
+    directory: &std::path::Path,
+) -> anyhow::Result<()> {
+    for (target, filename) in [
+        ("linux-aarch64", "kelvo-agent-aarch64-unknown-linux-musl"),
+        ("linux-x86_64", "kelvo-agent-x86_64-unknown-linux-musl"),
+    ] {
+        let artifact = catalog
+            .release()
+            .artifacts
+            .get(target)
+            .context("missing agent target")?;
+        kelvo_update::verify_artifact(artifact, &directory.join(filename))
+            .context("bundled agent differs from the signed standalone release")?;
+    }
     Ok(())
 }

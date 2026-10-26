@@ -7,21 +7,38 @@ pub(super) async fn prepare(
     alias: &str,
     p: kelvo_remote::install::InstallProbe,
 ) -> Result<RemoteHostPreparation, CommandError> {
-    let compatible = if let Some(helper) = p.helper_path.as_deref() {
-        kelvo_remote::install::version(alias, helper)
+    let version = if let Some(helper) = p.helper_path.as_deref() {
+        kelvo_remote::control::helper_version(alias, helper)
             .await
-            .is_ok_and(|version| version == env!("CARGO_PKG_VERSION"))
+            .ok()
     } else {
-        false
+        None
     };
+    let compatible = version
+        .as_ref()
+        .is_some_and(|v| kelvo_remote::control::protocol_compatible(v.min_compatible, v.proto));
+    let installed_version = if let Some(version) = &version {
+        Some(version.version.clone())
+    } else if let Some(helper) = p.helper_path.as_deref() {
+        // Legacy helpers expose only --version. It cannot prove compatibility, but
+        // still prevents offering a downgrade to a newer installation.
+        Some(kelvo_remote::install::version(alias, helper).await?)
+    } else {
+        None
+    };
+    let newer_installed = installed_version
+        .as_deref()
+        .is_some_and(|v| super::super::commands::older_version(env!("CARGO_PKG_VERSION"), v));
     Ok(RemoteHostPreparation {
         kind: RemoteHostKind::Mac,
         installed: p.app_path.is_some(),
         compatible,
-        newer_installed: false,
+        newer_installed,
         host_id: None,
         name: p.user.clone(),
-        message: if !compatible {
+        message: if newer_installed && !compatible {
+            Some("The other Mac runs a newer Kelvo. Update this Mac before connecting.".into())
+        } else if !compatible {
             Some(if p.app_path.is_some(){"Quit Kelvo on the other Mac, then update it with this build. Your settings and history are kept."}else{"Install this Kelvo build to enable remote monitoring"}.into())
         } else {
             None
@@ -44,6 +61,12 @@ impl Installation {
     ) -> Result<Self, CommandError> {
         let mut update = None;
         if install {
+            if let Some(helper) = probe.helper_path.as_deref() {
+                let version = kelvo_remote::install::version(alias, helper).await?;
+                if super::super::commands::older_version(env!("CARGO_PKG_VERSION"), &version) {
+                    return Err(CommandError::RemoteIncompatible { message: "The other Mac runs a newer Kelvo. Update this Mac first; remote apps are never downgraded.".into() });
+                }
+            }
             let exe = std::env::current_exe().map_err(failure)?;
             let bundle = exe
                 .ancestors()

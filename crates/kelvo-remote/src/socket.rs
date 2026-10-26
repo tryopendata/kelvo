@@ -45,6 +45,11 @@ impl SocketPaths {
 #[serde(tag = "operation", rename_all = "snake_case")]
 pub enum ControlRequest {
     Status,
+    UpdateStatus,
+    UpdatePolicy {
+        check_updates: bool,
+        auto_install_updates: bool,
+    },
     Configure {
         allow_remote_monitoring: bool,
         show_menu_bar_icon: Option<bool>,
@@ -62,6 +67,8 @@ pub struct ControlResponse {
     pub show_menu_bar_icon: Option<bool>,
     #[serde(default)]
     pub launch_at_login: Option<bool>,
+    #[serde(default)]
+    pub updates: Option<crate::control::RemoteUpdateStatus>,
 }
 
 pub(crate) fn bind_private(path: &Path) -> Result<UnixListener> {
@@ -298,6 +305,7 @@ mod tests {
                 allow_remote_monitoring: None,
                 show_menu_bar_icon: None,
                 launch_at_login: None,
+                updates: None,
             }),
             rx,
         ));

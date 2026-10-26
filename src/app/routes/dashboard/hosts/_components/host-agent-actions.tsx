@@ -3,6 +3,7 @@ import { hostKeys } from "@core/query-keys";
 import { remoteErrorText } from "@core/remote-errors";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import { toast } from "sonner";
 import { Button } from "~/components/ui/button";
 import {
   Dialog,
@@ -92,7 +93,14 @@ export function HostAgentActions({
     try {
       const result = await transport.updateRemoteAgent(remote.config.id);
       if (result.status === "error") onError(remoteErrorText(result.error));
+      else
+        toast.success(
+          "Update requested. The host finishes the update independently; its settings show the result."
+        );
       await cache.invalidateQueries({ queryKey: hostKeys.remote() });
+      await cache.invalidateQueries({
+        queryKey: hostKeys.updates(remote.config.id),
+      });
     } catch (e) {
       console.error("[remote hosts] agent update failed", {
         hostId: remote.config.id,

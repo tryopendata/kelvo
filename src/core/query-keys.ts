@@ -185,6 +185,7 @@ export const hostKeys = {
   all: ["hosts"] as const,
   list: () => [...hostKeys.all, "list"] as const,
   remote: () => [...hostKeys.all, "remote"] as const,
+  updates: (hostId: HostId) => [...hostKeys.all, hostId, "updates"] as const,
   detail: (hostId: HostId) => [...hostKeys.all, hostId, "record"] as const,
   capabilities: (hostId: HostId) =>
     [...hostKeys.all, hostId, "capabilities"] as const,

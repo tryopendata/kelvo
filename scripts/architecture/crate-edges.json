@@ -18,7 +18,8 @@
       "kelvo-proto",
       "kelvo-store",
       "kelvo-engine",
-      "kelvo-remote"
+      "kelvo-remote",
+      "kelvo-update"
     ],
     "dev": []
   },
@@ -28,8 +29,10 @@
       "kelvo-proto",
       "kelvo-store",
       "kelvo-engine",
-      "kelvo-remote"
+      "kelvo-remote",
+      "kelvo-update"
     ],
     "dev": []
-  }
+  },
+  "kelvo-update": { "normal": [], "dev": [] }
 }

@@ -4,6 +4,20 @@ This file tracks where Kelvo is against the plan. Task-level checkboxes live in 
 
 Agents update this file whenever a phase starts or finishes. Each update adds a log entry: what changed, how it was verified, and anything left open. They also tick the matching checkboxes in the version doc.
 
+## Automatic updates (2026-10-25, implemented; rollout acceptance pending)
+
+Implemented the [approved automatic-update plan](automatic-updates.md) on
+`codex/automatic-updates`: signed standalone releases, independent Linux transaction
+recovery, idle Mac installation without automatic elevation, and per-host policy/results.
+The independent CE code review approved after six findings were corrected. Final
+`make check` passed (1,109 workspace Rust, 26 updater-patch, 1,289 frontend tests);
+Chromium/WebKit passed 436 cases and frontend performance passed 13 cases. Signed Mac
+archive installation and native restart checks passed, as did real systemd acceptance
+for both architectures/scopes (x86 through container-local emulation).
+
+A real macOS login-session/fresh-account update remains before merge/publication.
+Native packaging stays local under D-118. Existing hosts need one initial manual upgrade.
+
 ## CI runner policy (2026-10-25)
 
 At the user's direction, hosted CI uses Linux only to avoid macOS runner charges.

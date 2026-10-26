@@ -1,4 +1,5 @@
 import capability from "../../../src-tauri/capabilities/default.json";
+import { COORDINATED_UPGRADE_GUIDE } from "../routes/dashboard/hosts/_components/remote-update-settings";
 import { sensorIssueUrl } from "./sensor-dump-dialog";
 
 /**
@@ -47,6 +48,13 @@ describe("opener capability scope", () => {
   it("allows the sensor dump issue link for any model", () => {
     expect(allowed(sensorIssueUrl("Mac15,9"))).toBe(true);
     expect(allowed(sensorIssueUrl(null))).toBe(true);
+  });
+
+  it("allows the coordinated upgrade guide without broadening repository access", () => {
+    expect(allowed(COORDINATED_UPGRADE_GUIDE)).toBe(true);
+    expect(
+      allowed(COORDINATED_UPGRADE_GUIDE.replace("releasing.md", "other.md"))
+    ).toBe(false);
   });
 
   it("refuses every other URL", () => {

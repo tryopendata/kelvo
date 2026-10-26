@@ -126,6 +126,9 @@ fn anchor(app: &AppHandle, tray_id: &str) -> Option<(Rect, Rect)> {
 /// Left click on the status item `tray_id` (there is one per own-item module, D-080), at
 /// `clicked`. Shows the panel under it, or hides it if it is showing.
 pub fn toggle(app: &AppHandle, clicked: Instant, tray_id: &str) {
+    let Ok(_maintenance) = crate::updates::maintenance(app) else {
+        return;
+    };
     if app.get_webview_window(LABEL).is_none()
         && let Err(e) = create(app)
     {
