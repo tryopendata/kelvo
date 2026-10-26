@@ -15,7 +15,7 @@ import {
 import { useTransport } from "~/lib/transport-context";
 import { useHostId } from "~/stores/host-store";
 import { useDockerHistory } from "../_hooks/use-docker";
-import { dockerRange, historyEnd } from "../_lib/history-params";
+import { useSharedContainerRange } from "../_hooks/use-shared-container-range";
 import { containerPath, lifecycleLabel } from "../_lib/presentation";
 import { ContainerHistory } from "./container-history";
 import { DOCKER_RANGES, HistoryControls } from "./history-controls";
@@ -71,8 +71,9 @@ function RetainedBrowser({ generation }: { generation: number }) {
   const selected = params.get("retainedEngine");
   const search = params.get("retainedQuery") ?? "";
   const offset = Math.max(0, Number(params.get("retainedOffset")) || 0);
-  const validRange = dockerRange(params.get("retainedRange"), "1h");
-  const end = historyEnd(params.get("retainedEnd"));
+  const sharedRange = useSharedContainerRange(now, "retained");
+  const validRange = sharedRange.preset;
+  const end = sharedRange.endMs;
   const set = (key: string, value: string | null, resetPage = false) =>
     setParams(
       (previous) => {
@@ -113,9 +114,15 @@ function RetainedBrowser({ generation }: { generation: number }) {
         })
       ),
   });
-  const to = end ?? now;
-  const from = to - DOCKER_RANGES[validRange];
-  const history = useDockerHistory(engine, null, from, to, generation);
+  const to = sharedRange.toMs;
+  const from = sharedRange.fromMs;
+  const history = useDockerHistory(
+    sharedRange.ready ? engine : "",
+    null,
+    from,
+    to,
+    generation
+  );
   return (
     <div className="mt-3 flex flex-col gap-3">
       <p className="text-[12px] text-muted-foreground">
@@ -154,10 +161,9 @@ function RetainedBrowser({ generation }: { generation: number }) {
             <HistoryControls
               range={validRange}
               end={end}
-              onRange={(value) => set("retainedRange", value)}
-              onEnd={(value) =>
-                set("retainedEnd", value === null ? null : String(value))
-              }
+              windowMs={sharedRange.windowMs}
+              onRange={(value) => sharedRange.setRange(DOCKER_RANGES[value])}
+              onEnd={sharedRange.setEnd}
               now={now}
             />
           </div>

@@ -20,7 +20,7 @@ const MIN = 60_000;
 /** Mid-bucket, so the newest row is not on a 10 s boundary. */
 const NOW = 1_760_000_005_000;
 const CPU = LANES.filter((l) => l.id === "cpu");
-const LIVE_1H: TimelineView = { span: "1h", endMs: null };
+const LIVE_1H: TimelineView = { windowMs: 3600000, endMs: null };
 
 const bucket = (t: number) => Math.floor(t / 10_000) * 10_000;
 
@@ -210,7 +210,7 @@ describe("useTimelineData beyond the 7-day minute window (D-076)", () => {
   const QUARTER = 15 * MIN;
 
   function OldDayProbe({ endMs }: { endMs: number }) {
-    latest = useTimelineData({ span: "24h", endMs }, CPU);
+    latest = useTimelineData({ windowMs: 86400000, endMs }, CPU);
     return <p>{latest.loading ? "loading" : "loaded"}</p>;
   }
 
@@ -260,9 +260,12 @@ describe("useTimelineData at 7d and 30d (v1.1, D-076)", () => {
 
   it("reads 7d ending now from minutes merged to 10-minute buckets", async () => {
     const transport = createMockTransport({ now: () => NOW, autoTick: false });
-    renderWithProviders(<LongProbe view={{ span: "7d", endMs: null }} />, {
-      transport,
-    });
+    renderWithProviders(
+      <LongProbe view={{ windowMs: 604800000, endMs: null }} />,
+      {
+        transport,
+      }
+    );
     await screen.findByText("loaded");
 
     expect(latest?.tier).toBe("m1");
@@ -281,9 +284,12 @@ describe("useTimelineData at 7d and 30d (v1.1, D-076)", () => {
 
   it("reads 30d from quarters merged to 30-minute buckets, with every night a gap", async () => {
     const transport = createMockTransport({ now: () => NOW, autoTick: false });
-    renderWithProviders(<LongProbe view={{ span: "30d", endMs: null }} />, {
-      transport,
-    });
+    renderWithProviders(
+      <LongProbe view={{ windowMs: 2592000000, endMs: null }} />,
+      {
+        transport,
+      }
+    );
     await screen.findByText("loaded");
 
     expect(latest?.tier).toBe("m15");
@@ -307,9 +313,12 @@ describe("useTimelineData at 7d and 30d (v1.1, D-076)", () => {
       autoTick: false,
       historyRows: 600,
     });
-    renderWithProviders(<LongProbe view={{ span: "30d", endMs: null }} />, {
-      transport,
-    });
+    renderWithProviders(
+      <LongProbe view={{ windowMs: 2592000000, endMs: null }} />,
+      {
+        transport,
+      }
+    );
     await screen.findByText("loaded");
     // The live edge lands once the backfill does.
     await waitFor(() =>
@@ -341,7 +350,7 @@ describe("useTimelineData at 7d and 30d (v1.1, D-076)", () => {
   it("draws 7d stepped back past the minute window at the quarters it gets", async () => {
     const transport = createMockTransport({ now: () => NOW, autoTick: false });
     const endMs = NOW - 10 * DAY;
-    renderWithProviders(<LongProbe view={{ span: "7d", endMs }} />, {
+    renderWithProviders(<LongProbe view={{ windowMs: 604800000, endMs }} />, {
       transport,
     });
     await screen.findByText("loaded");
@@ -354,7 +363,7 @@ describe("useTimelineData at 7d and 30d (v1.1, D-076)", () => {
   it("steps back a whole range and reads that window", async () => {
     const transport = createMockTransport({ now: () => NOW, autoTick: false });
     const endMs = Math.floor(NOW / (30 * MIN)) * 30 * MIN - 30 * DAY;
-    renderWithProviders(<LongProbe view={{ span: "30d", endMs }} />, {
+    renderWithProviders(<LongProbe view={{ windowMs: 2592000000, endMs }} />, {
       transport,
     });
     await screen.findByText("loaded");

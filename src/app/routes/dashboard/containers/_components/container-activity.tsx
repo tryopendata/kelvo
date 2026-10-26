@@ -1,4 +1,5 @@
 import type { DockerSnapshot } from "@core/generated/bindings";
+import { windowWords } from "@core/live-window";
 import { useCallback, useState } from "react";
 import type { SetURLSearchParams } from "react-router";
 import { useBrushStore } from "~/stores/brush-store";
@@ -76,6 +77,7 @@ export function ContainerActivity({
     <ComparisonControls
       metric={metric}
       range={range}
+      windowMs={route.windowMs}
       end={end}
       now={now}
       onMetric={setMetric}
@@ -97,7 +99,7 @@ export function ContainerActivity({
         from={from}
         to={to}
         live={end === null}
-        range={range}
+        range={end === null ? windowWords(route.windowMs) : "selected dates"}
         controls={historyControls}
         coverage={comparisonPage?.coverage}
         loading={comparison.isPending}

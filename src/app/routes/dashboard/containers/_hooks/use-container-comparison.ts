@@ -81,7 +81,7 @@ export function useContainerComparison(
     () => comparisonCandidates(ranking, metric, project),
     [ranking, metric, project]
   );
-  const scope = `${engine}:${metric}:${range}:${end}:${project}`;
+  const scope = `${engine}:${metric}:${route.windowMs ?? range}:${end}:${project}`;
   const resetEvaluation = useMembershipEvaluation({
     engine,
     scope,

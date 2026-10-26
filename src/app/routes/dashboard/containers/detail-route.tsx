@@ -3,12 +3,7 @@ import { dockerKeys } from "@core/query-keys";
 import { unwrap } from "@core/transport";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import {
-  useLocation,
-  useNavigate,
-  useParams,
-  useSearchParams,
-} from "react-router";
+import { useLocation, useNavigate, useParams } from "react-router";
 import { PageHeader } from "~/components/page-header";
 import { Button } from "~/components/ui/button";
 import { useTransport } from "~/lib/transport-context";
@@ -23,18 +18,16 @@ import { ContainerLifecycle } from "./_components/container-lifecycle";
 import { ContainerLogs } from "./_components/container-logs";
 import { ContainerMetadata } from "./_components/container-metadata";
 import { ContainerObservation } from "./_components/container-observation";
+import { ContainerRangeNotice } from "./_components/container-range-notice";
 import { DockerLocalOnly } from "./_components/docker-local-only";
-import {
-  DOCKER_RANGES,
-  type DockerRange,
-  HistoryControls,
-} from "./_components/history-controls";
+import { HistoryControls } from "./_components/history-controls";
 import {
   useDocker,
   useDockerEvents,
   useDockerHistory,
 } from "./_hooks/use-docker";
-import { dockerRange, historyEnd } from "./_lib/history-params";
+import { useSharedContainerRange } from "./_hooks/use-shared-container-range";
+import { DOCKER_RANGES } from "./_lib/history-params";
 import { healthLabel, lifecycleLabel, statusLabel } from "./_lib/presentation";
 
 export default function ContainerDetailRoute() {
@@ -51,20 +44,18 @@ function LocalContainerDetailRoute() {
   const host = useHostId();
   const navigate = useNavigate();
   const location = useLocation();
-  const [params] = useSearchParams();
-  const [range, setRange] = useState<DockerRange>(() =>
-    dockerRange(params.get("range"), "15m")
-  );
-  const [end, setEnd] = useState<number | null>(() =>
-    params.has("end")
-      ? historyEnd(params.get("end"))
-      : historyEnd(params.get("at"), 60_000)
-  );
+  const { snapshot } = useDocker();
+  const now = Math.floor((snapshot?.now_ms ?? Date.now()) / 10_000) * 10_000;
+  const sharedRange = useSharedContainerRange(now);
+  const range = sharedRange.preset;
+  const end = sharedRange.endMs;
   const [logs, setLogs] = useState(false);
   const [eventCursor, setEventCursor] = useState<string | null>(null);
   // biome-ignore lint/correctness/useExhaustiveDependencies: changing the investigation range restarts event pagination
-  useEffect(() => setEventCursor(null), [engineId, containerId, range, end]);
-  const { snapshot } = useDocker();
+  useEffect(
+    () => setEventCursor(null),
+    [engineId, containerId, sharedRange.windowMs, end]
+  );
   const detail = useQuery({
     queryKey: dockerKeys.detail(
       host,
@@ -81,18 +72,18 @@ function LocalContainerDetailRoute() {
     containerId,
     detail.isError ? undefined : detail.data
   );
-  const now = Math.floor((snapshot?.now_ms ?? Date.now()) / 10_000) * 10_000;
-  const to = end ?? now;
-  const from = to - DOCKER_RANGES[range];
+  const to = sharedRange.toMs;
+  const from = sharedRange.fromMs;
+  const historyEngine = sharedRange.ready ? engineId : "";
   const history = useDockerHistory(
-    engineId,
+    historyEngine,
     containerId,
     from,
     to,
     snapshot?.generation
   );
   const events = useDockerEvents(
-    engineId,
+    historyEngine,
     containerId,
     from,
     to,
@@ -131,13 +122,15 @@ function LocalContainerDetailRoute() {
               <HistoryControls
                 range={range}
                 end={end}
-                onRange={setRange}
-                onEnd={setEnd}
+                windowMs={sharedRange.windowMs}
+                onRange={(value) => sharedRange.setRange(DOCKER_RANGES[value])}
+                onEnd={sharedRange.setEnd}
                 now={now}
               />
             </div>
           }
         />
+        <ContainerRangeNotice />
         {row && <ContainerActionFailure id={row.id} />}
         {detail.error && (
           <p role="alert" className="text-[12px] text-muted-foreground">

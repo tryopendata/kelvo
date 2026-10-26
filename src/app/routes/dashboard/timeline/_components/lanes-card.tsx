@@ -1,20 +1,16 @@
-import { eventLabel } from "@core/events";
-import { formatClockSeconds, formatPercent } from "@core/format";
-import type { Event } from "@core/generated/bindings";
-import {
-  type KeyboardEvent,
-  type PointerEvent,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import type { TimeRange } from "@core/brush";
+import { formatClockSeconds } from "@core/format";
+import type { Event, SeriesStats } from "@core/generated/bindings";
+import { useEffect, useMemo, useState } from "react";
 import { useElementSize } from "~/hooks/use-element-size";
 import { cn } from "~/lib/utils";
+import { useHostId } from "~/stores/host-store";
 import { Card } from "~/widgets/card";
 import { type LaneData, useProcessesAt } from "../_hooks/use-timeline-data";
-import { meanOf, peakOf } from "../_lib/buckets";
-import { formatMetric, type LaneUnits } from "../_lib/format";
+import { useTimelineSelection } from "../_hooks/use-timeline-selection";
+import { useZoomPreview } from "../_hooks/use-zoom-preview";
+import { eventRange } from "../_lib/events";
+import type { LaneUnits } from "../_lib/format";
 import {
   type Band,
   type Marker,
@@ -23,12 +19,12 @@ import {
 } from "../_lib/gaps";
 import { buildLaneModel } from "../_lib/lane-model";
 import { LANE_GAP, LANE_HEIGHT, type LaneDef } from "../_lib/lanes";
+import { laneSummary } from "../_lib/summaries";
 import {
   axisTicks,
   dayLabel,
   endLabel,
   fractionAt,
-  momentLabel,
   type Span,
 } from "../_lib/time";
 import { AnnotationRow } from "./annotation-row";
@@ -50,19 +46,16 @@ export interface LanesCardProps {
   span: Span;
   live: boolean;
   units: LaneUnits;
-  /** "24 GB": installed memory, for the Memory lane's sub line. */
-  memTotal: string | null;
+  summaries?: SeriesStats | undefined;
+  summaryError?: boolean;
   /** The plot column's width in px, whenever it is measured or resized. */
   onPlotWidth?: (px: number) => void;
+  onSelectRange?: (range: TimeRange) => undefined | Promise<boolean>;
+  selectionNowMs?: number;
+  retainedFromMs?: number;
+  loading?: boolean;
+  failed?: boolean;
 }
-
-const SPAN_ARIA: Record<Span, string> = {
-  "1h": "last hour",
-  "6h": "6 hours",
-  "24h": "last 24 hours",
-  "7d": "last 7 days",
-  "30d": "last 30 days",
-};
 
 /** Narrowest gap band, in px, that gets hollow dots at its edges. */
 const EDGE_DOT_MIN_PX = 16;
@@ -70,36 +63,6 @@ const EDGE_DOT_MIN_PX = 16;
 /** Lanes a band covers: a whole-host gap covers all, a module gap its lane. */
 const covers = (band: Band, def: LaneDef) =>
   band.module === null || band.module === def.module;
-
-function subLine(
-  lane: LaneData,
-  units: LaneUnits,
-  memTotal: string | null,
-  span: Span
-): string {
-  const s = lane.series;
-  switch (lane.def.id) {
-    case "cpu": {
-      const peak = peakOf(s["cpu.total"] ?? []);
-      return peak
-        ? `peak ${formatPercent(peak.value)} · ${momentLabel(span, peak.tMs)}`
-        : "no samples in range";
-    }
-    case "gpu": {
-      const util = meanOf(s["gpu.util"] ?? []);
-      const freq = meanOf(s["gpu.freq"] ?? []);
-      return `avg ${formatPercent(util)} · ${formatMetric("gpu.freq", freq, units)}`;
-    }
-    case "memory":
-      return memTotal ? `pressure · ${memTotal}` : "pressure";
-    case "power":
-      return "CPU solid · rest faint";
-    case "temp":
-      return "hottest SoC zone";
-    default:
-      return "↑ above · ↓ below";
-  }
-}
 
 /**
  * The stacked lanes (top region): label column, one uPlot per lane
@@ -118,12 +81,52 @@ export function LanesCard({
   span,
   live,
   units,
-  memTotal,
+  summaries,
+  summaryError = false,
   onPlotWidth,
+  onSelectRange,
+  selectionNowMs = toMs,
+  retainedFromMs = 0,
+  loading = false,
+  failed = false,
 }: LanesCardProps) {
   const [plotColRef, width] = useElementSize("width");
-  const sliderRef = useRef<HTMLDivElement>(null);
-  const [cursor, setCursor] = useState<number | null>(null);
+  const hostId = useHostId();
+  const zoom = useZoomPreview(
+    plotColRef,
+    { fromMs, toMs },
+    resolution,
+    loading,
+    hostId,
+    failed
+  );
+  const selectRange = (range: TimeRange) => {
+    zoom.begin(range);
+    void Promise.resolve(onSelectRange?.(range))
+      .then((saved) => {
+        if (saved === false) zoom.cancel();
+      })
+      .catch(zoom.cancel);
+  };
+  const {
+    sliderRef,
+    cursor,
+    preview,
+    selecting,
+    sliderProps,
+    selectEvent,
+    focusAfterRange,
+  } = useTimelineSelection({
+    fromMs,
+    toMs,
+    bucketMs,
+    width,
+    nowMs: selectionNowMs,
+    retainedFromMs,
+    loading: loading || zoom.preview !== null,
+    onSelectRange: onSelectRange ? selectRange : undefined,
+  });
+  const [activeEvents, setActiveEvents] = useState<readonly Event[]>([]);
   const [tableLane, setTableLane] = useState<LaneData | null>(null);
 
   useEffect(() => {
@@ -164,14 +167,10 @@ export function LanesCard({
   // 30d holds about 60 Sleep and Wake markers; at a few pixels per night
   // they only merge into "+N" pills. The bands mark the nights there.
   const markers = useMemo(() => {
-    const out: Marker[] = shown.map((e) => ({
-      tMs: e.ts_ms,
-      kind: "event",
-      label: eventLabel(e),
-    }));
+    const out: Marker[] = [];
     if (span !== "30d") out.push(...sleepMarkers(gaps, fromMs, toMs));
     return out;
-  }, [shown, gaps, fromMs, toMs, span]);
+  }, [gaps, fromMs, toMs, span]);
   const ticks = useMemo(
     () => axisTicks(fromMs, toMs, span),
     [fromMs, toMs, span]
@@ -179,45 +178,8 @@ export function LanesCard({
   const stackHeight =
     lanes.length * LANE_HEIGHT + Math.max(0, lanes.length - 1) * LANE_GAP;
 
-  const processes = useProcessesAt(cursor, bucketMs);
-
-  const lastBucket = toMs - bucketMs;
-  const moveCursor = (t: number) =>
-    setCursor(Math.min(lastBucket, Math.max(fromMs, t)));
-  // A pill click puts the crosshair on the event and focus on the slider,
-  // so the arrow keys step on from there.
-  const selectEvent = (tMs: number) => {
-    moveCursor(Math.floor(tMs / bucketMs) * bucketMs);
-    sliderRef.current?.focus();
-  };
-  const onPointerMove = (e: PointerEvent<HTMLDivElement>) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    if (rect.width <= 0) return;
-    const t = fromMs + ((e.clientX - rect.left) / rect.width) * (toMs - fromMs);
-    moveCursor(Math.floor(t / bucketMs) * bucketMs);
-  };
-  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-    const step = e.shiftKey ? bucketMs * 10 : bucketMs;
-    const at = cursor ?? lastBucket;
-    let next: number | null = null;
-    switch (e.key) {
-      case "ArrowLeft":
-        next = at - step;
-        break;
-      case "ArrowRight":
-        next = at + step;
-        break;
-      case "Home":
-        next = fromMs;
-        break;
-      case "End":
-        next = lastBucket;
-        break;
-    }
-    if (next === null) return;
-    e.preventDefault();
-    moveCursor(Math.floor(next / bucketMs) * bucketMs);
-  };
+  const processes = useProcessesAt(selecting ? null : cursor, bucketMs);
+  const lastBucket = Math.max(fromMs, toMs - bucketMs);
 
   return (
     <Card
@@ -230,6 +192,25 @@ export function LanesCard({
         <div />
         <AnnotationRow
           markers={markers}
+          events={shown}
+          onActiveEvents={setActiveEvents}
+          onSelectEvents={(members) => {
+            const range = eventRange(
+              members,
+              bucketMs,
+              selectionNowMs,
+              retainedFromMs
+            );
+            if (
+              !range ||
+              !onSelectRange ||
+              range.toMs - range.fromMs >= toMs - fromMs
+            )
+              return false;
+            focusAfterRange.current = true;
+            selectRange(range);
+            return true;
+          }}
           fromMs={fromMs}
           toMs={toMs}
           widthPx={width}
@@ -243,8 +224,7 @@ export function LanesCard({
             <LaneLabel
               key={l.def.id}
               def={l.def}
-              sub={subLine(l, units, memTotal, span)}
-              units={units}
+              summary={laneSummary(l.def.id, summaries, units, summaryError)}
               onShowTable={() => setTableLane(l)}
             />
           ))}
@@ -255,32 +235,41 @@ export function LanesCard({
           className="relative"
           style={{ height: stackHeight }}
         >
-          <div className="flex flex-col gap-3">
-            {models.map((m) => (
-              <LanePlot
-                key={m.def.id}
-                x={m.x}
-                series={m.series}
-                domain={m.domain}
-                baseline={m.baseline}
-                fromMs={fromMs}
-                toMs={toMs}
-                height={LANE_HEIGHT}
-                ariaLabel={`${m.def.ariaLabel}, ${SPAN_ARIA[span]}`}
-              />
-            ))}
+          <div data-lane-content className="absolute inset-0">
+            <div className="flex flex-col gap-3">
+              {models.map((m) => (
+                <LanePlot
+                  key={m.def.id}
+                  x={m.x}
+                  series={m.series}
+                  domain={m.domain}
+                  baseline={m.baseline}
+                  fromMs={fromMs}
+                  toMs={toMs}
+                  height={LANE_HEIGHT}
+                  ariaLabel={`${m.def.ariaLabel}, recorded range from ${dayLabel(fromMs)} ${formatClockSeconds(fromMs)} to ${dayLabel(toMs)} ${formatClockSeconds(toMs)}`}
+                />
+              ))}
+            </div>
+
+            <LaneOverlays
+              ticks={ticks}
+              bands={bands}
+              lanes={lanes}
+              shown={activeEvents.filter(
+                (e) => e.ts_ms >= fromMs && e.ts_ms < toMs
+              )}
+              width={width}
+              fromMs={fromMs}
+              toMs={toMs}
+            />
           </div>
-
-          <LaneOverlays
-            ticks={ticks}
-            bands={bands}
-            lanes={lanes}
-            shown={shown}
-            width={width}
-            fromMs={fromMs}
-            toMs={toMs}
+          <div
+            ref={zoom.overlayRef}
+            aria-hidden
+            className="pointer-events-none absolute inset-0 overflow-hidden bg-card"
+            style={{ visibility: zoom.preview ? "visible" : "hidden" }}
           />
-
           <LaneCrosshair
             lanes={lanes}
             bands={bands}
@@ -295,11 +284,24 @@ export function LanesCard({
             processes={processes}
           />
 
+          {preview && (
+            <div
+              aria-hidden
+              className="pointer-events-none absolute inset-y-0 border-primary border-x bg-primary/14"
+              style={{
+                left: `${fractionAt(preview.fromMs, fromMs, toMs) * 100}%`,
+                width: `${(fractionAt(preview.toMs, fromMs, toMs) - fractionAt(preview.fromMs, fromMs, toMs)) * 100}%`,
+              }}
+            />
+          )}
           <div
             ref={sliderRef}
             role="slider"
             tabIndex={0}
             aria-label="Timeline cursor"
+            aria-description="Arrow keys inspect. Hold Shift and use arrows to select a range, then Enter to zoom. Escape cancels."
+            aria-busy={loading}
+            style={{ pointerEvents: zoom.preview ? "none" : undefined }}
             aria-valuemin={fromMs}
             aria-valuemax={lastBucket}
             aria-valuenow={cursor ?? lastBucket}
@@ -311,11 +313,7 @@ export function LanesCard({
             className={cn(
               "absolute inset-0 cursor-crosshair rounded-tile outline-none focus-visible:ring-2 focus-visible:ring-ring"
             )}
-            onPointerMove={onPointerMove}
-            onPointerLeave={() => setCursor(null)}
-            onKeyDown={onKeyDown}
-            onFocus={() => setCursor((c) => c ?? lastBucket)}
-            onBlur={() => setCursor(null)}
+            {...sliderProps}
           />
         </div>
       </div>
@@ -338,6 +336,12 @@ export function LanesCard({
         </div>
       </div>
 
+      {zoom.preview && (
+        <p role="status" className="text-[11px] text-muted-foreground">
+          {failed ? "Recorded detail unavailable" : "Loading recorded detail"} ·
+          preview at {zoom.preview.resolution}
+        </p>
+      )}
       <LaneTableDialog
         lane={tableLane}
         bands={bands}

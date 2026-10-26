@@ -41,6 +41,7 @@ export function containerRouteState(
     ],
     collapsed: params.getAll("collapsed"),
     range,
+    windowMs: Number(DOCKER_RANGES[range]),
     end,
     now,
     to,

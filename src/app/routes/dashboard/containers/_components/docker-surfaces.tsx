@@ -1,7 +1,6 @@
 import { formatBytes, formatPercent } from "@core/format";
 import { ChevronDown } from "lucide-react";
 import { useLayoutEffect, useMemo, useRef } from "react";
-import { Link } from "react-router";
 import { useIsLocalHost } from "~/hooks/use-is-local-host";
 import { useTransport } from "~/lib/transport-context";
 import type { PresentationProps } from "~/routes/popover/_components/popover-cards";
@@ -197,34 +196,16 @@ function LiveTimelineLane({ from, to }: { from: number; to: number }) {
           Container events unavailable: {events.error.message}
         </p>
       )}
-      {events.data?.coverage.map((gap) => (
-        <p
-          key={`${gap.start_ms}-${gap.container_id}`}
-          className="text-[11px] text-muted-foreground"
-        >
-          Event coverage gap: {gap.reason} ·{" "}
-          {new Date(gap.start_ms).toLocaleString()}
+      {!!events.data?.coverage.length && (
+        <p className="text-[11px] text-muted-foreground">
+          Container event history is incomplete in parts of this range.
         </p>
-      ))}
+      )}
       {history.error && (
         <p role="alert" className="text-[12px] text-muted-foreground">
           Container history unavailable: {history.error.message}
         </p>
       )}
-      <div className="flex flex-wrap gap-x-4 gap-y-2 text-[11px]">
-        {events.data?.events
-          .filter((event) => event.container_id !== null)
-          .map((event) => (
-            <Link
-              key={event.id}
-              className="rounded-control text-link underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              to={`${containerPath(event.engine_id, event.container_id ?? "")}?at=${event.time_ms}`}
-            >
-              {event.name ?? event.container_id} · {event.action} ·{" "}
-              {new Date(event.time_ms).toLocaleTimeString()}
-            </Link>
-          ))}
-      </div>
     </section>
   );
 }

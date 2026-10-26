@@ -1,55 +1,21 @@
 import { TableIcon } from "lucide-react";
-import { useHost } from "~/stores/host-store";
-import { selectNetwork } from "~/stores/live-selectors";
-import { formatMetric, type LaneUnits } from "../_lib/format";
-import { LANE_HEIGHT, type LaneDef, type LaneId } from "../_lib/lanes";
-
-/** The series whose current value the label shows. */
-const NOW_METRIC: Record<LaneId, string> = {
-  cpu: "cpu.total",
-  gpu: "gpu.util",
-  memory: "mem.pressure",
-  power: "power.system",
-  temp: "thermal.hottest",
-  network: "net.rx_total",
-};
-
-/**
- * Upload plus download, summed over interfaces, as the sidebar shows it; null
- * when either direction is missing.
- */
-export function networkTotal({
-  rx,
-  tx,
-}: {
-  rx: number | null;
-  tx: number | null;
-}): number | null {
-  return rx === null || tx === null ? null : rx + tx;
-}
+import { LANE_HEIGHT, type LaneDef } from "../_lib/lanes";
+import type { LaneSummary } from "../_lib/summaries";
 
 export interface LaneLabelProps {
   def: LaneDef;
   /** Fact line from the visible range ("peak 71% · 14:02"). */
-  sub: string;
-  units: LaneUnits;
+  summary: LaneSummary;
   onShowTable: () => void;
 }
 
 /**
- * Label column of one lane: swatch and name, the current value,
- * and a sub line. Subscribes to its one live value, so a tick re-renders
- * only this label.
+ * Label column describes the recorded interval; crosshair values remain momentary.
  */
-export function LaneLabel({ def, sub, units, onShowTable }: LaneLabelProps) {
-  const now = useHost((s) =>
-    def.id === "network"
-      ? networkTotal(selectNetwork(s))
-      : (s.held[NOW_METRIC[def.id]] ?? null)
-  );
+export function LaneLabel({ def, summary, onShowTable }: LaneLabelProps) {
   return (
     <div
-      className="group flex flex-col justify-center gap-[3px] border-border-subtle border-r pr-3"
+      className="group flex flex-col justify-center gap-px border-border-subtle border-r pr-3"
       style={{ height: LANE_HEIGHT }}
     >
       <div className="flex items-center gap-1.5">
@@ -69,12 +35,20 @@ export function LaneLabel({ def, sub, units, onShowTable }: LaneLabelProps) {
           <TableIcon className="size-3" />
         </button>
       </div>
-      <span className="figures-display text-[16px] tracking-[-0.01em]">
-        {formatMetric(NOW_METRIC[def.id], now, units)}
+      <span className="figures-display text-[16px] leading-5 tracking-[-0.01em]">
+        {summary.value}
       </span>
-      <span className="figures truncate text-[10px] text-muted-foreground">
-        {sub}
+      <span className="figures truncate text-[10px] text-muted-foreground leading-3">
+        {summary.detail}
       </span>
+      {summary.coverage && (
+        <span
+          className="figures truncate text-[10px] text-fg-faint leading-3"
+          title={summary.coverage}
+        >
+          {summary.coverage}
+        </span>
+      )}
     </div>
   );
 }

@@ -17,16 +17,10 @@ import { useHost, useHostId } from "~/stores/host-store";
 import { type Bucket, combineSeries } from "../_lib/buckets";
 import { mergeTail, tailRange } from "../_lib/history-tail";
 import type { LaneDef } from "../_lib/lanes";
-import {
-  historyWindow,
-  requestBucketMs,
-  resolutionLabel,
-  SPAN_MS,
-  type Span,
-} from "../_lib/time";
+import { historyWindow, requestBucketMs, resolutionLabel } from "../_lib/time";
 
 export interface TimelineView {
-  span: Span;
+  windowMs: number;
   /** `null` follows now (Live); a number is a window the user stepped back to. */
   endMs: number | null;
 }
@@ -83,31 +77,32 @@ export function useTimelineData(
   const hostId = useHostId();
   const queryClient = useQueryClient();
   const live = view.endMs === null;
-  const spanMs = SPAN_MS[view.span];
-  const long = view.span === "7d" || view.span === "30d";
-  const requestBucket = requestBucketMs(view.span, plotPx);
+  const spanMs = view.windowMs;
+  const long = spanMs > 86_400_000;
+  const requestBucket = requestBucketMs(view.windowMs, plotPx);
   // The bucket is part of the range: a window resized across a step of the
   // bucket ladder reads again at the new width. Not the pixel width itself,
   // so resizing within a step does not.
   const keys = useMemo(() => {
     const range: RangeSpec = {
-      span: view.span,
+      windowMs: view.windowMs,
       endMs: view.endMs,
       bucketMs: requestBucket,
     };
     return lanes.map((lane) =>
       historyKeys.range(hostId, lane.module, range, TIER_REQUEST)
     );
-  }, [lanes, hostId, view.span, view.endMs, requestBucket]);
+  }, [lanes, hostId, view.windowMs, view.endMs, requestBucket]);
 
   const queries = useQueries({
     queries: lanes.map((lane, i) => ({
       queryKey: keys[i] as (typeof keys)[number],
       queryFn: () => {
         const w = historyWindow(
-          view.span,
+          view.windowMs,
           view.endMs ?? clock(),
-          requestBucket
+          requestBucket,
+          !live
         );
         return unwrap(
           transport.queryHistory({
@@ -160,7 +155,11 @@ export function useTimelineData(
     if (prev.edge === liveEdge) return;
     const nowMs = clock();
     const requestedAt = Date.now();
-    const keepFromMs = historyWindow(view.span, nowMs, requestBucket).fromMs;
+    const keepFromMs = historyWindow(
+      view.windowMs,
+      nowMs,
+      requestBucket
+    ).fromMs;
     lanes.forEach((lane, i) => {
       const queryKey = keys[i];
       if (!queryKey) return;
@@ -201,6 +200,9 @@ export function useTimelineData(
             mergeTail(now.data, res.data, tail.fromMs, keepFromMs),
             { updatedAt: requestedAt }
           );
+        })
+        .catch(() => {
+          void queryClient.refetchQueries({ queryKey, exact: true });
         });
     });
   }, [
@@ -213,7 +215,7 @@ export function useTimelineData(
     hostId,
     transport,
     queryClient,
-    view.span,
+    view.windowMs,
     requestBucket,
   ]);
 

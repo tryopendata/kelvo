@@ -2,6 +2,7 @@ import type { RemoteHostRecord } from "@core/generated/bindings";
 import { connectionLabel } from "@core/remote-hosts";
 import { type RefObject, useEffect, useLayoutEffect, useRef } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router";
+import { RangeNavigationProvider } from "~/hooks/use-range-navigation";
 import { useRemoteHosts } from "~/hooks/use-remote-hosts";
 import { HostClockContext } from "~/lib/host-clock";
 import { useHostSelection } from "~/lib/host-selection";
@@ -82,42 +83,44 @@ export default function DashboardLayout() {
     ((sampling.stale && !sampling.paused) ||
       (remote !== undefined && remote.status.state !== "connected"));
   return (
-    <div className="flex h-svh bg-background text-foreground">
-      <LiveSidebar />
-      <main
-        ref={mainRef}
-        data-stale={stale || undefined}
-        className={cn(
-          "min-w-0 flex-1 overflow-y-auto px-3 pt-5 pb-6 transition-opacity duration-(--motion-crossfade) sm:px-6",
-          pageEnter,
-          stale && "opacity-50"
-        )}
-      >
-        {remote && metricPage && (
-          <div
-            role="status"
-            className="mb-4 border-border-subtle border-b pb-3 text-[12px] text-muted-foreground"
-          >
-            {remote.config.name} · {connectionLabel(remote)}
-            {remote.status.state !== "connected" &&
-              " · live readings are stale; saved history remains available"}
-            {Math.abs(remote.status.clock_offset_ms ?? 0) >= 30000 &&
-              " · chart times follow this Mac’s clock"}
-            {remote.status.error && (
-              <p className="mt-1 text-destructive">{remote.status.error}</p>
-            )}
-          </div>
-        )}
-        {!metricPage && local && local.id !== hostId ? (
-          <HostClockContext.Provider value={localNow}>
-            <HostStoreProvider hostId={local.id}>
-              <Outlet />
-            </HostStoreProvider>
-          </HostClockContext.Provider>
-        ) : (
-          <Outlet />
-        )}
-      </main>
-    </div>
+    <RangeNavigationProvider>
+      <div className="flex h-svh bg-background text-foreground">
+        <LiveSidebar />
+        <main
+          ref={mainRef}
+          data-stale={stale || undefined}
+          className={cn(
+            "min-w-0 flex-1 overflow-y-auto px-3 pt-5 pb-6 transition-opacity duration-(--motion-crossfade) sm:px-6",
+            pageEnter,
+            stale && "opacity-50"
+          )}
+        >
+          {remote && metricPage && (
+            <div
+              role="status"
+              className="mb-4 border-border-subtle border-b pb-3 text-[12px] text-muted-foreground"
+            >
+              {remote.config.name} · {connectionLabel(remote)}
+              {remote.status.state !== "connected" &&
+                " · live readings are stale; saved history remains available"}
+              {Math.abs(remote.status.clock_offset_ms ?? 0) >= 30000 &&
+                " · chart times follow this Mac’s clock"}
+              {remote.status.error && (
+                <p className="mt-1 text-destructive">{remote.status.error}</p>
+              )}
+            </div>
+          )}
+          {!metricPage && local && local.id !== hostId ? (
+            <HostClockContext.Provider value={localNow}>
+              <HostStoreProvider hostId={local.id}>
+                <Outlet />
+              </HostStoreProvider>
+            </HostClockContext.Provider>
+          ) : (
+            <Outlet />
+          )}
+        </main>
+      </div>
+    </RangeNavigationProvider>
   );
 }

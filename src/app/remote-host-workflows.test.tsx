@@ -557,7 +557,7 @@ describe("remote Mac recovery workflows", () => {
     // The IPC response distinguishes hosts so a leaked query cache is observable.
     function HistoryTable() {
       const data = useTimelineData(
-        { span: "24h", endMs: null },
+        { windowMs: 86_400_000, endMs: null },
         LANES.filter((lane) => lane.id === "cpu")
       );
       const lane = data.lanes[0];

@@ -1,4 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
+import { chooseTimelinePreset } from "./helpers/timeline";
 
 /**
  * v1.2 events (D-083, D-084) on the mock transport: the Timeline's event
@@ -23,9 +24,7 @@ const shot = (name: string, theme: string, project: string) =>
   `test-results/screens/${name}-${theme}-${project}.png`;
 
 const pills = (page: Page) =>
-  page
-    .getByRole("list", { name: "Events, sleep and wake" })
-    .getByRole("button");
+  page.getByRole("list", { name: "Timeline events" }).getByRole("button");
 
 async function open(page: Page, route: string, theme: string) {
   await page.clock.setFixedTime(FIXED_NOW);
@@ -35,65 +34,69 @@ async function open(page: Page, route: string, theme: string) {
 
 for (const theme of THEMES) {
   test.describe(`events (${theme})`, () => {
-    test("24h pill, click moves the crosshair", async ({ page }, info) => {
-      const errors = trackConsoleErrors(page);
-      await open(page, "/dashboard/timeline", theme);
-      const fans = pills(page).filter({ hasText: "Fans ramped up" });
-      await expect(fans).toHaveText(
-        "14:02 Fans ramped up · kernel_task + Xcode build"
-      );
-      await page.screenshot({
-        path: shot("timeline-events-24h", theme, info.project.name),
-        fullPage: true,
-      });
-
-      // The pill's dot sits on the event's time: its right edge is 4 px
-      // past the band the event shades.
-      const band = await page.locator("[data-event-band]").nth(1).boundingBox();
-      const pill = await fans.boundingBox();
-      if (!band || !pill) throw new Error("no band or pill");
-      expect(
-        Math.abs(pill.x + pill.width - (band.x + band.width) - 4)
-      ).toBeLessThan(5);
-
-      await fans.click();
-      const cursor = page.getByRole("slider", { name: "Timeline cursor" });
-      await expect(cursor).toBeFocused();
-      await expect(cursor).toHaveAttribute("aria-valuetext", /14:02:00$/);
-      await expect(page.getByText("Top processes then")).toBeVisible();
-      await page.screenshot({
-        path: shot("timeline-events-24h-cursor", theme, info.project.name),
-        fullPage: true,
-      });
-      // The arrow keys step on from the event.
-      await page.keyboard.press("ArrowRight");
-      await expect(cursor).toHaveAttribute("aria-valuetext", /14:03:00$/);
-      expect(errors).toEqual([]);
-    });
-
-    test("7d crowds the day's events into +N, never overlapping", async ({
+    test("24h event focus highlights only that event; a click investigates its episode", async ({
       page,
     }, info) => {
       const errors = trackConsoleErrors(page);
       await open(page, "/dashboard/timeline", theme);
-      await page.getByRole("radio", { name: "7d", exact: true }).click();
-      await expect(pills(page).filter({ hasText: /\+\d/ })).not.toHaveCount(0);
+      await chooseTimelinePreset(page, "Last 1 day");
+      const event = page.getByRole("button", { name: /14:02 Fans ramped up/ });
+      await expect(event).toBeVisible();
+      await expect(page.locator("[data-event-band]")).toHaveCount(0);
+      await event.focus();
+      await expect(page.locator("[data-event-band]")).toHaveCount(1);
+      await page.screenshot({
+        path: shot("timeline-events-24h", theme, info.project.name),
+      });
+      await event.click();
+      await expect(page.getByText(/^Recorded · /)).toBeVisible();
+      await expect(page.getByText(/Loading recorded detail/)).toHaveCount(0);
+      await expect(
+        page.getByRole("slider", { name: "Timeline cursor" })
+      ).toBeFocused();
+      const focusedEvent = page.getByRole("button", {
+        name: /14:02 Fans ramped up/,
+      });
+      await focusedEvent.click();
+      await expect(
+        page.getByRole("list", { name: "Events in group" })
+      ).toBeVisible();
+      await expect(
+        page
+          .getByRole("list", { name: "Events in group" })
+          .getByRole("button", { name: /Fans ramped up/ })
+      ).toBeVisible();
+      await page.screenshot({
+        path: shot("timeline-event-detail", theme, info.project.name),
+      });
+      expect(errors).toEqual([]);
+    });
+
+    test("7d clusters retain accessible counts and zoom into members", async ({
+      page,
+    }, info) => {
+      const errors = trackConsoleErrors(page);
+      await open(page, "/dashboard/timeline", theme);
+      await chooseTimelinePreset(page, "Last 7 days");
+      const groups = pills(page).filter({ hasText: /^\d+$/ });
+      await expect(groups.first()).toBeVisible();
       const boxes = await pills(page).evaluateAll((els) =>
         els.map((el) => {
-          const r = el.getBoundingClientRect();
-          return { l: r.left, r: r.right, t: r.top };
+          const rect = el.getBoundingClientRect();
+          return { left: rect.left, right: rect.right };
         })
       );
-      for (const [i, a] of boxes.entries()) {
-        for (const b of boxes.slice(i + 1)) {
-          const sameRow = Math.abs(a.t - b.t) < 1;
-          expect(sameRow && a.l < b.r && b.l < a.r).toBe(false);
-        }
-      }
+      for (let i = 1; i < boxes.length; i++)
+        expect(boxes[i]?.left).toBeGreaterThanOrEqual(boxes[i - 1]?.right ?? 0);
       await page.screenshot({
         path: shot("timeline-events-7d", theme, info.project.name),
-        fullPage: true,
       });
+      await groups.first().click();
+      await expect(page.getByText(/^Recorded · /)).toBeVisible();
+      await expect(page.getByText(/Loading recorded detail/)).toHaveCount(0);
+      await expect(
+        page.getByRole("slider", { name: "Timeline cursor" })
+      ).toBeFocused();
       expect(errors).toEqual([]);
     });
 

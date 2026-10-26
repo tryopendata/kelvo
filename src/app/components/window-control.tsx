@@ -11,21 +11,26 @@ import { Popover } from "radix-ui";
 import { useState } from "react";
 import { SegmentedControl } from "~/components/segmented-control";
 import { CustomRangeForm } from "~/components/window-control-custom";
-import { useChartWindow, useSetChartWindow } from "~/hooks/use-chart-window";
+import { useChartWindow } from "~/hooks/use-chart-window";
+import { useRangeNavigation } from "~/hooks/use-range-navigation";
 import { cn } from "~/lib/utils";
 import { useHost } from "~/stores/host-store";
 
 /** Shared module range picker: two shortcuts and retained/custom ranges. */
-export function WindowControl() {
+export function WindowControl({
+  onApply,
+}: {
+  onApply?: (value: ChartWindow) => void;
+}) {
   const intervalMs = useHost((s) => gridIntervalMs(s.status));
   const current = useChartWindow();
-  const setWindow = useSetChartWindow();
+  const navigation = useRangeNavigation();
   const [open, setOpen] = useState(false);
   if (current === null) return null;
   const quick =
     current.endMs === null && [300_000, 3_600_000].includes(current.windowMs);
   const apply = (value: ChartWindow) => {
-    setWindow(value);
+    void (onApply ?? navigation.apply)(value);
     setOpen(false);
   };
   return (

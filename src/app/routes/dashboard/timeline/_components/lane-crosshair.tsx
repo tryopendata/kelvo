@@ -79,7 +79,11 @@ export function LaneCrosshair({
         resolution={resolution}
         rows={rows}
         processes={gapHere ? null : processes}
-        note={gapHere?.label}
+        note={
+          gapHere?.reason === "paused"
+            ? "Recording was paused during this interval. No samples were collected."
+            : gapHere?.label
+        }
         style={{ left: tipLeft }}
       />
     </>

@@ -1,4 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
+import { chooseTimelinePreset } from "./helpers/timeline";
 
 /**
  * The Timeline's 30-day heatmap and Export CSV (plan v1.1 phases 1.1-B and
@@ -17,21 +18,6 @@ function trackConsoleErrors(page: Page): string[] {
   return errors;
 }
 
-const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-const MONTHS = [
-  "Jan",
-  "Feb",
-  "Mar",
-  "Apr",
-  "May",
-  "Jun",
-  "Jul",
-  "Aug",
-  "Sep",
-  "Oct",
-  "Nov",
-  "Dec",
-];
 const pad = (n: number) => String(n).padStart(2, "0");
 
 /** Local `h:m` on the day `n` days before today (the browser shares this zone). */
@@ -40,9 +26,10 @@ function daysAgo(n: number, h: number, m = 0): Date {
   return new Date(t.getFullYear(), t.getMonth(), t.getDate() - n, h, m);
 }
 
-/** The subtitle's "Sun Oct 4 · 14:00". */
-const dayClock = (d: Date) =>
-  `${WEEKDAYS[d.getDay()]} ${MONTHS[d.getMonth()]} ${d.getDate()} · ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+const dateStamp = (d: Date) =>
+  `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+const header = (page: Page) =>
+  page.getByRole("heading", { name: "Timeline", exact: true }).locator("..");
 
 const shot = (name: string, theme: string, project: string) =>
   `test-results/screens/${name}-${theme}-${project}.png`;
@@ -53,6 +40,7 @@ async function open(page: Page, theme: string) {
     `/?window=dashboard&route=/dashboard/timeline&theme=${theme}&ticks=0`
   );
   await expect(page.getByRole("heading", { name: "Timeline" })).toBeVisible();
+  await chooseTimelinePreset(page, "Last 1 day");
   const card = page.getByRole("region", { name: "30-day heatmap" });
   await expect(card.getByRole("gridcell")).toHaveCount(720);
   await expect(
@@ -120,10 +108,10 @@ for (const theme of THEMES) {
       const card = await open(page, theme);
       // Yesterday 14:00: within the minutes, so the hour itself.
       await card.locator('[data-cell="28-14"]').click();
-      await expect(page.getByText(/^One hour, /)).toBeVisible();
-      await expect(
-        page.getByText(`${dayClock(daysAgo(1, 14))} – 15:00`, { exact: true })
-      ).toBeVisible();
+      await expect(header(page)).toContainText("Recorded ·");
+      await expect(header(page)).toContainText(
+        `${dateStamp(daysAgo(1, 14))} to ${dateStamp(daysAgo(1, 15))}`
+      );
       await expect(
         page.getByRole("button", { name: "Next range" })
       ).toBeVisible();
@@ -135,21 +123,19 @@ for (const theme of THEMES) {
       for (let i = 0; i < 20; i++) await page.keyboard.press("ArrowUp");
       await expect(card.locator('[data-cell="8-14"]')).toBeFocused();
       await page.keyboard.press("Enter");
-      await expect(page.getByText(/^6 hours, /)).toBeVisible();
+      await expect(header(page)).toContainText("Recorded ·");
       // 21 days back, centred on 14:00 to 15:00.
-      await expect(
-        page.getByText(`${dayClock(daysAgo(21, 11, 30))} – 17:30`, {
-          exact: true,
-        })
-      ).toBeVisible();
+      await expect(header(page)).toContainText(
+        `${dateStamp(daysAgo(21, 11, 30))} to ${dateStamp(daysAgo(21, 17, 30))}`
+      );
       // Focus follows the view up to the Timeline.
       await expect(
         page.getByRole("heading", { name: "Timeline" })
       ).toBeFocused();
       // No preset is selected for the 6-hour window.
       await expect(page.getByRole("radio", { checked: true })).toHaveCount(1);
-      const range = page.getByRole("radiogroup", { name: "Range" });
-      await expect(range.getByRole("radio")).toHaveCount(4);
+      const range = page.getByRole("radiogroup", { name: "Window" });
+      await expect(range.getByRole("radio")).toHaveCount(2);
       await expect(range.getByRole("radio", { checked: true })).toHaveCount(0);
       await expect(range.locator("[data-state=on]")).toHaveCount(0);
       await page.screenshot({
@@ -158,28 +144,26 @@ for (const theme of THEMES) {
       });
 
       await page.getByRole("button", { name: "Live" }).click();
-      await expect(page.getByText("Last 24 hours, ending")).toBeVisible();
+      await expect(header(page)).toContainText("Live ·");
       expect(errors).toEqual([]);
     });
 
-    test("a 6h window stepped forward onto now follows Live at 24h", async ({
+    test("a 6h window stepped forward onto now follows Live at the same duration", async ({
       page,
     }) => {
       const errors = trackConsoleErrors(page);
       const card = await open(page, theme);
       // 7 days ago at 00:00 is past the minutes, so 6 hours: 28 steps to now.
       await card.locator('[data-cell="22-0"]').click();
-      await expect(page.getByText(/^6 hours, /)).toBeVisible();
+      await expect(header(page)).toContainText("Recorded ·");
       const next = page.getByRole("button", { name: "Next range" });
       for (let i = 0; i < 40 && (await next.isVisible()); i++) {
         await next.click();
       }
       await expect(next).toBeHidden();
-      await expect(page.getByText("Last 24 hours, ending")).toBeVisible();
+      await expect(header(page)).toContainText("Live ·");
       await expect(
-        page
-          .getByRole("radiogroup", { name: "Range" })
-          .getByRole("radio", { name: "24h", checked: true })
+        page.getByRole("button", { name: "Time range: 6h" })
       ).toBeVisible();
       expect(errors).toEqual([]);
     });
@@ -198,7 +182,7 @@ for (const theme of THEMES) {
       await button.click();
       await expect(
         page.getByText(
-          /^Exported [\d,]+ rows.* to \/Users\/mock\/Downloads\/kelvo-\d{4}-\d{2}-\d{2}-\d{4}-24h\.csv$/
+          /^Exported [\d,]+ rows.* to \/Users\/mock\/Downloads\/kelvo-\d{4}-\d{2}-\d{2}-\d{4}-1d\.csv$/
         )
       ).toBeVisible();
       expect(errors).toEqual([]);

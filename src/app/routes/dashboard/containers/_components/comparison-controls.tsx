@@ -7,6 +7,7 @@ export const ComparisonControls = memo(function ComparisonControls({
   range,
   end,
   now,
+  windowMs,
   onMetric,
   onRange,
   onEnd,
@@ -15,6 +16,7 @@ export const ComparisonControls = memo(function ComparisonControls({
   range: DockerRange;
   end: number | null;
   now: number;
+  windowMs?: number;
   onMetric: (value: "cpu" | "memory") => void;
   onRange: (value: DockerRange) => void;
   onEnd: (value: number | null) => void;
@@ -32,6 +34,7 @@ export const ComparisonControls = memo(function ComparisonControls({
       />
       <HistoryControls
         range={range}
+        windowMs={windowMs}
         end={end}
         now={now}
         onRange={onRange}

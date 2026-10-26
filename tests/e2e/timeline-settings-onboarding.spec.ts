@@ -1,4 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
+import { chooseTimelinePreset } from "./helpers/timeline";
 
 /**
  * Timeline, Settings and onboarding on the
@@ -31,6 +32,7 @@ for (const theme of THEMES) {
       await expect(
         page.getByRole("heading", { name: "Timeline" })
       ).toBeVisible();
+      await chooseTimelinePreset(page, "Last 1 day");
       await expect(page.locator("[data-lane-plot]")).toHaveCount(6);
       await expect(page.getByText("Asleep 5h 15m · no samples")).toBeVisible();
       await expect(page.getByText(/Sleep$/).first()).toBeVisible();

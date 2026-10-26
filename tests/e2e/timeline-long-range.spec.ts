@@ -1,4 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
+import { chooseTimelinePreset } from "./helpers/timeline";
 
 /**
  * Timeline 7d and 30d (plan v1.1 phase 1.1-A) on the mock
@@ -32,12 +33,11 @@ async function openRange(page: Page, theme: string, span: "7d" | "30d") {
     `/?window=dashboard&route=/dashboard/timeline&theme=${theme}&ticks=0`
   );
   await expect(page.getByRole("heading", { name: "Timeline" })).toBeVisible();
-  await page.getByRole("radio", { name: span, exact: true }).click();
-  await expect(
-    page.getByText(
-      span === "7d" ? "Last 7 days, ending" : "Last 30 days, ending"
-    )
-  ).toBeVisible();
+  await chooseTimelinePreset(
+    page,
+    span === "7d" ? "Last 7 days" : "Last 30 days"
+  );
+  await expect(page.getByText(/^Live · /)).toBeVisible();
   await expect(page.locator("[data-lane-plot]")).toHaveCount(6);
 }
 
@@ -108,7 +108,7 @@ for (const theme of THEMES) {
 
       await page.mouse.move(0, 0);
       await page.getByRole("button", { name: "Previous range" }).click();
-      await expect(page.getByText(/^30 days, /)).toBeVisible();
+      await expect(page.getByText(/^Recorded · /)).toBeVisible();
       await expect(
         page.getByRole("button", { name: "Next range" })
       ).toBeVisible();

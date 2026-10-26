@@ -9,9 +9,17 @@ import type { Span } from "./time";
  * length, "kelvo-2026-10-04-2240-24h.csv". Rust only drops path separators,
  * so the local date is ours to format.
  */
-export function exportFileName(span: Span, fromMs: number): string {
+export function exportFileName(span: Span | number, fromMs: number): string {
+  const duration =
+    typeof span === "number"
+      ? span % 86_400_000 === 0
+        ? `${span / 86_400_000}d`
+        : span % 3_600_000 === 0
+          ? `${span / 3_600_000}h`
+          : `${span / 60_000}m`
+      : span;
   const d = new Date(fromMs);
-  return `kelvo-${localDateIso(d)}-${pad2(d.getHours())}${pad2(d.getMinutes())}-${span}.csv`;
+  return `kelvo-${localDateIso(d)}-${pad2(d.getHours())}${pad2(d.getMinutes())}-${duration}.csv`;
 }
 
 /** The toast after a save: where it went and how much. `null` for a cancel. */

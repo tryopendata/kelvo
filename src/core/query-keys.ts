@@ -20,7 +20,7 @@ import type {
  * that ladder reads again.
  */
 export interface RangeSpec {
-  span: "1h" | "6h" | "24h" | "7d" | "30d";
+  windowMs: number;
   endMs: number | null;
   bucketMs: number;
 }

@@ -1,112 +1,154 @@
+import { eventId, eventLabel } from "@core/events";
 import { formatClock } from "@core/format";
+import type { Event } from "@core/generated/bindings";
+import { Popover } from "radix-ui";
 import { cn } from "~/lib/utils";
+import { eventPriority, groupEvents } from "../_lib/events";
 import { layoutMarkers, type Marker } from "../_lib/gaps";
 
 export interface AnnotationRowProps {
   markers: readonly Marker[];
+  events?: readonly Event[];
   fromMs: number;
   toMs: number;
   widthPx: number;
-  /** An event pill was clicked: move the crosshair to `tMs`. */
   onSelect?: (tMs: number) => void;
+  onSelectEvents?: (events: readonly Event[]) => boolean;
+  onActiveEvents?: (events: readonly Event[]) => void;
 }
 
-/**
- * Tabular SF 10 px is under 6 px per character, plus the 7 px dot and its
- * gap. An event pill is SF 11 px (under 5.8 px per character) after a
- * tabular "14:02 ", plus its padding, the 8 px dot and the gaps. The
- * estimates run wide, so pills never overlap.
- */
-const measure = (m: Marker) =>
-  m.kind === "event"
-    ? Math.ceil(6 * 6.6 + m.label.length * 5.8 + 32)
-    : m.label.length * 6 + 16;
-const MARKER_ROW_PX = 13;
-const PILL_ROW_PX = 26;
-
-/**
- * Detector and alert events as amber pills, and Sleep and Wake markers (a
- * hollow dot for Sleep, a filled one for Wake), above the lanes.
- * Pills never overlap: a crowded one moves to a second row or merges into
- * "+N" on its nearest neighbour. Events and Sleep/Wake are laid out apart,
- * the markers on their own rows under the pills, so a wide event pill never
- * swallows a Sleep or Wake marker into its "+N". Clicking an event pill moves the crosshair to it.
- */
+/** A narrow event track; each cluster keeps an accessible list of its members. */
 export function AnnotationRow({
   markers,
+  events = [],
   fromMs,
   toMs,
   widthPx,
   onSelect,
+  onSelectEvents,
+  onActiveEvents,
 }: AnnotationRowProps) {
-  const lay = (kind: (m: Marker) => boolean) =>
+  const groups = groupEvents(events, fromMs, toMs, widthPx);
+  const marks =
     widthPx > 0
-      ? layoutMarkers(markers.filter(kind), fromMs, toMs, widthPx, measure)
-      : [];
-  const events = lay((m) => m.kind === "event");
-  const marks = lay((m) => m.kind !== "event");
-  const rowsOf = (ps: readonly { row: number }[]) =>
-    ps.length === 0 ? 0 : Math.max(...ps.map((p) => p.row + 1));
-  const pillsPx = rowsOf(events) * PILL_ROW_PX;
-  const placed = [...events, ...marks];
-  return (
-    <ul
-      aria-label="Events, sleep and wake"
-      className="relative"
-      style={{
-        height: Math.max(26, pillsPx + rowsOf(marks) * MARKER_ROW_PX + 4),
-      }}
-    >
-      {placed.map((p) =>
-        p.kind === "event" ? (
-          <li
-            key={`event-${p.tMs}-${p.label}`}
-            className="absolute"
-            // Anchored by its right edge, so the dot lands on the time
-            // whatever the text really measures; layout used the estimate.
-            style={{
-              right: widthPx - p.leftPx - measure(p),
-              top: 1 + p.row * PILL_ROW_PX,
-            }}
-          >
-            <button
-              type="button"
-              data-event-ts={p.tMs}
-              className="flex h-[22px] items-center gap-2 whitespace-nowrap rounded-full border border-warning/40 bg-warning/10 pr-1.5 pl-2.5 text-[11px] text-foreground outline-none hover:bg-warning/20 focus-visible:ring-2 focus-visible:ring-ring"
-              onClick={() => onSelect?.(p.tMs)}
-            >
-              <span>
-                <span className="figures text-power-ink">
-                  {formatClock(p.tMs)}
-                </span>{" "}
-                {p.label}
-                {p.more > 0 && (
-                  <span className="text-muted-foreground"> +{p.more}</span>
-                )}
-              </span>
-              <span aria-hidden className="size-2 rounded-full bg-warning" />
-            </button>
-          </li>
-        ) : (
-          <li
-            key={`${p.kind}-${p.tMs}`}
-            className="absolute flex items-center gap-1.5"
-            style={{ left: p.leftPx, top: pillsPx + 4 + p.row * MARKER_ROW_PX }}
-          >
-            <span
-              aria-hidden
-              className={cn(
-                "size-[7px] rounded-full border border-muted-foreground",
-                p.kind === "wake" && "bg-muted-foreground"
-              )}
-            />
-            <span className="figures whitespace-nowrap text-[10px] text-muted-foreground">
-              {p.label}
-              {p.more > 0 && ` +${p.more}`}
-            </span>
-          </li>
+      ? layoutMarkers(
+          markers.filter((m) => m.kind !== "event"),
+          fromMs,
+          toMs,
+          widthPx,
+          (m) => m.label.length * 6 + 16
         )
-      )}
-    </ul>
+      : [];
+  return (
+    <div className="relative" style={{ height: 32 + (marks.length ? 30 : 0) }}>
+      <ul aria-label="Timeline events" className="absolute inset-x-0 top-0 h-7">
+        {groups.map((group, index) => {
+          const label = eventLabel(group.representative);
+          const warning = eventPriority(group.representative) >= 2;
+          const nextFraction = groups[index + 1]?.fraction ?? 1;
+          const left = Math.max(
+            0,
+            Math.min(widthPx - 22, group.fraction * widthPx)
+          );
+          const available = Math.max(22, nextFraction * widthPx - left - 8);
+          return (
+            <li
+              key={group.id}
+              className="absolute top-0 flex items-center"
+              style={{
+                left,
+              }}
+              onPointerEnter={() => onActiveEvents?.(group.members)}
+              onPointerLeave={() => onActiveEvents?.([])}
+            >
+              <Popover.Root
+                onOpenChange={(open) =>
+                  onActiveEvents?.(open ? group.members : [])
+                }
+              >
+                <Popover.Trigger asChild>
+                  <button
+                    type="button"
+                    data-event-ts={group.representative.ts_ms}
+                    aria-label={`${formatClock(group.representative.ts_ms)} ${label}${group.members.length > 1 ? ` · ${group.members.length} events` : ""}`}
+                    title={group.members.map(eventLabel).join("; ")}
+                    onFocus={() => onActiveEvents?.(group.members)}
+                    onBlur={() => onActiveEvents?.([])}
+                    onClick={(event) => {
+                      if (onSelectEvents?.(group.members))
+                        event.preventDefault();
+                      else onSelect?.(group.representative.ts_ms);
+                    }}
+                    style={{ maxWidth: Math.min(180, available) }}
+                    className={cn(
+                      "figures flex h-6 min-w-5 items-center justify-center gap-1 overflow-hidden rounded-control border px-1.5 text-[10px] outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring",
+                      warning
+                        ? "border-warning/40 bg-warning/10"
+                        : "border-border bg-card"
+                    )}
+                  >
+                    <span
+                      aria-hidden
+                      className={cn(
+                        "size-1.5 shrink-0 rounded-full",
+                        warning ? "bg-warning" : "bg-muted-foreground"
+                      )}
+                    />
+                    {available > 100 && warning && (
+                      <span className="truncate">{label}</span>
+                    )}
+                    {group.members.length > 1 && (
+                      <span>{group.members.length}</span>
+                    )}
+                  </button>
+                </Popover.Trigger>
+                <Popover.Portal>
+                  <Popover.Content
+                    align="start"
+                    sideOffset={6}
+                    collisionPadding={12}
+                    className="z-50 max-h-72 w-80 overflow-y-auto rounded-card border bg-popover p-2 text-popover-foreground shadow-sm"
+                  >
+                    <ul
+                      aria-label="Events in group"
+                      className="flex flex-col gap-1"
+                    >
+                      {group.members.map((event) => (
+                        <li key={eventId(event)}>
+                          <Popover.Close asChild>
+                            <button
+                              type="button"
+                              onClick={() => onSelectEvents?.([event])}
+                              className="w-full rounded-control px-2 py-1.5 text-left text-[11px] outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
+                            >
+                              <span className="figures text-muted-foreground">
+                                {formatClock(event.ts_ms)}
+                              </span>{" "}
+                              {eventLabel(event)}
+                            </button>
+                          </Popover.Close>
+                        </li>
+                      ))}
+                    </ul>
+                  </Popover.Content>
+                </Popover.Portal>
+              </Popover.Root>
+            </li>
+          );
+        })}
+      </ul>
+      <ul aria-label="Sleep and wake" className="absolute inset-x-0 top-8">
+        {marks.map((mark) => (
+          <li
+            key={`${mark.kind}-${mark.tMs}`}
+            className="figures absolute text-[10px] text-muted-foreground"
+            style={{ left: mark.leftPx, top: mark.row * 13 }}
+          >
+            {mark.label}
+            {mark.more > 0 && ` +${mark.more}`}
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }

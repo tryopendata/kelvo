@@ -1,7 +1,11 @@
 import type { DockerSettings, DockerSnapshot } from "@core/generated/bindings";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef } from "react";
-import { useLocation, useSearchParams } from "react-router";
+import {
+  type SetURLSearchParams,
+  useLocation,
+  useSearchParams,
+} from "react-router";
 import { PageHeader } from "~/components/page-header";
 import { SegmentedControl } from "~/components/segmented-control";
 import { Button } from "~/components/ui/button";
@@ -11,6 +15,7 @@ import { useCgroups } from "~/stores/live-selectors";
 import { CgroupContainers } from "./_components/cgroup-containers";
 import { ContainerActionProvider } from "./_components/container-actions";
 import { ContainerActivity } from "./_components/container-activity";
+import { ContainerRangeNotice } from "./_components/container-range-notice";
 import { DockerCleanupFlow } from "./_components/docker-cleanup-flow";
 import { DockerLocalOnly } from "./_components/docker-local-only";
 import { DockerStorage } from "./_components/docker-storage";
@@ -20,6 +25,8 @@ import { useContainerComparison } from "./_hooks/use-container-comparison";
 import { useDocker } from "./_hooks/use-docker";
 import { useDockerCleanup } from "./_hooks/use-docker-cleanup";
 import { useDockerConfiguration } from "./_hooks/use-docker-configuration";
+import { useSharedContainerRange } from "./_hooks/use-shared-container-range";
+import { DOCKER_RANGES, dockerRange } from "./_lib/history-params";
 import { type ContainerSort, statusLabel } from "./_lib/presentation";
 import { containerRouteState, restoredScroll } from "./_lib/route-state";
 
@@ -52,27 +59,27 @@ function LocalContainersRoute() {
     connected
   );
   const sortOverride = useRef<ContainerSort | null>(null);
-  const routeState = containerRouteState(
+  const nowMs = snapshot?.now_ms ?? Date.now();
+  const sharedRange = useSharedContainerRange(nowMs);
+  const baseRouteState = containerRouteState(
     params,
-    snapshot?.now_ms ?? Date.now(),
+    nowMs,
     sortOverride.current
   );
+  const routeState = {
+    ...baseRouteState,
+    windowMs: sharedRange.windowMs,
+    range: sharedRange.preset,
+    end: sharedRange.endMs,
+    from: sharedRange.fromMs,
+    to: sharedRange.toMs,
+  };
   const { storageView } = routeState;
-  const chart = useContainerComparison(snapshot, routeState);
-  const set = useCallback(
-    (key: string, value: string | null) =>
-      setParams(
-        (old) => {
-          const next = new URLSearchParams(old);
-          if (value === null) next.delete(key);
-          else next.set(key, value);
-          next.delete("page");
-          return next;
-        },
-        { replace: key !== "chart" }
-      ),
-    [setParams]
+  const chart = useContainerComparison(
+    sharedRange.ready ? snapshot : null,
+    routeState
   );
+  const set = useContainerRouteSetter(setParams, sharedRange);
   const viewControl = useMemo(
     () => (
       <SegmentedControl
@@ -116,6 +123,7 @@ function LocalContainersRoute() {
             </Button>
           }
         />
+        <ContainerRangeNotice />
         {(actionError || error) && (
           <p role="alert" className="text-[12px] text-destructive">
             {actionError ?? error}
@@ -196,4 +204,35 @@ function MonitoringContent({
       <RetainedHistory enabled={false} generation={snapshot.generation} />
     </>
   );
+}
+
+function useContainerRouteSetter(
+  setParams: SetURLSearchParams,
+  sharedRange: ReturnType<typeof useSharedContainerRange>
+) {
+  const { setRange, setEnd } = sharedRange;
+  const set = useCallback(
+    (key: string, value: string | null) => {
+      if (key === "range") {
+        setRange(DOCKER_RANGES[dockerRange(value, "15m")]);
+        return;
+      }
+      if (key === "end") {
+        setEnd(value === null ? null : Number(value));
+        return;
+      }
+      setParams(
+        (old) => {
+          const next = new URLSearchParams(old);
+          if (value === null) next.delete(key);
+          else next.set(key, value);
+          next.delete("page");
+          return next;
+        },
+        { replace: key !== "chart" }
+      );
+    },
+    [setParams, setRange, setEnd]
+  );
+  return set;
 }

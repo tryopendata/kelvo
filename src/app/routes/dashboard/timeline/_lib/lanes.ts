@@ -87,5 +87,5 @@ export const LANES: readonly LaneDef[] = [
 ];
 
 /** Lane plot height and the space between lanes. */
-export const LANE_HEIGHT = 64;
+export const LANE_HEIGHT = 72;
 export const LANE_GAP = 12;

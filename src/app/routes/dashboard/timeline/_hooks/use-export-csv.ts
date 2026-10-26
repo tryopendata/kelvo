@@ -12,7 +12,8 @@ import type { LaneDef } from "../_lib/lanes";
 import type { Span } from "../_lib/time";
 
 export interface ExportRange {
-  span: Span;
+  span?: Span;
+  windowMs?: number;
   fromMs: number;
   toMs: number;
   lanes: readonly LaneDef[];
@@ -27,7 +28,13 @@ export function useExportCsv() {
   const hostId = useHostId();
   const [exporting, setExporting] = useState(false);
 
-  const exportCsv = async ({ span, fromMs, toMs, lanes }: ExportRange) => {
+  const exportCsv = async ({
+    span,
+    windowMs,
+    fromMs,
+    toMs,
+    lanes,
+  }: ExportRange) => {
     setExporting(true);
     try {
       const result = await transport.exportCsv({
@@ -38,7 +45,7 @@ export function useExportCsv() {
         from_ms: fromMs,
         to_ms: toMs,
         tier: "auto",
-        file_name: exportFileName(span, fromMs),
+        file_name: exportFileName(windowMs ?? span ?? toMs - fromMs, fromMs),
       });
       if (result.status === "error") {
         console.error("[timeline] export_csv failed", {

@@ -10,7 +10,7 @@ import {
 
 const H = "h1";
 const base = defaultSettings(scenarioFlags(["default"]));
-const RANGE = { span: "1h", endMs: null, bucketMs: 10_000 } as const;
+const RANGE = { windowMs: 3600000, endMs: null, bucketMs: 10_000 } as const;
 
 const KEYS = {
   historyRange: historyKeys.range(H, "cpu", RANGE, "auto"),

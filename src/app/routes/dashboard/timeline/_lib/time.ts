@@ -47,11 +47,23 @@ const POINTS_PER_PX = 2;
  * so the store merges buckets server-side and the page stays a few
  * thousand points. `plotPx` 0 (not measured yet) is treated as 1,000 px.
  */
-export function requestBucketMs(span: Span, plotPx: number): number {
-  if (span === "1h") return S10.bucket_ms;
-  if (span === "6h" || span === "24h") return M1.bucket_ms;
+export const durationMs = (span: Span | number): number =>
+  typeof span === "number" ? span : SPAN_MS[span];
+
+/** Formatting density only; query bounds always retain the actual duration. */
+export function presentationSpan(ms: number): Span {
+  if (ms <= HOUR) return "1h";
+  if (ms <= 6 * HOUR) return "6h";
+  if (ms <= DAY) return "24h";
+  return ms <= 7 * DAY ? "7d" : "30d";
+}
+
+export function requestBucketMs(span: Span | number, plotPx: number): number {
+  const ms = durationMs(span);
+  if (ms <= HOUR) return S10.bucket_ms;
+  if (ms <= DAY) return M1.bucket_ms;
   const points = POINTS_PER_PX * (plotPx > 0 ? plotPx : 1000);
-  const want = SPAN_MS[span] / points;
+  const want = ms / points;
   return (
     LONG_BUCKETS_MS.find((w) => w >= want) ??
     (LONG_BUCKETS_MS[LONG_BUCKETS_MS.length - 1] as number)
@@ -78,13 +90,16 @@ export interface HistoryWindow {
  * early. 30d, the same, for one rule.
  */
 export function historyWindow(
-  span: Span,
+  span: Span | number,
   toMs: number,
-  bucketMs: number
+  bucketMs: number,
+  fixed = false
 ): HistoryWindow {
-  const slack = span === "1h" || span === "24h" ? bucketMs : 0;
-  const fromMs =
-    Math.floor((toMs - SPAN_MS[span]) / bucketMs) * bucketMs - slack;
+  const ms = durationMs(span);
+  if (fixed)
+    return { fromMs: toMs - ms, toMs, maxPoints: Math.ceil(ms / bucketMs) + 2 };
+  const slack = ms <= DAY ? bucketMs : 0;
+  const fromMs = Math.floor((toMs - ms) / bucketMs) * bucketMs - slack;
   return {
     fromMs,
     toMs,

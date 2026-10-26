@@ -93,7 +93,9 @@ it("shows event coverage gaps beside Timeline annotations", async () => {
     { transport }
   );
   expect(
-    await screen.findByText(/Event coverage gap: runtime_disconnected/)
+    await screen.findByText(
+      /Container event history is incomplete in parts of this range/
+    )
   ).toBeVisible();
   result.unmount();
   transport.dispose();

@@ -1,12 +1,11 @@
-import { historyKeys } from "@core/query-keys";
 import { seriesKey } from "@core/series-key";
-import { act, screen, waitFor } from "@testing-library/react";
+import { act, screen } from "@testing-library/react";
 import { renderWithProviders } from "@tests/test-utils";
 import { Profiler } from "react";
 import { type HostStore, useHostStore } from "~/stores/host-store";
 import { BatteryDayCard } from "./battery-day-card";
 
-it("keeps hourly history idle on power-only frames and updates displayed battery readings", async () => {
+it("keeps fixed charge history idle on power-only frames and updates current battery readings", async () => {
   let store: HostStore | undefined;
   function Capture() {
     store = useHostStore();
@@ -20,7 +19,14 @@ it("keeps hourly history idle on power-only frames and updates displayed battery
         <BatteryDayCard />
       </Profiler>
     </>,
-    { transportOptions: { now: () => 1_800_000_000_000 } }
+    {
+      transportOptions: {
+        now: () => 1_800_000_000_000,
+        chartWindow: {
+          absolute: { from_ms: 1_799_913_600_000, to_ms: 1_800_000_000_000 },
+        },
+      },
+    }
   );
   await screen.findByRole("img", { name: /Battery charge/ });
   const state = store?.getState();
@@ -65,22 +71,19 @@ it("keeps hourly history idle on power-only frames and updates displayed battery
   frame(24, 90);
   expect(screen.getByText("90%")).toBeInTheDocument();
   expect(commit.mock.calls.length).toBeGreaterThan(settled);
-  const beforeRefresh = commit.mock.calls.length;
-  const bars = screen.getByRole("img", { name: /Battery charge/ }).outerHTML;
-  const previous = r.transport.batteryHours;
-  r.transport.batteryHours = async (...args) => {
-    const result = await previous(...args);
-    if (result.status === "ok")
-      result.data = result.data.map((hour) => ({ ...hour, charge: 25 }));
-    return result;
-  };
-  await act(async () => {
-    await r.queryClient.invalidateQueries({ queryKey: historyKeys.all });
-  });
-  await waitFor(() =>
-    expect(commit.mock.calls.length).toBeGreaterThan(beforeRefresh)
+  const chargeRead = r.transport.calls.find(
+    (call) =>
+      call.command === "query_history" &&
+      JSON.stringify(call.args).includes("battery.charge")
   );
+  expect(chargeRead?.args[0]).toMatchObject({
+    from_ms: 1_799_913_600_000,
+    to_ms: 1_800_000_000_000,
+  });
   expect(
-    screen.getByRole("img", { name: /Battery charge/ }).outerHTML
-  ).not.toBe(bars);
+    r.transport.calls.some((call) => call.command === "battery_hours")
+  ).toBe(false);
+  expect(
+    screen.queryByText("Charging", { exact: true })
+  ).not.toBeInTheDocument();
 });
