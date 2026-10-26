@@ -16,25 +16,39 @@ Canonical agent instructions now explicitly forbid starting, adding, restoring o
 rerunning hosted macOS jobs, including historical workflows, and direct agents to
 local hooks and release packaging. Generated AGENTS.md carries the same policy.
 
-## Release 0.2.0 (2026-10-25, in progress)
+## Release 0.2.0 (2026-10-25, published)
 
-Preparing the next minor release from main: synchronized application/workspace
-versions and refreshed release notes for Linux hosts, history ranges, space reports
-and power charts. Added CHANGELOG.md; updated README setup/features, Linux architecture
-and roadmap status, generated agent guidance and the release procedure. Release
-manifest validation and its 3 tests passed; functional Chromium/WebKit: 432 passed
-in 1.9 minutes. The normal push hook supplies the full gate; hosted build and
-publication evidence will follow here.
+Published [Kelvo 0.2.0](https://github.com/tryopendata/kelvo/releases/tag/v0.2.0)
+as latest stable from `ea9ee6e9e850106246dbdff7b2e940e502754ca5` on main.
+Versions, CHANGELOG.md, release notes, README features/setup, Linux architecture
+and roadmap status, release procedure and generated agent guidance are updated.
 
-The first hosted audit found RUSTSEC-2026-0382 (rustls-webpki),
-RUSTSEC-2026-0386 (Tokio), and seven frontend findings in Happy DOM/Vite and
-its editor integration. Updated to rustls-webpki 0.103.16, Tokio 1.53.3,
-Happy DOM 21.0.4 and Vite 8.3.5; bun audit now reports zero vulnerabilities.
-Cancelled the initial release build before publication; final checks are pending.
+[Exact-tag CI](https://github.com/tryopendata/kelvo/actions/runs/40258637964)
+passed every Linux-only job, including both dependency audits, Chromium/WebKit,
+portable Rust, static agents, pipe and store fill tests.
+[Release validation](https://github.com/tryopendata/kelvo/actions/runs/40258703590)
+passed on Linux. Native verification ran locally through normal Git hooks:
+1,071 Rust tests passed (48 ignored), 1,281 frontend unit tests passed,
+432 functional browser cases passed, and 13 performance cases passed in 5.1 min.
+Manifest validation and all 3 manifest tests passed.
+
+Fixed the first audit failures with rustls-webpki 0.103.16, Tokio 1.53.3,
+Happy DOM 21.0.4 and Vite 8.3.5. The earlier hosted Disk test timeout did not
+recur in subsequent full suites. At the user's direction, cancelled hosted
+macOS CI/release runs and moved all native checks and packaging local (D-118).
+
+Built and signed the app locally with the existing updater key. Verified the app's
+code signature, system-only runtime dependencies and matching bundled Linux agents.
+The updater verifier accepted the signed version, rejected tampering without
+changing the old bundle, installed into a temporary app and verified its signature.
+The DMG internal checksum passed. Downloaded all five draft assets and verified
+SHA256SUMS before publishing. Fresh-account installation and a real update from
+0.1.0 preserving user history/settings remain manual acceptance checks; no existing
+installation or user data was replaced by this verification.
 
 ## Start here (handoff, 2026-10-25, history/remote landing and QA)
 
-State: `main` holds v1.0, v1.1 and v1.2. The app runs from source with `bun run tauri dev`. Verification evidence is dated in the log; older green runs do not establish the current refactor as complete. The user accepted day-to-day stability on 2026-10-16 and authorized the free GitHub release path: an ad-hoc-signed DMG and signature-verified in-app updates. Kelvo 0.1.0 is publicly available through GitHub Releases; release build and package verification are complete; Apple Developer membership, notarization, Homebrew and the Mac App Store remain deferred.
+State: `main` holds v1.0, v1.1 and v1.2. The app runs from source with `bun run tauri dev`. Verification evidence is dated in the log; older green runs do not establish the current refactor as complete. The user accepted day-to-day stability on 2026-10-16 and authorized the free GitHub release path: an ad-hoc-signed DMG and signature-verified in-app updates. Kelvo 0.2.0 is publicly available through GitHub Releases; release build and package verification are complete; Apple Developer membership, notarization, Homebrew and the Mac App Store remain deferred.
 
 The local Docker feature and first Mac-to-Mac remote milestone are also merged.
 Remote setup guidance and error recovery are pushed through `ded22a7`, following
