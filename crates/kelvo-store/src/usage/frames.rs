@@ -9,7 +9,7 @@ pub(crate) type Frame = (i64, Vec<(u64, UsageFacts)>);
 const CHUNK_ROWS: usize = 1_000_000;
 
 pub(crate) fn encode(frames: &[Frame]) -> Result<Vec<u8>> {
-    if frames.len() > 30 {
+    if frames.is_empty() || frames.len() > 30 {
         return Err(corrupt("too many frames"));
     }
     let mut out = vec![2, frames.len() as u8];
@@ -48,7 +48,7 @@ pub(crate) fn decode(blob: &[u8], at: i64, include: Option<&HashSet<u64>>) -> Re
         .get(1..)
         .ok_or_else(|| corrupt("missing frame header"))?;
     let count = usize::from(take::<1>(&mut input)?[0]);
-    if count > 30 {
+    if count == 0 || count > 30 {
         return Err(corrupt("oversized frame count"));
     }
     let mut ends = Vec::with_capacity(count);

@@ -1,5 +1,5 @@
 //! Usage rollups preserve every identity and merge sufficient statistics, never top-N.
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 
 use kelvo_schema::floor_to;
 use rusqlite::params;
@@ -91,6 +91,61 @@ impl State {
         Ok(())
     }
 
+    /// A clock rollback invalidates future last-seen bounds. Check candidate
+    /// identities against surviving facts before reclaiming any metadata.
+    pub(super) fn usage_discard_identities(&mut self, host: i64, from: i64) -> Result<()> {
+        for (identities, facts) in [
+            ("usage_processes", "usage_process_buckets"),
+            ("usage_apps", "usage_app_buckets"),
+        ] {
+            let mut candidates: HashSet<u64> = self
+                .conn
+                .prepare_cached(&format!(
+                    "SELECT id FROM {identities} WHERE host_id=?1 AND last_ms>?2"
+                ))?
+                .query_map(params![host, from], |r| Ok(r.get::<_, i64>(0)? as u64))?
+                .collect::<rusqlite::Result<_>>()?;
+            self.conn.execute(
+                &format!("UPDATE {identities} SET last_ms=?2 WHERE host_id=?1 AND last_ms>?2"),
+                params![host, from],
+            )?;
+            if candidates.is_empty() {
+                continue;
+            }
+            {
+                let mut stmt = self.conn.prepare_cached(&format!(
+                    "SELECT bucket_ts,blob FROM {facts} WHERE host_id=?1"
+                ))?;
+                let mut rows = stmt.query([host])?;
+                while !candidates.is_empty() {
+                    let Some(row) = rows.next()? else { break };
+                    let at: i64 = row.get(0)?;
+                    let blob: Vec<u8> = row.get(1)?;
+                    for (_, observed) in frames::decode(&blob, at, Some(&candidates))? {
+                        for (id, _) in observed {
+                            candidates.remove(&id);
+                        }
+                    }
+                }
+            }
+            let ids: Vec<_> = candidates.into_iter().collect();
+            for chunk in ids.chunks(500) {
+                let members = chunk
+                    .iter()
+                    .map(u64::to_string)
+                    .collect::<Vec<_>>()
+                    .join(",");
+                let references = if identities == "usage_apps" {
+                    " AND NOT EXISTS(SELECT 1 FROM usage_processes p WHERE p.app_id=usage_apps.id) AND NOT EXISTS(SELECT 1 FROM usage_uncertain u WHERE u.app_id=usage_apps.id)"
+                } else {
+                    ""
+                };
+                self.conn.execute(&format!("DELETE FROM {identities} WHERE host_id=?1 AND id IN ({members}){references}"),[host])?;
+            }
+        }
+        Ok(())
+    }
+
     pub(super) fn usage_discard(&mut self, host: i64, from: i64) -> Result<()> {
         // Preserve exact finest frames before a rollback edge even when the
         // physical commit batch crosses it. Coarse facts cannot be split.
@@ -126,7 +181,7 @@ impl State {
             )?;
         }
         self.conn.execute(
-            "DELETE FROM usage_uncertain WHERE host_id=?1 AND possible_to_ms>?2",
+            "DELETE FROM usage_uncertain WHERE host_id=?1 AND (possible_to_ms>?2 OR discovery_bucket_ts+10000>?2)",
             params![host, from],
         )?;
         Ok(())

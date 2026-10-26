@@ -323,6 +323,7 @@ fn production_retained_fill() {
             println!("[production retained] {buckets} buckets seeded");
         }
     }
+    rebatch_finest(&mut db);
     db.execute_batch("PRAGMA wal_checkpoint(TRUNCATE)").unwrap();
     let size = std::fs::metadata(&path).unwrap().len();
     let bytes:Vec<(String,i64)>=db.prepare("SELECT coalesce(s.tbl_name,d.name),sum(d.pgsize) FROM dbstat d LEFT JOIN sqlite_schema s ON s.name=d.name GROUP BY 1").unwrap().query_map([],|r|Ok((r.get(0)?,r.get(1)?))).unwrap().collect::<Result<_,_>>().unwrap();
@@ -406,6 +407,22 @@ fn production_retained_query_latency() {
             elapsed.as_secs_f64() < 15.0,
             "remote query timeout exceeded"
         );
+    }
+    for phase in ["connection-cold", "warm"] {
+        let mut reader = store.reader().unwrap();
+        let start = std::time::Instant::now();
+        let growth = reader
+            .history_growth(T0 + 30 * DAY, &kelvo_store::Retention::default())
+            .unwrap()
+            .unwrap();
+        let elapsed = start.elapsed();
+        println!(
+            "[production query] settings growth {phase} {}ms {:?}",
+            elapsed.as_millis(),
+            growth.usage
+        );
+        assert!(growth.usage.is_some());
+        assert!(elapsed.as_secs_f64() < 15.0);
     }
 }
 
@@ -570,4 +587,139 @@ fn production_real_host_replay() {
         )
         .unwrap();
     assert!(n < count);
+}
+
+#[path = "../src/usage/frames.rs"]
+mod frames;
+
+fn rebatch_finest(db: &mut rusqlite::Connection) {
+    let keys:Vec<(i64,i64)>=db.prepare("SELECT DISTINCT host_id,bucket_ts/300000*300000 FROM usage_coverage WHERE width_ms=10000 ORDER BY 1,2").unwrap().query_map([],|r|Ok((r.get(0)?,r.get(1)?))).unwrap().collect::<Result<_,_>>().unwrap();
+    for (host, at) in keys {
+        let tx = db.transaction().unwrap();
+        for table in [
+            "usage_app_buckets",
+            "usage_process_buckets",
+            "usage_coverage",
+        ] {
+            let mut frames = std::collections::BTreeMap::new();
+            let mut seq = 0;
+            {
+                let mut stmt=tx.prepare(&format!("SELECT bucket_ts,seq,blob FROM {table} WHERE host_id=?1 AND width_ms=10000 AND bucket_ts>=?2 AND bucket_ts<?3 ORDER BY bucket_ts")).unwrap();
+                let mut rows = stmt
+                    .query(rusqlite::params![host, at, at + 300_000])
+                    .unwrap();
+                while let Some(row) = rows.next().unwrap() {
+                    let time: i64 = row.get(0).unwrap();
+                    seq = seq.max(row.get::<_, i64>(1).unwrap());
+                    let blob: Vec<u8> = row.get(2).unwrap();
+                    frames.extend(frames::decode(&blob, time, None).unwrap());
+                }
+            }
+            let blob = frames::encode(&frames.into_iter().collect::<Vec<_>>()).unwrap();
+            tx.execute(&format!("DELETE FROM {table} WHERE host_id=?1 AND width_ms=10000 AND bucket_ts>=?2 AND bucket_ts<?3"),rusqlite::params![host,at,at+300_000]).unwrap();
+            tx.execute(&format!("INSERT INTO {table}(host_id,width_ms,bucket_ts,seq,blob) VALUES(?1,10000,?2,?3,?4)"),rusqlite::params![host,at,seq,blob]).unwrap();
+        }
+        tx.commit().unwrap();
+    }
+    {
+        let mut stmt = db.prepare("PRAGMA incremental_vacuum").unwrap();
+        let mut rows = stmt.query([]).unwrap();
+        while rows.next().unwrap().is_some() {}
+    }
+    db.execute_batch("PRAGMA wal_checkpoint(TRUNCATE)").unwrap();
+}
+
+#[test]
+#[ignore = "rebatch checkpointed retained fixture with production codec and compare public replies"]
+fn production_rebatch_retained_fixture() {
+    use kelvo_schema::durable_usage::*;
+    let source = std::path::PathBuf::from(
+        std::env::var_os("KELVO_USAGE_FILL_PATH").expect("retained source"),
+    );
+    let destination = std::path::PathBuf::from(
+        std::env::var_os("KELVO_USAGE_BATCHED_PATH").expect("task-owned destination"),
+    );
+    assert_ne!(source, destination);
+    std::fs::copy(&source, &destination).unwrap();
+    let q = HistoricalUsageRequest {
+        host: host(1).id,
+        from_ms: T0,
+        to_ms: T0 + 30 * DAY,
+        by: HistoricalUsageMetric::Cpu,
+        app_names: vec![],
+    };
+    let before = kelvo_store::Store::open(kelvo_store::StoreConfig::new(&destination)).unwrap();
+    let expected = before
+        .reader()
+        .unwrap()
+        .historical_usage_after(&q, Vec::new)
+        .unwrap();
+    before.close().unwrap();
+    let mut db = rusqlite::Connection::open(&destination).unwrap();
+    rebatch_finest(&mut db);
+    let size = std::fs::metadata(&destination).unwrap().len();
+    for table in [
+        "usage_apps",
+        "usage_processes",
+        "usage_app_buckets",
+        "usage_process_buckets",
+        "usage_coverage",
+        "usage_uncertain",
+        "usage_recording_start",
+    ] {
+        let bytes:i64=db.query_row("SELECT coalesce(sum(d.pgsize),0) FROM dbstat d LEFT JOIN sqlite_schema s ON s.name=d.name WHERE coalesce(s.tbl_name,d.name)=?1",[table],|r|r.get(0)).unwrap();
+        println!("[batched retained] {table} {bytes} allocated bytes incl indexes");
+    }
+    drop(db);
+    let after = kelvo_store::Store::open(kelvo_store::StoreConfig::new(&destination)).unwrap();
+    assert_eq!(
+        after
+            .reader()
+            .unwrap()
+            .historical_usage_after(&q, Vec::new)
+            .unwrap(),
+        expected
+    );
+    let layout = layout(&["cpu.load"]);
+    for minute in 0..60 {
+        after
+            .writer()
+            .write_bucket(bucket(
+                host(1).id,
+                kelvo_schema::Tier::M1,
+                T0 + 30 * DAY - HOUR + minute * MIN,
+                &layout,
+                1.0,
+            ))
+            .unwrap();
+    }
+    after.writer().flush().unwrap();
+    println!(
+        "[batched retained] actual SQLite bytes={size}, existing150MB-added total={}",
+        size + 150_000_000
+    );
+    assert!(size + 150_000_000 <= 750_000_000);
+}
+
+#[test]
+#[ignore = "prepare task-owned retained fixture for public Settings growth query"]
+fn production_retained_growth_setup() {
+    let path =
+        std::path::PathBuf::from(std::env::var_os("KELVO_USAGE_FILL_PATH").expect("task fixture"));
+    let store = kelvo_store::Store::open(kelvo_store::StoreConfig::new(path)).unwrap();
+    let layout = layout(&["cpu.load"]);
+    for minute in 0..60 {
+        store
+            .writer()
+            .write_bucket(bucket(
+                host(1).id,
+                kelvo_schema::Tier::M1,
+                T0 + 30 * DAY - HOUR + minute * MIN,
+                &layout,
+                1.0,
+            ))
+            .unwrap();
+    }
+    store.writer().flush().unwrap();
+    store.close().unwrap();
 }

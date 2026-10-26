@@ -24,6 +24,7 @@ impl State {
                 params![host_ref, from],
             )?;
         }
+        self.usage_discard_identities(host_ref, from)?;
         // The minute holding `from` summed 10 s rows that just went.
         let minute = Tier::M1.bucket_start(from).unwrap_or(from);
         if minute < from {

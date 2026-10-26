@@ -112,3 +112,34 @@ fn unsupported_truncated_oversized_and_invalid_integral_facts_return_corruption(
         );
     }
 }
+
+#[test]
+fn malformed_batch_frame_headers_and_timestamps_return_corruption() {
+    for defect in [
+        "frame-count",
+        "zero-frame-count",
+        "frame-time",
+        "chunk-count",
+        "frame-rows",
+    ] {
+        let (_dir, store) = fixture();
+        let db = rusqlite::Connection::open(store.path()).unwrap();
+        let mut blob: Vec<u8> = db
+            .query_row("SELECT blob FROM usage_app_buckets", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(blob[0], 2);
+        match defect {
+            "frame-count" => blob[1] = 31,
+            "zero-frame-count" => blob = vec![2, 0, 0],
+            "frame-time" => blob[2..10].copy_from_slice(&(T0 + 1000).to_le_bytes()),
+            "chunk-count" => blob[14] = 0,
+            _ => blob[10..14].copy_from_slice(&0_u32.to_le_bytes()),
+        }
+        db.execute("UPDATE usage_app_buckets SET blob=?1", [blob])
+            .unwrap();
+        assert!(
+            matches!(query(&store), Err(StoreError::Corrupt(_))),
+            "{defect}"
+        );
+    }
+}

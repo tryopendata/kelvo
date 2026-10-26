@@ -7,7 +7,7 @@ CREATE TABLE usage_processes (
  id INTEGER PRIMARY KEY, host_id INTEGER NOT NULL REFERENCES hosts(id),
  app_id INTEGER NOT NULL, pid INTEGER NOT NULL, start_time_us INTEGER NOT NULL,
  name TEXT NOT NULL, last_ms INTEGER NOT NULL,
- UNIQUE(host_id,pid,start_time_us)
+ UNIQUE(host_id,app_id,pid,start_time_us)
 );
 CREATE INDEX usage_process_app ON usage_processes(host_id,app_id);
 CREATE TABLE usage_app_buckets (

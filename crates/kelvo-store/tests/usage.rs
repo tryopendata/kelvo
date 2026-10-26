@@ -708,3 +708,137 @@ fn failed_physical_batch_commit_then_replayed_frames_recovers_without_duplicates
     assert_eq!(reply.range.coverage[0].coverage.measured_ms, 20_000);
     assert!(reply.ranking_complete);
 }
+
+#[test]
+fn late_app_resolution_preserves_each_process_membership_without_moving_old_facts() {
+    let dir = temp_dir("usage-membership");
+    let store = open(&dir, "h.sqlite");
+    let w = store.writer();
+    w.upsert_host(host(1)).unwrap();
+    let mut first = one(T0, 0.5);
+    first.apps[0].name = Arc::from("fallback");
+    first.processes[0].app_name = Arc::from("fallback");
+    let mut resolved = first.processes[0].clone();
+    resolved.app_name = Arc::from("Resolved app");
+    for f in [
+        &mut first.apps[0].facts,
+        &mut first.processes[0].facts,
+        &mut resolved.facts,
+    ] {
+        f.present_ms = 5000;
+        f.mem_byte_ms = 500_000.0;
+        for c in &mut f.coverage {
+            c.measured_ms = 5000;
+        }
+    }
+    first.apps.push(UsageAppFacts {
+        name: resolved.app_name.clone(),
+        facts: resolved.facts.clone(),
+    });
+    first.processes.push(resolved);
+    w.write_usage_bucket(host(1).id, first).unwrap();
+    w.flush().unwrap();
+    drop(w);
+    store.close().unwrap();
+    let store = open(&dir, "h.sqlite");
+    let mut r = store.reader().unwrap();
+    for app in ["fallback", "Resolved app"] {
+        let mut q = children(T0, T0 + 10_000);
+        q.app_name = app.into();
+        let detail = r.usage_processes_after(&q, Vec::new).unwrap();
+        assert_eq!(detail.processes.len(), 1);
+        assert_eq!(detail.processes[0].pid, 42);
+        assert_eq!(detail.processes[0].start_time_us, 1000);
+        assert_eq!(detail.processes[0].figures.cpu_avg_pct, Some(5.0));
+    }
+    let mut later = one(T0 + 10_000, 1.0);
+    later.apps[0].name = Arc::from("Resolved app");
+    later.processes[0].app_name = Arc::from("Resolved app");
+    store
+        .writer()
+        .write_usage_bucket(host(1).id, later)
+        .unwrap();
+    store.writer().flush().unwrap();
+    let mut q = children(T0 + 10_000, T0 + 20_000);
+    q.app_name = "fallback".into();
+    assert!(
+        r.usage_processes_after(&q, Vec::new)
+            .unwrap()
+            .processes
+            .is_empty()
+    );
+    q.app_name = "Resolved app".into();
+    assert_eq!(
+        r.usage_processes_after(&q, Vec::new).unwrap().processes[0]
+            .figures
+            .cpu_avg_pct,
+        Some(10.0)
+    );
+    let old = r
+        .historical_usage_after(
+            &request(T0, T0 + 10_000, HistoricalUsageMetric::Cpu),
+            Vec::new,
+        )
+        .unwrap();
+    assert_eq!(old.apps.len(), 2);
+    assert!(old.apps.iter().all(|a| a.figures.cpu_avg_pct == Some(5.0)));
+}
+
+#[test]
+fn rollback_reclaims_only_unreferenced_future_identities_and_future_discoveries() {
+    let dir = temp_dir("usage-rollback-identities");
+    let store = open(&dir, "h.sqlite");
+    let w = store.writer();
+    w.upsert_host(host(1)).unwrap();
+    w.write_usage_bucket(host(1).id, one(T0, 1.0)).unwrap();
+    let mut future = one(T0 + DAY, 2.0);
+    let mut orphan = future.processes[0].clone();
+    orphan.pid = 43;
+    orphan.start_time_us = 2000;
+    orphan.app_name = Arc::from("Discarded app");
+    future.apps.push(UsageAppFacts {
+        name: orphan.app_name.clone(),
+        facts: orphan.facts.clone(),
+    });
+    future.processes.push(orphan);
+    future.uncertain_network.push(UsageNetworkUncertainty {
+        app_name: Some("Discarded app".into()),
+        possible_from_ms: T0,
+        possible_to_ms: T0 + 10_000,
+        rx_bytes: 123,
+        tx_bytes: 0,
+        records: 1,
+    });
+    w.write_usage_bucket(host(1).id, future).unwrap();
+    w.flush().unwrap();
+    w.discard_from(host(1).id, T0 + 15_000).unwrap();
+    let reply = store
+        .reader()
+        .unwrap()
+        .historical_usage_after(
+            &request(T0, T0 + 10_000, HistoricalUsageMetric::Cpu),
+            Vec::new,
+        )
+        .unwrap();
+    assert_eq!(reply.apps.len(), 1);
+    assert_eq!(reply.apps[0].name, "Editor");
+    assert!(reply.network_uncertainty.is_empty());
+    let detail = store
+        .reader()
+        .unwrap()
+        .usage_processes_after(&children(T0, T0 + 10_000), Vec::new)
+        .unwrap();
+    assert_eq!(detail.processes.len(), 1);
+    assert_eq!(detail.processes[0].pid, 42);
+    // Reclaimed metadata is part of the bounded on-disk history, not just hidden
+    // from query output. A retained fact's identity must remain present.
+    let db = raw(&store);
+    let count = |table: &str| {
+        db.query_row(&format!("SELECT count(*) FROM {table}"), [], |r| {
+            r.get::<_, i64>(0)
+        })
+        .unwrap()
+    };
+    assert_eq!(count("usage_processes"), 1);
+    assert_eq!(count("usage_apps"), 1);
+}
