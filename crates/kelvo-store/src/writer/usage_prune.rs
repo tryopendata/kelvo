@@ -5,7 +5,7 @@ use kelvo_schema::floor_to;
 use rusqlite::params;
 
 use super::State;
-use crate::usage::{UsageFacts, codec};
+use crate::usage::{UsageFacts, codec, frames};
 use crate::{Result, Retention};
 
 impl State {
@@ -21,7 +21,7 @@ impl State {
                     "usage_coverage",
                 ] {
                     s.conn.execute(
-                        &format!("DELETE FROM {table} WHERE host_id=?1 AND bucket_ts+width_ms<=?2"),
+                        &format!("DELETE FROM {table} WHERE host_id=?1 AND bucket_ts+CASE WHEN width_ms=10000 THEN 300000 ELSE width_ms END<=?2"),
                         params![host, cut],
                     )?;
                 }
@@ -49,9 +49,16 @@ impl State {
     }
 
     fn roll_usage(&mut self, host: i64, source: i64, target: i64, cut: i64) -> Result<()> {
-        let cut = floor_to(cut, target);
+        let cut = floor_to(
+            cut,
+            target.max(if source == 10_000 {
+                frames::BATCH_MS
+            } else {
+                target
+            }),
+        );
         loop {
-            let first:Option<i64>=self.conn.query_row("SELECT min(bucket_ts) FROM usage_coverage WHERE host_id=?1 AND width_ms=?2 AND bucket_ts+width_ms<=?3",params![host,source,cut],|r|r.get(0))?;
+            let first:Option<i64>=self.conn.query_row("SELECT min(bucket_ts) FROM usage_coverage WHERE host_id=?1 AND width_ms=?2 AND bucket_ts+CASE WHEN width_ms=10000 THEN 300000 ELSE width_ms END<=?3",params![host,source,cut],|r|r.get(0))?;
             let Some(first) = first else { break };
             let start = floor_to(first, target);
             let end = (start + 3_600_000).min(cut);
@@ -64,9 +71,9 @@ impl State {
                         while let Some(row)=rows.next()? {
                             let at:i64=row.get(0)?;
                             let blob:Vec<u8>=row.get(1)?;
-                            let group=folded.entry(floor_to(at,target)).or_default();
-                            for (id,f) in codec::decode(&blob)? {
-                                group.entry(id).or_default().merge(&f);
+                            for (time,rows) in frames::decode(&blob,at,None)? {
+                                let group=folded.entry(floor_to(time,target)).or_default();
+                                for (id,f) in rows {group.entry(id).or_default().merge(&f);}
                             }
                         }
                     }
@@ -85,6 +92,27 @@ impl State {
     }
 
     pub(super) fn usage_discard(&mut self, host: i64, from: i64) -> Result<()> {
+        // Preserve exact finest frames before a rollback edge even when the
+        // physical commit batch crosses it. Coarse facts cannot be split.
+        let batches:Vec<(i64,Vec<u8>)>=self.conn.prepare_cached("SELECT bucket_ts,blob FROM usage_coverage WHERE host_id=?1 AND width_ms=10000 AND bucket_ts<?2 AND bucket_ts+300000>?2")?.query_map(params![host,from],|r|Ok((r.get(0)?,r.get(1)?)))?.collect::<rusqlite::Result<_>>()?;
+        for (at, _) in batches {
+            for table in [
+                "usage_app_buckets",
+                "usage_process_buckets",
+                "usage_coverage",
+            ] {
+                let blob:Vec<u8>=self.conn.query_row(&format!("SELECT blob FROM {table} WHERE host_id=?1 AND width_ms=10000 AND bucket_ts=?2"),params![host,at],|r|r.get(0))?;
+                let kept: Vec<_> = frames::decode(&blob, at, None)?
+                    .into_iter()
+                    .filter(|(time, _)| time + 10000 <= from)
+                    .collect();
+                if kept.is_empty() {
+                    self.conn.execute(&format!("DELETE FROM {table} WHERE host_id=?1 AND width_ms=10000 AND bucket_ts=?2"),params![host,at])?;
+                } else {
+                    self.usage_upsert(table, host, 10000, at, &frames::encode(&kept)?)?;
+                }
+            }
+        }
         // A coarse bucket crossing the new timeline edge cannot be partially recovered.
         // Drop it whole and disclose the missing edge instead of prorating its facts.
         for table in [
@@ -93,7 +121,7 @@ impl State {
             "usage_coverage",
         ] {
             self.conn.execute(
-                &format!("DELETE FROM {table} WHERE host_id=?1 AND bucket_ts+width_ms>?2"),
+                &format!("DELETE FROM {table} WHERE host_id=?1 AND width_ms<>10000 AND bucket_ts+width_ms>?2"),
                 params![host, from],
             )?;
         }

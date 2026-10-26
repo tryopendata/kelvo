@@ -84,6 +84,9 @@ fn unsupported_truncated_oversized_and_invalid_integral_facts_return_corruption(
         let mut blob: Vec<u8> = db
             .query_row("SELECT blob FROM usage_app_buckets", [], |r| r.get(0))
             .unwrap();
+        if blob.first() == Some(&2) {
+            blob = blob[(7 + 12 * usize::from(blob[1]))..].to_vec();
+        }
         match defect {
             "version" => blob[0] = 255,
             "truncated" => blob.truncate(blob.len() / 2),

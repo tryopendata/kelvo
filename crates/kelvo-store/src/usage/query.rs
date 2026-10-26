@@ -19,7 +19,6 @@ pub(crate) struct QueryFacts {
     pub source: [UsageSourceCoverage; 5],
     pub spans: Vec<UsageHistorySpan>,
     pub boundary: bool,
-    pub revision: i64,
     pub recorded_from: Option<i64>,
     pub retained_from: i64,
     pub uncertainty: Vec<UsageNetworkUncertainty>,

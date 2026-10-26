@@ -553,10 +553,158 @@ fn young_usage_growth_projects_tiers_and_identity_churn_independently() {
     assert_eq!(usage.measured_ms, HOUR);
     assert!(usage.identity_day_bytes > 0);
     assert!(usage.fixed_identity_bytes > 0);
-    assert!(usage.finest_day_bytes > usage.minute_day_bytes);
+    assert!(usage.finest_day_bytes > 0);
+    assert!(usage.minute_day_bytes > 0);
     assert!(usage.minute_day_bytes > usage.quarter_day_bytes);
     assert!(
         usage.quarter_day_bytes * 15 > usage.minute_day_bytes,
         "coarse process membership cannot be costed as one fifteenth under churn"
     );
+}
+
+#[test]
+fn exact_frames_replacement_and_tier_seams_survive_physical_commit_batches() {
+    let dir = temp_dir("usage-batch-frames");
+    let store = open(&dir, "h.sqlite");
+    let w = store.writer();
+    w.upsert_host(host(1)).unwrap();
+    for i in 0..40 {
+        w.write_usage_bucket(host(1).id, one(T0 + i * 10_000, (i + 1) as f64))
+            .unwrap();
+    }
+    w.flush().unwrap();
+    let mut r = store.reader().unwrap();
+    let q = request(T0 + 20_000, T0 + 30_000, HistoricalUsageMetric::Cpu);
+    let single = r.historical_usage_after(&q, Vec::new).unwrap();
+    assert_eq!(single.apps[0].figures.cpu_avg_pct, Some(30.0));
+    assert_eq!(single.range.coverage[0].coverage.measured_ms, 10_000);
+    assert!(single.ranking_complete);
+    w.write_usage_bucket(host(1).id, one(T0 + 20_000, 9.0))
+        .unwrap();
+    w.flush().unwrap();
+    assert_eq!(
+        r.historical_usage_after(&q, Vec::new).unwrap().apps[0]
+            .figures
+            .cpu_avg_pct,
+        Some(90.0)
+    );
+    let adjacent = r
+        .historical_usage_after(
+            &request(T0 + 10_000, T0 + 20_000, HistoricalUsageMetric::Cpu),
+            Vec::new,
+        )
+        .unwrap();
+    assert_eq!(adjacent.apps[0].figures.cpu_avg_pct, Some(20.0));
+    let crossing = r
+        .historical_usage_after(
+            &request(T0 + 290_000, T0 + 310_000, HistoricalUsageMetric::Cpu),
+            Vec::new,
+        )
+        .unwrap();
+    assert_eq!(crossing.apps[0].figures.cpu_avg_pct, Some(305.0));
+    assert_eq!(crossing.range.coverage[0].coverage.measured_ms, 20_000);
+    w.prune(T0 + DAY + 300_000, Retention::default()).unwrap();
+    let seam = r
+        .historical_usage_after(
+            &request(T0 + 240_000, T0 + 320_000, HistoricalUsageMetric::Cpu),
+            Vec::new,
+        )
+        .unwrap();
+    assert_eq!(seam.apps[0].figures.cpu_avg_pct, Some(285.0));
+    assert!(seam.ranking_complete);
+    assert_eq!(
+        seam.range
+            .spans
+            .iter()
+            .map(|s| s.resolution_ms)
+            .collect::<Vec<_>>(),
+        vec![60_000, 10_000]
+    );
+}
+
+#[test]
+fn rollback_inside_a_physical_batch_preserves_only_complete_earlier_frames() {
+    let dir = temp_dir("usage-batch-discard");
+    let store = open(&dir, "h.sqlite");
+    let w = store.writer();
+    w.upsert_host(host(1)).unwrap();
+    for i in 0..30 {
+        w.write_usage_bucket(host(1).id, one(T0 + i * 10_000, 1.0))
+            .unwrap();
+    }
+    w.flush().unwrap();
+    w.discard_from(host(1).id, T0 + 125_000).unwrap();
+    let mut r = store.reader().unwrap();
+    let earlier = r
+        .historical_usage_after(
+            &request(T0, T0 + 120_000, HistoricalUsageMetric::Cpu),
+            Vec::new,
+        )
+        .unwrap();
+    assert!(earlier.ranking_complete);
+    assert_eq!(earlier.range.coverage[0].coverage.measured_ms, 120_000);
+    let cut = r
+        .historical_usage_after(
+            &request(T0 + 120_000, T0 + 140_000, HistoricalUsageMetric::Cpu),
+            Vec::new,
+        )
+        .unwrap();
+    assert!(cut.apps.is_empty());
+    assert_eq!(cut.range.coverage[0].coverage.measured_ms, 0);
+    assert!(!cut.ranking_complete);
+    w.write_usage_bucket(host(1).id, one(T0 + 130_000, 2.0))
+        .unwrap();
+    w.flush().unwrap();
+    let restarted = r
+        .historical_usage_after(
+            &request(T0 + 120_000, T0 + 140_000, HistoricalUsageMetric::Cpu),
+            Vec::new,
+        )
+        .unwrap();
+    assert_eq!(restarted.range.coverage[0].coverage.measured_ms, 10_000);
+    assert!(!restarted.ranking_complete);
+    assert_eq!(restarted.apps[0].figures.cpu_avg_pct, Some(20.0));
+}
+
+#[cfg(feature = "write-stats")]
+#[test]
+fn failed_physical_batch_commit_then_replayed_frames_recovers_without_duplicates() {
+    let dir = temp_dir("usage-batch-retry");
+    let store = open(&dir, "h.sqlite");
+    let w = store.writer();
+    w.upsert_host(host(1)).unwrap();
+    w.flush().unwrap();
+    w.set_fail_commits(true);
+    w.write_usage_bucket(host(1).id, one(T0, 0.125)).unwrap();
+    w.write_usage_bucket(host(1).id, one(T0 + 10_000, 0.375))
+        .unwrap();
+    assert!(w.flush().is_err());
+    assert!(
+        store
+            .reader()
+            .unwrap()
+            .historical_usage_after(
+                &request(T0, T0 + 20_000, HistoricalUsageMetric::Cpu),
+                Vec::new
+            )
+            .unwrap()
+            .apps
+            .is_empty()
+    );
+    w.set_fail_commits(false);
+    w.write_usage_bucket(host(1).id, one(T0, 0.125)).unwrap();
+    w.write_usage_bucket(host(1).id, one(T0 + 10_000, 0.375))
+        .unwrap();
+    w.flush().unwrap();
+    let reply = store
+        .reader()
+        .unwrap()
+        .historical_usage_after(
+            &request(T0, T0 + 20_000, HistoricalUsageMetric::Cpu),
+            Vec::new,
+        )
+        .unwrap();
+    assert_eq!(reply.apps[0].figures.cpu_avg_pct, Some(2.5));
+    assert_eq!(reply.range.coverage[0].coverage.measured_ms, 20_000);
+    assert!(reply.ranking_complete);
 }

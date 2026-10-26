@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use super::Reader;
 use crate::usage::{
-    UsageBucket, codec,
+    UsageBucket, frames,
     query::{QueryFacts, figures, rank},
 };
 use crate::{Result, StoreError};
@@ -287,47 +287,47 @@ fn load(
     } else {
         "usage_app_buckets"
     };
-    let mut stmt=conn.prepare_cached(&format!("SELECT b.bucket_ts,b.width_ms,b.seq,b.blob,c.blob FROM {table} b JOIN usage_coverage c ON c.host_id=b.host_id AND c.width_ms=b.width_ms AND c.bucket_ts=b.bucket_ts WHERE b.host_id=?1 AND b.bucket_ts<?3 AND b.bucket_ts+b.width_ms>?2 ORDER BY b.bucket_ts,b.width_ms"))?;
+    let mut stmt=conn.prepare_cached(&format!("SELECT b.bucket_ts,b.width_ms,b.seq,b.blob,c.blob FROM {table} b JOIN usage_coverage c ON c.host_id=b.host_id AND c.width_ms=b.width_ms AND c.bucket_ts=b.bucket_ts WHERE b.host_id=?1 AND b.bucket_ts<?3 AND b.bucket_ts+CASE WHEN b.width_ms=10000 THEN 300000 ELSE b.width_ms END>?2 ORDER BY b.bucket_ts,b.width_ms"))?;
     let mut rows = stmt.query(params![host, from, to])?;
     while let Some(row) = rows.next()? {
         let at: i64 = row.get(0)?;
         let width: i64 = row.get(1)?;
-        if at < from || at + width > to {
-            out.boundary = true;
-            continue;
-        }
-        if recent
-            .iter()
-            .any(|b| b.from_ms < at + width && b.to_ms > at)
-        {
-            continue;
-        }
-        let seq: i64 = row.get(2)?;
-        out.revision = out.revision.max(seq);
         let blob: Vec<u8> = row.get(3)?;
         let source: Vec<u8> = row.get(4)?;
-        let source = codec::decode(&source)?
+        let sources: BTreeMap<_, _> = frames::decode(&source, at, None)?
             .into_iter()
-            .next()
-            .map(|(_, f)| f.coverage)
-            .ok_or_else(|| StoreError::Corrupt("missing usage source coverage".into()))?;
-        out.observe(at, at + width, source);
-        let decoded = if process_app.is_some() {
-            codec::decode_selected(&blob, Some(&include))?
-        } else {
-            codec::decode(&blob)?
-        };
-        for (id, facts) in decoded {
-            if process_app.is_some() {
-                let key = process_ids
-                    .get(&id)
-                    .ok_or_else(|| StoreError::Corrupt("unknown usage process".into()))?;
-                out.processes.entry(key.clone()).or_default().merge(&facts);
-            } else {
-                let name = apps
-                    .get(&id)
-                    .ok_or_else(|| StoreError::Corrupt("unknown usage app".into()))?;
-                out.apps.entry(name.clone()).or_default().merge(&facts);
+            .map(|(time, rows)| (time, rows.into_iter().next().map(|(_, f)| f.coverage)))
+            .collect();
+        for (time, decoded) in frames::decode(&blob, at, process_app.map(|_| &include))? {
+            if time < from || time + width > to {
+                if time < to && time + width > from {
+                    out.boundary = true;
+                }
+                continue;
+            }
+            if recent
+                .iter()
+                .any(|b| b.from_ms < time + width && b.to_ms > time)
+            {
+                continue;
+            }
+            let source = sources
+                .get(&time)
+                .and_then(|c| *c)
+                .ok_or_else(|| StoreError::Corrupt("missing usage source frame".into()))?;
+            out.observe(time, time + width, source);
+            for (id, facts) in decoded {
+                if process_app.is_some() {
+                    let key = process_ids
+                        .get(&id)
+                        .ok_or_else(|| StoreError::Corrupt("unknown usage process".into()))?;
+                    out.processes.entry(key.clone()).or_default().merge(&facts);
+                } else {
+                    let name = apps
+                        .get(&id)
+                        .ok_or_else(|| StoreError::Corrupt("unknown usage app".into()))?;
+                    out.apps.entry(name.clone()).or_default().merge(&facts);
+                }
             }
         }
     }

@@ -440,6 +440,7 @@ struct State {
     docker_admission: Arc<std::sync::Mutex<docker::Admission>>,
     docker_coordination: Arc<std::sync::Mutex<()>>,
     docker_pending: Vec<docker::Applied>,
+    usage_pending: usage::Pending,
     conn: Connection,
     rx: mpsc::Receiver<Op>,
     /// The database file, for measuring its size on disk.
@@ -519,6 +520,7 @@ impl State {
             })),
             docker_coordination: Arc::new(std::sync::Mutex::new(())),
             docker_pending: Vec::new(),
+            usage_pending: Default::default(),
             conn,
             rx,
             path,

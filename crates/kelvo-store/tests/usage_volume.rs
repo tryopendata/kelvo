@@ -408,3 +408,166 @@ fn production_retained_query_latency() {
         );
     }
 }
+
+#[test]
+#[ignore = "replay captured real collector facts through production Writer"]
+fn production_real_host_replay() {
+    use rusqlite::params;
+    let source = std::env::var_os("KELVO_USAGE_REAL_SOURCE").expect("captured fixture path");
+    let db = rusqlite::Connection::open_with_flags(
+        std::path::PathBuf::from(source),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .unwrap();
+    let apps: std::collections::HashMap<u64, Arc<str>> = db
+        .prepare("SELECT id,name FROM usage_apps")
+        .unwrap()
+        .query_map([], |r| {
+            Ok((
+                r.get::<_, i64>(0)? as u64,
+                Arc::from(r.get::<_, String>(1)?),
+            ))
+        })
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    let procs:std::collections::HashMap<u64,(Arc<str>,i32,i64,Arc<str>)>=db.prepare("SELECT p.id,a.name,p.pid,p.start_time_us,p.name FROM usage_processes p JOIN usage_apps a ON a.id=p.app_id").unwrap().query_map([],|r|Ok((r.get::<_,i64>(0)? as u64,(Arc::from(r.get::<_,String>(1)?),r.get(2)?,r.get(3)?,Arc::from(r.get::<_,String>(4)?))))).unwrap().collect::<Result<_,_>>().unwrap();
+    let dir = temp_dir("usage-real-replay");
+    let store = open(&dir, "replay.sqlite");
+    let w = store.writer();
+    w.upsert_host(host(1)).unwrap();
+    w.flush().unwrap();
+    let first = w.write_stats().unwrap();
+    let mut stmt=db.prepare("SELECT a.bucket_ts,a.blob,p.blob,c.blob FROM usage_app_buckets a JOIN usage_process_buckets p USING(host_id,width_ms,bucket_ts) JOIN usage_coverage c USING(host_id,width_ms,bucket_ts) WHERE a.width_ms=10000 ORDER BY a.bucket_ts").unwrap();
+    let mut rows = stmt.query([]).unwrap();
+    let mut count = 0;
+    while let Some(row) = rows.next().unwrap() {
+        let at: i64 = row.get(0).unwrap();
+        let a: Vec<u8> = row.get(1).unwrap();
+        let p: Vec<u8> = row.get(2).unwrap();
+        let c: Vec<u8> = row.get(3).unwrap();
+        let source = codec::decode_selected(&c, None).unwrap()[0].1.coverage;
+        let app_facts = codec::decode_selected(&a, None)
+            .unwrap()
+            .into_iter()
+            .map(|(id, facts)| UsageAppFacts {
+                name: apps[&id].clone(),
+                facts,
+            })
+            .collect();
+        let process_facts = codec::decode_selected(&p, None)
+            .unwrap()
+            .into_iter()
+            .map(|(id, facts)| {
+                let (app, pid, start, name) = &procs[&id];
+                UsageProcessFacts {
+                    app_name: app.clone(),
+                    pid: *pid,
+                    start_time_us: *start,
+                    name: name.clone(),
+                    facts,
+                }
+            })
+            .collect();
+        let uncertain=db.prepare("SELECT a.name,u.possible_from_ms,u.possible_to_ms,u.rx_bytes,u.tx_bytes,u.records FROM usage_uncertain u LEFT JOIN usage_apps a ON a.id=u.app_id WHERE discovery_bucket_ts=?1").unwrap().query_map([at],|r|Ok(kelvo_schema::durable_usage::UsageNetworkUncertainty{app_name:r.get(0)?,possible_from_ms:r.get(1)?,possible_to_ms:r.get(2)?,rx_bytes:r.get::<_,i64>(3)? as u64,tx_bytes:r.get::<_,i64>(4)? as u64,records:r.get::<_,i64>(5)? as u64})).unwrap().collect::<Result<_,_>>().unwrap();
+        w.write_usage_bucket(
+            host(1).id,
+            UsageBucket {
+                from_ms: at,
+                to_ms: at + 10_000,
+                source,
+                apps: app_facts,
+                processes: process_facts,
+                uncertain_network: uncertain,
+            },
+        )
+        .unwrap();
+        count += 1;
+        if count % 30 == 0 {
+            w.flush().unwrap();
+        }
+    }
+    w.flush().unwrap();
+    let end = w.write_stats().unwrap();
+    let mut payload = 0_i64;
+    let mut population = 0_i64;
+    let target = raw(&store);
+    for table in [
+        "usage_apps",
+        "usage_processes",
+        "usage_app_buckets",
+        "usage_process_buckets",
+        "usage_coverage",
+        "usage_uncertain",
+        "usage_recording_start",
+    ] {
+        let columns: Vec<(String, String)> = target
+            .prepare(&format!("PRAGMA table_info({table})"))
+            .unwrap()
+            .query_map([], |r| Ok((r.get(1)?, r.get(2)?)))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        let expression = columns
+            .iter()
+            .map(|(name, ty)| {
+                if ty == "INTEGER" {
+                    format!("CASE WHEN {name} IS NULL THEN 0 ELSE 8 END")
+                } else {
+                    format!("coalesce(length({name}),0)")
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("+");
+        let (n, bytes): (i64, i64) = target
+            .query_row(
+                &format!("SELECT count(*),coalesce(sum({expression}),0) FROM {table}"),
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        population += n;
+        payload += bytes;
+        println!("[real replay] {table} rows={n} payload={bytes}");
+    }
+    let wal = end.wal_bytes() - first.wal_bytes();
+    println!(
+        "[real replay] {count} finest frames total usage rows={population} payload={payload} WAL={wal}; baseline-added payload={} WAL={}",
+        payload + 769392,
+        wal + 4331712
+    );
+    assert!(payload + 769392 <= 4_000_000);
+    assert!(wal + 4331712 <= 12_000_000);
+    let (from, to): (i64, i64) = db
+        .query_row(
+            "SELECT min(bucket_ts),max(bucket_ts)+10000 FROM usage_coverage",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    let q = kelvo_schema::durable_usage::HistoricalUsageRequest {
+        host: host(1).id,
+        from_ms: from,
+        to_ms: to,
+        by: kelvo_schema::durable_usage::HistoricalUsageMetric::Cpu,
+        app_names: vec![],
+    };
+    assert_eq!(
+        store
+            .reader()
+            .unwrap()
+            .historical_usage_after(&q, Vec::new)
+            .unwrap()
+            .apps
+            .len(),
+        10
+    );
+    let (n,): (i64,) = target
+        .query_row(
+            "SELECT count(*) FROM usage_app_buckets WHERE width_ms=?1",
+            params![10000],
+            |r| Ok((r.get(0)?,)),
+        )
+        .unwrap();
+    assert!(n < count);
+}

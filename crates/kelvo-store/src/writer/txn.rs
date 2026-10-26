@@ -73,6 +73,9 @@ impl State {
         if !self.in_txn {
             return Ok(());
         }
+        if !self.usage_pending.is_empty() {
+            self.apply(|s| s.flush_usage_pending())?;
+        }
         self.in_txn = false;
         self.deadline = None;
         if let Err(e) = self.commit_txn() {
@@ -83,6 +86,7 @@ impl State {
             }
             let _ = self.conn.execute_batch("ROLLBACK");
             self.clear_caches();
+            self.usage_pending.clear();
             for p in std::mem::take(&mut self.docker_pending) {
                 p.finish(DockerOutcome::Failed, Some(e.to_string()));
             }

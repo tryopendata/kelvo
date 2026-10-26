@@ -254,3 +254,30 @@ identities 6 times and needs a first-hour/recurring split, but byte failures are
 The storage gate remains closed. Next diagnostic is the actual recorded fact-value
 distribution and lossless whole-commit compression preserving each 10-second fact.
 No budget, cadence or detail reduction is authorized by this failure.
+
+
+## Lossless whole-commit batching
+
+The actual real-host hour was copied to a task-owned SQLite snapshot for diagnosis.
+Recompressing concatenated independently compressed frames gave no improvement.
+Combining their columns into one standard zlib stream per five-minute batch reduced
+app payload 1,492,275→236,301 bytes and process payload 3,317,243→477,462 bytes.
+The production Writer now buffers exact finest frames until its normal commit,
+with independent app/process/source streams, timestamp/row-count frame headers,
+and bounded codec chunks. Every 10-second fact remains independently queryable;
+older rollups retain their existing sufficient-stat semantics. Partial final
+batches can be reopened and revised without replacing neighboring frames.
+
+Replaying the preserved real-host facts through the new real Writer produced
+358 finest frames, 415 apps, 1,146 instances, 1,598 usage rows, 804,129 logical payload
+bytes and 3,773,840 actual WAL bytes. With the earlier unchanged baseline this is
+1,573,521 payload and 8,105,552 WAL bytes. This passes the storage headroom check;
+the integrated engine write/CPU gate must still be rerun after integration.
+
+Public SQLite regressions now cover exact single-frame selection and completeness,
+frame replacement, cross-batch and finest/minute seams, partial rollback deletion,
+failed commit then replay, and cap pruning. Removing the per-frame selection check
+made the exact-frame regression fail with 155% versus 30% CPU; it was restored.
+The complete store suite (write-stats enabled), clippy and architecture checks pass.
+Retained size and release query/Settings growth timing must be refreshed for the
+new physical layout before final acceptance.

@@ -2,6 +2,7 @@
 //! Resource arrays consistently use CPU, GPU, RAM, CPU energy, network order.
 
 pub(crate) mod codec;
+pub(crate) mod frames;
 pub(crate) mod query;
 
 pub(crate) const SCHEMA: &str = include_str!("schema.sql");

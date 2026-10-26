@@ -59,16 +59,22 @@ pub(crate) fn encode(rows: &[(u64, UsageFacts)]) -> Result<Vec<u8>> {
     Ok(out)
 }
 
-pub(crate) fn decode(blob: &[u8]) -> Result<Vec<(u64, UsageFacts)>> {
-    decode_selected(blob, None)
-}
-
 /// Filtering identities before decoding full facts keeps lazy expansion allocations
 /// proportional to the app, although the compressed bucket is read once.
 pub(crate) fn decode_selected(
     blob: &[u8],
     include: Option<&HashSet<u64>>,
 ) -> Result<Vec<(u64, UsageFacts)>> {
+    Ok(decode_indexed(blob, include)?
+        .into_iter()
+        .map(|(_, id, f)| (id, f))
+        .collect())
+}
+
+pub(crate) fn decode_indexed(
+    blob: &[u8],
+    include: Option<&HashSet<u64>>,
+) -> Result<Vec<(usize, u64, UsageFacts)>> {
     let header = blob.get(..5).ok_or_else(|| corrupt("missing header"))?;
     if header.first().copied() != Some(VERSION) {
         return Err(corrupt("unsupported version"));
@@ -144,7 +150,7 @@ pub(crate) fn decode_selected(
         {
             return Err(corrupt("nonfinite or negative integral"));
         }
-        result.push((id, facts));
+        result.push((row, id, facts));
     }
     Ok(result)
 }

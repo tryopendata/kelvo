@@ -5,7 +5,8 @@ use kelvo_schema::HostId;
 use rusqlite::{OptionalExtension, params};
 
 use super::{Op, State, Writer};
-use crate::usage::{UsageBucket, UsageFacts, codec};
+use crate::usage::{UsageBucket, UsageFacts, frames};
+pub(super) type Pending = BTreeMap<(i64, i64), BTreeMap<i64, [Vec<(u64, UsageFacts)>; 3]>>;
 use crate::{Result, StoreError};
 
 impl State {
@@ -33,14 +34,6 @@ impl State {
             coverage: bucket.source,
             ..UsageFacts::default()
         };
-        for (table, rows) in [
-            ("usage_app_buckets", apps.into_iter().collect::<Vec<_>>()),
-            ("usage_process_buckets", processes.into_iter().collect()),
-            ("usage_coverage", vec![(0, source)]),
-        ] {
-            let blob = codec::encode(&rows)?;
-            self.usage_upsert(table, host, 10_000, bucket.from_ms, &blob)?;
-        }
         self.conn.execute(
             "DELETE FROM usage_uncertain WHERE host_id=?1 AND discovery_bucket_ts=?2",
             params![host, bucket.from_ms],
@@ -59,7 +52,55 @@ impl State {
             let seq = self.alloc_seq();
             self.conn.prepare_cached("INSERT INTO usage_uncertain(host_id,app_id,discovery_bucket_ts,possible_from_ms,possible_to_ms,rx_bytes,tx_bytes,records,seq) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9)")?.execute(params![host,app,bucket.from_ms,u.possible_from_ms,u.possible_to_ms,signed(u.rx_bytes)?,signed(u.tx_bytes)?,signed(u.records)?,seq])?;
         }
+        let batch = kelvo_schema::floor_to(bucket.from_ms, frames::BATCH_MS);
+        self.usage_pending.entry((host, batch)).or_default().insert(
+            bucket.from_ms,
+            [
+                apps.into_iter().collect(),
+                processes.into_iter().collect(),
+                vec![(0, source)],
+            ],
+        );
         Ok(())
+    }
+
+    pub(super) fn flush_usage_pending(&mut self) -> Result<()> {
+        let pending = std::mem::take(&mut self.usage_pending);
+        let result = (|| {
+            for (&(host, batch), updates) in &pending {
+                for (index, table) in [
+                    "usage_app_buckets",
+                    "usage_process_buckets",
+                    "usage_coverage",
+                ]
+                .into_iter()
+                .enumerate()
+                {
+                    let mut frames = BTreeMap::new();
+                    {
+                        let mut stmt=self.conn.prepare_cached(&format!("SELECT bucket_ts,blob FROM {table} WHERE host_id=?1 AND width_ms=10000 AND bucket_ts>=?2 AND bucket_ts<?3 ORDER BY bucket_ts"))?;
+                        let mut rows =
+                            stmt.query(params![host, batch, batch + frames::BATCH_MS])?;
+                        while let Some(row) = rows.next()? {
+                            let at: i64 = row.get(0)?;
+                            let blob: Vec<u8> = row.get(1)?;
+                            frames.extend(frames::decode(&blob, at, None)?);
+                        }
+                    }
+                    for (at, rows) in updates {
+                        frames.insert(*at, rows[index].clone());
+                    }
+                    let blob = frames::encode(&frames.into_iter().collect::<Vec<_>>())?;
+                    self.conn.execute(&format!("DELETE FROM {table} WHERE host_id=?1 AND width_ms=10000 AND bucket_ts>?2 AND bucket_ts<?3"),params![host,batch,batch+frames::BATCH_MS])?;
+                    self.usage_upsert(table, host, 10_000, batch, &blob)?;
+                }
+            }
+            Ok(())
+        })();
+        if result.is_err() {
+            self.usage_pending = pending;
+        }
+        result
     }
 
     fn usage_app_id(&mut self, host: i64, name: &str, at: i64) -> Result<i64> {

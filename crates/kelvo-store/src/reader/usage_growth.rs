@@ -3,7 +3,7 @@ use super::Reader;
 use crate::{
     Result,
     types::Retention,
-    usage::{UsageFacts, codec},
+    usage::{UsageFacts, codec, frames},
 };
 use rusqlite::params;
 use std::collections::BTreeMap;
@@ -28,7 +28,7 @@ impl Reader {
         let (Some(first), Some(_last)) = bounds else {
             return Ok(None);
         };
-        let recorded:i64=self.conn.query_row("SELECT coalesce(sum(w),0) FROM (SELECT bucket_ts,max(width_ms) w FROM usage_coverage GROUP BY bucket_ts)",[],|r|r.get(0))?;
+        let recorded = self.usage_recorded_ms(None, None)?;
         if recorded < super::growth::MIN_MEASURED_MS {
             return Ok(None);
         }
@@ -92,13 +92,21 @@ impl Reader {
         let Some(source) = source else {
             return Ok(None);
         };
-        let last: i64 = self.conn.query_row(
-            "SELECT max(bucket_ts+width_ms) FROM usage_coverage WHERE width_ms=?1",
+        let at: i64 = self.conn.query_row(
+            "SELECT max(bucket_ts) FROM usage_coverage WHERE width_ms=?1",
             [source],
             |r| r.get(0),
         )?;
+        let blob: Vec<u8> = self.conn.query_row(
+            "SELECT blob FROM usage_coverage WHERE width_ms=?1 AND bucket_ts=?2 LIMIT 1",
+            params![source, at],
+            |r| r.get(0),
+        )?;
+        let last = frames::decode(&blob, at, None)?
+            .last()
+            .map_or(at + source, |(time, _)| time + source);
         let start = kelvo_schema::floor_to(last - 3_600_000, target);
-        let measured:i64=self.conn.query_row("SELECT coalesce(sum(w),0) FROM (SELECT bucket_ts,max(width_ms) w FROM usage_coverage WHERE width_ms=?1 AND bucket_ts>=?2 GROUP BY bucket_ts)",params![source,start],|r|r.get(0))?;
+        let measured = self.usage_recorded_ms(Some(source), Some(start))?;
         if measured < super::growth::MIN_MEASURED_MS {
             return Ok(None);
         }
@@ -108,6 +116,11 @@ impl Reader {
             "usage_process_buckets",
             "usage_coverage",
         ] {
+            if source == target && target == 10_000 {
+                let n:i64=self.conn.query_row(&format!("SELECT coalesce(sum(length(blob)+64),0) FROM {table} WHERE width_ms=?1 AND bucket_ts>=?2"),params![source,start],|r|r.get(0))?;
+                bytes += n as u64;
+                continue;
+            }
             let mut groups = BTreeMap::<(i64, i64), BTreeMap<u64, UsageFacts>>::new();
             let mut stmt=self.conn.prepare(&format!("SELECT host_id,bucket_ts,blob FROM {table} WHERE width_ms=?1 AND bucket_ts>=?2 ORDER BY bucket_ts"))?;
             let mut rows = stmt.query(params![source, start])?;
@@ -115,11 +128,13 @@ impl Reader {
                 let host: i64 = row.get(0)?;
                 let at: i64 = row.get(1)?;
                 let blob: Vec<u8> = row.get(2)?;
-                let group = groups
-                    .entry((host, kelvo_schema::floor_to(at, target)))
-                    .or_default();
-                for (id, f) in codec::decode(&blob)? {
-                    group.entry(id).or_default().merge(&f);
+                for (time, rows) in frames::decode(&blob, at, None)? {
+                    let group = groups
+                        .entry((host, kelvo_schema::floor_to(time, target)))
+                        .or_default();
+                    for (id, f) in rows {
+                        group.entry(id).or_default().merge(&f);
+                    }
                 }
             }
             for group in groups.into_values() {
@@ -131,5 +146,19 @@ impl Reader {
         Ok(Some(
             (bytes as f64 / fill * Retention::DAY_MS as f64 / measured as f64) as u64,
         ))
+    }
+    fn usage_recorded_ms(&self, width: Option<i64>, from: Option<i64>) -> Result<i64> {
+        let mut times = std::collections::BTreeMap::new();
+        let mut stmt=self.conn.prepare("SELECT width_ms,bucket_ts,blob FROM usage_coverage WHERE (?1 IS NULL OR width_ms=?1) AND (?2 IS NULL OR bucket_ts>=?2)")?;
+        let mut rows = stmt.query(params![width, from])?;
+        while let Some(row) = rows.next()? {
+            let width: i64 = row.get(0)?;
+            let at: i64 = row.get(1)?;
+            let blob: Vec<u8> = row.get(2)?;
+            for (time, _) in frames::decode(&blob, at, None)? {
+                times.insert(time, width);
+            }
+        }
+        Ok(times.into_values().sum())
     }
 }
