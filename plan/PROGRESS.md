@@ -4,10 +4,10 @@ This file tracks where Kelvo is against the plan. Task-level checkboxes live in 
 
 Agents update this file whenever a phase starts or finishes. Each update adds a log entry: what changed, how it was verified, and anything left open. They also tick the matching checkboxes in the version doc.
 
-## Open-tray CPU (2026-10-26, in progress)
+## Open-tray CPU (2026-10-26, landed)
 
-Investigating reported foreground CPU after 0.3.0 on
-`codex/tray-cpu-optimization`, using Sol 6.1 agents and CE architecture guidance.
+Landed [PR #4](https://github.com/tryopendata/kelvo/pull/4) at
+`f59d2899bd7353a36ed5f9fac6abab81b9e112a8`, using Sol 6.1 agents and CE architecture guidance.
 The [performance record](tray-performance.md) separates native measurements,
 React commit counts and storage benchmarks. Original expanded, compact and mixed
 popovers all measured about 9.4% of one core in controlled short runs. Rendering
@@ -21,9 +21,17 @@ are unchanged. The controlled native pair measured 9.5208% → 4.9372% open-tray
 browser commit counts and visual comparisons pass. An independent CE code-reviewer
 approved the architecture and maintainability. All 492 functional browser cases
 passed on a frozen rerun; the first run's 13 failures remain preserved with no
-established cause. The normal local and hosted quality gates remain pending.
-Canvas work is excluded. No release is being published
-as part of this investigation.
+established cause. The normal local push gates passed: 1,359 frontend tests,
+1,194 Rust executions (55 ignored), bindings and all 13 browser-performance cases.
+All five [Linux CI jobs](https://github.com/tryopendata/kelvo/actions/runs/40343438711)
+passed: 1,359 frontend tests, 492 browser cases without case retries and 940 Rust
+executions (33 ignored). Only the frontend job was retried after slow Ubuntu package
+downloads delayed its first browser setup; no source or threshold changed.
+CI verifies source `60d4ada2c3fab973984f08eb12eb6b05daab49c4`; the merge has an
+identical tree. These results describe that source, not this later documentation
+record. Task processes and branch are cleaned up, with evidence retained and the
+unrelated local land-command edit preserved. Canvas work is excluded; no release
+was published for this batch.
 
 ## Release 0.3.0 (2026-10-26, published)
 

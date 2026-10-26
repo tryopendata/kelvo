@@ -1,6 +1,7 @@
 # Open-tray CPU investigation
 
-Status: measurements and optimization in progress, 2026-10-26.
+Status: landed through [PR #4](https://github.com/tryopendata/kelvo/pull/4) at
+`f59d2899bd7353a36ed5f9fac6abab81b9e112a8`, 2026-10-26. No release published.
 
 The native open tray reproduces the reported CPU cost. Initial controlled runs
 measure about 9.4% of one core with the panel visible and untouched. WebContent
@@ -196,8 +197,16 @@ review; it did not replace the execution checks below.
 
 Native before/after measurements and chart/gallery visual checks are complete.
 The full functional rerun passed all 492 Chromium/WebKit cases in 2.4 minutes,
-with no retries, using a frozen checkout and retained failure traces. The remaining
-work is the normal local push gate and hosted Linux checks.
+with no retries, using a frozen checkout and retained failure traces. The normal
+push hook passed `make check bindings-check e2e-perf`: 1,359 frontend tests,
+1,194 Rust executions (55 ignored), current generated bindings, and all 13 browser
+performance cases in 5.1 minutes. Popover main-thread work measured 11.51 ms/s
+against the existing 40 ms/s limit, with no long tasks. This Chromium mock result
+measures a different workload from the native whole-app comparison.
+
+Local full-gate evidence is
+`target/qa/pre-push/20261026T143923Z-Sdpp0D/`, for source
+`60d4ada2c3fab973984f08eb12eb6b05daab49c4`.
 No performance ceilings or product defaults have been raised.
 
 The first full local browser run completed 479 of 492 cases successfully. Its
@@ -218,3 +227,19 @@ fix. Original animation behavior fails the geometry-read/gap tests, and the old 
 target fails the HTML-layer assertion. The storage preservation test also detects
 a deliberate app-identity aliasing mutation. Logs and restoration hashes are under
 `target/qa/tray-cpu/checks/selector-mutation/` and the other task evidence folders.
+
+Hosted [CI](https://github.com/tryopendata/kelvo/actions/runs/40343438711) runs on
+Linux only. Its first frontend attempt was cancelled after browser dependency
+installation spent over 13 minutes downloading Ubuntu packages slowly; browser
+tests had not begun. Only that job was retried, on unchanged source. The successful
+Linux job recorded 940 Rust executions (33 ignored), including packaged-agent and
+history-fill tests. The frontend retry passed 1,359 unit tests and all 492 browser
+cases without case retries: Chromium 246 in 7.2 minutes, WebKit 123 in 4.9 minutes
+and 123 in 5.4 minutes. All five jobs passed, including advisory audits.
+
+CI verifies source `60d4ada2c3fab973984f08eb12eb6b05daab49c4`; the merge commit
+`f59d2899bd7353a36ed5f9fac6abab81b9e112a8` has an identical Git tree. This later
+documentation-only completion record does not claim a new source verification.
+Task-owned benchmark apps, browsers and watchers have stopped. The branch is
+removed after merge; the unrelated local land-command edit remains preserved.
+Native bundles, source snapshots and failure evidence remain under `target/qa/`.
