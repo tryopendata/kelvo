@@ -4,11 +4,11 @@ This file tracks where Kelvo is against the plan. Task-level checkboxes live in 
 
 Agents update this file whenever a phase starts or finishes. Each update adds a log entry: what changed, how it was verified, and anything left open. They also tick the matching checkboxes in the version doc.
 
-## Release 0.3.0 (2026-10-26, verified draft)
+## Release 0.3.0 (2026-10-26, published)
 
-Prepared [Kelvo 0.3.0](https://github.com/tryopendata/kelvo/releases/tag/untagged-684773399e4def6a3bc8)
-from `484c6036bee4b197a4ed30a26ee97ea3b80e693d` on main. The matching tag is
-pushed. The nine-asset draft remains unpublished pending manual acceptance.
+Published [Kelvo 0.3.0](https://github.com/tryopendata/kelvo/releases/tag/v0.3.0)
+as latest stable at 12:52 UTC from `484c6036bee4b197a4ed30a26ee97ea3b80e693d`
+on main. The matching tag and all nine assets are public.
 Versions, changelog, release notes, README usage/storage/update guidance and release
 examples are updated using `ce:writer`.
 
@@ -45,8 +45,8 @@ and verified the app signature inside the downloaded DMG.
 Isolated native restart acceptance passed ordinary, background and remote-setup
 launches, including persistent identity/history and shutdown. A fresh-account or
 second-Mac installation, a real update from 0.2.0 preserving user settings/history,
-and a genuine login-session launch remain unverified. The user has been asked
-whether to defer these manual acceptance checks before publication. Existing
+and a genuine login-session launch remain unverified. The user explicitly accepted
+these deferred checks and authorized publication as-is on 2026-10-26. Existing
 installed apps and user data were not replaced during release verification.
 Evidence is retained under `target/qa/release-0.3.0/` and
 `target/qa/pre-push/20261026T121312Z-T7tsEE/`.
@@ -163,7 +163,7 @@ installation or user data was replaced by this verification.
 
 ## Start here (handoff, 2026-10-25, history/remote landing and QA)
 
-State: `main` holds v1.0, v1.1 and v1.2. The app runs from source with `bun run tauri dev`. Verification evidence is dated in the log; older green runs do not establish the current refactor as complete. The user accepted day-to-day stability on 2026-10-16 and authorized the free GitHub release path: an ad-hoc-signed DMG and signature-verified in-app updates. Kelvo 0.2.0 is publicly available through GitHub Releases; release build and package verification are complete; Apple Developer membership, notarization, Homebrew and the Mac App Store remain deferred.
+State: `main` holds v1.0, v1.1 and v1.2. The app runs from source with `bun run tauri dev`. Verification evidence is dated in the log; older green runs do not establish the current refactor as complete. The user accepted day-to-day stability on 2026-10-16 and authorized the free GitHub release path: an ad-hoc-signed DMG and signature-verified in-app updates. Kelvo 0.3.0 is publicly available through GitHub Releases; release build and package verification are complete; Apple Developer membership, notarization, Homebrew and the Mac App Store remain deferred.
 
 The local Docker feature and first Mac-to-Mac remote milestone are also merged.
 Remote setup guidance and error recovery are pushed through `ded22a7`, following
