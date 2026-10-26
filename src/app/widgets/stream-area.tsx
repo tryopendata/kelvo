@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { cn } from "~/lib/utils";
 import {
   annotationFraction,
   ChartAnnotation,
@@ -16,6 +17,7 @@ import {
 import { ChartFrame, ChartGrid, ChartSelectionVeil } from "./chart-frame";
 import { GapBands, type GapSpan } from "./gap-band";
 import { type Accent, accentVars, rampColor } from "./lib/accent";
+import styles from "./lib/scroll-layer.module.css";
 import { useTickScroll } from "./lib/use-tick-scroll";
 
 /** Width of the drawing in viewBox units; the SVG stretches to its box. */
@@ -124,7 +126,6 @@ export function StreamArea({
 }: StreamAreaProps) {
   const uid = useId();
   const n = Math.max(2, ...series.map((s) => s.values.length));
-  const step = VB_W / (n - 1);
   const x = scaleLinear()
     .domain([0, n - 1])
     .range([0, VB_W]);
@@ -139,10 +140,10 @@ export function StreamArea({
     .x((p) => p.x)
     .y0(height)
     .y1((p) => p.y);
-  const scrollRef = useTickScroll<SVGGElement>(
+  const scrollRef = useTickScroll<HTMLDivElement>(
     tEndMs,
     intervalMs,
-    `${step.toFixed(2)}px`
+    `${(100 / (n - 1)).toFixed(3)}%`
   );
   const [svgRef, widthPx] = useWidth<SVGSVGElement>();
   // Dashes are in screen px from the path's start, which stays at the left
@@ -194,59 +195,81 @@ export function StreamArea({
       xTicks={xTicks}
       style={accentVars(accent)}
     >
-      <svg
-        ref={svgRef}
-        viewBox={`0 0 ${VB_W} ${height}`}
-        preserveAspectRatio="none"
-        width="100%"
-        height={height}
-        role="img"
-        aria-label={ariaLabel}
-        className="block overflow-hidden"
-      >
-        <defs>
-          {drawn
-            .filter((d) => d.filled)
-            .map(({ s, fill }) => (
-              <linearGradient
-                key={s.key}
-                id={`${uid}-${s.key}`}
-                x1="0"
-                y1="0"
-                x2="0"
-                y2="1"
-              >
-                <stop
-                  offset="0"
-                  style={{ stopColor: fill, stopOpacity: 0.4 }}
-                />
-                <stop offset="1" style={{ stopColor: fill, stopOpacity: 0 }} />
-              </linearGradient>
-            ))}
-        </defs>
-        <ChartGrid values={gridlines} ceiling={yMax} height={height} />
-        <g ref={scrollRef}>
-          {drawn.map(({ s, filled, linePath, areaPath, stroke }) => (
-            <g key={s.key} data-series={s.key} opacity={s.opacity ?? 1}>
-              {filled && (
-                <path data-area d={areaPath} fill={`url(#${uid}-${s.key})`} />
-              )}
-              <path
-                data-line
-                d={linePath}
-                fill="none"
-                style={{ stroke }}
-                strokeWidth={s.weight ?? 1.5}
-                strokeDasharray={s.dash ? DASH.join(" ") : undefined}
-                strokeDashoffset={s.dash ? dashOffset.toFixed(2) : undefined}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                vectorEffect="non-scaling-stroke"
-              />
+      <div className="relative overflow-hidden">
+        <svg
+          aria-hidden
+          viewBox={`0 0 ${VB_W} ${height}`}
+          preserveAspectRatio="none"
+          width="100%"
+          height={height}
+          className="pointer-events-none absolute inset-0"
+        >
+          <ChartGrid values={gridlines} ceiling={yMax} height={height} />
+        </svg>
+        <div ref={scrollRef} className={cn("relative", styles.layer)}>
+          <svg
+            ref={svgRef}
+            viewBox={`0 0 ${VB_W} ${height}`}
+            preserveAspectRatio="none"
+            width="100%"
+            height={height}
+            role="img"
+            aria-label={ariaLabel}
+            className="block overflow-hidden"
+          >
+            <defs>
+              {drawn
+                .filter((d) => d.filled)
+                .map(({ s, fill }) => (
+                  <linearGradient
+                    key={s.key}
+                    id={`${uid}-${s.key}`}
+                    x1="0"
+                    y1="0"
+                    x2="0"
+                    y2="1"
+                  >
+                    <stop
+                      offset="0"
+                      style={{ stopColor: fill, stopOpacity: 0.4 }}
+                    />
+                    <stop
+                      offset="1"
+                      style={{ stopColor: fill, stopOpacity: 0 }}
+                    />
+                  </linearGradient>
+                ))}
+            </defs>
+            <g>
+              {drawn.map(({ s, filled, linePath, areaPath, stroke }) => (
+                <g key={s.key} data-series={s.key} opacity={s.opacity ?? 1}>
+                  {filled && (
+                    <path
+                      data-area
+                      d={areaPath}
+                      fill={`url(#${uid}-${s.key})`}
+                    />
+                  )}
+                  <path
+                    data-line
+                    d={linePath}
+                    fill="none"
+                    style={{ stroke }}
+                    strokeWidth={s.weight ?? 1.5}
+                    strokeDasharray={s.dash ? DASH.join(" ") : undefined}
+                    strokeDashoffset={
+                      s.dash ? dashOffset.toFixed(2) : undefined
+                    }
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    vectorEffect="non-scaling-stroke"
+                  />
+                </g>
+              ))}
             </g>
-          ))}
-        </g>
-      </svg>
+          </svg>
+        </div>
+      </div>
       {gaps && gaps.length > 0 && tEndMs > 0 && (
         <GapBands
           gaps={gaps}

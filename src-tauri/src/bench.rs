@@ -18,6 +18,7 @@
 //! - `KELVO_BENCH_PERFORMANCE=1|0`: Performance mode on or off for this launch, in memory.
 //! - `KELVO_BENCH_BATTERY=1`: the engine sees the Mac on battery, with the battery
 //!   slowdown on, so the backed-off case measures on AC.
+//! - `KELVO_BENCH_NO_MOTION=1`: zero popover motion tokens without changing cadence.
 
 use std::time::Duration;
 
@@ -108,10 +109,30 @@ pub fn settings_file(
     }
     let menu_bar = std::env::var("KELVO_BENCH_MENU_BAR").unwrap_or_default();
     let docker_socket = std::env::var("KELVO_BENCH_DOCKER_SOCKET").unwrap_or_default();
-    Box::new(MemorySettings(std::sync::Mutex::new(Some(defaults_with(
-        &menu_bar,
-        &docker_socket,
-    )))))
+    let mut defaults = defaults_with(&menu_bar, &docker_socket);
+    if let Ok(density) = std::env::var("KELVO_BENCH_POPOVER") {
+        popover_density(&mut defaults, &density);
+    }
+    Box::new(MemorySettings(std::sync::Mutex::new(Some(defaults))))
+}
+
+#[cfg_attr(not(feature = "bench"), allow(dead_code))]
+fn popover_density(value: &mut serde_json::Value, density: &str) {
+    if !matches!(density, "expanded" | "compact" | "mixed") {
+        return;
+    }
+    if let Some(cards) = value.get_mut("popover").and_then(|v| v.as_object_mut()) {
+        for (module, card) in cards {
+            *card = serde_json::Value::String(
+                if density == "expanded" || (density == "mixed" && module == "cpu") {
+                    "expanded"
+                } else {
+                    "compact"
+                }
+                .to_owned(),
+            );
+        }
+    }
 }
 
 #[cfg(not(feature = "bench"))]
@@ -220,6 +241,7 @@ fn open(app: &AppHandle, scenario: &Scenario) {
         #[cfg(target_os = "macos")]
         Scenario::Popover => {
             crate::popover::toggle(app, std::time::Instant::now(), crate::tray::TRAY_ID);
+            disable_motion(app);
         }
         #[cfg(not(target_os = "macos"))]
         Scenario::Popover => {}
@@ -231,9 +253,60 @@ fn open(app: &AppHandle, scenario: &Scenario) {
     }
 }
 
+/// Diagnostic motion isolation: leave sampling and collector periods unchanged.
+#[cfg(all(feature = "bench", target_os = "macos"))]
+fn disable_motion(app: &AppHandle) {
+    use tauri::Manager;
+
+    if !std::env::var("KELVO_BENCH_NO_MOTION").is_ok_and(|v| no_motion(&v)) {
+        return;
+    }
+    let Some(window) = app.get_webview_window("popover") else {
+        return;
+    };
+    match window.eval(
+        "for (const token of ['tick','count','fast','entry','enter','stagger','crossfade']) \
+         document.documentElement.style.setProperty('--motion-'+token,'0ms')",
+    ) {
+        Ok(()) => tracing::info!("bench popover motion disabled; cadence unchanged"),
+        Err(error) => tracing::warn!(%error, "bench motion override"),
+    }
+}
+
+#[cfg(all(not(feature = "bench"), target_os = "macos"))]
+fn disable_motion(_app: &AppHandle) {}
+
+#[cfg_attr(not(all(feature = "bench", target_os = "macos")), allow(dead_code))]
+fn no_motion(value: &str) -> bool {
+    cfg!(feature = "bench") && value == "1"
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn motion_diagnostic_requires_bench_feature_and_explicit_opt_in() {
+        assert_eq!(no_motion("1"), cfg!(feature = "bench"));
+        for value in ["", "0", "true", "false"] {
+            assert!(!no_motion(value));
+        }
+    }
+
+    #[test]
+    fn popover_density_changes_only_card_presentation() {
+        for density in ["expanded", "compact", "mixed", "invalid", ""] {
+            let mut value = defaults_with("", "");
+            let original = value.clone();
+            popover_density(&mut value, density);
+            for (module, card) in value["popover"].as_object().expect("cards") {
+                let expanded = density != "compact" && (density != "mixed" || module == "cpu");
+                assert_eq!(card, if expanded { "expanded" } else { "compact" });
+            }
+            value["popover"] = original["popover"].clone();
+            assert_eq!(value, original);
+        }
+    }
 
     #[test]
     fn parses_the_scenarios_the_script_passes() {

@@ -23,7 +23,8 @@
 #
 # Keep hands off while it runs: the popover hides when another app activates, and the
 # dashboard stops streaming when it is covered (D-036), which would understate those
-# scenarios. The scenario line says how many processes were counted.
+# scenarios. Popover runs require current-launch open/visible logs and reject any
+# occlusion during measurement. The scenario line says how many processes were counted.
 #
 # Usage: scripts/bench-coalition.sh [SECONDS]        (default 120 per scenario)
 #   SCENARIOS="tray popover"   only these
@@ -37,6 +38,9 @@
 #                              (KELVO_BENCH_DEFAULTS), so a setting left in the file
 #                              cannot spoil the run (D-073)
 #   MENU_BAR="items.cpu=graph" menu bar choices on top of the defaults (KELVO_BENCH_MENU_BAR, D-102)
+#   POPOVER_DENSITY=mixed      expanded, compact, or CPU expanded with the rest compact;
+#                              applies to in-memory defaults (without KEEP_SETTINGS)
+#   NO_MOTION=1                zero popover motion tokens; sampling periods stay unchanged
 #   DOCKER_SOCKET=/absolute/path/to/docker.sock enables read-only Docker monitoring
 #                              in the isolated bench identity; empty leaves it off
 #
@@ -86,6 +90,8 @@ caffeinate -di -w $$ &
 (cd "$ROOT" && cargo build --quiet --release -p kelvo-collect --example coalition)
 MEASURE="$ROOT/target/release/examples/coalition"
 [ -x "$BIN" ] || { echo "bench-coalition: no app at $APP" >&2; exit 2; }
+bundle_id="$(plutil -extract CFBundleIdentifier raw -o - "$APP/Contents/Info.plist")"
+[ "$bundle_id" = "$ID" ] || { echo "bench-coalition: expected isolated $ID, got $bundle_id" >&2; exit 2; }
 
 app_pid() { pgrep -f "^$BIN" | head -1 || true; }
 
@@ -120,12 +126,14 @@ defaults=1
 [ -n "${KEEP_SETTINGS:-}" ] && defaults=0
 
 run_scenario() {
-  local name="$1" pid t0
+  local name="$1" pid t0 launch measure_start measure_end
   stop_app
+  launch="$(python3 -c 'import time; print(time.time())')"
   open -n --env "KELVO_BENCH_SCENARIO=$(route_of "$name")" \
     --env "KELVO_BENCH_DEFAULTS=$defaults" --env "KELVO_BENCH_MENU_BAR=${MENU_BAR:-}" \
+    --env "KELVO_BENCH_POPOVER=${POPOVER_DENSITY:-}" --env "KELVO_BENCH_NO_MOTION=${NO_MOTION:-0}" \
     --env "KELVO_BENCH_DOCKER_SOCKET=${DOCKER_SOCKET:-}" \
-    --env "RUST_LOG=info,kelvo_lib::tray=debug" --env "KELVO_BENCH_TRAY_COUNTERS_MS=5000" \
+    --env "RUST_LOG=info,kelvo_lib::tray=debug,kelvo_lib::popover=debug" --env "KELVO_BENCH_TRAY_COUNTERS_MS=5000" \
     "$APP"
   for _ in $(seq 1 50); do
     pid="$(app_pid)"
@@ -134,8 +142,13 @@ run_scenario() {
   done
   [ -n "$pid" ] || { echo "bench-coalition: the app did not start" >&2; exit 2; }
   t0="$(date +%s)"
+  measure_start="$(python3 -c 'import sys, time; print(time.time() + int(sys.argv[1]))' "$WARMUP")"
   "$MEASURE" --pid "$pid" --warmup "$WARMUP" --seconds "$SECS" > "$OUT/$name.json"
+  measure_end="$(python3 -c 'import time; print(time.time())')"
   stop_app
+  if [ "$name" = popover ]; then
+    python3 "$ROOT/scripts/bench-popover-visible.py" "$LOGS" "$launch" "$measure_start" "$measure_end"
+  fi
   python3 "$ROOT/scripts/tray-frames.py" "$OUT/$name.json" "$LOGS" \
     "$((t0 + WARMUP))" "$((t0 + WARMUP + SECS))"
   printf 'bench: %-10s %6.3f%% CPU  %6.1f MB footprint  (%s processes)\n' "$name" \

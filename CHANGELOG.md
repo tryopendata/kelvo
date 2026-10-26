@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- Reduced live-chart animation work by removing forced layout reads and keeping
+  chart motion on separate drawing layers. Sampling and history detail are unchanged.
+- Reused app identity lookups within each historical usage bucket, reducing
+  repeated database work for helper processes.
+
 ## [0.3.0](https://github.com/tryopendata/kelvo/compare/v0.2.0...v0.3.0) - 2026-10-26
 
 ### Added
