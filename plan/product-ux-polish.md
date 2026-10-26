@@ -1,6 +1,6 @@
 # Product UX polish: defaults, Timeline investigation and compact popover
 
-Status: implementation integrated in PR #3; final whole-app acceptance and landing pending.
+Status: completed and landed through PR #3 on 2026-10-26.
 Authorized on 2026-10-25. Current verification is in [PROGRESS.md](PROGRESS.md).
 Product choices and Devil's Advocate review corrections incorporated.
 
@@ -421,8 +421,8 @@ agents own implementation in isolated managed worktrees.
 - [x] Durable usage contracts and storage feasibility measurements.
 - [x] Durable usage lifecycle, local/remote queries and correctness checks.
 - [x] Timeline/shared range, event navigation, attribution and comparison.
-- [ ] Integrated browser/native verification, independent code review and fixes.
-- [ ] Normal hooks, exact-revision Linux CI, landing and task-owned cleanup.
+- [x] Integrated browser/native verification, independent code review and fixes (manual hardware limits recorded).
+- [x] Normal hooks, exact-revision Linux CI, landing and task-owned cleanup.
 
 The storage-write increases and 750 MB default history cap recorded below are
 authorized. CPU budgets and full retained process-detail requirements are unchanged;

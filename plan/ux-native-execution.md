@@ -265,3 +265,32 @@ check. No runner-load cause or baseline CI flake is claimed without telemetry.
 The local 476-case run had no retries. Source logs and job metadata are preserved
 alongside the local evidence; this records their actual result, not a retry-free
 hosted run.
+
+## Completed whole-app acceptance and landing, 2026-10-26
+
+The user reopened the lid and the baseline/candidate app pair completed. Each run
+measured 330 seconds after a 30-second warm-up, using isolated benchmark identities
+and the production coalition/frames measurement. Baseline CPU was 0.7383%; valid
+candidate CPU was 0.8046% (8.98% higher), under the unchanged 1.111% regression
+ceiling. Footprints were 134.6/132.5 MB across the measured coalition memberships;
+no like-for-like memory improvement is claimed. Both exceed the 0.5% product
+CPU target. Candidate tray drawing was 12.78 frames/minute, with history rows
+increasing from 12 warmed rows to 24 final rows and app/process facts persisted.
+
+The first candidate measurement was 9.925% with active WebKit. Logs showed visible-
+detail 1-second cadence and eleven settings commits; the user confirmed trying the
+UI during that run. It is invalid as a background comparison and is preserved in
+`coalition-candidate/tray.previous.json`. The automatic repeat held 2-second cadence,
+had no visible Kelvo windows or settings mutations, and passed. Read-only source
+review confirmed compact sizing cannot write settings or activate detail interest.
+No product change or performance-threshold change was needed.
+
+Source `2b041c04476ea03485913f1a00efb63940a67adf` landed on main and PR #3 is merged.
+Its [completed CI](https://github.com/tryopendata/kelvo/actions/runs/40282891981)
+passed all five jobs. Of 476 hosted browser cases, one WebKit host-picker case
+passed on retry after waiting for option stability; the local 476-case suite had
+no retries. The normal main push passed all code, binding and 13 performance gates.
+The final measurement files, source/binary hashes, native logs, visual comparisons
+and retained fixture are preserved in the primary checkout's `target/qa/product-ux/`.
+The manual hardware limitations above remain explicit. This records verification
+of the landed source, not a separate run for this documentation-only update.

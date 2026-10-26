@@ -115,7 +115,7 @@ See [README](README.md) for the roadmap and [architecture.md](architecture.md) f
 | D-116 | Linux agent: a headless collector, its identity binding and the wire additions it needs | Accepted |
 | D-117 | Remote queries: one request/reply call on the session, for per-app usage and space reports | Accepted |
 | D-119 | Independent signed automatic updates with isolated Linux trials | Implemented; login-session acceptance pending |
-| D-120 | Durable interval usage keeps facts before ranking | Implementation in progress |
+| D-120 | Durable interval usage keeps facts before ranking | Accepted |
 
 ---
 
@@ -3816,7 +3816,8 @@ signing and acceptance stay local under D-118; this does not authorize hosted ma
 
 ## D-120: Durable interval usage keeps facts before ranking
 
-Date: 2026-10-25. Product UX polish implementation; feasibility remains a blocking gate.
+Date: 2026-10-25. Implemented and verified on 2026-10-26; final production
+measurements are recorded in [PROGRESS.md](PROGRESS.md).
 
 Record app and process-instance sufficient statistics before floors or top-N selection.
 App identity follows D-089; process identity is PID plus start time. Keep CPU/GPU time,

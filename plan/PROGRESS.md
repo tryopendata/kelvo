@@ -4,47 +4,50 @@ This file tracks where Kelvo is against the plan. Task-level checkboxes live in 
 
 Agents update this file whenever a phase starts or finishes. Each update adds a log entry: what changed, how it was verified, and anything left open. They also tick the matching checkboxes in the version doc.
 
-## Product UX implementation (2026-10-25)
+## Product UX updates (2026-10-26, landed)
 
-[UX implementation plan](product-ux-polish.md) combines issue #1 defaults/display fixes,
-Timeline range navigation and animated investigation, durable app attribution and
-comparison, and independently compact popover cards. Product choices are recorded
-in the plan. A Sol 6.1 agent applied ce:devils-advocate and found three corrections:
-uncertain-time network attribution, source-level completeness, and storage-gate
-accounting. Those corrections and native content-sizing constraints are incorporated;
-the follow-up review passed with no remaining material finding.
-Implementation is integrated in `codex/product-ux`, with nothing landed yet.
-Native/compact UI and issue #1 evidence is in [ux-native-execution.md](ux-native-execution.md).
-Timeline navigation, animation, annotations, recorded attribution, comparison and
-module integration are recorded in [ux-timeline-execution.md](ux-timeline-execution.md).
-Durable lifecycle, local/remote queries and lossless batching are recorded in
-[ux-history-execution.md](ux-history-execution.md). The real-collector full-hour
-storage gate passes: 2,819 rows, 1,988,351 payload bytes and 9,647,904 WAL bytes.
-The retained 30-day fixture occupies 388,562,944 bytes before existing history.
-All 476 integrated Chromium/WebKit cases pass at `df464fb`. Independent CE review
-approves final source `aeff3d5f5e8db9bfc57357e4f97e619b2ff90b1a`, including the
-failed-zoom, Container Back and Power performance-test readiness corrections.
-Normal push checks pass: 1,355 frontend tests, 1,191 Rust test executions (55
-ignored), generated bindings and all 13 production browser-performance cases.
-Live-collector tests run serially to avoid process churn caused by overlapping
-tests; limits and test selection are unchanged. The separate serial performance
-run measured tray core 9.46 allocations/tick against the unchanged limit of 10.
-The real-history release engine pair measures 0.254% CPU on main and 0.318% on
-the candidate, below the unchanged 0.494% regression ceiling. Both six-minute
-runs delivered 172 frames and wrote history; the candidate also persisted app
-and process buckets. The reported-only 30-second interval measured 0.227%.
-Whole-app CPU remains unmeasured: the existing benchmark refused to launch with
-the lid closed and no external display. It requires an active display and
-nonzero tray frame counters. The PR stays draft until that acceptance passes.
-[Exact-source Linux CI](https://github.com/tryopendata/kelvo/actions/runs/40280327267)
-passed all five jobs: 1,355 frontend tests, 476 browser cases (three WebKit cases
-passed on retry), 926 portable Rust executions (33 ignored), 11 packaged-agent
-pipe cases and both history-fill/read cases. The WebKit retries were a Docker
-Monitoring screenshot timeout, Overview entrance opacity not yet at 1, and a
-remote-host connection-button click timeout. Their triage is recorded with the
-native execution evidence. [PR #3](https://github.com/tryopendata/kelvo/pull/3) is not merged.
-These are historical results for the stated source, not verification of this
-documentation update. Fixtures are not app verification.
+The [approved UX plan](product-ux-polish.md) is implemented and landed through
+[PR #3](https://github.com/tryopendata/kelvo/pull/3) at
+`2b041c04476ea03485913f1a00efb63940a67adf`. Sol 6.1 agents implemented the work;
+independent CE architecture/product and code reviews passed after corrections.
+
+Timeline selection now navigates a shared historical range with animated zoom,
+Back, focused annotations, top-ten app groups, expandable processes and previous-
+interval comparison. Durable history preserves resource aggregates and coverage
+through progressively coarser tiers. Its approved default cap is 750 MB; valid
+saved caps remain unchanged. Tray cards collapse independently or together and
+the popover fits their content. Issue #1 temperature, battery, memory layout and
+pause-caption fixes are included. Details are in the
+[native](ux-native-execution.md), [Timeline](ux-timeline-execution.md) and
+[history](ux-history-execution.md) execution records.
+
+Normal main-push hooks passed: 1,355 frontend tests, 1,191 Rust test executions
+(55 ignored), generated bindings and 13 production browser-performance cases.
+The local functional browser run passed all 476 cases without retries.
+[Exact landed-source CI](https://github.com/tryopendata/kelvo/actions/runs/40282891981)
+passed all five Linux-only jobs: 1,355 frontend tests, 476 browser cases (one
+WebKit host-picker case passed on retry), 926 portable Rust executions (33
+ignored), 11 packaged-agent pipe cases and both history-fill/read cases.
+Live-collector tests ran serially with unchanged test selection and limits.
+
+The real-collector full-hour storage gate measured 2,819 rows, 1,988,351 payload
+bytes and 9,647,904 WAL bytes. The retained 30-day usage fixture occupies
+388,562,944 bytes; adding the existing 150 MB allowance gives 538,562,944 bytes.
+The release engine pair measured 0.254% CPU before and 0.318% after, below its
+unchanged 0.494% ceiling. The valid whole-app pair measured 0.7383% before and
+0.8046% after, an 8.98% increase, below the unchanged 1.111% regression ceiling.
+The candidate's measured footprint was 132.5 MB. Both builds remain above the
+0.5% whole-app product target; this work does not claim that target is achieved.
+Each whole-app run measured 330 seconds after 30 seconds of warm-up, with actual
+tray frames and persisted history. The first candidate run included user-confirmed
+UI interaction and is retained separately, excluded from background comparison.
+
+The four task worktrees were archived after preserving source snapshots, visuals,
+measurements and the retained fixture under `target/qa/product-ux/` in the primary
+checkout. Native multi-display, larger-text and Accessibility-dependent gestures
+remain manual acceptance limits described in the native record. These results
+verify the stated landed source; this later documentation-only record does not
+claim a separate completed CI run for itself.
 
 ## Automatic updates (2026-10-25, landed; rollout acceptance pending)
 

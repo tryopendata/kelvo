@@ -1,7 +1,7 @@
 # Durable usage execution evidence
 
-Status: production implementation integrated; storage and correctness gates pass.
-Final CPU acceptance and landing are tracked in [PROGRESS.md](PROGRESS.md).
+Status: landed; storage, correctness and CPU regression gates pass.
+Final measurements and exact-source CI are recorded in [PROGRESS.md](PROGRESS.md).
 The dated checkpoints below preserve earlier failures and their corrections.
 
 The schema contracts live in `crates/kelvo-schema/src/durable_usage.rs`. They separate
