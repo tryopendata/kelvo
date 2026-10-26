@@ -197,11 +197,11 @@ A behavior test proves two identical observations remain two after replay and a
 revised open bucket becomes three both in recent and durable queries.
 
 
-## Retained production bytes and release queries
+## Superseded pre-batch retained bytes and release queries
 
 The production-schema fill has 4,320,950 process instances and 19,488 retained
 buckets across 10 s / 1 min / 15 min tiers. The unchanged production codec encodes
-all app/process sufficient stats and per-resource coverage. The database after
+all app/process sufficient stats and per-resource coverage. The superseded pre-batch database after
 checkpoint is **455,245,824 bytes**, all tables and indexes included. Major allocated
 costs: process identities 346,324,992; process buckets 68,567,040; app buckets
 36,503,552; source coverage 1,622,016; uncertainty 344,064. With the existing
@@ -251,7 +251,7 @@ payload and 17.425 MB/h WAL exceed the approved 4 MB/h and 12 MB/h. The syntheti
 production fixture above was too compressible; its result does not establish
 whole-engine acceptance. The 10,818 rows/h extrapolation repeats startup app/process
 identities 6 times and needs a first-hour/recurring split, but byte failures are real.
-The storage gate remains closed. Next diagnostic is the actual recorded fact-value
+At this stage the storage gate remained closed. The next diagnostic was the actual recorded fact-value
 distribution and lossless whole-commit compression preserving each 10-second fact.
 No budget, cadence or detail reduction is authorized by this failure.
 
@@ -281,3 +281,62 @@ made the exact-frame regression fail with 155% versus 30% CPU; it was restored.
 The complete store suite (write-stats enabled), clippy and architecture checks pass.
 Retained size and release query/Settings growth timing must be refreshed for the
 new physical layout before final acceptance.
+
+
+## Latest retained-size and query evidence
+
+The final app-membership-aware schema uses its composite unique index for app
+process reads; the older standalone app index became redundant and was removed.
+The owned retained fixture was rebuilt offline from that final create-schema DDL,
+preserving every metadata ID. **Latest actual SQLite size: 388,562,944 bytes** for
+4,320,950 process/app associations and all retained fact, identity, uncertainty,
+coverage and index storage. Adding the unchanged 150,000,000-byte existing history
+allowance gives **538,562,944 bytes**, below the approved 750,000,000-byte default.
+The earlier 455,245,824 pre-batch and 431,570,944 batch-plus-redundant-index figures
+are superseded. Existing valid saved caps, including 150 MB, remain unchanged.
+This is synthetic retained cost using production schema/codec, not a captured
+month of process behavior. Older-tier seed facts and ownership are preserved;
+recording/restart/rollup lifecycle correctness is independently tested via Writer.
+
+After whole-commit batching, a root-coordinated quiet release query window measured
+30-day top-ten app sorts across all five resources at 1,376–1,393 ms connection-cold
+and 1,362–1,391 ms warm. Selected-app first/next 100 process rows took 1,263/1,257 ms,
+with visible continuation. Settings growth took 1,759/1,744 ms. The 14-query harness
+used 19.96 s real, 18.99 s user + 0.80 s system CPU, 64.1 MB maximum RSS, zero block
+inputs. These are SQLite-connection-cold, OS-cache-warm reads; no global caches
+were purged. Timings precede the redundant metadata-index removal; no colder-disk
+or post-index timing claim is made. All measured queries are below 15 s, including
+Settings. Query memory/CPU is visible-demand cost, not an idle-memory/CPU claim.
+
+Measured growth publishes distinct finest/minute/quarter costs using actual batch
+payloads (about 6.73/6.27/1.15 MB per day at that measurement), with process identity
+cost kept linear rather than reduced 1/15. The protected 24-hour policy floor in
+`daysUnderLimit` estimates capacity, not guaranteed recorded coverage or a promise
+that an arbitrarily tiny cap can be met. A host that only recorded one hour still
+has one hour; gaps and actual retained dates come from history query coverage.
+
+The integrated collector→recorder→Writer gate subsequently passed at the root:
+9,774 rows/h, 2,011,782 payload bytes/h and 11,124,624 WAL bytes/h in the 10-minute
+run; startup identity extrapolation is conservative. Root is rerunning a full
+synthetic-clock hour with real collectors and measuring the final native CPU pair
+across normal five-minute commits. Those final integration results are owned by
+root, not implied by the storage replay or retained-fill evidence above.
+
+## Final correctness additions
+
+Same (pid,start) can move from a fallback to a resolved app. Each observed app
+membership now has a separate metadata ID and preserves its earlier frame facts;
+selected-app expansion still identifies a process by PID and birth time. The
+unshipped v8 create-schema is corrected directly; no permanent intermediate-v8
+migration is retained. Only owned benchmark metadata was rebuilt offline.
+
+Clock rollback reclaims metadata only after generic future-fact deletion. It
+checks discarded-future candidates against surviving frames, keeps referenced
+identities, clamps surviving pruning bounds and removes proven orphans. Future
+discoveries are removed even when their possible network interval predates the
+rollback edge. Public regressions prove retained frames and identities survive.
+Disabling the app-aware metadata lookup changed expected 5% CPU to 10%; disabling
+orphan cleanup retained two identities instead of one. Both mutations failed the
+intended behavior assertions and were restored. Final store/write-stats suite
+passes with 17 usage scenarios and 3 public codec cases; clippy and normal commit
+hooks pass. Worktree stays attached for orchestrator-owned integration/cleanup.

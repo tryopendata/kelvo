@@ -153,8 +153,9 @@ export function projectedHistoryBytes(
 /**
  * Whole days of history that fit under `limitBytes`. The trim drops the
  * oldest data first, so the quarters go before the minutes (D-076). Never
- * under 1: the trim keeps the last 24 hours even when they do not fit
- * (D-057).
+ * under 1: policy protects the last 24 hours even when the cap cannot be met
+ * (D-057). This estimates capacity, not already recorded time; actual retained
+ * dates and incomplete coverage come from history queries.
  */
 export function daysUnderLimit(
   limitBytes: number,
@@ -178,7 +179,7 @@ export function daysUnderLimit(
 export interface RetentionProjection {
   /** Expected size on disk: the projection, or the limit when it is lower. */
   bytes: number;
-  /** Days actually kept when the limit cuts the retention short, else null. */
+  /** Estimated whole-day capacity under the cap, not actual recorded dates. */
   limitedDays: number | null;
 }
 
