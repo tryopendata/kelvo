@@ -54,7 +54,7 @@ impl Engine {
             .close_before(tick.wall_ms.saturating_sub(grace));
         // Retain before enqueueing and hold the source lock through the queue write.
         // Clear-history takes this lock before its delete, so old writes precede it.
-        usage.update_owned(closed.clone(), tick.wall_ms);
+        usage.update_owned(closed.iter().cloned(), tick.wall_ms);
         self.write_usage(closed, tick.wall_ms);
     }
     pub(super) fn flush_usage(&mut self, now: i64) {

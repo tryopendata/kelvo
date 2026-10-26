@@ -171,7 +171,8 @@ fn exact_network_bytes_are_conserved_and_late_bytes_stay_out_of_exact_totals() {
         7
     );
     let mut ring = UsageRecent::default();
-    ring.update_owned(snapshots.clone(), 30_000);
+    ring.update_owned(snapshots.iter().cloned(), 30_000);
+    assert_eq!(ring.snapshot(0, 30_000), snapshots);
     let selected = ring.snapshot(0, 10_000);
     assert!(
         selected.iter().any(|b| b.from_ms == 20_000),

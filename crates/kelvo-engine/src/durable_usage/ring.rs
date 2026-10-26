@@ -9,7 +9,7 @@ pub(crate) struct UsageRecent {
     pub recorder: super::UsageRecorder,
 }
 impl UsageRecent {
-    pub fn update_owned(&mut self, buckets: Vec<UsageBucket>, now: i64) {
+    pub fn update_owned(&mut self, buckets: impl IntoIterator<Item = UsageBucket>, now: i64) {
         for bucket in buckets {
             self.buckets.insert(bucket.from_ms, bucket);
         }
