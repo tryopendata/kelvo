@@ -110,6 +110,7 @@ pub struct NetPerProcess {
     session: Option<Session>,
     /// Continuous time of the last settle.
     last_ns: Option<u64>,
+    session_from_ns: Option<u64>,
     /// Bytes per pid and identity of one settle, reused.
     bytes: SettleMap,
     /// Paces description queries while some flow's owner is unknown.
@@ -130,6 +131,7 @@ impl NetPerProcess {
         Self {
             session: None,
             last_ns: None,
+            session_from_ns: None,
             bytes: HashMap::new(),
             describe: Every::new(DESCRIBE_EVERY_MS),
             breaker: Breaker::default(),
@@ -186,7 +188,10 @@ impl Collector for NetPerProcess {
                 self.describe.reset();
                 self.bytes.reserve(PID_ROOM);
                 match Session::start(api) {
-                    Ok(s) => self.session.insert(s),
+                    Ok(s) => {
+                        self.session_from_ns = Some(now);
+                        self.session.insert(s)
+                    }
                     Err(e) => {
                         self.breaker.failed(now);
                         return Err(e);
@@ -213,6 +218,25 @@ impl Collector for NetPerProcess {
             return Err(e);
         }
         self.breaker.succeeded();
+        use kelvo_schema::durable_usage::UsageIncompleteCause;
+        let ledger = session.ledger.lock_ok();
+        let span_ms = self
+            .last_ns
+            .map_or(0, |prev| now.saturating_sub(prev) / 1_000_000);
+        let causes = [
+            Some(UsageIncompleteCause::UnreadableProcess),
+            (ledger.unresolved() > 0).then_some(UsageIncompleteCause::UnresolvedIdentity),
+            ledger
+                .identity_limited()
+                .then_some(UsageIncompleteCause::IdentityLimit),
+            (span_ms == 0).then_some(UsageIncompleteCause::NoBaseline),
+        ];
+        drop(ledger);
+        out.set_usage_observation(4, crate::UsageObservation { span_ms, causes });
+        if let Some(from_ns) = self.session_from_ns {
+            out.set_net_session_from_ns(from_ns);
+        }
+
         let measured = session.ledger.lock_ok().settle(&mut self.bytes);
         let prev = self.last_ns.replace(tick.continuous_ns);
         let (true, Some(prev)) = (measured, prev) else {

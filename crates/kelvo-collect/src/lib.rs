@@ -249,6 +249,8 @@ pub type PrimaryIface = Option<Arc<str>>;
 /// size.
 #[derive(Debug, Default)]
 pub struct SampleBuf {
+    usage: [Option<UsageObservation>; 5],
+    net_session_from_ns: Option<u64>,
     values: Vec<Sample>,
     processes: Vec<ProcessSample>,
     net: Vec<ProcessNet>,
@@ -426,6 +428,8 @@ impl SampleBuf {
 
     /// Clears values and process rows, keeping capacity.
     pub fn clear(&mut self) {
+        self.usage = Default::default();
+        self.net_session_from_ns = None;
         self.values.clear();
         self.processes.clear();
         self.net.clear();
@@ -722,3 +726,6 @@ pub mod disk_space;
 #[cfg(unix)]
 pub mod docker;
 pub mod docker_storage;
+
+mod usage_observation;
+pub use usage_observation::UsageObservation;

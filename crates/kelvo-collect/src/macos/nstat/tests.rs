@@ -393,6 +393,10 @@ fn new_names_are_capped_per_hour() {
         None,
         "over the cap: other apps"
     );
+    assert!(
+        l.identity_limited(),
+        "name-limit loss remains explicit source evidence"
+    );
     // A known name is not new; an hour later new names are taken again.
     l.added(10_000);
     let need = l.counts(10_000, cu(10_000, 10_000, 1, 0)).unwrap();

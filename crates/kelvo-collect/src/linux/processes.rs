@@ -152,6 +152,7 @@ pub struct Visibility {
 }
 
 pub struct Processes {
+    last_usage_ns: Option<u64>,
     root: SysRoot,
     dir: Option<PidDir>,
     proc_base: String,
@@ -201,6 +202,7 @@ impl Processes {
             app_buf: String::new(),
             names: ContainerNames::default(),
             visibility: Visibility::default(),
+            last_usage_ns: None,
             disk_io: false,
         }
     }
@@ -408,6 +410,7 @@ impl Collector for Processes {
     }
 
     fn probe(&mut self) -> Probe {
+        self.last_usage_ns = None;
         self.known.clear();
         let btime = self
             .root
@@ -436,6 +439,12 @@ impl Collector for Processes {
         caps.process_disk_io = self.disk_io;
     }
 
+    fn release(&mut self) {
+        self.last_usage_ns = None;
+        self.known.clear();
+        self.seen.clear();
+    }
+
     fn sample(&mut self, tick: &Tick, out: &mut SampleBuf) -> Result<(), CollectError> {
         let listed = self.dir.as_ref().is_some_and(|d| d.list(&mut self.pids));
         if !listed {
@@ -445,6 +454,10 @@ impl Collector for Processes {
             });
         }
         let now = tick.continuous_ns;
+        let span_ms = self
+            .last_usage_ns
+            .replace(now)
+            .map_or(0, |prev| now.saturating_sub(prev) / 1_000_000);
         self.visibility = Visibility {
             listed: u32::try_from(self.pids.len()).unwrap_or(u32::MAX),
             ..Visibility::default()
@@ -460,6 +473,12 @@ impl Collector for Processes {
         }
         // Processes not seen this time have exited; dropping them forgets them.
         std::mem::swap(&mut self.known, &mut self.seen);
+        out.observe_processes(
+            span_ms,
+            self.visibility.listed,
+            self.visibility.readable,
+            false,
+        );
         Ok(())
     }
 }
@@ -549,6 +568,15 @@ mod tests {
             "first sample of a process: no row"
         );
 
+        assert!(
+            buf.usage_observations()[0]
+                .as_ref()
+                .unwrap()
+                .causes
+                .contains(&Some(
+                    kelvo_schema::durable_usage::UsageIncompleteCause::NoBaseline
+                ))
+        );
         // 100 ticks of CPU (1 s at USER_HZ 100) and 4 MB read over 2 s.
         pid1(&dir, 100, 4_000_000);
         buf.clear();
@@ -566,6 +594,18 @@ mod tests {
         assert_eq!(row.disk_write_bps, 0.0);
         assert_eq!(row.start_time_us, 1_788_630_414_000_000);
         assert_eq!(row.interval_s, 2.0);
+        let observation = buf.usage_observations()[0].as_ref().unwrap();
+        assert_eq!(observation.span_ms, 2000);
+        assert!(!observation.causes.contains(&Some(
+            kelvo_schema::durable_usage::UsageIncompleteCause::NoBaseline
+        )));
+        assert!(observation.causes.contains(&Some(
+            kelvo_schema::durable_usage::UsageIncompleteCause::UnresolvedIdentity
+        )));
+        assert!(
+            buf.usage_observations()[3].is_none(),
+            "Linux process energy is unsupported"
+        );
         assert_eq!(row.app, None);
         assert_eq!(
             p.visibility(),

@@ -174,6 +174,7 @@ pub(super) struct Names {
     /// Start of the current hour of [`NEW_NAMES_PER_HOUR`].
     window: Option<Instant>,
     new_in_window: u32,
+    limited: bool,
 }
 
 /// Distinct new names a ledger takes per hour; past it, new processes go unnamed
@@ -204,6 +205,7 @@ impl Names {
             self.new_in_window = 0;
         }
         if self.new_in_window >= NEW_NAMES_PER_HOUR {
+            self.limited = true;
             return None;
         }
         self.new_in_window += 1;
@@ -345,6 +347,10 @@ impl Ledger {
     /// Flows with bytes but no known owner: a description query would name them.
     pub(crate) fn unresolved(&self) -> usize {
         self.flows.values().filter(|f| f.unresolved()).count()
+    }
+
+    pub(super) fn identity_limited(&self) -> bool {
+        self.names.limited
     }
 
     /// Fills `out` with the bytes each pid and identity moved since the last settle,

@@ -93,6 +93,11 @@ impl Engine {
         // The span asleep or paused was not measured; the open buckets keep what was.
         let now = self.ticker.now();
         self.net.restart_at(now.wall_ms, now.continuous_ns);
+        self.sink
+            .live
+            .usage_recording()
+            .recorder
+            .restart(now.wall_ms);
         self.start_ticker();
     }
 
@@ -169,7 +174,13 @@ impl Engine {
             ..self.settings.clone()
         } == next;
         let performance_changed = next.performance_mode != self.settings.performance_mode;
+        let resources_changed = next.disabled != self.settings.disabled;
         self.settings = next;
+        if resources_changed {
+            let now = self.ticker.now().wall_ms;
+            self.flush_usage(now);
+            self.sink.live.usage_recording().recorder.restart(now);
+        }
         if cadence_only {
             // The menu bar and Performance mode change cadences from the next tick and
             // the alert rules are swapped above. Performance mode can also change the
@@ -223,6 +234,7 @@ impl Engine {
         let at = self.ticker.now();
         self.net.restart_at(at.wall_ms, at.continuous_ns);
         self.sink.live.net_clear();
+        self.sink.live.clear_usage_buckets();
         self.sink.live.net_update(&[], &[], self.net.final_to());
         self.sink.live.rollups().clear();
         self.flush_store(now);

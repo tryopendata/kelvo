@@ -136,3 +136,5 @@ pub mod docker;
 pub use history_store::{HistoryStore, HistoryStoreError, HistoryUnavailableReason};
 
 pub use history_store::DB_FILE as HISTORY_DB_FILE;
+
+mod durable_usage;

@@ -78,6 +78,7 @@ impl Engine {
         self.sink.live.rollups().flush(self.host, &mut self.rows);
         self.write_rows(now_ms);
         self.flush_net(now_ms);
+        self.flush_usage(now_ms);
     }
 
     /// Writes one per-app network bucket, unless nothing in it was measured or

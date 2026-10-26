@@ -79,6 +79,7 @@ pub struct LiveHub {
     rollups: Arc<Mutex<Rollups>>,
     /// Its own lock: a process batch adds to it, and a range query sums it.
     usage: Arc<Mutex<UsageRing>>,
+    durable_usage: Arc<Mutex<crate::durable_usage::UsageRecent>>,
 }
 
 impl LiveHub {
@@ -90,6 +91,7 @@ impl LiveHub {
             net: Arc::default(),
             rollups: Arc::default(),
             usage: Arc::default(),
+            durable_usage: Arc::default(),
         }
     }
 
@@ -266,6 +268,43 @@ impl LiveHub {
         self.net().clear();
     }
 
+    /// Recent durable facts are copied after the store read, including late ownership
+    /// records whose possible transfer interval overlaps the requested bounds.
+    pub fn recent_usage_buckets(
+        &self,
+        from_ms: i64,
+        to_ms: i64,
+    ) -> Vec<kelvo_store::usage::UsageBucket> {
+        self.durable_usage.lock_ok().snapshot(from_ms, to_ms)
+    }
+    pub fn recent_usage_apps(
+        &self,
+        from_ms: i64,
+        to_ms: i64,
+    ) -> Vec<kelvo_store::usage::UsageBucket> {
+        self.durable_usage.lock_ok().apps(from_ms, to_ms)
+    }
+    pub fn recent_usage_processes(
+        &self,
+        from_ms: i64,
+        to_ms: i64,
+        app: &str,
+    ) -> Vec<kelvo_store::usage::UsageBucket> {
+        self.durable_usage.lock_ok().processes(from_ms, to_ms, app)
+    }
+    pub(crate) fn usage_recording(&self) -> MutexGuard<'_, crate::durable_usage::UsageRecent> {
+        self.durable_usage.lock_ok()
+    }
+    pub(crate) fn usage_generation(&self) -> u64 {
+        self.durable_usage.lock_ok().generation
+    }
+    pub(crate) fn clear_usage_buckets(&self) {
+        self.durable_usage.lock_ok().clear();
+    }
+    pub(crate) fn drop_usage_after(&self, at: i64) {
+        self.durable_usage.lock_ok().drop_after(at);
+    }
+
     fn usage(&self) -> MutexGuard<'_, UsageRing> {
         // As for `lock`: nothing panics while holding it.
         self.usage.lock_ok()
@@ -318,6 +357,7 @@ impl LiveHub {
         self.rollups().forget();
         // Per-app usage is history too, even though it is never stored.
         *self.usage() = UsageRing::default();
+        self.clear_usage_buckets();
     }
 
     /// How long a history point of `key` in buckets of `bucket_ms`, in a range starting

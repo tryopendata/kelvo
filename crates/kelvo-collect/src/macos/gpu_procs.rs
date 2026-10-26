@@ -404,9 +404,38 @@ impl Collector for GpuPerProcess {
         };
         let prev = self.last_ns.replace(tick.continuous_ns);
         let (true, Some(prev)) = (measured, prev) else {
+            out.set_usage_observation(
+                1,
+                crate::UsageObservation {
+                    span_ms: 0,
+                    causes: [
+                        Some(kelvo_schema::durable_usage::UsageIncompleteCause::NoBaseline),
+                        None,
+                        None,
+                        None,
+                    ],
+                },
+            );
             return Ok(());
         };
         let wall_ns = tick.continuous_ns.saturating_sub(prev);
+        let causes = if self.ledger.kept_last || !self.ledger.primed {
+            [
+                Some(kelvo_schema::durable_usage::UsageIncompleteCause::ReadFailed),
+                None,
+                None,
+                None,
+            ]
+        } else {
+            [None; 4]
+        };
+        out.set_usage_observation(
+            1,
+            crate::UsageObservation {
+                span_ms: wall_ns / 1_000_000,
+                causes,
+            },
+        );
         out.set_process_gpu_measured(wall_ns / 1_000_000);
         shares(&self.ledger.per_pid, wall_ns, |pid, pct| {
             out.push_process_gpu(ProcessGpu { pid, pct })

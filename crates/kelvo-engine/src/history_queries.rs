@@ -45,3 +45,23 @@ impl HistoryStore {
         Ok((crate::attribute(read), complete_to_ms))
     }
 }
+
+impl HistoryStore {
+    /// The remote/source owner supplies its recorder snapshot after the durable read.
+    /// An unavailable source store remains unavailable; live rings are separate APIs.
+    pub fn historical_usage(
+        &self,
+        request: &kelvo_schema::durable_usage::HistoricalUsageRequest,
+        recent: impl FnOnce() -> Vec<kelvo_store::usage::UsageBucket>,
+    ) -> Result<kelvo_schema::durable_usage::HistoricalUsageReply, HistoryStoreError> {
+        self.read(|reader| reader.historical_usage_after(request, recent))
+    }
+
+    pub fn usage_processes(
+        &self,
+        request: &kelvo_schema::durable_usage::UsageProcessRequest,
+        recent: impl FnOnce() -> Vec<kelvo_store::usage::UsageBucket>,
+    ) -> Result<kelvo_schema::durable_usage::UsageProcessReply, HistoryStoreError> {
+        self.read(|reader| reader.usage_processes_after(request, recent))
+    }
+}

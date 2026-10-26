@@ -5,15 +5,14 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
 use kelvo_collect::{Cadence, Interest, Interests, ProcessSample, Tick};
-use kelvo_schema::{Gap, GapReason, Tier};
-use kelvo_store::ProcRow;
+use kelvo_schema::{Gap, GapReason};
 
 use super::cadence::{
     PERFORMANCE_IDLE_PROCESS_MS, PERFORMANCE_VISIBLE_MS, performance_period, performance_slowdown,
 };
 use super::control::NO_PROCESS_INTEREST;
 use super::{Engine, hold_ms, stale_ms};
-use crate::bus::{BusMsg, FrameLayout, LiveFrame, ProcessBatch};
+use crate::bus::{BusMsg, FrameLayout, LiveFrame};
 use crate::usage::USAGE_BUCKET_MS;
 
 /// Ticks of continuous time without a tick, and without a sleep event, after which the
@@ -42,15 +41,13 @@ pub(super) const MAX_PERSIST_HOLD_MS: i64 = 3_600_000;
 
 const MINUTE_MS: i64 = 60_000;
 
-/// Top processes kept per snapshot (architecture.md, Store).
-const PROC_SNAPSHOT_TOP: usize = 30;
-
 impl Engine {
     pub(super) fn on_tick(&mut self, t: Tick) {
         let ts = t.wall_ms;
         self.ticks += 1;
         self.update_power();
 
+        self.sync_usage_generation(ts);
         self.check_clock(t);
         self.last_tick = Some(t);
 
@@ -91,6 +88,8 @@ impl Engine {
                         Err(e) => tracing::warn!("stall gap rejected: {e}"),
                     }
                 }
+                self.reprobe.all = true;
+                self.sink.live.usage_recording().recorder.restart(ts);
                 tracing::warn!(held_ms, "ticks stalled without a sleep event");
             }
         }
@@ -222,7 +221,33 @@ impl Engine {
                     ..
                 }
             );
-            if let Err(e) = slot.collector.sample(&t, &mut self.buf)
+            let sampled = slot.collector.sample(&t, &mut self.buf);
+            if sampled.is_err() {
+                let resources: &[usize] = match slot.collector.id().0 {
+                    "processes" => &[0, 2, 3],
+                    "gpu_per_process" => &[1],
+                    "net_per_process" => &[4],
+                    _ => &[],
+                };
+                if !resources.is_empty() {
+                    slot.collector.release();
+                }
+                for &resource in resources {
+                    self.buf.set_usage_observation(
+                        resource,
+                        kelvo_collect::UsageObservation {
+                            span_ms: 0,
+                            causes: [
+                                Some(kelvo_schema::durable_usage::UsageIncompleteCause::ReadFailed),
+                                None,
+                                None,
+                                None,
+                            ],
+                        },
+                    );
+                }
+            }
+            if let Err(e) = sampled
                 && let Some(suppressed) = slot.errors.check(ts)
             {
                 tracing::warn!(
@@ -366,16 +391,19 @@ impl Engine {
             // upsert into the old clock's rows.
             if ts < from || !self.discard_ahead(ts) {
                 self.account_net(&t, false);
+                self.account_usage(t, &procs, false);
                 if !procs.is_empty() {
                     self.publish_processes(ts, procs);
                 }
                 return;
             }
+            self.sink.live.usage_recording().recorder.restart(from);
             self.persist_from = None;
             self.publish_status();
             tracing::info!("wall clock passed the held span; persisting again");
         }
         self.account_net(&t, true);
+        self.account_usage(t, &procs, true);
         let persisted = &self.layout.persisted;
         let (meta, spans, periods) = (&self.layout.meta, &self.span_ms, &self.series_period);
         // Each value with its rollup weight (D-092): for a span average, the span it
@@ -463,9 +491,11 @@ impl Engine {
         // `flush_buckets` wrote the open per-app buckets; a sample reaching back before
         // the step would put time that was not lived on the new timeline.
         self.close_net_as_is(self.ticker.now());
+        self.sink.live.usage_recording().recorder.restart(ts);
         if step < 0 {
             self.sink.live.net_drop_after(ts);
             self.sink.live.usage_drop_after(ts);
+            self.sink.live.drop_usage_after(ts);
         }
         for at in self.sampled_at.iter_mut().chain(&mut self.slot_sampled_at) {
             if *at != i64::MIN {
@@ -531,42 +561,5 @@ impl Engine {
         });
         self.layout.frame = Arc::clone(&frame);
         self.sink.live.publish(BusMsg::Layout(frame));
-    }
-
-    fn on_processes(&mut self, ts: i64, procs: Vec<ProcessSample>) {
-        let bucket = Tier::S10.bucket_start(ts);
-        if bucket.is_some() && bucket != self.last_proc_bucket {
-            self.last_proc_bucket = bucket;
-            let mut top: Vec<&ProcessSample> = procs.iter().collect();
-            top.sort_by(|a, b| b.cpu_pct.total_cmp(&a.cpu_pct));
-            let rows: Vec<ProcRow> = top
-                .into_iter()
-                .take(PROC_SNAPSHOT_TOP)
-                .map(|p| ProcRow {
-                    name: p.name.to_string(),
-                    pid: p.pid,
-                    cpu_pct: p.cpu_pct,
-                    mem_bytes: p.mem_bytes,
-                    threads: p.threads,
-                    idle_wakeups_per_s: p.idle_wakeups_per_s,
-                    energy: p.energy,
-                })
-                .collect();
-            if let Some(store) = &self.sink.store {
-                let r = store.write_proc_snapshot(self.host, ts, rows);
-                self.store_result("process snapshot", r, ts);
-            }
-        }
-        self.publish_processes(ts, procs);
-    }
-
-    fn publish_processes(&self, ts: i64, procs: Vec<ProcessSample>) {
-        self.sink
-            .live
-            .publish(BusMsg::Processes(Arc::new(ProcessBatch {
-                ts_ms: ts,
-                rows: procs,
-                gpu_span_ms: self.proc_gpu_span_ms,
-            })));
     }
 }

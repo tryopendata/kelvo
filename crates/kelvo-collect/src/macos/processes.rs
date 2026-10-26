@@ -150,6 +150,7 @@ pub struct Visibility {
 }
 
 pub struct Processes {
+    last_usage_ns: Option<u64>,
     ticks_to_ns: f64,
     pids: Vec<i32>,
     known: HashMap<(i32, i64), Known>,
@@ -175,6 +176,7 @@ impl Processes {
             unreadable: Unreadable::default(),
             users: HashMap::new(),
             visibility: Visibility::default(),
+            last_usage_ns: None,
         }
     }
 
@@ -239,6 +241,7 @@ impl Collector for Processes {
     }
 
     fn probe(&mut self) -> Probe {
+        self.last_usage_ns = None;
         self.known.clear();
         self.unreadable = Unreadable::default();
         if libproc::list_pids(&mut self.pids) {
@@ -259,6 +262,12 @@ impl Collector for Processes {
         caps.process_disk_io = true;
     }
 
+    fn release(&mut self) {
+        self.last_usage_ns = None;
+        self.known.clear();
+        self.seen.clear();
+    }
+
     fn sample(&mut self, tick: &Tick, out: &mut SampleBuf) -> Result<(), CollectError> {
         if !libproc::list_pids(&mut self.pids) {
             return Err(CollectError::Os {
@@ -267,6 +276,10 @@ impl Collector for Processes {
             });
         }
         let now = tick.continuous_ns;
+        let span_ms = self
+            .last_usage_ns
+            .replace(now)
+            .map_or(0, |prev| now.saturating_sub(prev) / 1_000_000);
         let mut vis = Visibility {
             listed: self.pids.len() as u32,
             readable: 0,
@@ -356,6 +369,7 @@ impl Collector for Processes {
         std::mem::swap(&mut self.known, &mut self.seen);
         self.unreadable.end();
         self.visibility = vis;
+        out.observe_processes(span_ms, vis.listed, vis.readable, true);
         Ok(())
     }
 }

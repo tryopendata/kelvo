@@ -26,7 +26,9 @@ mod layout;
 mod lifecycle;
 mod parts;
 mod persist;
+mod processes;
 mod tick;
+mod usage;
 
 pub use cadence::{
     BACKGROUND_TICK_MS, PERFORMANCE_IDLE_PROCESS_MS, PERFORMANCE_IDLE_SENSOR_MS,
@@ -263,6 +265,7 @@ pub struct Engine {
     net_closed: Vec<NetSlot>,
     /// Network history as the last tick applied it.
     net_history: bool,
+    usage_generation: u64,
 }
 
 impl Engine {
@@ -346,6 +349,7 @@ impl Engine {
             net: NetAppAcc::default(),
             net_closed: Vec::new(),
             net_history: true,
+            usage_generation: 0,
         }
     }
 
@@ -388,6 +392,11 @@ impl Engine {
         }
         self.started = true;
         let now = self.ticker.now();
+        self.sink
+            .live
+            .usage_recording()
+            .recorder
+            .restart(usage::next_bucket(now.wall_ms));
         if let Some(store) = &self.sink.store {
             match store.begin_session(self.host, now.wall_ms) {
                 Ok(s) => self.seed_net_edge(s.net_written_to_ms, now.wall_ms),
