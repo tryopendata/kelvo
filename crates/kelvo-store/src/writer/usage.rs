@@ -13,16 +13,17 @@ impl State {
     pub(super) fn write_usage(&mut self, host: HostId, bucket: &UsageBucket) -> Result<()> {
         let host = self.host_ref(host)?;
         self.conn.execute("INSERT INTO usage_recording_start(host_id,from_ms) VALUES(?1,?2) ON CONFLICT(host_id) DO UPDATE SET from_ms=min(from_ms,excluded.from_ms)",params![host,bucket.from_ms])?;
+        let mut app_ids = BTreeMap::new();
         let mut apps = BTreeMap::new();
         for app in &bucket.apps {
-            let id = self.usage_app_id(host, &app.name, bucket.to_ms)?;
+            let id = self.usage_app_id(host, &app.name, bucket.to_ms, &mut app_ids)?;
             apps.entry(id as u64)
                 .or_insert_with(UsageFacts::default)
                 .merge(&app.facts);
         }
         let mut processes = BTreeMap::new();
         for p in &bucket.processes {
-            let app = self.usage_app_id(host, &p.app_name, bucket.to_ms)?;
+            let app = self.usage_app_id(host, &p.app_name, bucket.to_ms, &mut app_ids)?;
             self.conn.prepare_cached("INSERT INTO usage_processes(host_id,app_id,pid,start_time_us,name,last_ms) VALUES(?1,?2,?3,?4,?5,?6) ON CONFLICT(host_id,app_id,pid,start_time_us) DO UPDATE SET last_ms=max(last_ms,excluded.last_ms)")?.execute(params![host,app,p.pid,p.start_time_us,&*p.name,bucket.to_ms])?;
             let id:i64 = self.conn.prepare_cached("SELECT id FROM usage_processes WHERE host_id=?1 AND pid=?2 AND start_time_us=?3 AND app_id=?4")?.query_row(params![host,p.pid,p.start_time_us,app],|r| r.get(0))?;
             processes
@@ -47,7 +48,7 @@ impl State {
             let app = u
                 .app_name
                 .as_ref()
-                .map(|n| self.usage_app_id(host, n, bucket.to_ms))
+                .map(|n| self.usage_app_id(host, n, bucket.to_ms, &mut app_ids))
                 .transpose()?;
             let seq = self.alloc_seq();
             self.conn.prepare_cached("INSERT INTO usage_uncertain(host_id,app_id,discovery_bucket_ts,possible_from_ms,possible_to_ms,rx_bytes,tx_bytes,records,seq) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9)")?.execute(params![host,app,bucket.from_ms,u.possible_from_ms,u.possible_to_ms,signed(u.rx_bytes)?,signed(u.tx_bytes)?,signed(u.records)?,seq])?;
@@ -103,15 +104,26 @@ impl State {
         result
     }
 
-    fn usage_app_id(&mut self, host: i64, name: &str, at: i64) -> Result<i64> {
+    fn usage_app_id(
+        &mut self,
+        host: i64,
+        name: &str,
+        at: i64,
+        ids: &mut BTreeMap<String, i64>,
+    ) -> Result<i64> {
+        if let Some(&id) = ids.get(name) {
+            return Ok(id);
+        }
         if name.is_empty() || name.len() > 1024 || name.contains('\0') {
             return Err(StoreError::Usage("invalid app identity".into()));
         }
         self.conn.prepare_cached("INSERT INTO usage_apps(host_id,name,last_ms) VALUES(?1,?2,?3) ON CONFLICT(host_id,name) DO UPDATE SET last_ms=max(last_ms,excluded.last_ms)")?.execute(params![host,name,at])?;
-        Ok(self
+        let id = self
             .conn
             .prepare_cached("SELECT id FROM usage_apps WHERE host_id=?1 AND name=?2")?
-            .query_row(params![host, name], |r| r.get(0))?)
+            .query_row(params![host, name], |r| r.get(0))?;
+        ids.insert(name.to_owned(), id);
+        Ok(id)
     }
 
     pub(super) fn usage_upsert(

@@ -844,3 +844,62 @@ fn rollback_reclaims_only_unreferenced_future_identities_and_future_discoveries(
     assert_eq!(count("usage_processes"), 1);
     assert_eq!(count("usage_apps"), 1);
 }
+
+#[test]
+fn shared_app_helpers_keep_distinct_facts_and_advance_identity_timestamps() {
+    let dir = temp_dir("usage-helper-identities");
+    let store = open(&dir, "h.sqlite");
+    let w = store.writer();
+    w.upsert_host(host(1)).unwrap();
+    for n in 0..2 {
+        let mut b = one(T0 + n * 10_000, 3.0);
+        let mut helper = b.processes[0].clone();
+        helper.pid = 43;
+        helper.name = "Editor Helper".into();
+        helper.facts = facts(2.0, 1.0, 200);
+        b.processes.push(helper);
+        let mut other = b.processes[0].clone();
+        other.app_name = "Terminal".into();
+        other.name = "Shell".into();
+        other.pid = 44;
+        other.facts = facts(1.0, 0.0, 300);
+        b.processes.push(other);
+        w.write_usage_bucket(host(1).id, b).unwrap();
+        w.flush().unwrap();
+    }
+    let mut q = children(T0, T0 + 20_000);
+    q.page_size = 10;
+    let mut r = store.reader().unwrap();
+    let reply = r.usage_processes_after(&q, Vec::new).unwrap();
+    assert_eq!(reply.processes.len(), 2);
+    let editor = &reply.processes[0];
+    let helper = &reply.processes[1];
+    assert_eq!((editor.pid, editor.name.as_str()), (42, "Editor"));
+    assert_eq!((helper.pid, helper.name.as_str()), (43, "Editor Helper"));
+    assert_eq!(editor.figures.cpu_avg_pct, Some(30.0));
+    assert_eq!(helper.figures.cpu_avg_pct, Some(20.0));
+    assert_eq!(helper.figures.gpu_avg_pct, Some(10.0));
+    assert_eq!(helper.figures.mem_peak_bytes, Some(200));
+    q.app_name = "Terminal".into();
+    let other = r.usage_processes_after(&q, Vec::new).unwrap();
+    assert_eq!(other.processes.len(), 1);
+    assert_eq!(other.processes[0].pid, 44);
+    assert_eq!(other.processes[0].figures.cpu_avg_pct, Some(10.0));
+    let conn = raw(&store);
+    let app_last: i64 = conn
+        .query_row(
+            "SELECT last_ms FROM usage_apps WHERE name='Editor'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(app_last, T0 + 20_000);
+    let helper_count: i64 = conn
+        .query_row(
+            "SELECT count(*) FROM usage_processes WHERE last_ms=?1",
+            [T0 + 20_000],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(helper_count, 3);
+}

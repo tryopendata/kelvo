@@ -4,6 +4,27 @@ This file tracks where Kelvo is against the plan. Task-level checkboxes live in 
 
 Agents update this file whenever a phase starts or finishes. Each update adds a log entry: what changed, how it was verified, and anything left open. They also tick the matching checkboxes in the version doc.
 
+## Open-tray CPU (2026-10-26, in progress)
+
+Investigating reported foreground CPU after 0.3.0 on
+`codex/tray-cpu-optimization`, using Sol 6.1 agents and CE architecture guidance.
+The [performance record](tray-performance.md) separates native measurements,
+React commit counts and storage benchmarks. Original expanded, compact and mixed
+popovers all measured about 9.4% of one core in controlled short runs. Rendering
+dominates; the writer is a small part of the observed cost.
+
+The changes remove forced chart layout reads, move scrolling SVG content into an
+HTML drawing layer and retain that layer between ticks. A bounded per-bucket
+app-ID cache also removes redundant SQLite work. Sampling and history precision
+are unchanged. The controlled native pair measured 9.5208% → 4.9372% open-tray CPU
+(48.1% lower), with similar closed-tray CPU and footprint. Scoped behavior tests,
+browser commit counts and visual comparisons pass. An independent CE code-reviewer
+approved the architecture and maintainability. All 492 functional browser cases
+passed on a frozen rerun; the first run's 13 failures remain preserved with no
+established cause. The normal local and hosted quality gates remain pending.
+Canvas work is excluded. No release is being published
+as part of this investigation.
+
 ## Release 0.3.0 (2026-10-26, published)
 
 Published [Kelvo 0.3.0](https://github.com/tryopendata/kelvo/releases/tag/v0.3.0)

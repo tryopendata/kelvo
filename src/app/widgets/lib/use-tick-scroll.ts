@@ -2,11 +2,12 @@ import { useLayoutEffect, useRef } from "react";
 
 /**
  * Streaming scroll (design-system.md "Motion"): when the window advances by
- * exactly one interval, the already-redrawn content is put back where the old
- * content was (`translateX(shift)`) and slid to rest over `--motion-tick`. The
+ * exactly one interval, the already-redrawn content slides from where the old
+ * content was (`translateX(shift)`) to rest over `--motion-tick`. The
  * path `d` is never tweened. Any other jump (first render, a gap, an interval
- * change) is drawn in place. `--motion-tick` is 0ms under reduced motion and
- * Performance mode, so the slide becomes a jump there without a JS branch.
+ * change) is drawn in place. Read the root motion tokens each tick so reduced
+ * motion and Performance mode land immediately. Explicit animation keyframes
+ * avoid forcing geometry to commit a CSS transition's starting offset.
  *
  * `shift` is a CSS length: user units for an SVG `<g>` (`"16.9px"`), or a
  * percentage of the element's own width for an HTML row (`"2.08%"`).
@@ -26,12 +27,14 @@ export function useTickScroll<T extends HTMLElement | SVGGElement>(
     if (!el || tEndMs === undefined || last === undefined) return;
     const step = tEndMs - last;
     if (Math.abs(step - intervalMs) > intervalMs / 2) return;
-    el.style.transition = "none";
-    el.style.transform = `translateX(${shift})`;
-    // Commit the offset before the transition starts.
-    el.getBoundingClientRect();
-    el.style.transition = "transform var(--motion-tick) var(--ease-tick)";
-    el.style.transform = "translateX(0)";
+    const style = getComputedStyle(el.ownerDocument.documentElement);
+    const duration = Number.parseFloat(style.getPropertyValue("--motion-tick"));
+    if (!(duration > 0) || typeof el.animate !== "function") return;
+    const animation = el.animate(
+      [{ transform: `translateX(${shift})` }, { transform: "translateX(0)" }],
+      { duration, easing: style.getPropertyValue("--ease-tick").trim() }
+    );
+    return () => animation.cancel();
   }, [tEndMs, intervalMs, shift]);
 
   return ref;

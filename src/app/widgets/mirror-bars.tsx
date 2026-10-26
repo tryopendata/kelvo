@@ -1,6 +1,7 @@
 import { clamp01 } from "@core/chart-math";
 import { cn } from "~/lib/utils";
 import { type Accent, accentVars, rampColor } from "./lib/accent";
+import styles from "./lib/scroll-layer.module.css";
 import { useTickScroll } from "./lib/use-tick-scroll";
 
 export interface MirrorBarsProps {
@@ -77,7 +78,7 @@ export function MirrorBars({
     >
       <div
         ref={upRef}
-        className="flex items-end gap-0.5"
+        className={cn("flex items-end gap-0.5", styles.layer)}
         style={{ height: upHeight }}
       >
         {slots.map((i) => (
@@ -95,7 +96,7 @@ export function MirrorBars({
       <div className="h-px bg-axis" />
       <div
         ref={downRef}
-        className="flex items-start gap-0.5"
+        className={cn("flex items-start gap-0.5", styles.layer)}
         style={{ height: downHeight }}
       >
         {slots.map((i) => (

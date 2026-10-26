@@ -167,7 +167,7 @@ Motion tells the reader what changed, and lets a surface settle into place when 
 
 | Change | Treatment | Duration |
 |---|---|---|
-| A new sample on a streaming chart | Append the point and scroll the whole path with `transform: translateX()` on a wrapping `<g>`. The path `d` is rewritten once per tick, never tweened | Scroll eases over 150 ms (`--ease-tick`), or jumps when motion is reduced |
+| A new sample on a streaming chart | Append the point and scroll the series SVG inside an HTML layer; keep the grid and overlays stationary. The path `d` is rewritten once per tick, never tweened | Scroll eases over 150 ms (`--ease-tick`), or jumps when motion is reduced |
 | A headline number changes (ring centre, stat-strip figures) | Counts to the new value when it moved 10% or more or changed unit: "10 GB" counts down through the megabytes to "100 MB". Smaller moves, other numbers and a change to or from "—" are replaced in place. No per-digit roll, never a count up from zero on mount. Tabular figures keep width stable | 450 ms, ease-out cubic; instant in Performance mode (D-087, D-088) |
 | A value changes state (paused to live, pressure turning critical) | The glyph and word remount and fade in | 150 ms |
 | A bar, ring or core tile changes value | `transform: scaleX()` on the bar fill, `stroke-dashoffset` on the ring, background alpha on tiles | 150 ms, `--ease-tick` |
@@ -183,7 +183,7 @@ Motion tells the reader what changed, and lets a surface settle into place when 
 
 The sidebar and title bar never animate in; route changes and window hides have no exit animation.
 
-Path tweening is banned because interpolating between two `d` strings of different length produces wrong intermediate shapes and costs a layout pass per frame. The 150 ms scroll is a translate on a composited layer, which is cheap.
+Path tweening is banned because interpolating between two `d` strings of different length produces wrong intermediate shapes and costs a layout pass per frame. The 150 ms scroll uses Web Animations keyframes without a forced geometry read. A static 3D transform keeps the HTML drawing layer available between ticks; reduced motion and Performance mode disable that promotion. This trades retained drawing surfaces for less repeated layer creation. The [native performance record](tray-performance.md) documents the measured CPU and memory costs.
 
 Animation runs only on visible surfaces. Rust stops a window's live channel when the window is hidden, minimized, occluded or the display sleeps, so nothing renders off screen. In Performance mode, which the user turns on in Settings or macOS Low Power Mode engages, all motion is off: Rust sets a `data-performance` attribute on each window root and every motion token drops to 0 ms (D-088). Being on battery alone changes nothing about motion. When Low Power Mode engaged the mode, the sidebar footer and the popover's interval pill say so, with a hovercard explaining why.
 

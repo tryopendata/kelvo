@@ -1,0 +1,5 @@
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-performance]) .layer {
+    transform: translateZ(0);
+  }
+}
