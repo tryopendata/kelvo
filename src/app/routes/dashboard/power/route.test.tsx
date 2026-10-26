@@ -52,20 +52,18 @@ it("Battery enablement also controls Power's battery history without removing sy
   const r = renderWithProviders(<PowerRoute />, {
     transportOptions: { now: () => NOW },
   });
-  await screen.findByText("Battery, last 24 hours");
+  await screen.findByText("Battery charge");
   await act(async () => {
     await r.transport.updateSettings({
       modules: { battery: { enabled: false } },
     });
   });
-  await waitFor(() =>
-    expect(screen.queryByText("Battery, last 24 hours")).toBeNull()
-  );
+  await waitFor(() => expect(screen.queryByText("Battery charge")).toBeNull());
   expect(screen.getAllByText(/system draw/).length).toBeGreaterThan(0);
   await act(async () => {
     await r.transport.updateSettings({
       modules: { battery: { enabled: true } },
     });
   });
-  await screen.findByText("Battery, last 24 hours");
+  await screen.findByText("Battery charge");
 });

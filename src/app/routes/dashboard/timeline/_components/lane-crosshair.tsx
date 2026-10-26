@@ -1,5 +1,6 @@
 import { formatClockSeconds } from "@core/format";
 import type { ProcessesAt } from "@core/generated/bindings";
+import { gapExplanation } from "@core/history-state";
 import type { LaneData } from "../_hooks/use-timeline-data";
 import type { LaneUnits } from "../_lib/format";
 import type { Band } from "../_lib/gaps";
@@ -79,11 +80,7 @@ export function LaneCrosshair({
         resolution={resolution}
         rows={rows}
         processes={gapHere ? null : processes}
-        note={
-          gapHere?.reason === "paused"
-            ? "Recording was paused during this interval. No samples were collected."
-            : gapHere?.label
-        }
+        note={gapHere ? (gapExplanation(gapHere) ?? undefined) : undefined}
         style={{ left: tipLeft }}
       />
     </>
