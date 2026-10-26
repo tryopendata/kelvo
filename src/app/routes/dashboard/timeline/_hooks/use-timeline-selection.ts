@@ -8,16 +8,8 @@ import {
 } from "react";
 import { selectedRange } from "../_lib/selection";
 
-export function useTimelineSelection({
-  fromMs,
-  toMs,
-  bucketMs,
-  width,
-  nowMs,
-  retainedFromMs,
-  loading,
-  onSelectRange,
-}: {
+interface SelectionOptions {
+  rangeKey: string;
   fromMs: number;
   toMs: number;
   bucketMs: number;
@@ -26,27 +18,50 @@ export function useTimelineSelection({
   retainedFromMs: number;
   loading: boolean;
   onSelectRange?: ((range: TimeRange) => void) | undefined;
-}) {
+}
+type Geometry = {
+  from: number;
+  to: number;
+  bucket: number;
+  left: number;
+  width: number;
+};
+
+export function useTimelineSelection({
+  fromMs,
+  toMs,
+  rangeKey,
+  bucketMs,
+  width,
+  nowMs,
+  retainedFromMs,
+  loading,
+  onSelectRange,
+}: SelectionOptions) {
   const sliderRef = useRef<HTMLDivElement>(null);
   const [cursor, setCursor] = useState<number | null>(null);
-  const [selection, setSelection] = useState<{
-    anchor: number;
-    current: number;
-  } | null>(null);
-  const drag = useRef<{ pointer: number; x: number; anchor: number } | null>(
-    null
-  );
-  const keyboardAnchor = useRef<number | null>(null);
+  const [selection, setSelection] = useState<Selection>(null);
+  const drag = useRef<Drag | null>(null);
+  const geometry = useRef<Geometry | null>(null);
+  const freeze = () => {
+    geometry.current ??= plotGeometry(
+      sliderRef.current,
+      fromMs,
+      toMs,
+      bucketMs,
+      width
+    );
+  };
   const focusAfterRange = useRef(false);
   const lastBucket = Math.max(fromMs, toMs - bucketMs);
   const moveCursor = (t: number) =>
-    setCursor(Math.min(lastBucket, Math.max(fromMs, t)));
+    setCursor(clampCursor(t, geometry.current, fromMs, lastBucket));
   const cancelSelection = () => {
+    geometry.current = null;
     drag.current = null;
-    keyboardAnchor.current = null;
     setSelection(null);
   };
-  // biome-ignore lint/correctness/useExhaustiveDependencies: bounds are the reset trigger
+  // biome-ignore lint/correctness/useExhaustiveDependencies: committed range identity resets; Live tail bounds do not
   useEffect(() => {
     cancelSelection();
     setCursor(null);
@@ -54,51 +69,44 @@ export function useTimelineSelection({
       focusAfterRange.current = false;
       sliderRef.current?.focus({ preventScroll: true });
     }
-  }, [fromMs, toMs]);
+  }, [rangeKey]);
   const snap = (a: number, b: number) =>
-    selectedRange(a, b, bucketMs, nowMs, retainedFromMs);
+    selectedRange(
+      a,
+      b,
+      geometry.current?.bucket ?? bucketMs,
+      nowMs,
+      retainedFromMs
+    );
   const commitSelection = (a: number, b: number) => {
     const next = snap(a, b);
     cancelSelection();
     if (next) onSelectRange?.(next);
   };
   const onPointerMove = (e: PointerEvent<HTMLDivElement>) => {
-    const current = pointerTime(e, fromMs, toMs);
+    const current = pointerTime(e, fromMs, toMs, geometry.current);
     if (current === null) return;
     if (drag.current) {
       if (Math.abs(e.clientX - drag.current.x) >= 4)
         setSelection({ anchor: drag.current.anchor, current });
     } else moveCursor(Math.floor(current / bucketMs) * bucketMs);
   };
-  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-    if (e.key === "Escape") {
-      e.preventDefault();
-      cancelSelection();
-      return;
-    }
-    if (e.key === "Enter" && selection) {
-      e.preventDefault();
-      commitSelection(selection.anchor, selection.current);
-      return;
-    }
-    if (loading) return;
-    const at = cursor ?? lastBucket;
-    const next = keyTime(e.key, at, fromMs, lastBucket, bucketMs);
-    if (next === undefined) return;
-    e.preventDefault();
-    const current = Math.min(
-      lastBucket,
-      Math.max(fromMs, Math.floor(next / bucketMs) * bucketMs)
-    );
-    if (e.shiftKey && onSelectRange) {
-      keyboardAnchor.current ??= at;
-      setSelection({ anchor: keyboardAnchor.current, current });
-    } else {
-      keyboardAnchor.current = null;
-      setSelection(null);
-    }
-    moveCursor(current);
-  };
+  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) =>
+    selectionKeyboard(e, {
+      loading,
+      selection,
+      cursor,
+      canSelect: Boolean(onSelectRange),
+      bounds: geometry.current ?? { from: fromMs, to: toMs, bucket: bucketMs },
+      freeze,
+      cancel: cancelSelection,
+      commit: commitSelection,
+      setSelection,
+      moveCursor,
+      unfreeze: () => {
+        geometry.current = null;
+      },
+    });
   return {
     sliderRef,
     cursor,
@@ -112,7 +120,8 @@ export function useTimelineSelection({
     sliderProps: {
       onPointerDown: (e: PointerEvent<HTMLDivElement>) => {
         if (!onSelectRange || width <= 0 || loading || e.button !== 0) return;
-        const anchor = pointerTime(e, fromMs, toMs);
+        freeze();
+        const anchor = pointerTime(e, fromMs, toMs, geometry.current);
         if (anchor === null) return;
         e.currentTarget.setPointerCapture(e.pointerId);
         drag.current = { pointer: e.pointerId, x: e.clientX, anchor };
@@ -121,7 +130,7 @@ export function useTimelineSelection({
       onPointerUp: (e: PointerEvent<HTMLDivElement>) => {
         const active = drag.current;
         if (!active || active.pointer !== e.pointerId) return;
-        const current = pointerTime(e, fromMs, toMs);
+        const current = pointerTime(e, fromMs, toMs, geometry.current);
         if (current !== null && Math.abs(e.clientX - active.x) >= 4)
           commitSelection(active.anchor, current);
         else {
@@ -153,13 +162,16 @@ export function useTimelineSelection({
 function pointerTime(
   e: PointerEvent<HTMLDivElement>,
   fromMs: number,
-  toMs: number
+  toMs: number,
+  frozen: { from: number; to: number; left: number; width: number } | null
 ) {
-  const rect = e.currentTarget.getBoundingClientRect();
+  const rect = frozen ?? e.currentTarget.getBoundingClientRect();
+  const from = frozen?.from ?? fromMs;
+  const to = frozen?.to ?? toMs;
   return rect.width > 0
-    ? fromMs +
+    ? from +
         Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width)) *
-          (toMs - fromMs)
+          (to - from)
     : null;
 }
 
@@ -178,3 +190,98 @@ function keyTime(
   };
   return positions[key];
 }
+
+function clampCursor(
+  t: number,
+  geometry: Geometry | null,
+  from: number,
+  last: number
+) {
+  return Math.min(
+    geometry ? Math.max(geometry.from, geometry.to - geometry.bucket) : last,
+    Math.max(geometry?.from ?? from, t)
+  );
+}
+function keyMove(
+  key: string,
+  cursor: number | null,
+  bounds: Pick<Geometry, "from" | "to" | "bucket">
+) {
+  const { from, to, bucket } = bounds;
+  const last = Math.max(from, to - bucket);
+  const at = cursor ?? last;
+  const next = keyTime(key, at, from, last, bucket);
+  return next === undefined
+    ? null
+    : {
+        at,
+        current: Math.min(
+          last,
+          Math.max(from, Math.floor(next / bucket) * bucket)
+        ),
+      };
+}
+
+type Selection = { anchor: number; current: number } | null;
+function selectionKeyboard(
+  e: KeyboardEvent<HTMLDivElement>,
+  controls: {
+    loading: boolean;
+    selection: Selection;
+    cursor: number | null;
+    canSelect: boolean;
+    bounds: Pick<Geometry, "from" | "to" | "bucket">;
+    freeze: () => void;
+    cancel: () => void;
+    commit: (a: number, b: number) => void;
+    setSelection: (selection: Selection) => void;
+    moveCursor: (at: number) => void;
+    unfreeze: () => void;
+  }
+) {
+  if (e.key === "Escape") {
+    e.preventDefault();
+    controls.cancel();
+    return;
+  }
+  if (e.key === "Enter" && controls.selection) {
+    e.preventDefault();
+    controls.commit(controls.selection.anchor, controls.selection.current);
+    return;
+  }
+  if (controls.loading && !controls.selection) return;
+  const extend = e.shiftKey && controls.canSelect;
+  if (extend) controls.freeze();
+  const move = keyMove(e.key, controls.cursor, controls.bounds);
+  if (!move) return;
+  e.preventDefault();
+  if (extend)
+    controls.setSelection({
+      anchor: controls.selection?.anchor ?? move.at,
+      current: move.current,
+    });
+  else {
+    controls.unfreeze();
+    controls.setSelection(null);
+  }
+  controls.moveCursor(move.current);
+}
+
+function plotGeometry(
+  element: HTMLElement | null,
+  from: number,
+  to: number,
+  bucket: number,
+  width: number
+): Geometry {
+  const rect = element?.getBoundingClientRect();
+  return {
+    from,
+    to,
+    bucket,
+    left: rect?.left ?? 0,
+    width: rect?.width ?? width,
+  };
+}
+
+type Drag = { pointer: number; x: number; anchor: number };

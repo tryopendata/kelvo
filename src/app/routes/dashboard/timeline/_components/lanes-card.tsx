@@ -53,6 +53,7 @@ export interface LanesCardProps {
   onSelectRange?: (range: TimeRange) => undefined | Promise<boolean>;
   selectionNowMs?: number;
   retainedFromMs?: number;
+  selectionKey?: string;
   loading?: boolean;
   failed?: boolean;
 }
@@ -87,6 +88,7 @@ export function LanesCard({
   onSelectRange,
   selectionNowMs = toMs,
   retainedFromMs = 0,
+  selectionKey,
   loading = false,
   failed = false,
 }: LanesCardProps) {
@@ -117,6 +119,9 @@ export function LanesCard({
     selectEvent,
     focusAfterRange,
   } = useTimelineSelection({
+    rangeKey: `${hostId}:${
+      selectionKey ?? `${live ? `live:${toMs - fromMs}` : `${fromMs}:${toMs}`}`
+    }`,
     fromMs,
     toMs,
     bucketMs,

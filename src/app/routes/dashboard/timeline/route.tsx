@@ -213,6 +213,7 @@ export default function TimelineRoute() {
         summaryError={summaries.isError}
         onPlotWidth={setPlotPx}
         onSelectRange={selectRange}
+        selectionKey={`${view.windowMs}:${view.endMs}`}
         selectionNowMs={clock()}
         retainedFromMs={history.health?.trimmed_before_ms ?? 0}
         loading={data.loading || navigation.pending}
