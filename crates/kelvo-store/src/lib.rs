@@ -36,6 +36,7 @@ mod perms;
 mod reader;
 mod rolldown;
 mod types;
+pub mod usage;
 mod writer;
 
 use std::path::{Path, PathBuf};
