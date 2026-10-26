@@ -3809,3 +3809,15 @@ dependent attribution UI. A failed gate blocks integration; it does not authoriz
 a larger retained-file cap, a shorter process horizon or silently discarded identities.
 The retained cap requires a measured full-horizon recommendation and a separate user
 decision before it changes. The write-budget approval is not production gate evidence.
+
+The user approved a new 750 MB default retained-file cap after the measured thirty-day
+prototype required 445 MB for new usage facts and identity indexes alone. Preserve every
+valid saved cap, including 150 MB, because its provenance cannot be inferred. A smaller
+saved cap may shorten actual retention and must be disclosed. This changes the default,
+not existing saved choices; production integrated measurements remain required.
+
+Remote replies are bounded independently of retained data: ten app groups, comparison
+membership at most ten, process expansion pages at most one hundred with opaque
+snapshot-bound continuation, and at most eleven conservative uncertainty summaries.
+App queries read app facts separately from indexed process-detail blocks. Historical
+process facts are not truncated to enforce reply bounds.

@@ -201,8 +201,8 @@ pub struct Retention {
 
 impl Retention {
     pub const DAY_MS: i64 = 24 * 3_600_000;
-    /// The default cap: the 150 MB budget for 30 days (architecture.md, Budget math).
-    pub const DEFAULT_MAX_BYTES: u64 = 150 * 1_000_000;
+    /// The default cap: 750 MB for durable app/process history (D-119).
+    pub const DEFAULT_MAX_BYTES: u64 = 750 * 1_000_000;
     /// Default independent remote-mirror budget.
     pub const MIRROR_MAX_BYTES: u64 = 100 * 1_000_000;
 

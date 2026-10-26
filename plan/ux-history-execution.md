@@ -118,3 +118,20 @@ Coarsening older facts can reduce tier storage, but not the 243 MB identity-only
 - Production tests will use real SQLite and public engine/store queries, following
   ce:writing-tests and repository testing rules. Lifecycle, rank, concurrent memory,
   partial retained edges, uncertainty, reset/prune and comparison still need coverage.
+
+## Subsequent authorization and bounded replies
+
+The user approved the recommended **750 MB default cap**. Valid saved caps remain
+unchanged; smaller caps may shorten actual retained history and must be disclosed.
+Schema and store defaults now agree, with 750 added to valid size-limit options.
+
+Process expansion is bounded to pages of at most 100 instances, with source-generated
+opaque continuation bound to interval, app, ranking, epoch and snapshot revision.
+Network uncertainty replies summarize at most the ten returned apps plus one remainder.
+Comparison requests accept at most ten unique app identities; intervals are limited to
+the existing thirty-day Timeline horizon. These bounds do not discard retained facts.
+
+The schema validation tests were mutation-verified: raising the membership cap and
+relaxing the page-size bound each caused the corresponding behavioral test to fail
+with its expected assertion. Both mutations were restored. Production pagination
+round trips and process-detail queries remain part of the pending store implementation.

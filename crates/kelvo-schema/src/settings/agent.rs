@@ -10,7 +10,7 @@ impl Settings {
     ///   collectors run at their idle period until a viewer asks for live values (D-067).
     /// - Every module on, Disk included: the Mac leaves Disk for onboarding to switch on,
     ///   and the agent has no onboarding.
-    /// - History as on the Mac: 30 days within 150 MB (the controller sets the budget the
+    /// - History as on the Mac: 30 days within 750 MB (the controller sets the budget the
     ///   user chose), and network history on, which records nothing until a collector
     ///   supplies per-process network bytes.
     pub fn agent_default() -> Self {

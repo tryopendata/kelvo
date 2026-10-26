@@ -291,7 +291,7 @@ pub fn sampling_plans() -> Vec<SamplingPlan> {
 /// The settings domains Settings offers and Rust validates.
 pub const SAMPLING_INTERVALS_MS: [u32; 7] = SamplingSettings::INTERVALS_MS;
 pub const RETENTION_DAYS: [u16; 3] = HistorySettings::RETENTION_DAYS;
-pub const SIZE_LIMITS_MB: [u32; 4] = HistorySettings::SIZE_LIMITS_MB;
+pub const SIZE_LIMITS_MB: [u32; 5] = HistorySettings::SIZE_LIMITS_MB;
 
 #[cfg(test)]
 mod tests {

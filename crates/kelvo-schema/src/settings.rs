@@ -446,9 +446,9 @@ const fn network_history_default() -> bool {
 
 impl HistorySettings {
     pub const RETENTION_DAYS: [u16; 3] = [7, 30, 90];
-    /// "History size limit" options: 150 MB (default), 300 MB, 500 MB, 1 GB.
-    pub const SIZE_LIMITS_MB: [u32; 4] = [150, 300, 500, 1000];
-    pub const DEFAULT_SIZE_LIMIT_MB: u32 = 150;
+    /// "History size limit" options; 750 MB is the D-119 default.
+    pub const SIZE_LIMITS_MB: [u32; 5] = [150, 300, 500, 750, 1000];
+    pub const DEFAULT_SIZE_LIMIT_MB: u32 = 750;
 
     /// The size limit in bytes.
     pub const fn size_limit_bytes(&self) -> u64 {
@@ -685,7 +685,7 @@ pub enum SettingsError {
     Interval(u32),
     #[error("retention {0} days is not one of 7, 30, 90")]
     Retention(u16),
-    #[error("history size limit {0} MB is not one of 150, 300, 500, 1000")]
+    #[error("history size limit {0} MB is not one of 150, 300, 500, 750, 1000")]
     SizeLimit(u32),
     #[error("module {0:?} has no settings entry")]
     MissingModule(Module),
@@ -702,13 +702,24 @@ mod tests {
     use super::*;
 
     #[test]
+    fn a_valid_saved_smaller_history_cap_survives_the_new_default() {
+        let mut saved = Settings::default();
+        saved.history.size_limit_mb = 150;
+        let json = serde_json::to_string(&saved).unwrap();
+        let restored: Settings = serde_json::from_str(&json).unwrap();
+        assert_eq!(restored.validate(), Ok(()));
+        assert_eq!(restored.history.size_limit_mb, 150);
+        assert_eq!(Settings::default().history.size_limit_mb, 750);
+    }
+
+    #[test]
     fn default_is_valid_and_matches_plan() {
         let s = Settings::default();
         s.validate().unwrap();
         assert_eq!(s.sampling.interval_ms, 1000);
         assert_eq!(s.history.retention_days, 30);
-        assert_eq!(s.history.size_limit_mb, 150);
-        assert_eq!(s.history.size_limit_bytes(), 150_000_000);
+        assert_eq!(s.history.size_limit_mb, 750);
+        assert_eq!(s.history.size_limit_bytes(), 750_000_000);
         assert!(s.history.network_history);
         assert!(!s.module(Module::Disk).unwrap().enabled);
         assert!(s.module(Module::Cpu).unwrap().enabled);

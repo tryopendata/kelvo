@@ -1,5 +1,5 @@
 //! Durable interval attribution (D-119). Separate from the recent live usage ring.
-//! These contracts are provisional until the storage feasibility gate passes.
+//! Storage integration must pass the independent feasibility and lifecycle gates.
 
 use serde::{Deserialize, Serialize};
 
@@ -126,6 +126,8 @@ pub struct HistoricalUsageReply {
     pub ranking_complete: bool,
     /// Late ownership can identify bytes without identifying their transfer interval.
     /// These are excluded from exact interval figures; overlap is only uncertainty.
+    /// At most one summary for each returned app plus one combined unnamed/other-app
+    /// summary: eleven records maximum. Raw uncertainty stays durable, not in this reply.
     pub network_uncertainty: Vec<UsageNetworkUncertainty>,
 }
 
@@ -139,6 +141,11 @@ pub struct UsageProcessRequest {
     pub to_ms: i64,
     pub app_name: String,
     pub by: HistoricalUsageMetric,
+    /// 1..=100, rejected rather than silently clamped.
+    pub page_size: u16,
+    /// Opaque source-generated continuation, bound to host, app, interval, ranking,
+    /// history epoch and the interval's snapshot revision. Stale tokens are rejected.
+    pub cursor: Option<String>,
 }
 
 /// A historical process instance, safe against PID reuse. Never a current action target.
@@ -151,7 +158,8 @@ pub struct HistoricalUsageProcess {
     pub figures: HistoricalUsageFigures,
 }
 
-/// All retained observed process instances for an app, ranked after aggregation.
+/// A bounded page of retained process instances, ranked after full interval aggregation.
+/// Ordering is metric descending, then PID and start time ascending for stable ties.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, specta::Type)]
 pub struct UsageProcessReply {
     pub range: UsageHistoryRange,
@@ -159,9 +167,12 @@ pub struct UsageProcessReply {
     pub processes: Vec<HistoricalUsageProcess>,
     /// Network is app-level unless identity-safe per-instance evidence was recorded.
     pub network_app_level_only: bool,
+    /// Present while further process instances remain. No retained instances are dropped.
+    pub next_cursor: Option<String>,
 }
 
-/// Bytes whose app became known after transfer, with conservative possible-time bounds.
+/// Summary of bytes whose owner became known after transfer, with the union's
+/// conservative possible-time envelope. It never implies exact transfer timestamps.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 pub struct UsageNetworkUncertainty {
     pub app_name: Option<String>,
@@ -173,6 +184,65 @@ pub struct UsageNetworkUncertainty {
     pub rx_bytes: u64,
     #[specta(type = crate::JsSafeInt)]
     pub tx_bytes: u64,
+    #[specta(type = crate::JsSafeInt)]
+    pub records: u64,
+}
+
+/// Durable usage is limited to the existing longest Timeline window.
+pub const USAGE_HISTORY_MAX_RANGE_MS: i64 = 30 * 86_400_000;
+pub const USAGE_PROCESS_PAGE_MAX: u16 = 100;
+
+fn validate_range(from: i64, to: i64) -> Result<(), &'static str> {
+    if !crate::is_js_safe(from)
+        || !crate::is_js_safe(to)
+        || to <= from
+        || to.saturating_sub(from) > USAGE_HISTORY_MAX_RANGE_MS
+    {
+        return Err("usage interval must be nonempty, JS-safe and at most thirty days");
+    }
+    Ok(())
+}
+
+fn valid_name(name: &str) -> bool {
+    !name.is_empty() && name.len() <= 1024 && !name.contains('\0')
+}
+
+impl HistoricalUsageRequest {
+    /// Validate at each command/remote boundary before a store read or allocation.
+    pub fn validate(&self) -> Result<(), &'static str> {
+        validate_range(self.from_ms, self.to_ms)?;
+        if self.app_names.len() > 10 || self.app_names.iter().any(|n| !valid_name(n)) {
+            return Err("comparison membership must contain at most ten valid app identities");
+        }
+        if self
+            .app_names
+            .iter()
+            .enumerate()
+            .any(|(i, name)| self.app_names[..i].contains(name))
+        {
+            return Err("comparison membership contains duplicate app identities");
+        }
+        Ok(())
+    }
+}
+
+impl UsageProcessRequest {
+    pub fn validate(&self) -> Result<(), &'static str> {
+        validate_range(self.from_ms, self.to_ms)?;
+        if !valid_name(&self.app_name) || !(1..=USAGE_PROCESS_PAGE_MAX).contains(&self.page_size) {
+            return Err(
+                "process expansion needs a valid app identity and page size between one and one hundred",
+            );
+        }
+        if self
+            .cursor
+            .as_ref()
+            .is_some_and(|c| c.is_empty() || c.len() > 4096)
+        {
+            return Err("process continuation is invalid or too large");
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -187,6 +257,7 @@ mod tests {
             possible_to_ms: 90000,
             rx_bytes: 700,
             tx_bytes: 20,
+            records: 1,
         };
         let mut bytes = Vec::new();
         ciborium::into_writer(&late, &mut bytes).unwrap();
@@ -210,5 +281,51 @@ mod tests {
         assert_eq!(encoded["complete"], false);
         let decoded: UsageResourceCoverage = serde_json::from_value(encoded).unwrap();
         assert_eq!(decoded, source);
+    }
+
+    #[test]
+    fn invalid_membership_or_intervals_are_rejected_before_history_reads() {
+        let mut request = HistoricalUsageRequest {
+            host: HostId(uuid::Uuid::nil()),
+            from_ms: 0,
+            to_ms: USAGE_HISTORY_MAX_RANGE_MS,
+            by: HistoricalUsageMetric::Cpu,
+            app_names: Vec::new(),
+        };
+        assert_eq!(request.validate(), Ok(()));
+        request.to_ms += 1;
+        assert!(request.validate().is_err());
+        request.to_ms = 0;
+        assert!(request.validate().is_err());
+        request.to_ms = 60000;
+        request.app_names = vec!["Browser".into(), "Browser".into()];
+        assert!(request.validate().is_err());
+        request.app_names = (0..11).map(|i| format!("App {i}")).collect();
+        assert!(request.validate().is_err());
+        request.app_names.pop();
+        assert_eq!(request.validate(), Ok(()));
+    }
+
+    #[test]
+    fn process_expansion_requires_bounded_pages_and_continuations() {
+        let mut request = UsageProcessRequest {
+            host: HostId(uuid::Uuid::nil()),
+            from_ms: 0,
+            to_ms: 60000,
+            app_name: "Compiler".into(),
+            by: HistoricalUsageMetric::Cpu,
+            page_size: 100,
+            cursor: None,
+        };
+        assert_eq!(request.validate(), Ok(()));
+        request.page_size = 101;
+        assert!(request.validate().is_err());
+        request.page_size = 0;
+        assert!(request.validate().is_err());
+        request.page_size = 1;
+        request.cursor = Some("x".repeat(4097));
+        assert!(request.validate().is_err());
+        request.cursor = Some("opaque snapshot continuation".into());
+        assert_eq!(request.validate(), Ok(()));
     }
 }
