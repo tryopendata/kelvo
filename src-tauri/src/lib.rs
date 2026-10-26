@@ -316,12 +316,14 @@ mod tests {
 }
 
 /// Development builds are isolated from installed data; bench builds supply their own ID.
+#[cfg(all(debug_assertions, not(feature = "bench")))]
+fn runtime_identifier(_: &str) -> &str {
+    DEV_IDENTIFIER
+}
+
+#[cfg(not(all(debug_assertions, not(feature = "bench"))))]
 fn runtime_identifier(configured: &str) -> &str {
-    if cfg!(all(debug_assertions, not(feature = "bench"))) {
-        DEV_IDENTIFIER
-    } else {
-        configured
-    }
+    configured
 }
 
 #[cfg(test)]
@@ -329,11 +331,10 @@ mod identity_tests {
     #[test]
     fn bench_keeps_the_configured_identity_and_normal_debug_uses_dev_data() {
         let configured = "com.tryopendata.kelvo.bench.ux-native";
-        let expected = if cfg!(all(debug_assertions, not(feature = "bench"))) {
-            super::DEV_IDENTIFIER
-        } else {
-            configured
-        };
+        #[cfg(all(debug_assertions, not(feature = "bench")))]
+        let expected = super::DEV_IDENTIFIER;
+        #[cfg(not(all(debug_assertions, not(feature = "bench"))))]
+        let expected = configured;
         assert_eq!(super::runtime_identifier(configured), expected);
     }
 }
