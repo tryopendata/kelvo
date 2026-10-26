@@ -15,6 +15,9 @@
 
 ### Fixed
 
+- Updated TLS certificate verification, Tokio, Vite and the test DOM dependency
+  to resolve dependency audit findings.
+
 - Remote feed replacement, reconnects after sleep, backoff and agent restarts.
 - Loading stored remote history into live charts and preserving disk selections
   through process navigation.

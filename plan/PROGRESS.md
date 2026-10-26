@@ -14,6 +14,12 @@ manifest validation and its 3 tests passed; functional Chromium/WebKit: 432 pass
 in 1.9 minutes. The normal push hook supplies the full gate; hosted build and
 publication evidence will follow here.
 
+The first hosted audit found RUSTSEC-2026-0382 (rustls-webpki),
+RUSTSEC-2026-0386 (Tokio), and seven frontend findings in Happy DOM/Vite and
+its editor integration. Updated to rustls-webpki 0.103.16, Tokio 1.53.3,
+Happy DOM 21.0.4 and Vite 8.3.5; bun audit now reports zero vulnerabilities.
+Cancelled the initial release build before publication; final checks are pending.
+
 ## Start here (handoff, 2026-10-25, history/remote landing and QA)
 
 State: `main` holds v1.0, v1.1 and v1.2. The app runs from source with `bun run tauri dev`. Verification evidence is dated in the log; older green runs do not establish the current refactor as complete. The user accepted day-to-day stability on 2026-10-16 and authorized the free GitHub release path: an ad-hoc-signed DMG and signature-verified in-app updates. Kelvo 0.1.0 is publicly available through GitHub Releases; release build and package verification are complete; Apple Developer membership, notarization, Homebrew and the Mac App Store remain deferred.

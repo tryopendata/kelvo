@@ -16,6 +16,9 @@ Kelvo is a free, open-source system monitor for Apple Silicon Macs running macOS
 Existing users can update from Settings → General. History and settings are
 preserved across updates.
 
+Dependency updates address TLS certificate verification and runtime advisories,
+plus development server and test environment findings.
+
 ## Install
 
 Download **Kelvo_aarch64.dmg**, open it, and drag **Kelvo** into **Applications**.
