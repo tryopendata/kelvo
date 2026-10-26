@@ -188,7 +188,7 @@ pub struct UsageNetworkUncertainty {
     pub records: u64,
 }
 
-/// Durable usage is limited to the existing longest Timeline window.
+/// Maximum interval for a durable app-attribution query, independent of chart ranges.
 pub const USAGE_HISTORY_MAX_RANGE_MS: i64 = 30 * 86_400_000;
 pub const USAGE_PROCESS_PAGE_MAX: u16 = 100;
 

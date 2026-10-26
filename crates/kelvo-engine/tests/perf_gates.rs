@@ -24,7 +24,7 @@
 //!   Elsewhere the test prints `[perf] skipped: no hardware`, which the CI step
 //!   surfaces as a notice.
 //!
-//! The engine runs on the fake ticker, so 10 minutes take a few seconds; the collectors
+//! The engine runs on the fake ticker, so a full hour takes tens of seconds; the collectors
 //! read the real machine. A window's modes tick at 1 s, tray-only at the background's
 //! 2 s (D-094), with the processes collector every 30 s and the temperature collectors
 //! every 10 s. Each test prints what it measured.
@@ -739,6 +739,8 @@ fn wal_volume_by_commit_interval() {
 #[test]
 fn store_write_volume_per_hour_at_one_second() {
     let b = budget();
+    // A full hour counts startup app/process identities once. Short-run extrapolation
+    // multiplies that fixed cost and can reject an unchanged steady-state recorder.
     let minutes = num(&b, "store.minutes") as u64;
     let commit_s = kelvo_store::DEFAULT_COMMIT_INTERVAL.as_secs();
     let (h, growth, wal) = store_run("store-volume", minutes, commit_s);
