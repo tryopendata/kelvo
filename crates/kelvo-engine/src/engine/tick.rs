@@ -223,29 +223,7 @@ impl Engine {
             );
             let sampled = slot.collector.sample(&t, &mut self.buf);
             if sampled.is_err() {
-                let resources: &[usize] = match slot.collector.id().0 {
-                    "processes" => &[0, 2, 3],
-                    "gpu_per_process" => &[1],
-                    "net_per_process" => &[4],
-                    _ => &[],
-                };
-                if !resources.is_empty() {
-                    slot.collector.release();
-                }
-                for &resource in resources {
-                    self.buf.set_usage_observation(
-                        resource,
-                        kelvo_collect::UsageObservation {
-                            span_ms: 0,
-                            causes: [
-                                Some(kelvo_schema::durable_usage::UsageIncompleteCause::ReadFailed),
-                                None,
-                                None,
-                                None,
-                            ],
-                        },
-                    );
-                }
+                super::usage::failed_read(slot.collector.as_mut(), &mut self.buf);
             }
             if let Err(e) = sampled
                 && let Some(suppressed) = slot.errors.check(ts)
@@ -320,7 +298,8 @@ impl Engine {
             if self.buf.process_gpu_measured() {
                 self.buf.sort_process_gpu();
                 for p in &mut procs {
-                    // Absent from the GPU batch: no GPU time over the interval.
+                    // A complete GPU read observes absent PIDs as zero; a partial
+                    // read leaves their GPU time unmeasured.
                     let complete = self
                         .buf
                         .usage_observations()

@@ -43,7 +43,10 @@ use kelvo_collect::{
 };
 use kelvo_engine::{Bus, BusMsg, EngineParts, LiveHub, LocalSource, Source, SourceSink};
 use kelvo_schema::{Catalog, HostId, Settings, Snapshot};
-use kelvo_store::{Store, StoreConfig};
+use kelvo_store::Store;
+
+#[path = "dump/history.rs"]
+mod history;
 
 #[derive(Default)]
 struct Args {
@@ -324,32 +327,13 @@ fn main() -> Result<()> {
     settings.validate().context("settings")?;
     let settings_interval = settings.sampling.interval_ms;
 
-    let store = match &args.db {
-        Some(path) => {
-            let mut cfg = StoreConfig::new(path);
-            if let Some(ms) = args.commit_ms {
-                cfg.commit_interval = Duration::from_millis(ms);
-            }
-            Some(Store::open(cfg).context("opening the store")?)
-        }
-        None => None,
-    };
+    let store = history::open(args.db.as_deref(), args.commit_ms)?;
     // The dump tool is not the app: a fixed id keeps its throwaway databases apart from a
     // real host.
     let record =
         kelvo_engine::host_record(HostId(uuid::Uuid::from_u128(0x6b65_6c76_6f2d_6475_6d70)));
     let host = record.id;
-    if let Some(store) = &store {
-        store
-            .writer()
-            .upsert_host(record.clone())
-            .context("registering dump host")?;
-    }
-    let history_before = if args.perf {
-        args.db.as_deref().map(persisted_history_rows).transpose()?
-    } else {
-        None
-    };
+    let history_before = history::register(store.as_ref(), &record, args.perf)?;
     let mut parts = EngineParts::platform(Arc::new(kelvo_engine::NoScaleStore));
     let spent = if args.perf {
         let (wrapped, table) = timed(std::mem::take(&mut parts.collectors));
@@ -467,14 +451,8 @@ fn main() -> Result<()> {
     let end_threads = thread_times();
     let end_collectors = spent_snapshot(&spent);
     handle.stop();
-    if args.perf
-        && let (Some(store), Some(path), Some(before)) = (&store, &args.db, history_before)
-    {
-        store
-            .writer()
-            .flush()
-            .context("flushing measured history")?;
-        require_persisted_history(path, before)?;
+    if let (Some(store), Some(before)) = (&store, history_before) {
+        history::verify(store, before)?;
     }
     if args.perf {
         let Some(b) = baseline else {
@@ -538,59 +516,4 @@ fn main() -> Result<()> {
         started.elapsed().as_secs_f64()
     );
     Ok(())
-}
-
-// Checked outside the CPU interval, after a writer flush. A successful collector-only
-// run cannot stand in for a benchmark that promises to include the history writer.
-fn persisted_history_rows(path: &str) -> Result<i64> {
-    let db =
-        rusqlite::Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
-            .context("opening measured history")?;
-    Ok(db.query_row(
-        "SELECT (SELECT count(*) FROM tier_10s) + (SELECT count(*) FROM tier_1m)",
-        [],
-        |row| row.get(0),
-    )?)
-}
-fn require_persisted_history(path: &str, before: i64) -> Result<()> {
-    let after = persisted_history_rows(path)?;
-    if after <= before {
-        bail!(
-            "--perf --db persisted no new history rows; writer evidence is missing (run long enough to close a ten-second bucket)"
-        );
-    }
-    eprintln!("[perf] persisted {} new history rows", after - before);
-    Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn perf_db_requires_new_committed_history_not_an_empty_or_reused_database() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("perf.sqlite");
-        let path = path.to_str().unwrap();
-        let store = Store::open(StoreConfig::new(path)).unwrap();
-        let record = kelvo_engine::host_record(HostId(uuid::Uuid::nil()));
-        let writer = store.writer();
-        writer.upsert_host(record.clone()).unwrap();
-        assert!(require_persisted_history(path, 0).is_err());
-        writer
-            .write_bucket(kelvo_store::BucketRow {
-                host: record.id,
-                tier: kelvo_schema::Tier::S10,
-                bucket_ts: 10_000,
-                series: vec![kelvo_schema::SeriesKey::parse("cpu.total").unwrap()].into(),
-                stats: vec![1.0, 3.0, 2.0],
-            })
-            .unwrap();
-        writer.flush().unwrap();
-        require_persisted_history(path, 0).unwrap();
-        let before = persisted_history_rows(path).unwrap();
-        assert_eq!(before, 1);
-        assert!(require_persisted_history(path, before).is_err());
-        store.close().unwrap();
-    }
 }

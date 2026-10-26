@@ -98,3 +98,33 @@ impl Engine {
     }
 }
 use kelvo_schema::lock::LockExt;
+
+/// Failed attribution sources lose their baseline and mark resource coverage incomplete.
+pub(super) fn failed_read(
+    collector: &mut dyn kelvo_collect::Collector,
+    buf: &mut kelvo_collect::SampleBuf,
+) {
+    let resources: &[usize] = match collector.id().0 {
+        "processes" => &[0, 2, 3],
+        "gpu_per_process" => &[1],
+        "net_per_process" => &[4],
+        _ => &[],
+    };
+    if !resources.is_empty() {
+        collector.release();
+    }
+    for &resource in resources {
+        buf.set_usage_observation(
+            resource,
+            kelvo_collect::UsageObservation {
+                span_ms: 0,
+                causes: [
+                    Some(kelvo_schema::durable_usage::UsageIncompleteCause::ReadFailed),
+                    None,
+                    None,
+                    None,
+                ],
+            },
+        );
+    }
+}
