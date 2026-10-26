@@ -6,6 +6,7 @@ import type {
   UsageByApp,
   UsageKey,
 } from "@core/generated/bindings";
+import { USAGE_KEEP_MS } from "@core/generated/bindings";
 import { targetKey } from "@core/process-selection";
 import { remoteQueryText } from "@core/remote-errors";
 import {
@@ -31,6 +32,7 @@ import {
   UnrecordedRange,
 } from "~/components/app-table";
 import { brushScopeProps } from "~/components/brush-overlay";
+import { HistoricalUsageCard } from "~/components/historical-usage-card";
 import {
   ProcessSelectionHead,
   ProcessSelectionRow,
@@ -83,23 +85,56 @@ export interface UsageTableConfig {
   footnote: ReactNode;
 }
 
+interface UsageAppsCardProps {
+  windowMs: number;
+  config: UsageTableConfig;
+  viewControl?: ReactNode;
+}
+
 /**
- * Per-app use over the chart window (D-091), or over the brushed range
+ * Fixed and long ranges use read-only source history. Live short ranges keep
+ * per-app use over the chart window (D-091), or over the brushed range
  * when there is one (D-099): which apps used the resource, not what is busy
  * now (that is the Processes page). Rows are apps that sum their processes
  * and expand to list them; an app's actions target its main process, with
  * individual processes selectable too. After the apps come "Other apps" and
  * "System and other", so additive columns add up to the host's figure.
  */
-export function UsageAppsCard({
+export function UsageAppsCard(props: UsageAppsCardProps) {
+  const fixed = useModuleRange()?.endMs != null;
+  return fixed || props.windowMs > USAGE_KEEP_MS ? (
+    <MemoHistoricalUsageApps {...props} />
+  ) : (
+    <LiveUsageAppsCard {...props} />
+  );
+}
+
+function HistoricalUsageApps({ windowMs, config }: UsageAppsCardProps) {
+  const { range } = useRangeScope(windowMs);
+  if (config.by === "disk") {
+    return (
+      <AppsShell accent="disk" title="Disk by app">
+        <UnrecordedRange>Per-app disk history isn’t recorded</UnrecordedRange>
+      </AppsShell>
+    );
+  }
+  return (
+    <HistoricalUsageCard
+      range={range}
+      by={config.by}
+      accent={config.accent}
+      title={`${config.noun} by app`}
+    />
+  );
+}
+
+const MemoHistoricalUsageApps = memo(HistoricalUsageApps);
+
+function LiveUsageAppsCard({
   windowMs,
   config,
   viewControl,
-}: {
-  windowMs: number;
-  config: UsageTableConfig;
-  viewControl?: ReactNode;
-}) {
+}: UsageAppsCardProps) {
   const fixedEnd = useModuleRange()?.endMs ?? null;
   const { selection, range, keepPrevious } = useRangeScope(windowMs);
   const q = useUsageByApp(range, config.by, { keepPrevious });

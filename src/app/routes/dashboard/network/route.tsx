@@ -1,5 +1,6 @@
 import { formatBytes, formatPercent, formatRate } from "@core/format";
 import type { MetricStat } from "@core/generated/bindings";
+import { USAGE_KEEP_MS } from "@core/generated/bindings";
 import { labelValues, sk } from "@core/series-key";
 import { useMemo } from "react";
 import { BRUSH_SCOPE_ATTR } from "~/components/brush-overlay";
@@ -18,7 +19,11 @@ import { useIsLocalHost } from "~/hooks/use-is-local-host";
 import { useProcessNetwork } from "~/hooks/use-process-interest";
 import { useHeld, useLayout } from "~/hooks/use-ring";
 import { useUnits } from "~/hooks/use-units";
-import { ChartRangeNotice, ChartRangeProvider } from "~/stores/chart-range";
+import {
+  ChartRangeNotice,
+  ChartRangeProvider,
+  useModuleRange,
+} from "~/stores/chart-range";
 import { useNetwork, usePrimaryIface } from "~/stores/live-selectors";
 import { useSettings } from "~/stores/settings-store";
 import { StatStrip } from "~/widgets/stat-strip";
@@ -144,13 +149,12 @@ export default function NetworkRoute() {
                   {brush && <SelectionSummary windowMs={windowMs} />}
                 </div>
               </SectionCard>
-              {perProcess &&
-                history !== null &&
-                (history && local ? (
-                  <AppsCard windowMs={windowMs} />
-                ) : (
-                  <AppsNowCard />
-                ))}
+              <NetworkApps
+                windowMs={windowMs}
+                local={local}
+                perProcess={perProcess}
+                history={history}
+              />
             </div>
             <SectionCard
               accent="net"
@@ -168,4 +172,22 @@ export default function NetworkRoute() {
       </div>
     </ChartRangeProvider>
   );
+}
+
+function NetworkApps({
+  windowMs,
+  local,
+  perProcess,
+  history,
+}: {
+  windowMs: number;
+  local: boolean;
+  perProcess: boolean;
+  history: boolean | null;
+}) {
+  const fixed = useModuleRange()?.endMs != null;
+  if (fixed || windowMs > USAGE_KEEP_MS)
+    return <AppsCard windowMs={windowMs} />;
+  if (!perProcess || history === null) return null;
+  return history && local ? <AppsCard windowMs={windowMs} /> : <AppsNowCard />;
 }

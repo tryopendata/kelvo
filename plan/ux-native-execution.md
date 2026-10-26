@@ -165,3 +165,41 @@ accepted as the final estimate. Only favicon 404 appeared in the browser console
 
 Production recording byte gates and final integration/performance checks remain
 orchestrator-owned landing prerequisites. No push or full performance gate ran.
+
+## Module recorded-attribution callers (D-120)
+
+CPU, GPU, Memory, Power and Network now mount the shared read-only recorded
+usage table for fixed intervals or rolling windows longer than the one-hour
+recent ring. Short live ranges retain their existing search, process expansion
+and process actions. Changing back to Live remounts those controls. Historical
+Network requests the selected source host even when current Network recording
+is off; current rates and capability flags never substitute for stored evidence.
+Disk preserves recorded charts and shows ‘Per-app disk history isn’t recorded’
+instead of mounting a recent process table. Fixed tables are memoized against
+parent sampling renders; range, host and brush changes still update them.
+
+Twelve new real-route behavior cases cover five resource pages, a rolling day,
+short live behavior, Disk charts and attribution omission, capable remote source,
+recording-off history, return to Live, and remote failure plus Retry of the same
+interval. No internal components or hooks are mocked; only the failed transport
+command is overridden in the Retry case. All twelve pass. Disabling the shared
+card routing makes the CPU case fail on the missing visible Compiler row; after
+restoration all twelve pass again. The initial implementation-free CPU case also
+failed on that row. Sixty-four neighboring behavior cases pass. All TypeScript
+projects and the full frontend suite pass: 206 files / 1332 tests. These results
+used the shared table owner’s offered source handoff unchanged; dependency
+da4fe55 was then integrated as 7d4e057 through normal hooks, and the combined
+module/shared-card suites passed all 21 cases against that exact dependency.
+
+Inspected browser screenshots of all five resource tables, Disk and the dev
+gallery are under ignored test-results/screens/module-*. Existing SectionCard,
+module accent, table and typography tokens match neighboring screens. The
+intentional difference is the same five comparable recorded-resource columns
+on each historical module, with the selected module ranking highlighted and
+no process selection or Quit controls. Date, coverage, gaps and CPU-only power
+estimate limits remain visible. At 1280 × 900 the document is 1280 px and main
+is 1060 px, with zero horizontal overflow. At 820 × 700 the document is 820 px
+and main is 600 px, also without overflow; the table scrolls internally to the
+remaining columns and its footer. The module-memory-day-card-820-dark screenshot
+records this intentional narrow-layout behavior. Only the existing favicon 404
+appeared in the browser console. This follow-up changes no native geometry.

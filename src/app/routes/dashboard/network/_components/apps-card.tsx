@@ -7,9 +7,10 @@ import {
   type RateUnits,
 } from "@core/format";
 import type { NetworkByApp } from "@core/generated/bindings";
+import { USAGE_KEEP_MS } from "@core/generated/bindings";
 import { networkByAppFailure } from "@core/history-state";
 import { CommandFailure } from "@core/transport";
-import { type ReactNode, useMemo, useState } from "react";
+import { memo, type ReactNode, useMemo, useState } from "react";
 import {
   APP_CELL,
   AppsNote,
@@ -18,6 +19,7 @@ import {
   ShareCell,
   UnrecordedRange,
 } from "~/components/app-table";
+import { HistoricalUsageCard } from "~/components/historical-usage-card";
 import { SelectionChip } from "~/components/selection-chip";
 import { SortHeader } from "~/components/sort-header";
 import {
@@ -62,6 +64,29 @@ import {
  * other".
  */
 export function AppsCard({ windowMs }: { windowMs: number }) {
+  const fixed = useModuleRange()?.endMs != null;
+  return fixed || windowMs > USAGE_KEEP_MS ? (
+    <MemoHistoricalNetworkApps windowMs={windowMs} />
+  ) : (
+    <LiveAppsCard windowMs={windowMs} />
+  );
+}
+
+function HistoricalNetworkApps({ windowMs }: { windowMs: number }) {
+  const { range } = useRangeScope(windowMs);
+  return (
+    <HistoricalUsageCard
+      range={range}
+      by="network"
+      accent="net"
+      title="Network by app"
+    />
+  );
+}
+
+const MemoHistoricalNetworkApps = memo(HistoricalNetworkApps);
+
+function LiveAppsCard({ windowMs }: { windowMs: number }) {
   const fixed = useModuleRange()?.endMs != null;
   const complete = useCompleteEdge(useOpenEdge());
   const { selection, range, keepPrevious } = useRangeScope(windowMs, complete);

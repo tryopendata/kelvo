@@ -1,6 +1,7 @@
 import { scopeWords, type TimeRange } from "@core/brush";
 import { formatBytes, formatRate, formatSpan } from "@core/format";
 import type { LiveProcess, ProcessUsage } from "@core/generated/bindings";
+import { USAGE_KEEP_MS } from "@core/generated/bindings";
 import { FULL_TABLE } from "@core/process-interest";
 import { targetKey } from "@core/process-selection";
 import { remoteQueryText } from "@core/remote-errors";
@@ -43,6 +44,7 @@ import {
 } from "~/hooks/use-process-interest";
 import { useUsageByApp } from "~/hooks/use-usage-by-app";
 import { useBrushRange } from "~/stores/brush-store";
+import { useModuleRange } from "~/stores/chart-range";
 
 const EMPTY: readonly LiveProcess[] = [];
 export const requestedBytes = (
@@ -84,6 +86,8 @@ const appConfig = (mac: boolean): UsageTableConfig => ({
 
 export function DiskProcesses({ windowMs }: { windowMs: number }) {
   const [apps, setApps] = useState(false);
+  const historical =
+    useModuleRange()?.endMs != null || windowMs > USAGE_KEEP_MS;
   const mac = useHostNoun() === "Mac";
   const config = useMemo(() => appConfig(mac), [mac]);
   const viewControl = (
@@ -91,11 +95,11 @@ export function DiskProcesses({ windowMs }: { windowMs: number }) {
       {apps ? "By process" : "By app"}
     </Button>
   );
-  return apps ? (
+  return apps || historical ? (
     <UsageAppsCard
       windowMs={windowMs}
       config={config}
-      viewControl={viewControl}
+      viewControl={historical ? undefined : viewControl}
     />
   ) : (
     <DiskProcessList windowMs={windowMs} viewControl={viewControl} />

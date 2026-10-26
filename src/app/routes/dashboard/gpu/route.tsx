@@ -1,4 +1,5 @@
 import { formatPercent } from "@core/format";
+import { USAGE_KEEP_MS } from "@core/generated/bindings";
 import type { ProcessView } from "@core/process-interest";
 import { PageHeader } from "~/components/page-header";
 import {
@@ -62,8 +63,12 @@ const TABLE: UsageTableConfig = {
 export default function GpuRoute() {
   const info = useHostRecord()?.info;
   const perProcess = useProcessGpu();
-  useProcessInterest(perProcess ? GPU_VIEW : null);
-  const windowMs = useChartWindow()?.windowMs ?? null;
+  const chartWindow = useChartWindow();
+  const windowMs = chartWindow?.windowMs ?? null;
+  const historical =
+    chartWindow !== null &&
+    (chartWindow.endMs !== null || chartWindow.windowMs > USAGE_KEEP_MS);
+  useProcessInterest(perProcess && !historical ? GPU_VIEW : null);
   return (
     <ChartRangeProvider>
       <div className="flex flex-col gap-4">
@@ -80,7 +85,9 @@ export default function GpuRoute() {
               <FrequencyCard windowMs={windowMs} />
               <PowerCard windowMs={windowMs} />
             </div>
-            {perProcess && <UsageAppsCard windowMs={windowMs} config={TABLE} />}
+            {(perProcess || historical) && (
+              <UsageAppsCard windowMs={windowMs} config={TABLE} />
+            )}
           </>
         )}
       </div>
