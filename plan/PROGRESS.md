@@ -4,6 +4,19 @@ This file tracks where Kelvo is against the plan. Task-level checkboxes live in 
 
 Agents update this file whenever a phase starts or finishes. Each update adds a log entry: what changed, how it was verified, and anything left open. They also tick the matching checkboxes in the version doc.
 
+## Product UX implementation (2026-10-25)
+
+[UX implementation plan](product-ux-polish.md) combines issue #1 defaults/display fixes,
+Timeline range navigation and animated investigation, durable app attribution and
+comparison, and independently compact popover cards. Product choices are recorded
+in the plan. A Sol 6.1 agent applied ce:devils-advocate and found three corrections:
+uncertain-time network attribution, source-level completeness, and storage-gate
+accounting. Those corrections and native content-sizing constraints are incorporated;
+the follow-up review passed with no remaining material finding.
+Implementation is authorized and underway in isolated Sol 6.1 agent worktrees.
+Storage/performance feasibility blocks dependent Timeline attribution work. Native/UI
+acceptance and final review remain gates; the prototype is not app verification.
+
 ## CI runner policy (2026-10-25)
 
 At the user's direction, hosted CI uses Linux only to avoid macOS runner charges.

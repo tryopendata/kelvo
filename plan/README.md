@@ -13,6 +13,7 @@ This folder is the plan for Kelvo, from the first installable build through remo
 | [remote-macs-execution.md](remote-macs-execution.md) | Implemented Mac-to-Mac behavior, SSH setup/recovery, verification evidence and remaining device checks |
 | [history-remote-landing.md](history-remote-landing.md) | Module time ranges, remote feed replacement, Linux agent memory acceptance and landing evidence |
 | [agent-ops-post-mortem-2026-10-25.md](agent-ops-post-mortem-2026-10-25.md) | Landing review: browser verification lanes, observable push hooks, durable handoff and cleanup |
+| [product-ux-polish.md](product-ux-polish.md) | Reviewed proposal: issue #1 defaults, Timeline investigation and durable attribution, compact popover cards |
 | [docker-container-monitoring.md](docker-container-monitoring.md) | Local Docker tab implemented and merged: aggregate/runtime and per-container stats, history, logs; real-world release acceptance remains open |
 | [docker-monitoring-ux-rfc.md](docker-monitoring-ux-rfc.md) | Implemented and verified Containers UX revision: per-container comparison, repaired history, bounded tables and automatic engine inventory |
 | [docker-storage-cleanup.md](docker-storage-cleanup.md) | In progress: on-demand Docker storage inventory, cleanup review, confirmed local actions and resource review |
