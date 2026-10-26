@@ -147,9 +147,9 @@
     },
     "store": {
       "minutes": 10,
-      "rowsPerHour": 1400,
-      "payloadBytesPerHour": 1200000,
-      "walBytesPerHour": 6000000
+      "rowsPerHour": 10000,
+      "payloadBytesPerHour": 4000000,
+      "walBytesPerHour": 12000000
     },
     "perf": {
       "baseline": {

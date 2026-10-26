@@ -49,6 +49,7 @@ pub mod disk_io;
 pub mod disk_space;
 pub mod docker;
 pub mod docker_storage;
+pub mod durable_usage;
 mod event;
 mod history;
 mod host;

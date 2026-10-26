@@ -3,6 +3,9 @@
 //! uses (default `Typescript`, `specta_serde::PhasesFormat`). A type the app shell could
 //! not export (an unannotated `i64`, a serde attribute specta rejects) fails here.
 
+use kelvo_schema::durable_usage::{
+    HistoricalUsageReply, HistoricalUsageRequest, UsageProcessReply, UsageProcessRequest,
+};
 use kelvo_schema::{
     AlertRule, Capabilities, Cursor, Event, Gap, HostId, HostRecord, Module, SeriesKey,
     SeriesSelector, Settings, Snapshot, Tier,
@@ -25,7 +28,11 @@ fn ipc_types_export_to_typescript() {
         .register::<Settings>()
         .register::<AlertRule>()
         .register::<Event>()
-        .register::<Snapshot>();
+        .register::<Snapshot>()
+        .register::<HistoricalUsageRequest>()
+        .register::<HistoricalUsageReply>()
+        .register::<UsageProcessRequest>()
+        .register::<UsageProcessReply>();
     let ts = Typescript::default()
         .export(&types, specta_serde::PhasesFormat)
         .unwrap_or_else(|e| panic!("export failed: {e}"));
@@ -40,4 +47,10 @@ fn ipc_types_export_to_typescript() {
     // i64 fields marked JsSafeInt export as a plain, non-nullable number.
     assert!(ts.contains("seq: number,"), "{ts}");
     assert!(ts.contains("end_ms: number | null,"), "{ts}");
+    assert!(ts.contains("start_time_us: number,"), "{ts}");
+    assert!(ts.contains("mem_peak_bytes: number | null,"), "{ts}");
+    assert!(
+        ts.contains("network_uncertainty: UsageNetworkUncertainty[]"),
+        "{ts}"
+    );
 }

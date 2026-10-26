@@ -3776,3 +3776,36 @@ updater verification run on the maintainer's Mac before draft publication.
 
 This trades hosted native coverage for local verification evidence. Do not add
 macOS CI jobs, including manual preview or release jobs, without a new user decision.
+
+
+## D-119: Durable interval usage keeps facts before ranking
+
+Date: 2026-10-25. Product UX polish implementation; feasibility remains a blocking gate.
+
+Record app and process-instance sufficient statistics before floors or top-N selection.
+App identity follows D-089; process identity is PID plus start time. Keep CPU/GPU time,
+CPU energy, directional app network bytes, concurrent app RAM maxima, RAM byte-time
+and present-time. Per-resource observation and source-incompleteness causes are data,
+not inferred from bucket duration. Store uncertain-time late network bytes separately
+with their possible interval; exclude them from exact interval totals.
+
+Use existing age tiers and configured retention, sum/max rollups without identity
+pruning, and return actual covered bounds/resolution. Exclude unresolvable partial
+boundary buckets. Rank the aggregated population and then return ten; comparison
+asks for those same identities. Process details are lazy, read-only and retained for
+the same horizon. Old unrecorded periods remain unavailable.
+
+Add separate durable queries, leaving live-ring UsageByApp unchanged. Connected hosts
+answer source-history queries through existing request/reply with a new negotiated
+feature; older peers report unsupported and offline peers unavailable. New history is
+not mirrored in this batch. Record new wire vocabulary only after feasibility passes.
+
+The user subsequently approved storage-write ceilings of 4,000,000 payload bytes/hour,
+12,000,000 WAL bytes/hour and 10,000 rows/hour. Idle CPU, collector cadence, permissions
+and the 150 MB retained-file cap remain unchanged. Measure
+all proposed usage/identity/coverage/uncertainty tables plus existing store costs,
+steady and high process churn, restart recovery and retained-detail queries before
+dependent attribution UI. A failed gate blocks integration; it does not authorize
+a larger retained-file cap, a shorter process horizon or silently discarded identities.
+The retained cap requires a measured full-horizon recommendation and a separate user
+decision before it changes. The write-budget approval is not production gate evidence.
