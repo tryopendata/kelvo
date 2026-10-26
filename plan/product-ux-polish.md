@@ -213,7 +213,9 @@ app bytes and do not lose the underlying observed traffic.
 Use existing 10-second, one-minute and fifteen-minute age tiers and configured retention.
 Roll down by sums/maxima with all identities preserved, then aggregate and rank for a
 query. Retain process detail for the same horizon, loaded only on expansion. Intern
-identities, batch writes and prune whole old intervals through the existing size cap.
+identities, batch writes and prune whole old intervals through the existing size-cap
+mechanism. The approved default cap is 750 MB; retain valid saved cap choices and
+disclose actual available dates when a smaller cap fills.
 Do not silently cap identities or evict minor apps from each bucket to meet a budget;
 any unavoidable resource-limit loss makes coverage and rankings explicitly incomplete.
 
@@ -233,6 +235,12 @@ Propagate those causes through stored rollups, query replies, remote replies and
 comparison. Existing collector limits and permission boundaries stay intact. A host
 that sampled every scheduled interval can still have incomplete app attribution;
 missing app rows in that case are unknown, not a proven zero.
+
+Page process detail with bounded, deterministic, snapshot-bound continuation; keep
+full retained instances without returning an unbounded list. Return a bounded network
+uncertainty summary while retaining raw uncertainty facts. App rankings read app
+aggregates independently of process-detail blocks. Validate request bounds, comparison
+membership (at most the current top ten) and page inputs.
 
 Add typed durable query and lazy process-detail interfaces through schema, transport,
 engine/store and mocks. Write the data-model/protocol decision before implementation.
@@ -408,16 +416,16 @@ The review did not establish runtime/storage feasibility or verify implementatio
 2026-10-25: execution authorized. Orchestrator owns integration and landing; Sol 6.1
 agents own implementation in isolated managed worktrees.
 
-- [ ] Native/settings and compact popover, including issue #1 fixes.
+- [x] Native/settings and compact popover, including issue #1 fixes (integrated; final review/gates pending).
 - [ ] Durable usage contracts and blocking storage feasibility measurements.
 - [ ] Durable usage lifecycle, local/remote queries and correctness checks.
 - [ ] Timeline/shared range, event navigation, attribution and comparison (depends on history gate).
 - [ ] Integrated browser/native verification, independent code review and fixes.
 - [ ] Normal hooks, exact-revision Linux CI, landing and task-owned cleanup.
 
-Only the storage-write ceiling increases recorded below are authorized. CPU budgets
-and process-detail retention requirements are unchanged; a larger disk cap awaits
-measurement and a separate user decision.
+The storage-write increases and 750 MB default history cap recorded below are
+authorized. CPU budgets and full retained process-detail requirements are unchanged;
+existing valid saved caps remain respected.
 
 Execution checkpoint: native settings/temperature contracts compile and generated
 bindings are produced. Independent Timeline navigation is in progress. The history
@@ -445,3 +453,17 @@ Additional execution requirements confirmed by the user:
   workflow tests, real internal modules and SQLite, with mocks only at repository-
   approved transport/collector/time boundaries. Cover visible outcomes, persistence,
   failures and correct rollups. Prove regression tests fail without their fixes.
+
+2026-10-25 user decision: approve a 750 MB default history disk cap after the
+30-day rolled-up SQLite prototype measured 445,186,048 bytes for new usage history.
+Existing valid saved caps stay unchanged; smaller caps may retain fewer days, which
+must be disclosed. Production fill measurement must verify the estimate. The approved
+retention policy keeps approximately one day at finest recorded resolution, then
+progressively wider accurate aggregation buckets.
+
+Native/UI checkpoint: source commit 343cd8b4ab8097f83affe6884b95466600e07b0a
+integrated as 0bef7ff. Focused behavior/visual/native evidence is recorded in
+[ux-native-execution.md](ux-native-execution.md). Normal commit hooks passed; final
+integrated suites, review and landing remain pending. Remote/shell/transport work
+now belongs to that agent; the Timeline agent will implement collector/engine
+recording while the history agent owns store/rollup/query behavior.

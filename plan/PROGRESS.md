@@ -13,7 +13,9 @@ in the plan. A Sol 6.1 agent applied ce:devils-advocate and found three correcti
 uncertain-time network attribution, source-level completeness, and storage-gate
 accounting. Those corrections and native content-sizing constraints are incorporated;
 the follow-up review passed with no remaining material finding.
-Implementation is authorized and underway in isolated Sol 6.1 agent worktrees.
+Implementation is underway in isolated Sol 6.1 agent worktrees. Native/compact
+UI and issue #1 fixes are integrated on the feature branch (0bef7ff), with focused
+evidence in [ux-native-execution.md](ux-native-execution.md). Nothing is landed yet.
 Storage/performance feasibility blocks dependent Timeline attribution work. Native/UI
 acceptance and final review remain gates; the prototype is not app verification.
 
