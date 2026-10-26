@@ -62,6 +62,24 @@ export function dateInput(ms: number): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
+/** Recorded bounds retain seconds and fractional precision; editable fields stay minutes. */
+export function recordedDate(ms: number): string {
+  return recordedWallTime(ms, Math.round((ms % 1000) * 1000));
+}
+export function recordedProcessStart(us: number): string {
+  return recordedWallTime(Math.floor(us / 1000), us % 1_000_000);
+}
+function recordedWallTime(ms: number, fractionUs: number): string {
+  const date = new Date(ms);
+  const seconds = date.getSeconds();
+  if (seconds === 0 && fractionUs === 0) return dateInput(ms);
+  const fraction =
+    fractionUs === 0
+      ? ""
+      : `.${String(fractionUs).padStart(6, "0").replace(/0+$/, "")}`;
+  return `${dateInput(ms)}:${String(seconds).padStart(2, "0")}${fraction}`;
+}
+
 export function parseDateInput(text: string): number | null {
   if (!/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(text)) return null;
   const ms = new Date(text.replace(" ", "T")).getTime();

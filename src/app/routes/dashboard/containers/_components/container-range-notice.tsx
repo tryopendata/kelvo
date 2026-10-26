@@ -1,4 +1,4 @@
-import { dateInput } from "@core/chart-range";
+import { recordedDate } from "@core/chart-range";
 import { useChartWindow } from "~/hooks/use-chart-window";
 
 export function ContainerRangeNotice() {
@@ -6,8 +6,8 @@ export function ContainerRangeNotice() {
   if (!range || range.endMs === null) return null;
   return (
     <p role="status" className="text-[11px] text-muted-foreground">
-      History: {dateInput(range.endMs - range.windowMs)} to{" "}
-      {dateInput(range.endMs)} ·{" "}
+      History: {recordedDate(range.endMs - range.windowMs)} to{" "}
+      {recordedDate(range.endMs)} ·{" "}
       {Intl.DateTimeFormat().resolvedOptions().timeZone}. Inventory and controls
       retain their labeled current or last-observed state.
     </p>

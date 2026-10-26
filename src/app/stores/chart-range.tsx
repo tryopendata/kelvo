@@ -1,5 +1,5 @@
 import type { TimeRange } from "@core/brush";
-import { dateInput } from "@core/chart-range";
+import { recordedDate } from "@core/chart-range";
 import { RING_SPAN_MS } from "@core/generated/bindings";
 import {
   createContext,
@@ -54,7 +54,7 @@ export function ChartRangeNotice() {
           role="status"
         >
           {range.endMs !== null &&
-            `${dateInput(range.endMs - range.windowMs)} to ${dateInput(range.endMs)} · ${Intl.DateTimeFormat().resolvedOptions().timeZone}. `}
+            `${recordedDate(range.endMs - range.windowMs)} to ${recordedDate(range.endMs)} · ${Intl.DateTimeFormat().resolvedOptions().timeZone}. `}
           Charts and totals use recorded history. Current readings stay live.
           Hatched areas have missing data. App activity may cover only part of
           this range.

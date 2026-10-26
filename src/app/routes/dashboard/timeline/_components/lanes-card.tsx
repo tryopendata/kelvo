@@ -1,6 +1,10 @@
 import type { TimeRange } from "@core/brush";
 import { formatClockSeconds } from "@core/format";
-import type { Event, SeriesStats } from "@core/generated/bindings";
+import type {
+  Event,
+  HistoricalUsageMetric,
+  SeriesStats,
+} from "@core/generated/bindings";
 import { useEffect, useMemo, useState } from "react";
 import { useElementSize } from "~/hooks/use-element-size";
 import { cn } from "~/lib/utils";
@@ -19,7 +23,7 @@ import {
 } from "../_lib/gaps";
 import { buildLaneModel } from "../_lib/lane-model";
 import { LANE_GAP, LANE_HEIGHT, type LaneDef } from "../_lib/lanes";
-import { laneSummary } from "../_lib/summaries";
+import { laneComparison, laneSummary } from "../_lib/summaries";
 import {
   axisTicks,
   dayLabel,
@@ -48,6 +52,10 @@ export interface LanesCardProps {
   units: LaneUnits;
   summaries?: SeriesStats | undefined;
   summaryError?: boolean;
+  previousSummaries?: SeriesStats | undefined;
+  comparing?: boolean;
+  rankBy?: HistoricalUsageMetric | undefined;
+  onRank?: ((metric: HistoricalUsageMetric) => void) | undefined;
   /** The plot column's width in px, whenever it is measured or resized. */
   onPlotWidth?: (px: number) => void;
   onSelectRange?: (range: TimeRange) => undefined | Promise<boolean>;
@@ -84,6 +92,10 @@ export function LanesCard({
   units,
   summaries,
   summaryError = false,
+  previousSummaries,
+  comparing = false,
+  rankBy,
+  onRank,
   onPlotWidth,
   onSelectRange,
   selectionNowMs = toMs,
@@ -119,9 +131,7 @@ export function LanesCard({
     selectEvent,
     focusAfterRange,
   } = useTimelineSelection({
-    rangeKey: `${hostId}:${
-      selectionKey ?? `${live ? `live:${toMs - fromMs}` : `${fromMs}:${toMs}`}`
-    }`,
+    rangeKey: timelineSelectionKey(hostId, selectionKey, live, fromMs, toMs),
     fromMs,
     toMs,
     bucketMs,
@@ -225,14 +235,17 @@ export function LanesCard({
 
       <div className="grid grid-cols-[148px_minmax(0,1fr)] gap-x-4">
         <div className="flex flex-col gap-3">
-          {lanes.map((l) => (
-            <LaneLabel
-              key={l.def.id}
-              def={l.def}
-              summary={laneSummary(l.def.id, summaries, units, summaryError)}
-              onShowTable={() => setTableLane(l)}
-            />
-          ))}
+          <LaneLabels
+            lanes={lanes}
+            summaries={summaries}
+            summaryError={summaryError}
+            previousSummaries={previousSummaries}
+            comparing={comparing}
+            rankBy={rankBy}
+            onRank={onRank}
+            units={units}
+            onShow={setTableLane}
+          />
         </div>
 
         <div
@@ -357,4 +370,59 @@ export function LanesCard({
       />
     </Card>
   );
+}
+
+function LaneLabels({
+  lanes,
+  summaries,
+  summaryError,
+  previousSummaries,
+  comparing,
+  rankBy,
+  onRank,
+  onShow,
+  units,
+}: Pick<
+  LanesCardProps,
+  | "lanes"
+  | "summaries"
+  | "summaryError"
+  | "previousSummaries"
+  | "comparing"
+  | "rankBy"
+  | "onRank"
+> & { onShow: (lane: LaneData) => void; units: LaneUnits }) {
+  return lanes.map((l) => {
+    const metric =
+      l.def.id === "temp"
+        ? undefined
+        : l.def.id === "power"
+          ? "energy"
+          : l.def.id;
+    return (
+      <LaneLabel
+        key={l.def.id}
+        def={l.def}
+        summary={laneSummary(l.def.id, summaries, units, summaryError)}
+        onShowTable={() => onShow(l)}
+        comparison={
+          comparing
+            ? laneComparison(l.def.id, summaries, previousSummaries, units)
+            : undefined
+        }
+        onRank={onRank && metric ? () => onRank(metric) : undefined}
+        ranked={rankBy === metric}
+      />
+    );
+  });
+}
+
+function timelineSelectionKey(
+  hostId: string,
+  selectionKey: string | undefined,
+  live: boolean,
+  fromMs: number,
+  toMs: number
+) {
+  return `${hostId}:${selectionKey ?? (live ? `live:${toMs - fromMs}` : `${fromMs}:${toMs}`)}`;
 }

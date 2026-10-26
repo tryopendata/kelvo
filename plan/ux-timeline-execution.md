@@ -76,3 +76,26 @@ was changed. Storage owner received /tmp/kelvo-usage-real-host-hour.sqlite and i
 with full output in /tmp/kelvo-usage-combined-hour-volume.log. The temporary full-hour
 measurement override was restored. Dependent attribution UI is gated again while the
 storage owner investigates lossless compression of the actual facts.
+
+Shared historical UI handoff: HistoricalUsageCard reads Rust-ranked app facts and lazy
+100-instance continuation pages through centralized history query keys. Timeline lane
+buttons select the ranking resource; ascending reverses the same membership. Comparison
+reads the immediately preceding equal interval for the current app names only; empty
+membership never requests an independent previous ranking. Each resource exposes its
+own coverage, visible partial status and keyboard-accessible details. Previous missing
+values stay unavailable. Refresh resets process pages; stale continuation recovery starts
+again without retaining old children. Fixed intervals remain cached until explicit refresh
+or history invalidation; Live follows existing bucket-bound changes. Above the approved
+30-day attribution request limit, the table explains its limit while charts retain the full
+selected interval. Visible bounds retain seconds and process start details retain microseconds.
+
+Verification: 1,332 frontend tests passed across 206 files; the 135-test focused slice
+includes nine real-provider table scenarios. All 22 Timeline workflows passed in Chromium
+and WebKit, plus four gallery screenshot cases. Rank/reverse and process-refresh mutations
+failed assertions and were restored (logs /tmp/kelvo-usage-revert-ranking.log and
+/tmp/kelvo-usage-revert-process-refresh.log). Typecheck and format passed. Browser snapshots
+were reviewed against the existing gallery in both themes. The table retains AppsShell,
+InitialChip, Table and SortHeader styling; added coverage notes and previous-value lines
+intentionally increase its height so recorded facts remain inspectable. No alternate card,
+header or badge system was introduced. Screenshots: test-results/screens/timeline-comparison-*
+and /tmp/kelvo-ux-gallery-*.png. Parent owns final integration/performance acceptance.

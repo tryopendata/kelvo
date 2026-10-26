@@ -41,14 +41,14 @@ for (const theme of ["light", "dark"]) {
     await expect(header(page)).toContainText("Recorded ·");
     await settled(page);
     const dates = (await header(page).innerText()).match(
-      /\d{4}-\d\d-\d\d \d\d:\d\d to \d{4}-\d\d-\d\d \d\d:\d\d/
+      /\d{4}-\d\d-\d\d \d\d:\d\d(?::\d\d(?:\.\d+)?)? to \d{4}-\d\d-\d\d \d\d:\d\d(?::\d\d(?:\.\d+)?)?/
     )?.[0];
     if (!dates) throw new Error("Selected dates not visible");
     await page.screenshot({
       path: `test-results/screens/timeline-selection-${theme}-${info.project.name}.png`,
     });
     await page.getByRole("link", { name: /^CPU / }).click();
-    await expect(page.getByText(dates, { exact: false })).toBeVisible();
+    await expect(page.getByText(dates, { exact: false }).first()).toBeVisible();
     await page.getByRole("link", { name: "Timeline", exact: true }).click();
     await page.getByRole("button", { name: "Back", exact: true }).click();
     await expect(header(page)).toContainText("Live ·");
@@ -86,16 +86,16 @@ for (const theme of ["light", "dark"]) {
     await expect(header(page)).toContainText("Recorded ·");
     await settled(page);
     const dates = (await header(page).innerText()).match(
-      /\d{4}-\d\d-\d\d \d\d:\d\d to \d{4}-\d\d-\d\d \d\d:\d\d/
+      /\d{4}-\d\d-\d\d \d\d:\d\d(?::\d\d(?:\.\d+)?)? to \d{4}-\d\d-\d\d \d\d:\d\d(?::\d\d(?:\.\d+)?)?/
     )?.[0];
     if (!dates) throw new Error("Selected dates not visible");
     await page.getByRole("link", { name: /^Battery / }).click();
     await expect(
       page.getByRole("img", { name: "Battery charge, selected range" })
     ).toBeVisible();
-    await expect(page.getByText(dates, { exact: false })).toBeVisible();
+    await expect(page.getByText(dates, { exact: false }).first()).toBeVisible();
     await page.getByRole("link", { name: "Containers", exact: true }).click();
-    await expect(page.getByText(dates, { exact: false })).toBeVisible();
+    await expect(page.getByText(dates, { exact: false }).first()).toBeVisible();
     await expect(
       page.getByRole("table", { name: /^Containers · / })
     ).toBeVisible();
@@ -145,3 +145,41 @@ test("pause explanation remains available through chart hover and keyboard focus
     "Recording was paused during this interval. No samples were collected."
   );
 });
+
+for (const theme of ["light", "dark"]) {
+  test(`${theme}: previous interval comparison and recorded process details stay available after ranking`, async ({
+    page,
+  }, info) => {
+    await ready(page, theme);
+    await drag(page);
+    await settled(page);
+    await page
+      .getByRole("button", { name: "Compare previous interval" })
+      .click();
+    await expect(page.getByText(/Previous:/).first()).toBeVisible();
+    await expect(page.getByText("Compiler", { exact: true })).toBeVisible();
+    await page
+      .getByRole("button", { name: "Rank apps by Memory", exact: true })
+      .click();
+    await expect(
+      page.getByRole("columnheader", { name: "Peak RAM" })
+    ).toHaveAttribute("aria-sort", "descending");
+    await page
+      .getByRole("button", { name: "Show Compiler recorded processes" })
+      .click();
+    await expect(page.getByText("PID 4099", { exact: false })).toBeVisible();
+    await page
+      .getByRole("button", { name: "Load more recorded processes" })
+      .click();
+    await expect(page.getByText("PID 4124", { exact: false })).toBeVisible();
+    await page
+      .getByRole("button", { name: "Hide Compiler recorded processes" })
+      .click();
+    await page
+      .getByRole("table", { name: "Recorded apps in this range" })
+      .scrollIntoViewIfNeeded();
+    await page.screenshot({
+      path: `test-results/screens/timeline-comparison-${theme}-${info.project.name}.png`,
+    });
+  });
+}

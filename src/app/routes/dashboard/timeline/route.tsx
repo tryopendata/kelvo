@@ -1,6 +1,9 @@
 import type { TimeRange } from "@core/brush";
-import { dateInput, relativeWindow } from "@core/chart-range";
-import type { ModuleCap } from "@core/generated/bindings";
+import { recordedDate, relativeWindow } from "@core/chart-range";
+import type {
+  HistoricalUsageMetric,
+  ModuleCap,
+} from "@core/generated/bindings";
 import { historyUnavailable } from "@core/history-state";
 import {
   ArrowLeft,
@@ -8,8 +11,10 @@ import {
   ChevronRight,
   DownloadIcon,
 } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { HistoricalUsageCard } from "~/components/historical-usage-card";
 import { HistoryNotices } from "~/components/history-notices";
+import type { ColumnSort } from "~/components/sort-header";
 import { Button } from "~/components/ui/button";
 import { WindowControl } from "~/components/window-control";
 import { useEvents } from "~/hooks/use-events";
@@ -49,6 +54,16 @@ export default function TimelineRoute() {
   };
   const span = presentationSpan(view.windowMs);
   const live = view.endMs === null;
+  const [compare, setCompare] = useState(false);
+  const [appSort, setAppSort] = useState<ColumnSort<HistoricalUsageMetric>>({
+    by: "cpu",
+    dir: "desc",
+  });
+  useEffect(() => {
+    if (live) setCompare(false);
+  }, [live]);
+  const comparisonAllowed = canCompare(view);
+  const comparing = compare && comparisonAllowed;
   const caps = useHost((s) => s.capabilities);
   const unitSettings = useSettings((s) => s.units);
   const units = useMemo(() => laneUnits(unitSettings), [unitSettings]);
@@ -65,13 +80,18 @@ export default function TimelineRoute() {
     SUMMARY_METRICS,
     navigation.range ? { fromMs: data.fromMs, toMs: data.toMs } : null
   );
+  const previousSummaries = useSeriesStats(
+    SUMMARY_METRICS,
+    comparing
+      ? { fromMs: data.fromMs - (data.toMs - data.fromMs), toMs: data.fromMs }
+      : null
+  );
   const events = useEvents(view.windowMs, view.endMs);
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const history = useHistoryHealth();
   const queryError = data.error?.error ?? null;
   // An unavailable store shows the banner; any other read error says so.
-  const otherError =
-    data.error && !historyUnavailable(data.error.error) ? data.error : null;
+  const otherError = nonHistoryError(data.error);
 
   const { exportCsv, exporting } = useExportCsv();
   const topRef = useRef<HTMLDivElement>(null);
@@ -118,7 +138,7 @@ export default function TimelineRoute() {
           <span className="font-normal text-[12px] text-muted-foreground">
             {live ? "Live · " : "Recorded · "}
             <span className="figures">
-              {dateInput(data.fromMs)} to {dateInput(data.toMs)}
+              {recordedDate(data.fromMs)} to {recordedDate(data.toMs)}
             </span>
             {" · "}
             {timezone}
@@ -163,6 +183,15 @@ export default function TimelineRoute() {
             onClick={navigation.live}
           >
             Live
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            aria-pressed={comparing}
+            disabled={!comparisonAllowed || navigation.pending}
+            onClick={() => setCompare((value) => !value)}
+          >
+            Compare previous interval
           </Button>
         </div>
         <Button
@@ -211,6 +240,10 @@ export default function TimelineRoute() {
         units={units}
         summaries={summaries.data}
         summaryError={summaries.isError}
+        previousSummaries={previousSummaries.data}
+        comparing={comparing}
+        rankBy={appSort.by}
+        onRank={(by) => setAppSort({ by, dir: "desc" })}
         onPlotWidth={setPlotPx}
         onSelectRange={selectRange}
         selectionKey={`${view.windowMs}:${view.endMs}`}
@@ -220,16 +253,82 @@ export default function TimelineRoute() {
         failed={data.error !== null}
       />
 
-      {summaries.data &&
-        (summaries.data.from_ms !== data.fromMs ||
-          summaries.data.to_ms !== data.toMs) && (
-          <p className="text-[11px] text-muted-foreground">
-            Summary bucket coverage: {dateInput(summaries.data.from_ms)} to{" "}
-            {dateInput(summaries.data.to_ms)} · {timezone}.
-          </p>
-        )}
+      <TimelineSummaryNotes
+        comparing={comparing}
+        previous={previousSummaries}
+        current={summaries.data}
+        fromMs={data.fromMs}
+        toMs={data.toMs}
+        timezone={timezone}
+      />
+      <HistoricalUsageCard
+        range={
+          navigation.range ? { fromMs: data.fromMs, toMs: data.toMs } : null
+        }
+        by={appSort.by}
+        sort={appSort}
+        onSortChange={setAppSort}
+        compare={comparing}
+      />
       <DockerTimelineLane from={data.fromMs} to={data.toMs} />
       <HeatmapCard units={units} onOpen={openHour} />
     </div>
   );
+}
+
+function TimelineSummaryNotes({
+  comparing,
+  previous: previousSummaries,
+  current,
+  fromMs,
+  toMs,
+  timezone,
+}: {
+  comparing: boolean;
+  previous: ReturnType<typeof useSeriesStats>;
+  current: ReturnType<typeof useSeriesStats>["data"];
+  fromMs: number;
+  toMs: number;
+  timezone: string;
+}) {
+  return (
+    <>
+      {" "}
+      {comparing && previousSummaries.isError && (
+        <p role="alert" className="text-[12px] text-muted-foreground">
+          Previous summaries could not be read.{" "}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => void previousSummaries.refetch()}
+          >
+            Retry previous summaries
+          </Button>
+        </p>
+      )}
+      {current && (current.from_ms !== fromMs || current.to_ms !== toMs) && (
+        <p className="text-[11px] text-muted-foreground">
+          Summary bucket coverage: {recordedDate(current.from_ms)} to{" "}
+          {recordedDate(current.to_ms)} · {timezone}.
+        </p>
+      )}
+      {comparing && previousSummaries.data && (
+        <p className="text-[11px] text-muted-foreground">
+          Previous summary bucket coverage:{" "}
+          {recordedDate(previousSummaries.data.from_ms)} to{" "}
+          {recordedDate(previousSummaries.data.to_ms)} · {timezone}.
+        </p>
+      )}
+    </>
+  );
+}
+
+function nonHistoryError<
+  T extends { error: Parameters<typeof historyUnavailable>[0] },
+>(error: T | null | undefined) {
+  return error && !historyUnavailable(error.error) ? error : null;
+}
+
+function canCompare(view: TimelineView) {
+  return view.endMs !== null && view.endMs >= 2 * view.windowMs;
 }

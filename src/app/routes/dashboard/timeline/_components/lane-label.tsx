@@ -1,18 +1,33 @@
 import { TableIcon } from "lucide-react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "~/components/ui/tooltip";
 import { LANE_HEIGHT, type LaneDef } from "../_lib/lanes";
-import type { LaneSummary } from "../_lib/summaries";
+import type { LaneComparison, LaneSummary } from "../_lib/summaries";
 
 export interface LaneLabelProps {
   def: LaneDef;
   /** Fact line from the visible range ("peak 71% · 14:02"). */
   summary: LaneSummary;
   onShowTable: () => void;
+  comparison?: LaneComparison | undefined;
+  onRank?: (() => void) | undefined;
+  ranked?: boolean | undefined;
 }
 
 /**
  * Label column describes the recorded interval; crosshair values remain momentary.
  */
-export function LaneLabel({ def, summary, onShowTable }: LaneLabelProps) {
+export function LaneLabel({
+  def,
+  summary,
+  onShowTable,
+  comparison,
+  onRank,
+  ranked,
+}: LaneLabelProps) {
   return (
     <div
       className="group flex flex-col justify-center gap-px border-border-subtle border-r pr-3"
@@ -24,7 +39,19 @@ export function LaneLabel({ def, summary, onShowTable }: LaneLabelProps) {
           className="size-2 rounded-mark"
           style={{ background: `var(--color-${def.accent})` }}
         />
-        <span className="font-[590] text-[12px]">{def.label}</span>
+        {onRank ? (
+          <button
+            type="button"
+            onClick={onRank}
+            aria-pressed={ranked}
+            aria-label={`Rank apps by ${def.label}`}
+            className="rounded-sm font-[590] text-[12px] underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            {def.label}
+          </button>
+        ) : (
+          <span className="font-[590] text-[12px]">{def.label}</span>
+        )}
         <button
           type="button"
           onClick={onShowTable}
@@ -41,13 +68,31 @@ export function LaneLabel({ def, summary, onShowTable }: LaneLabelProps) {
       <span className="figures truncate text-[10px] text-muted-foreground leading-3">
         {summary.detail}
       </span>
-      {summary.coverage && (
-        <span
-          className="figures truncate text-[10px] text-fg-faint leading-3"
-          title={summary.coverage}
-        >
-          {summary.coverage}
-        </span>
+      {comparison ? (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              className="figures truncate rounded-sm text-left text-[10px] text-fg-faint leading-3 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              aria-label={`Previous ${comparison.previous}; ${comparison.delta}. Current: ${summary.coverage}. Previous: ${comparison.coverage}`}
+            >
+              Prev {comparison.previous} · {comparison.delta}
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>
+            Current: {summary.coverage}. Previous: {comparison.coverage}.{" "}
+            {comparison.delta}
+          </TooltipContent>
+        </Tooltip>
+      ) : (
+        summary.coverage && (
+          <span
+            className="figures truncate text-[10px] text-fg-faint leading-3"
+            title={summary.coverage}
+          >
+            {summary.coverage}
+          </span>
+        )
       )}
     </div>
   );

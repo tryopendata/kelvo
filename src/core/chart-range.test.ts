@@ -5,6 +5,8 @@ import {
   dateInput,
   MAX_RANGE_MS,
   parseDateInput,
+  recordedDate,
+  recordedProcessStart,
   validChartRange,
 } from "./chart-range";
 
@@ -61,4 +63,15 @@ describe("chart ranges", () => {
       "error"
     );
   });
+});
+
+it("preserves selected seconds and distinguishes process starts within a millisecond", () => {
+  const ms = new Date("2026-10-26T12:34:50.123").getTime();
+  expect(recordedDate(ms)).toBe("2026-10-26 12:34:50.123");
+  expect(recordedProcessStart(ms * 1000 + 1)).toBe(
+    "2026-10-26 12:34:50.123001"
+  );
+  expect(recordedProcessStart(ms * 1000 + 2)).toBe(
+    "2026-10-26 12:34:50.123002"
+  );
 });

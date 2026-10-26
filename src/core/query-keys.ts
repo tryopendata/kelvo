@@ -6,6 +6,7 @@
  */
 import type {
   HeatmapMetric,
+  HistoricalUsageMetric,
   HostId,
   Module,
   Settings,
@@ -80,6 +81,32 @@ export const historyKeys = {
    * D-099). Not stored history, but cleared with it, so it sits in the
    * family a clear invalidates.
    */
+  historicalUsage: (
+    hostId: HostId,
+    fromMs: number,
+    toMs: number,
+    by: HistoricalUsageMetric,
+    appNames: readonly string[]
+  ) =>
+    ["history", hostId, "durable-usage", fromMs, toMs, by, appNames] as const,
+  usageProcessRange: (hostId: HostId, fromMs: number, toMs: number) =>
+    ["history", hostId, "durable-processes", fromMs, toMs] as const,
+  usageProcesses: (
+    hostId: HostId,
+    fromMs: number,
+    toMs: number,
+    by: HistoricalUsageMetric,
+    appName: string
+  ) =>
+    [
+      "history",
+      hostId,
+      "durable-processes",
+      fromMs,
+      toMs,
+      by,
+      appName,
+    ] as const,
   usageByApp: (
     hostId: HostId,
     by: UsageKey,
