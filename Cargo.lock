@@ -2233,7 +2233,7 @@ dependencies = [
 
 [[package]]
 name = "kelvo"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "ab_glyph",
  "anyhow",
@@ -2279,7 +2279,7 @@ dependencies = [
 
 [[package]]
 name = "kelvo-agent"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "kelvo-engine",
@@ -2297,7 +2297,7 @@ dependencies = [
 
 [[package]]
 name = "kelvo-collect"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "block2",
  "bollard",
@@ -2322,7 +2322,7 @@ dependencies = [
 
 [[package]]
 name = "kelvo-engine"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "core-foundation 0.10.1",
@@ -2348,7 +2348,7 @@ dependencies = [
 
 [[package]]
 name = "kelvo-proto"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "ciborium",
  "kelvo-schema",
@@ -2359,7 +2359,7 @@ dependencies = [
 
 [[package]]
 name = "kelvo-remote"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "kelvo-engine",
  "kelvo-proto",
@@ -2378,7 +2378,7 @@ dependencies = [
 
 [[package]]
 name = "kelvo-remote-helper"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "kelvo-remote",
  "serde_json",
@@ -2388,7 +2388,7 @@ dependencies = [
 
 [[package]]
 name = "kelvo-schema"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "ciborium",
  "compact_str",
@@ -2404,7 +2404,7 @@ dependencies = [
 
 [[package]]
 name = "kelvo-store"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "ciborium",

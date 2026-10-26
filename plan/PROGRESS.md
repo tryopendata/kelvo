@@ -4,6 +4,12 @@ This file tracks where Kelvo is against the plan. Task-level checkboxes live in 
 
 Agents update this file whenever a phase starts or finishes. Each update adds a log entry: what changed, how it was verified, and anything left open. They also tick the matching checkboxes in the version doc.
 
+## Release 0.2.0 (2026-10-25, in progress)
+
+Preparing the next minor release from main: synchronized application/workspace
+versions and refreshed release notes for Linux hosts, history ranges, space reports
+and power charts. Release checks and publication evidence will follow here.
+
 ## Start here (handoff, 2026-10-25, history/remote landing and QA)
 
 State: `main` holds v1.0, v1.1 and v1.2. The app runs from source with `bun run tauri dev`. Verification evidence is dated in the log; older green runs do not establish the current refactor as complete. The user accepted day-to-day stability on 2026-10-16 and authorized the free GitHub release path: an ad-hoc-signed DMG and signature-verified in-app updates. Kelvo 0.1.0 is publicly available through GitHub Releases; release build and package verification are complete; Apple Developer membership, notarization, Homebrew and the Mac App Store remain deferred.

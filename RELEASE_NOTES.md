@@ -1,11 +1,20 @@
-# Kelvo 0.1.0
+# Kelvo 0.2.0
 
-The first downloadable release of Kelvo, a free, open-source system monitor for
-Apple Silicon Macs running macOS 26 or later.
+Kelvo is a free, open-source system monitor for Apple Silicon Macs running macOS
+26 or later.
 
-- CPU, GPU, memory, power, sensors, network, disk and battery monitoring.
-- Local history, timeline, process views and optional Docker and remote Mac monitoring.
-- In-app update checks and an **Install and restart** action in Settings → General.
+- Monitor Linux hosts over SSH with a bundled headless agent, including CPU,
+  memory, disks, network, sensors and containers where supported.
+- Install, update and remove remote Linux agents from host settings.
+- Explore rolling and fixed history ranges, with remote per-app history and disk
+  space reports.
+- Drill into disk usage with an on-demand space report and treemap.
+- View per-app power draw and thermal zone history.
+- Improved remote reconnection, stored history loading, chart navigation and
+  rendering performance.
+
+Existing users can update from Settings → General. History and settings are
+preserved across updates.
 
 ## Install
 
