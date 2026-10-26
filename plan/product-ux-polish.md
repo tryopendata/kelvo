@@ -427,8 +427,8 @@ The storage-write increases and 750 MB default history cap recorded below are
 authorized. CPU budgets and full retained process-detail requirements are unchanged;
 existing valid saved caps remain respected.
 
-Execution checkpoint: native settings/temperature contracts compile and generated
-bindings are produced. Independent Timeline navigation is in progress. The history
+Initial execution checkpoint: native settings/temperature contracts compile and generated
+bindings are produced. Independent Timeline navigation was then in progress. The history
 lane measured an existing native store baseline of 936 rows/hour, 769,392 payload
 bytes/hour and 4,331,712 WAL bytes/hour. Candidate packed SQLite usage fixtures exceed
 the unchanged storage gates under process churn even with lossless batch compression.
@@ -467,3 +467,9 @@ integrated as 0bef7ff. Focused behavior/visual/native evidence is recorded in
 integrated suites, review and landing remain pending. Remote/shell/transport work
 now belongs to that agent; the Timeline agent will implement collector/engine
 recording while the history agent owns store/rollup/query behavior.
+
+Timeline navigation checkpoint: source commit 56982b2 integrated as fe3d029, with
+shared native presentation alignment in ab0d5f6. Four focused integration files
+passed all 16 tests after combining the lanes. Agent verification covers 1,299
+frontend tests and 74 Chromium/WebKit cases; see [ux-timeline-execution.md](ux-timeline-execution.md).
+Durable attribution, comparison, final integrated acceptance and landing remain pending.

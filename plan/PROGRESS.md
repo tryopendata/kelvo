@@ -16,8 +16,11 @@ the follow-up review passed with no remaining material finding.
 Implementation is underway in isolated Sol 6.1 agent worktrees. Native/compact
 UI and issue #1 fixes are integrated on the feature branch (0bef7ff), with focused
 evidence in [ux-native-execution.md](ux-native-execution.md). Nothing is landed yet.
-Storage/performance feasibility blocks dependent Timeline attribution work. Native/UI
-acceptance and final review remain gates; the prototype is not app verification.
+Shared Timeline range navigation, animation, annotations and historical lane summaries
+are integrated (fe3d029, ab0d5f6); focused evidence is in
+[ux-timeline-execution.md](ux-timeline-execution.md). Storage/performance feasibility
+still blocks dependent attribution and comparison work. Final integrated acceptance
+and review remain gates; prototype storage measurements are not app verification.
 
 ## CI runner policy (2026-10-25)
 
