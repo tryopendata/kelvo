@@ -69,7 +69,7 @@ struct Open {
     bucket: UsageBucket,
     source: Coverage,
     apps: HashMap<Arc<str>, (usize, Coverage)>,
-    processes: HashMap<(i32, i64), (usize, Coverage)>,
+    processes: HashMap<(i32, i64, Arc<str>), (usize, Coverage)>,
 }
 impl Open {
     fn new(from_ms: i64, capacity: usize) -> Self {
@@ -107,7 +107,7 @@ impl Open {
     fn process(&mut self, row: &ProcessSample, app: &Arc<str>) -> (&mut UsageFacts, &mut Coverage) {
         let (index, coverage) = self
             .processes
-            .entry((row.pid, row.start_time_us))
+            .entry((row.pid, row.start_time_us, app.clone()))
             .or_insert_with(|| {
                 let index = self.bucket.processes.len();
                 self.bucket.processes.push(UsageProcessFacts {

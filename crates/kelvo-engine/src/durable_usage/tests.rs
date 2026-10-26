@@ -253,3 +253,44 @@ fn a_partial_gpu_read_never_turns_an_unobserved_process_into_measured_zero() {
         0
     );
 }
+
+#[test]
+fn late_app_resolution_preserves_each_observed_membership_within_one_bucket() {
+    let mut recorder = UsageRecorder::default();
+    let mut unresolved = row(1, 10.0, 100, 5.0);
+    unresolved.app = None;
+    recorder.record(
+        tick(5_000),
+        &[unresolved],
+        &buf(5_000),
+        [true; 5],
+        [true; 5],
+    );
+    recorder.record(
+        tick(10_000),
+        &[row(1, 10.0, 100, 5.0)],
+        &buf(5_000),
+        [true; 5],
+        [true; 5],
+    );
+    let snapshots = recorder.snapshots();
+    assert_eq!(snapshots.len(), 1);
+    let bucket = &snapshots[0];
+    assert_eq!(bucket.processes.len(), 2);
+    for name in ["p1", "App"] {
+        let app = bucket
+            .apps
+            .iter()
+            .find(|app| app.name.as_ref() == name)
+            .unwrap();
+        let process = bucket
+            .processes
+            .iter()
+            .find(|process| process.app_name.as_ref() == name)
+            .unwrap();
+        assert_eq!((process.pid, process.start_time_us), (1, 1));
+        assert_eq!(process.facts.cpu_seconds, 0.5);
+        assert_eq!(app.facts.cpu_seconds, process.facts.cpu_seconds);
+        assert_eq!(process.facts.coverage[0].measured_ms, 5_000);
+    }
+}
