@@ -13,17 +13,20 @@ in the plan. A Sol 6.1 agent applied ce:devils-advocate and found three correcti
 uncertain-time network attribution, source-level completeness, and storage-gate
 accounting. Those corrections and native content-sizing constraints are incorporated;
 the follow-up review passed with no remaining material finding.
-Implementation is underway in isolated Sol 6.1 agent worktrees. Native/compact
-UI and issue #1 fixes are integrated on the feature branch (0bef7ff), with focused
-evidence in [ux-native-execution.md](ux-native-execution.md). Nothing is landed yet.
-Shared Timeline range navigation, animation, annotations and historical lane summaries
-are integrated (fe3d029, ab0d5f6); focused evidence is in
-[ux-timeline-execution.md](ux-timeline-execution.md). Durable store/query and engine
-recording are integrated (f1c9d4a, 02af8ff, b16d1cb). Attribution and comparison UI
-are underway against those contracts. The actual collector-to-store write gate
-failed despite a passing synthetic fixture; lossless batch compression is being
-implemented before repeating the gate. Final storage/performance acceptance,
-integrated verification and review remain blocking; fixtures are not app verification.
+Implementation is integrated in `codex/product-ux`, with nothing landed yet.
+Native/compact UI and issue #1 evidence is in [ux-native-execution.md](ux-native-execution.md).
+Timeline navigation, animation, annotations, recorded attribution, comparison and
+module integration are recorded in [ux-timeline-execution.md](ux-timeline-execution.md).
+Durable lifecycle, local/remote queries and lossless batching are recorded in
+[ux-history-execution.md](ux-history-execution.md). The real-collector full-hour
+storage gate passes: 2,819 rows, 1,988,351 payload bytes and 9,647,904 WAL bytes.
+The retained 30-day fixture occupies 388,562,944 bytes before existing history.
+All 476 integrated Chromium/WebKit cases pass at `df464fb`, and independent CE
+code review approves that revision after failed-zoom and Container Back fixes.
+Quiet allocation checks pass all five modes after eliminating a redundant batch
+list allocation (`b91e02f`, reviewed): tray recorder 9.96 allocations per tick
+against the unchanged limit of 10. CPU measurements, final normal hooks and
+exact-source Linux CI remain blocking. Fixtures are not app verification.
 
 ## Automatic updates (2026-10-25, landed; rollout acceptance pending)
 
