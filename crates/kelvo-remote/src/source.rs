@@ -292,7 +292,14 @@ async fn session_loop(
         .negotiated
         .features
         .contains(kelvo_proto::QUERY_FEATURE);
-    let (_line, mut calls) = crate::calls::open(&source.line, answers);
+    let (_line, mut calls) = crate::calls::open(
+        &source.line,
+        answers,
+        session
+            .negotiated
+            .features
+            .contains(kelvo_proto::USAGE_HISTORY_FEATURE),
+    );
     let mut state = Session {
         layout: None,
         summary_layout: None,
@@ -1008,6 +1015,103 @@ mod tests {
             mirror,
         )
     }
+    #[tokio::test]
+    async fn durable_queries_validate_host_and_forward_pages_without_rewriting_evidence() {
+        use kelvo_schema::durable_usage::*;
+        let source = fixture_source(None);
+        let mut request = UsageProcessRequest {
+            host: source.record.id,
+            from_ms: 0,
+            to_ms: 60000,
+            app_name: "Compiler".into(),
+            by: HistoricalUsageMetric::Cpu,
+            page_size: 100,
+            cursor: Some("opaque-snapshot-page2".into()),
+        };
+        let (_line, mut queued) = crate::calls::open(&source.line, true, true);
+        request.page_size = 101;
+        assert!(matches!(
+            source.usage_processes(request.clone()).await,
+            Err(RemoteError::InvalidArgument(_))
+        ));
+        request.page_size = 100;
+        request.host = HostId(uuid::Uuid::nil());
+        assert!(matches!(
+            source.usage_processes(request.clone()).await,
+            Err(RemoteError::InvalidArgument(_))
+        ));
+        assert!(queued.try_recv().is_err());
+        request.host = source.record.id;
+        let reply = UsageProcessReply {
+            range: UsageHistoryRange {
+                requested_from_ms: 0,
+                requested_to_ms: 60000,
+                spans: Vec::new(),
+                coverage: vec![UsageMetricCoverage {
+                    metric: HistoricalUsageMetric::Cpu,
+                    coverage: UsageResourceCoverage {
+                        supported: true,
+                        measured_ms: 0,
+                        complete: false,
+                        causes: vec![UsageIncompleteCause::SamplingGap],
+                    },
+                }],
+            },
+            app_name: "Compiler".into(),
+            processes: Vec::new(),
+            network_app_level_only: true,
+            next_cursor: Some("opaque-snapshot-page3".into()),
+        };
+        let (actual, ()) = tokio::join!(source.usage_processes(request.clone()), async {
+            let mut pending = crate::calls::Pending::default();
+            let Message::Request { id, query } = pending.request(queued.recv().await.unwrap())
+            else {
+                panic!("expected request")
+            };
+            assert_eq!(query, kelvo_proto::Query::UsageProcesses(request));
+            pending.reply(id, kelvo_proto::Answer::UsageProcesses(reply.clone()));
+        });
+        assert_eq!(actual.unwrap(), reply);
+    }
+
+    #[tokio::test]
+    async fn durable_query_stale_cursor_and_unknown_answers_keep_actionable_errors() {
+        use kelvo_schema::durable_usage::*;
+        let source = fixture_source(None);
+        let request = UsageProcessRequest {
+            host: source.record.id,
+            from_ms: 0,
+            to_ms: 60000,
+            app_name: "Compiler".into(),
+            by: HistoricalUsageMetric::Cpu,
+            page_size: 1,
+            cursor: None,
+        };
+        let (_line, mut queued) = crate::calls::open(&source.line, true, true);
+        for answer in [
+            kelvo_proto::Answer::Error {
+                code: kelvo_proto::ErrorCode::InvalidArgument,
+                message: "process history changed; restart expansion".into(),
+            },
+            kelvo_proto::Answer::Unknown,
+        ] {
+            let unknown = matches!(answer, kelvo_proto::Answer::Unknown);
+            let (actual, ()) = tokio::join!(source.usage_processes(request.clone()), async {
+                let mut pending = crate::calls::Pending::default();
+                let Message::Request { id, .. } = pending.request(queued.recv().await.unwrap())
+                else {
+                    panic!("expected request")
+                };
+                pending.reply(id, answer);
+            });
+            assert!(if unknown {
+                matches!(actual, Err(RemoteError::Unsupported(_)))
+            } else {
+                matches!(actual, Err(RemoteError::InvalidArgument(ref message)) if message.contains("restart expansion"))
+            });
+        }
+    }
+
     fn fixture_session<'a>(
         source: &'a Arc<RemoteSource>,
         sink: &'a SourceSink,

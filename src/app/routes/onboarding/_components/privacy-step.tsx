@@ -40,7 +40,7 @@ export function PrivacyStep({
   );
   const sizeText =
     projection.limitedDays === null
-      ? `takes about ${approxSize(projection.bytes)} for ${retentionDays} days`
+      ? `takes about ${approxSize(projection.bytes)} for ${retentionDays} days, with a ${sizeLimitLabel(sizeLimitMb)} size limit`
       : `stays under ${sizeLimitLabel(sizeLimitMb)}, about ${projection.limitedDays} days`;
 
   return (

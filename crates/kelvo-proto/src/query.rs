@@ -7,6 +7,9 @@
 use kelvo_schema::disk_space::{
     SpaceFile, SpaceReport, SpaceScanStatus, SpaceSubtree, SpaceTarget, SpaceVolume,
 };
+use kelvo_schema::durable_usage::{
+    HistoricalUsageReply, HistoricalUsageRequest, UsageProcessReply, UsageProcessRequest,
+};
 use kelvo_schema::usage::{UsageByApp, UsageKey};
 use serde::{Deserialize, Serialize};
 
@@ -23,6 +26,8 @@ pub enum Query {
         by: UsageKey,
         limit: u32,
     },
+    HistoricalUsage(HistoricalUsageRequest),
+    UsageProcesses(UsageProcessRequest),
     /// The host's space report service (D-114), one call per `SpaceService` method.
     SpaceVolumes,
     SpaceStart {
@@ -54,6 +59,8 @@ pub enum Query {
 #[serde(tag = "a", content = "v")]
 pub enum Answer {
     UsageByApp(UsageByApp),
+    HistoricalUsage(HistoricalUsageReply),
+    UsageProcesses(UsageProcessReply),
     SpaceVolumes(Vec<SpaceVolume>),
     SpaceStatus(SpaceScanStatus),
     SpaceReport(Option<SpaceReport>),

@@ -158,6 +158,7 @@ fn is_busy(e: &StoreError) -> bool {
 impl From<StoreError> for CommandError {
     fn from(e: StoreError) -> Self {
         match e {
+            StoreError::Usage(message) => CommandError::InvalidArgument { message },
             StoreError::UnknownHost(host) => CommandError::UnknownHost { host },
             StoreError::WriterGone => CommandError::history_unavailable(),
             StoreError::TooNew { found, supported } => {
@@ -231,6 +232,12 @@ mod tests {
             "store_too_new"
         );
         assert_eq!(kind(StoreError::WriterGone), "history_unavailable");
+        assert_eq!(
+            kind(StoreError::Usage(
+                "process history changed; restart expansion".into()
+            )),
+            "invalid_argument"
+        );
         assert_eq!(kind(sqlite(rusqlite::ffi::SQLITE_FULL)), "store");
     }
 

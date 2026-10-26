@@ -80,6 +80,8 @@ pub enum HandshakeError {
 
 /// `Message::Request` and `Message::Reply` (D-117).
 pub const QUERY_FEATURE: &str = "query.v1";
+/// Source-owned durable interval attribution and bounded process pages (D-120).
+pub const USAGE_HISTORY_FEATURE: &str = "query.usage-history.v1";
 
 /// The features this build offers: every `SyncPage` row kind it knows.
 pub fn local_features() -> BTreeSet<String> {
@@ -92,6 +94,7 @@ pub fn local_features() -> BTreeSet<String> {
             "live.summary",
             "live.recent",
             QUERY_FEATURE,
+            USAGE_HISTORY_FEATURE,
         ])
         .map(str::to_string)
         .collect()

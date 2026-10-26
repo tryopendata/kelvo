@@ -35,7 +35,7 @@ async fn spawn_blocking<T: Send + 'static>(
 }
 
 /// Runs `f` on a blocking thread with the app state.
-async fn blocking<T: Send + 'static>(
+pub(crate) async fn blocking<T: Send + 'static>(
     app: AppHandle,
     f: impl FnOnce(&AppState) -> Result<T, CommandError> + Send + 'static,
 ) -> Result<T, CommandError> {

@@ -129,6 +129,23 @@ impl HostEntry {
         self.live.usage_by_app(from_ms, to_ms, by, limit)
     }
 
+    pub fn recent_usage_apps(
+        &self,
+        from_ms: i64,
+        to_ms: i64,
+    ) -> Vec<kelvo_store::usage::UsageBucket> {
+        self.live.recent_usage_apps(from_ms, to_ms)
+    }
+
+    pub fn recent_usage_processes(
+        &self,
+        from_ms: i64,
+        to_ms: i64,
+        app_name: &str,
+    ) -> Vec<kelvo_store::usage::UsageBucket> {
+        self.live.recent_usage_processes(from_ms, to_ms, app_name)
+    }
+
     pub fn usage_series(
         &self,
         from_ms: i64,

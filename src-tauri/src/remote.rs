@@ -158,6 +158,8 @@ impl From<kelvo_remote::RemoteError> for CommandError {
             RemoteError::AgentNotRunning(_) => Self::RemoteAgentNotRunning { message },
             RemoteError::Busy(_) => Self::RemoteBusy { message },
             RemoteError::Unsupported(_) => Self::RemoteUnsupported { message },
+            RemoteError::HistoryUnavailable(_) => Self::history_unavailable(),
+            RemoteError::InvalidArgument(_) => Self::InvalidArgument { message },
             RemoteError::Refused(_) => Self::Internal { message },
             RemoteError::Transport(_)
             | RemoteError::Io(_)
@@ -334,6 +336,18 @@ mod command_regressions {
                 "remote_identity",
             ),
             (
+                RemoteError::InvalidArgument("process history changed; restart expansion".into()),
+                "invalid_argument",
+            ),
+            (
+                RemoteError::Unsupported("update the host".into()),
+                "remote_unsupported",
+            ),
+            (
+                RemoteError::HistoryUnavailable("history unavailable".into()),
+                "history_unavailable",
+            ),
+            (
                 RemoteError::Transport("offline".into()),
                 "remote_unreachable",
             ),
@@ -346,9 +360,13 @@ mod command_regressions {
                 "remote_unreachable",
             ),
         ] {
-            let value = serde_json::to_value(CommandError::from(error)).unwrap();
+            let command = CommandError::from(error);
+            assert!(!command.to_string().is_empty());
+            let value = serde_json::to_value(command).unwrap();
             assert_eq!(value["kind"], kind);
-            assert!(!value["message"].as_str().unwrap().is_empty());
+            if kind != "history_unavailable" {
+                assert!(!value["message"].as_str().unwrap().is_empty());
+            }
         }
     }
 

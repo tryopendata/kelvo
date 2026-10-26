@@ -15,6 +15,8 @@ export interface MockTransportOptions {
   updateFails?: boolean;
   /** A bounded setup delay for cancellation tests. */
   remoteSetupDelayMs?: number;
+  /** Connected peers predating durable usage reject only those queries. */
+  remoteUsageHistorySupported?: boolean;
   scenarios?: readonly ScenarioName[];
   windowLabel?: string;
   /** Clock for frame timestamps. Defaults to `Date.now`. */

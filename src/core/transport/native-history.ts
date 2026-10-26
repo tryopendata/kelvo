@@ -8,6 +8,8 @@ export function nativeHistory(): Pick<
   | "queryHistory"
   | "queryProcessesAt"
   | "queryNetworkByApp"
+  | "queryHistoricalUsage"
+  | "queryUsageProcesses"
   | "queryUsageByApp"
   | "queryUsageSeries"
   | "querySeriesStats"
@@ -25,6 +27,8 @@ export function nativeHistory(): Pick<
     queryProcessesAt: (host, tMs) => commands.queryProcessesAt(host, tMs),
     queryNetworkByApp: (host, fromMs, toMs) =>
       commands.queryNetworkByApp(host, fromMs, toMs),
+    queryHistoricalUsage: (request) => commands.queryHistoricalUsage(request),
+    queryUsageProcesses: (request) => commands.queryUsageProcesses(request),
     queryUsageByApp: (host, fromMs, toMs, by, limit) =>
       commands.queryUsageByApp(host, fromMs, toMs, by, limit),
     queryUsageSeries: (host, fromMs, toMs, by, limit) =>

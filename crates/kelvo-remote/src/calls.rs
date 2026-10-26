@@ -136,7 +136,10 @@ pub(crate) enum Line {
     Down,
     /// Connected to a host that does not answer queries (no `query.v1`).
     Old,
-    Up(mpsc::Sender<Call>),
+    Up {
+        calls: mpsc::Sender<Call>,
+        usage_history: bool,
+    },
 }
 
 /// Calls a session takes at once before the caller is told to back off.
@@ -146,8 +149,20 @@ const QUEUED: usize = 16;
 /// `Answer::Error` is the host's own refusal; connection failures and a host too busy or
 /// slow to answer are errors.
 pub(crate) async fn call(line: &Mutex<Line>, query: Query, timeout: Duration) -> Result<Answer> {
+    let durable = matches!(&query, Query::HistoricalUsage(_) | Query::UsageProcesses(_));
     let calls = match &*line.lock_ok() {
-        Line::Up(calls) => calls.clone(),
+        Line::Up {
+            usage_history: false,
+            ..
+        }
+        | Line::Old
+            if durable =>
+        {
+            return Err(RemoteError::Unsupported(
+                "This host does not support usage history; update Kelvo on that host".into(),
+            ));
+        }
+        Line::Up { calls, .. } => calls.clone(),
         Line::Old => {
             return Err(RemoteError::Incompatible(
                 "this host's Kelvo is too old to answer; update it".into(),
@@ -177,9 +192,20 @@ fn disconnected() -> RemoteError {
 
 /// Opens `line` for one session, which takes calls from the returned receiver. Dropping
 /// the guard puts the line down; calls still queued or pending then fail as disconnected.
-pub(crate) fn open(line: &Mutex<Line>, answers: bool) -> (LineGuard<'_>, mpsc::Receiver<Call>) {
+pub(crate) fn open(
+    line: &Mutex<Line>,
+    answers: bool,
+    usage_history: bool,
+) -> (LineGuard<'_>, mpsc::Receiver<Call>) {
     let (calls, queued) = mpsc::channel(QUEUED);
-    *line.lock_ok() = if answers { Line::Up(calls) } else { Line::Old };
+    *line.lock_ok() = if answers {
+        Line::Up {
+            calls,
+            usage_history,
+        }
+    } else {
+        Line::Old
+    };
     (LineGuard(line), queued)
 }
 
@@ -242,11 +268,60 @@ mod tests {
         }
     }
 
+    fn historical() -> Query {
+        Query::HistoricalUsage(kelvo_schema::durable_usage::HistoricalUsageRequest {
+            host: kelvo_schema::HostId(uuid::Uuid::nil()),
+            from_ms: 0,
+            to_ms: 60000,
+            by: kelvo_schema::durable_usage::HistoricalUsageMetric::Cpu,
+            app_names: Vec::new(),
+        })
+    }
+
+    #[tokio::test]
+    async fn durable_queries_require_negotiated_support_and_never_fall_back_offline() {
+        let line = Mutex::new(Line::Down);
+        assert!(matches!(
+            call(&line, historical(), WAIT).await,
+            Err(RemoteError::Transport(_))
+        ));
+        let (old, queued) = open(&line, false, false);
+        assert!(matches!(
+            call(&line, historical(), WAIT).await,
+            Err(RemoteError::Unsupported(_))
+        ));
+        drop((old, queued));
+        let (guard, mut queued) = open(&line, true, false);
+        assert!(matches!(
+            call(&line, historical(), WAIT).await,
+            Err(RemoteError::Unsupported(_))
+        ));
+        assert!(queued.try_recv().is_err());
+        let (ordinary, ()) = tokio::join!(call(&line, usage(1), WAIT), async {
+            let call = queued.recv().await.unwrap();
+            call.answer.send(Answer::Done).unwrap();
+        });
+        assert_eq!(ordinary.unwrap(), Answer::Done);
+        drop((guard, queued));
+        let (guard, mut queued) = open(&line, true, true);
+        let (durable, ()) = tokio::join!(call(&line, historical(), WAIT), async {
+            let call = queued.recv().await.unwrap();
+            assert_eq!(call.query, historical());
+            call.answer.send(Answer::Done).unwrap();
+        });
+        assert_eq!(durable.unwrap(), Answer::Done);
+        drop((guard, queued));
+        assert!(matches!(
+            call(&line, historical(), WAIT).await,
+            Err(RemoteError::Transport(_))
+        ));
+    }
+
     /// Replies reach their own callers in any order; a reply for nobody is dropped.
     #[tokio::test]
     async fn replies_reach_their_callers_out_of_order() {
         let line = Mutex::new(Line::Down);
-        let (_guard, mut queued) = open(&line, true);
+        let (_guard, mut queued) = open(&line, true, true);
         let session = async {
             let mut pending = Pending::default();
             let mut ids = Vec::new();
@@ -281,16 +356,16 @@ mod tests {
             call(&line, usage(1), WAIT).await,
             Err(RemoteError::Transport(_))
         ));
-        drop(open(&line, false));
+        drop(open(&line, false, false));
         assert!(matches!(&*line.lock_ok(), Line::Down));
-        let (guard, queued) = open(&line, false);
+        let (guard, queued) = open(&line, false, false);
         assert!(matches!(
             call(&line, usage(1), WAIT).await,
             Err(RemoteError::Incompatible(_))
         ));
         drop((guard, queued));
 
-        let (guard, mut queued) = open(&line, true);
+        let (guard, mut queued) = open(&line, true, true);
         let session = async {
             let mut pending = Pending::default();
             let _sent = pending.request(queued.recv().await.unwrap());
@@ -316,7 +391,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn an_unanswered_call_times_out_and_is_forgotten() {
         let line = Mutex::new(Line::Down);
-        let (_guard, mut queued) = open(&line, true);
+        let (_guard, mut queued) = open(&line, true, true);
         let mut pending = Pending::default();
         let (late, ()) = tokio::join!(call(&line, usage(1), Duration::from_secs(10)), async {
             let _ = pending.request(queued.recv().await.unwrap());

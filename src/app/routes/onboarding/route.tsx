@@ -1,4 +1,5 @@
 import type { SettingsPatch } from "@core/generated/bindings";
+import { DEFAULT_SIZE_LIMIT_MB } from "@core/generated/bindings";
 import {
   type OnboardingChoices,
   onboardingChoicesPatch,
@@ -54,7 +55,7 @@ export default function OnboardingRoute() {
       <PrivacyStep
         initialCheckUpdates={general?.check_updates ?? true}
         retentionDays={history?.retention_days ?? 30}
-        sizeLimitMb={history?.size_limit_mb ?? 150}
+        sizeLimitMb={history?.size_limit_mb ?? DEFAULT_SIZE_LIMIT_MB}
         busy={busy}
         onDone={(checkUpdates) =>
           void finish(onboardingDonePatch(checkUpdates))

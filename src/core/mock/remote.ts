@@ -15,6 +15,7 @@ import {
 } from "./fixtures";
 import { err, ok } from "./protocol";
 import { isLinuxAlias, mockLinuxPreparation } from "./remote-linux";
+import { remoteUsage, type UsageQueries } from "./remote-usage";
 import type { MockRing } from "./ring";
 export class MockRemotes {
   readonly remotes = new Map<
@@ -391,49 +392,9 @@ export class MockRemotes {
     const hosts = this.allHosts();
     this.emitters.hosts.emit({ hosts });
   };
-  /**
-   * `query_usage_by_app` for a remote host asks its peer (D-117), as the
-   * shell does over the session; the shell's view drops Quit from a remote
-   * host's processes. `query_usage_series` stays this Mac's.
-   */
-  routeUsage<T extends Pick<MockTransport, "queryUsageByApp">>(local: T): T {
-    return {
-      ...local,
-      queryUsageByApp: async (host, fromMs, toMs, by, limit) => {
-        const remote = this.remotes.get(host);
-        if (!remote)
-          return local.queryUsageByApp(host, fromMs, toMs, by, limit);
-        this.commands.record(
-          "query_usage_by_app",
-          host,
-          fromMs,
-          toMs,
-          by,
-          limit
-        );
-        if (remote.record.status.state !== "connected")
-          return err({
-            kind: "remote_unreachable",
-            message: "the host is not connected",
-          });
-        const r = await remote.peer.queryUsageByApp(
-          MOCK_HOST_ID,
-          fromMs,
-          toMs,
-          by,
-          limit
-        );
-        if (r.status === "error") return r;
-        return ok({
-          ...r.data,
-          apps: r.data.apps.map((app) => ({
-            ...app,
-            quit_pid: null,
-            processes: app.processes.map((p) => ({ ...p, refusal: null })),
-          })),
-        });
-      },
-    };
+  /** App queries go to the sampled peer; remote live rows have no Quit. */
+  routeUsage<T extends UsageQueries>(local: T): T {
+    return remoteUsage(this.remotes, this.commands, this.options, local);
   }
   seedScenario() {
     if (this.options.scenarios?.includes("multi-host"))

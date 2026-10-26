@@ -81,6 +81,9 @@ impl<H: ServedHost> HostServer<H> {
     pub(crate) fn host(&self) -> &H {
         &self.host
     }
+    pub(crate) fn history(&self) -> &HistoryStore {
+        &self.history
+    }
     pub(crate) fn space(&self) -> Option<&SpaceAccess> {
         self.space.as_ref()
     }
@@ -341,6 +344,138 @@ mod tests {
             }
         ));
         assert!(unsupported(&served.answer(1, Query::Unknown)));
+    }
+
+    #[test]
+    fn durable_queries_validate_before_reads_and_report_unavailable_history() {
+        use kelvo_schema::durable_usage::*;
+        let served = host();
+        let server = HostServer::new(served.clone(), Arc::new(HistoryStore::unavailable()));
+        let mut request = HistoricalUsageRequest {
+            host: served.record.id,
+            from_ms: 0,
+            to_ms: 60000,
+            by: HistoricalUsageMetric::Cpu,
+            app_names: Vec::new(),
+        };
+        assert!(matches!(
+            server.answer(1, Query::HistoricalUsage(request.clone())),
+            Answer::Error {
+                code: kelvo_proto::ErrorCode::HistoryUnavailable,
+                ..
+            }
+        ));
+        request.to_ms = request.from_ms;
+        assert!(matches!(
+            server.answer(1, Query::HistoricalUsage(request.clone())),
+            Answer::Error {
+                code: kelvo_proto::ErrorCode::InvalidArgument,
+                ..
+            }
+        ));
+        request.to_ms = 60000;
+        request.host = HostId(Uuid::nil());
+        assert!(matches!(
+            server.answer(1, Query::HistoricalUsage(request)),
+            Answer::Error {
+                code: kelvo_proto::ErrorCode::InvalidArgument,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn durable_queries_serve_source_sqlite_and_preserve_every_process_page() {
+        use kelvo_schema::durable_usage::*;
+        use kelvo_store::usage::*;
+        let dir = tempfile::tempdir().unwrap();
+        let history = Arc::new(HistoryStore::open(dir.path()));
+        let served = host();
+        let writer = history.register_host(&served.record).unwrap();
+        let coverage = [UsageSourceCoverage {
+            supported: true,
+            measured_ms: 10000,
+            causes: 0,
+        }; RESOURCE_COUNT];
+        let facts = UsageFacts {
+            cpu_seconds: 1.0,
+            present_ms: 10000,
+            coverage,
+            ..Default::default()
+        };
+        writer
+            .write_usage_bucket(
+                served.record.id,
+                UsageBucket {
+                    from_ms: 10000,
+                    to_ms: 20000,
+                    source: coverage,
+                    apps: vec![UsageAppFacts {
+                        name: "Compiler".into(),
+                        facts: UsageFacts {
+                            cpu_seconds: 101.0,
+                            ..facts.clone()
+                        },
+                    }],
+                    processes: (0..101)
+                        .map(|n| UsageProcessFacts {
+                            app_name: "Compiler".into(),
+                            pid: 1000 + n,
+                            start_time_us: i64::from(n),
+                            name: "worker".into(),
+                            facts: facts.clone(),
+                        })
+                        .collect(),
+                    uncertain_network: Vec::new(),
+                },
+            )
+            .unwrap();
+        writer.flush().unwrap();
+        let server = HostServer::new(served.clone(), history);
+        let query = HistoricalUsageRequest {
+            host: served.record.id,
+            from_ms: 10000,
+            to_ms: 20000,
+            by: HistoricalUsageMetric::Cpu,
+            app_names: Vec::new(),
+        };
+        let Answer::HistoricalUsage(apps) = server.answer(1, Query::HistoricalUsage(query)) else {
+            panic!("expected source history")
+        };
+        assert_eq!(apps.apps.len(), 1);
+        assert_eq!(apps.apps[0].name, "Compiler");
+        assert_eq!(apps.apps[0].figures.cpu_avg_pct, Some(1010.0));
+        let mut query = UsageProcessRequest {
+            host: served.record.id,
+            from_ms: 10000,
+            to_ms: 20000,
+            app_name: "Compiler".into(),
+            by: HistoricalUsageMetric::Cpu,
+            page_size: 100,
+            cursor: None,
+        };
+        let Answer::UsageProcesses(first) = server.answer(1, Query::UsageProcesses(query.clone()))
+        else {
+            panic!("expected first page")
+        };
+        assert_eq!(first.processes.len(), 100);
+        query.cursor = first.next_cursor;
+        assert!(query.cursor.is_some());
+        let Answer::UsageProcesses(last) = server.answer(1, Query::UsageProcesses(query.clone()))
+        else {
+            panic!("expected last page")
+        };
+        assert_eq!(last.processes.len(), 1);
+        assert!(last.next_cursor.is_none());
+        assert_ne!(first.processes[0].pid, last.processes[0].pid);
+        query.to_ms += 10000;
+        assert!(matches!(
+            server.answer(1, Query::UsageProcesses(query)),
+            Answer::Error {
+                code: kelvo_proto::ErrorCode::InvalidArgument,
+                ..
+            }
+        ));
     }
 
     /// A scan belongs to the session that started it: another session ending or clearing

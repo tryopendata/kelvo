@@ -303,6 +303,48 @@ pub const SAMPLING_INTERVALS_MS: [u32; 7] = SamplingSettings::INTERVALS_MS;
 pub const RETENTION_DAYS: [u16; 3] = HistorySettings::RETENTION_DAYS;
 pub const SIZE_LIMITS_MB: [u32; 5] = HistorySettings::SIZE_LIMITS_MB;
 
+/// Registers the Rust-owned facts used by the frontend and its mock transport.
+pub fn register(builder: tauri_specta::Builder<tauri::Wry>) -> tauri_specta::Builder<tauri::Wry> {
+    builder
+        // Each catalog metric's kind, for code that stands in for the engine (the mock
+        // transport) and so must label its layouts as the engine does (D-090).
+        .constant("METRIC_KINDS", metric_kinds())
+        // Engine, store and settings facts the webview and the mock read instead of
+        // keeping copies (D-092). See `facts.rs`.
+        .constant("METRIC_UNITS", metric_units())
+        .constant("METRIC_MODULES", metric_modules())
+        .constant("METRIC_PERIODS_MS", metric_periods_ms())
+        .constant("METRIC_CODES", kelvo_schema::metric_codes())
+        .constant("RING_SPAN_MS", kelvo_engine::RING_SPAN_MS)
+        .constant("HISTORY_COMMIT_MS", history_commit_ms())
+        // How far back `query_history` answers with history unavailable (live-only).
+        .constant("HISTORY_RECENT_MS", kelvo_engine::RECENT_ROWS_MS)
+        .constant("RING_MAX_ROWS", kelvo_engine::RING_MAX_ROWS)
+        .constant("HOLD_FACTOR", hold_factor())
+        .constant("PERFORMANCE_VISIBLE_MS", kelvo_engine::PERFORMANCE_VISIBLE_MS)
+        .constant("NET_BUCKET_MS", kelvo_engine::NET_BUCKET_MS)
+        .constant("USAGE_BUCKET_MS", kelvo_engine::USAGE_BUCKET_MS)
+        // The longest range `query_usage_series` answers.
+        .constant("USAGE_KEEP_MS", kelvo_engine::USAGE_KEEP_MS)
+        .constant("USAGE_HISTORY_MAX_RANGE_MS", kelvo_schema::durable_usage::USAGE_HISTORY_MAX_RANGE_MS)
+        .constant("USAGE_PROCESS_PAGE_MAX", kelvo_schema::durable_usage::USAGE_PROCESS_PAGE_MAX)
+        .constant("HEADER_BYTES_PER_PACKET", kelvo_engine::HEADER_BYTES_PER_PACKET)
+        .constant("CLAMP_SLACK_BYTES", kelvo_engine::CLAMP_SLACK_BYTES)
+        .constant("MAX_NET_SPAN_MS", crate::history::MAX_NET_SPAN_MS)
+        .constant("SAMPLING_INTERVALS_MS", SAMPLING_INTERVALS_MS)
+        .constant("RETENTION_DAYS", RETENTION_DAYS)
+        .constant("SIZE_LIMITS_MB", SIZE_LIMITS_MB)
+        .constant("DEFAULT_SIZE_LIMIT_MB", kelvo_schema::settings::HistorySettings::DEFAULT_SIZE_LIMIT_MB)
+        .constant("SETTINGS_MODULES", kelvo_schema::settings::SETTINGS_MODULES)
+        .constant("ITEM_MODES", item_modes())
+        .constant("READOUTS", READOUTS)
+        .constant("HISTORY_TIERS", history_tiers())
+        .constant("HISTORY_PROJECTION", history_projection())
+        .constant("SAMPLING_PLANS", sampling_plans())
+        .typ::<SamplingPlan>()
+        .typ::<kelvo_schema::Readout>()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

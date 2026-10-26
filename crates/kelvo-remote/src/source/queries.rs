@@ -18,6 +18,8 @@ impl RemoteSource {
         match self.call(query, ANSWER_WITHIN).await? {
             Answer::Error { code, message } => Err(match code {
                 ErrorCode::Unsupported => RemoteError::Unsupported(message),
+                ErrorCode::HistoryUnavailable => RemoteError::HistoryUnavailable(message),
+                ErrorCode::InvalidArgument => RemoteError::InvalidArgument(message),
                 ErrorCode::Busy => RemoteError::Busy(message),
                 _ => RemoteError::Refused(message),
             }),
@@ -46,6 +48,44 @@ impl RemoteSource {
         };
         self.ask(query, |a| match a {
             Answer::UsageByApp(usage) => Some(usage),
+            _ => None,
+        })
+        .await
+    }
+
+    pub async fn historical_usage(
+        &self,
+        request: kelvo_schema::durable_usage::HistoricalUsageRequest,
+    ) -> Result<kelvo_schema::durable_usage::HistoricalUsageReply> {
+        request
+            .validate()
+            .map_err(|message| RemoteError::InvalidArgument(message.into()))?;
+        if request.host != self.record.id {
+            return Err(RemoteError::InvalidArgument(
+                "usage query host does not match the source".into(),
+            ));
+        }
+        self.ask(Query::HistoricalUsage(request), |answer| match answer {
+            Answer::HistoricalUsage(reply) => Some(reply),
+            _ => None,
+        })
+        .await
+    }
+
+    pub async fn usage_processes(
+        &self,
+        request: kelvo_schema::durable_usage::UsageProcessRequest,
+    ) -> Result<kelvo_schema::durable_usage::UsageProcessReply> {
+        request
+            .validate()
+            .map_err(|message| RemoteError::InvalidArgument(message.into()))?;
+        if request.host != self.record.id {
+            return Err(RemoteError::InvalidArgument(
+                "usage query host does not match the source".into(),
+            ));
+        }
+        self.ask(Query::UsageProcesses(request), |answer| match answer {
+            Answer::UsageProcesses(reply) => Some(reply),
             _ => None,
         })
         .await

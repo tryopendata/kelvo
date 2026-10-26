@@ -179,6 +179,8 @@ export const commands = {
 	 *  the range is longer than the longest history retention.
 	 */
 	queryNetworkByApp: (host: HostId, fromMs: Millis, toMs: Millis) => typedError<NetworkByApp, CommandError>(__TAURI_INVOKE("query_network_by_app", { host, fromMs, toMs })),
+	queryHistoricalUsage: (request: HistoricalUsageRequest) => typedError<HistoricalUsageReply, CommandError>(__TAURI_INVOKE("query_historical_usage", { request })),
+	queryUsageProcesses: (request: UsageProcessRequest) => typedError<UsageProcessReply, CommandError>(__TAURI_INVOKE("query_usage_processes", { request })),
 	/**
 	 *  Which apps used CPU, GPU, memory, disk and energy over `[from_ms, to_ms)` (D-099),
 	 *  widened to whole 10 s buckets, from the last hour of process samples the host's hub
@@ -339,6 +341,8 @@ export const events = {
 /* Constants */
 export const CLAMP_SLACK_BYTES = 8192 as const;
 
+export const DEFAULT_SIZE_LIMIT_MB = 750 as const;
+
 export const HEADER_BYTES_PER_PACKET = 66 as const;
 
 export const HISTORY_COMMIT_MS = 300000 as const;
@@ -387,7 +391,11 @@ export const SIZE_LIMITS_MB = [150,300,500,750,1000] as const;
 
 export const USAGE_BUCKET_MS = 10000 as const;
 
+export const USAGE_HISTORY_MAX_RANGE_MS = 2592000000 as const;
+
 export const USAGE_KEEP_MS = 3610000 as const;
+
+export const USAGE_PROCESS_PAGE_MAX = 100 as const;
 
 /* Types */
 /**  Why an alert fired. */
@@ -1334,6 +1342,69 @@ export type HeatmapRequest = {
 	metric: HeatmapMetric,
 	/**  Oldest first, at most 92. */
 	days: HeatmapDaySpec[],
+};
+
+/**  One app group. Its peak is a simultaneous sum, not a sum of process peaks. */
+export type HistoricalUsageApp = {
+	name: string,
+	figures: HistoricalUsageFigures,
+	/**  False means expansion has no retained process-instance evidence. */
+	process_details_available: boolean,
+};
+
+/**  Resource values for an app or process. None means unavailable, never zero use. */
+export type HistoricalUsageFigures = {
+	cpu_avg_pct: number | null,
+	gpu_avg_pct: number | null,
+	mem_peak_bytes: number | null,
+	mem_avg_bytes: number | null,
+	energy_j: number | null,
+	cpu_power_w: number | null,
+	network_rx_bytes: number | null,
+	network_tx_bytes: number | null,
+	coverage: UsageMetricCoverage[],
+};
+
+/**  Resource used to rank the whole recorded app population before returning ten. */
+export type HistoricalUsageMetric = "cpu" | "gpu" | "memory" | "energy" | "network";
+
+/**  A historical process instance, safe against PID reuse. Never a current action target. */
+export type HistoricalUsageProcess = {
+	pid: number,
+	start_time_us: number,
+	name: string,
+	figures: HistoricalUsageFigures,
+};
+
+/**  Source-history answer. No live process controls or Quit targets are exposed. */
+export type HistoricalUsageReply = {
+	range: UsageHistoryRange,
+	by: HistoricalUsageMetric,
+	/**  Ordered largest first after interval aggregation. UI reversal reverses these ten. */
+	apps: HistoricalUsageApp[],
+	/**  False means this is a ranking of observed use, with explicit missing evidence. */
+	ranking_complete: boolean,
+	/**
+	 *  Late ownership can identify bytes without identifying their transfer interval.
+	 *  These are excluded from exact interval figures; overlap is only uncertainty.
+	 *  At most one summary for each returned app plus one combined unnamed/other-app
+	 *  summary: eleven records maximum. Raw uncertainty stays durable, not in this reply.
+	 */
+	network_uncertainty: UsageNetworkUncertainty[],
+};
+
+/**  Query ten app groups, or values for explicit identities during comparison. */
+export type HistoricalUsageRequest = {
+	host: HostId,
+	from_ms: number,
+	to_ms: number,
+	by: HistoricalUsageMetric,
+	/**
+	 *  Empty means rank all observed apps; otherwise return these identities without
+	 *  choosing an independently ranked population. An absent row is zero only when
+	 *  its resource coverage proves complete observation.
+	 */
+	app_names: string[],
 };
 
 /**
@@ -2818,6 +2889,24 @@ export type UsageHistoryGrowth = {
 	fixed_identity_bytes: ByteCount,
 };
 
+/**  The requested interval and the retained whole-bucket spans actually used. */
+export type UsageHistoryRange = {
+	requested_from_ms: number,
+	requested_to_ms: number,
+	spans: UsageHistorySpan[],
+	coverage: UsageMetricCoverage[],
+};
+
+/**  A contiguous observation span; holes are not silently added to its duration. */
+export type UsageHistorySpan = {
+	from_ms: number,
+	to_ms: number,
+	resolution_ms: number,
+};
+
+/**  Why observations cannot prove a complete attribution for a resource. */
+export type UsageIncompleteCause = "not_recorded" | "pruned" | "sampling_gap" | "read_failed" | "no_baseline" | "unreadable_process" | "unresolved_identity" | "identity_limit" | "uncertain_network_time" | "partial_boundary" | "resource_limit";
+
 /**  What `query_usage_by_app` sorts apps by (D-099). */
 export type UsageKey =
 /**  Average CPU. */
@@ -2830,6 +2919,25 @@ export type UsageKey =
 "disk" |
 /**  Joules. */
 "energy";
+
+/**  Coverage of one resource, independently of the other resources in the reply. */
+export type UsageMetricCoverage = {
+	metric: HistoricalUsageMetric,
+	coverage: UsageResourceCoverage,
+};
+
+/**
+ *  Summary of bytes whose owner became known after transfer, with the union's
+ *  conservative possible-time envelope. It never implies exact transfer timestamps.
+ */
+export type UsageNetworkUncertainty = {
+	app_name: string | null,
+	possible_from_ms: number,
+	possible_to_ms: number,
+	rx_bytes: number,
+	tx_bytes: number,
+	records: number,
+};
 
 /**
  *  What the host measured beyond Kelvo's processes ("System and other"): the host's
@@ -2850,6 +2958,45 @@ export type UsageOther = {
 	 *  there (the two are sampled differently).
 	 */
 	clamped: UsageKey[],
+};
+
+/**
+ *  A bounded page of retained process instances, ranked after full interval aggregation.
+ *  Ordering is metric descending, then PID and start time ascending for stable ties.
+ */
+export type UsageProcessReply = {
+	range: UsageHistoryRange,
+	app_name: string,
+	processes: HistoricalUsageProcess[],
+	/**  Network is app-level unless identity-safe per-instance evidence was recorded. */
+	network_app_level_only: boolean,
+	/**  Present while further process instances remain. No retained instances are dropped. */
+	next_cursor: string | null,
+};
+
+/**  Lazy expansion of one app within the exact same requested interval. */
+export type UsageProcessRequest = {
+	host: HostId,
+	from_ms: number,
+	to_ms: number,
+	app_name: string,
+	by: HistoricalUsageMetric,
+	/**  1..=100, rejected rather than silently clamped. */
+	page_size: number,
+	/**
+	 *  Opaque source-generated continuation, bound to host, app, interval, ranking,
+	 *  history epoch and the interval's snapshot revision. Stale tokens are rejected.
+	 */
+	cursor: string | null,
+};
+
+/**  Completeness is a source fact. Covered time alone never proves it. */
+export type UsageResourceCoverage = {
+	supported: boolean,
+	measured_ms: number,
+	/**  Complete only if the source observed the whole requested interval and population. */
+	complete: boolean,
+	causes: UsageIncompleteCause[],
 };
 
 /**

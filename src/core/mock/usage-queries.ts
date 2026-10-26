@@ -2,6 +2,7 @@ import type { HostId, UsageKey } from "@core/generated/bindings";
 import { USAGE_KEEP_MS } from "@core/generated/bindings";
 import type { MockCommands } from "./commands";
 import type { MockTransport } from "./contracts";
+import { MockDurableUsage } from "./durable-usage";
 import { hostInfo, withGpuPct } from "./fixtures";
 import { mockSeriesStats } from "./history";
 import {
@@ -26,6 +27,7 @@ import type { MockStore } from "./store";
 import { EXITED, LINUX_EXITED, mockUsageByApp } from "./usage";
 import { mockUsageSeries } from "./usage-series";
 export class MockUsageQueries {
+  private readonly durable: MockDurableUsage;
   constructor(
     private readonly ring: MockRing,
     private readonly power: MockPower,
@@ -34,7 +36,9 @@ export class MockUsageQueries {
     private readonly processes: MockProcesses,
     private readonly queries: MockQueries,
     private readonly commands: MockCommands
-  ) {}
+  ) {
+    this.durable = new MockDurableUsage(ring, commands, store);
+  }
   readonly queryNetworkByApp: MockTransport["queryNetworkByApp"] = async (
     host,
     fromMs,
@@ -203,6 +207,7 @@ export class MockUsageQueries {
 
   get methods() {
     return {
+      ...this.durable.methods,
       queryNetworkByApp: this.queryNetworkByApp,
       queryUsageByApp: this.queryUsageByApp,
       queryUsageSeries: this.queryUsageSeries,

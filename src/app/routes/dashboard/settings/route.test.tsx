@@ -1,5 +1,6 @@
 import { HISTORY_PROJECTION } from "@core/generated/bindings";
 import { MOCK_HOST_ID } from "@core/mock/fixtures";
+import { createMockTransport } from "@core/mock-transport";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import { renderWithProviders } from "../../../../../tests/test-utils";
 import SettingsRoute from "./route";
@@ -366,6 +367,36 @@ describe("Settings sampling and history", () => {
     expect(
       screen.queryByRole("switch", { name: "Network history" })
     ).toBeNull();
+  });
+
+  it("starts at 750 MB and offers every supported history cap", async () => {
+    const { user } = renderWithProviders(<SettingsRoute />);
+    const control = await screen.findByRole("combobox", {
+      name: "History size limit",
+    });
+    await waitFor(() => expect(control).toHaveTextContent("750 MB"));
+    await user.click(control);
+    expect(
+      (await screen.findAllByRole("option")).map((option) => option.textContent)
+    ).toEqual(["150 MB", "300 MB", "500 MB", "750 MB", "1 GB"]);
+  });
+
+  it("preserves a saved 150 MB cap when settings is reopened", async () => {
+    const transport = createMockTransport();
+    await transport.updateSettings({ history: { size_limit_mb: 150 } });
+    const first = renderWithProviders(<SettingsRoute />, { transport });
+    expect(
+      await screen.findByRole("combobox", { name: "History size limit" })
+    ).toHaveTextContent("150 MB");
+    first.unmount();
+    renderWithProviders(<SettingsRoute />, { transport });
+    expect(
+      await screen.findByRole("combobox", { name: "History size limit" })
+    ).toHaveTextContent("150 MB");
+    expect((await transport.getSettings()).settings.history.size_limit_mb).toBe(
+      150
+    );
+    transport.dispose();
   });
 
   it("writes the size limit through update_settings", async () => {

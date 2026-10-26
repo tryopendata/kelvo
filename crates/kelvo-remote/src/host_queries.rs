@@ -111,6 +111,40 @@ impl<H: ServedHost> HostServer<H> {
                 by,
                 usize::try_from(limit).unwrap_or(usize::MAX).min(500),
             )),
+            Query::HistoricalUsage(request) => {
+                if let Err(message) = request.validate() {
+                    return invalid(message);
+                }
+                if request.host != self.host().record().id {
+                    return invalid("usage query host does not match this host");
+                }
+                self.history()
+                    .historical_usage(&request, || {
+                        self.host()
+                            .hub()
+                            .recent_usage_apps(request.from_ms, request.to_ms)
+                    })
+                    .map(Answer::HistoricalUsage)
+                    .unwrap_or_else(usage_error)
+            }
+            Query::UsageProcesses(request) => {
+                if let Err(message) = request.validate() {
+                    return invalid(message);
+                }
+                if request.host != self.host().record().id {
+                    return invalid("usage query host does not match this host");
+                }
+                self.history()
+                    .usage_processes(&request, || {
+                        self.host().hub().recent_usage_processes(
+                            request.from_ms,
+                            request.to_ms,
+                            &request.app_name,
+                        )
+                    })
+                    .map(Answer::UsageProcesses)
+                    .unwrap_or_else(usage_error)
+            }
             Query::Unknown => unsupported(),
             space => match self.space() {
                 Some(access) => access.answer(session, space),
@@ -122,6 +156,83 @@ impl<H: ServedHost> HostServer<H> {
     pub(crate) fn release_queries(&self, session: u64) {
         if let Some(access) = self.space() {
             access.release(session);
+        }
+    }
+}
+
+fn invalid(message: &str) -> Answer {
+    Answer::Error {
+        code: ErrorCode::InvalidArgument,
+        message: message.into(),
+    }
+}
+
+fn usage_error(error: kelvo_engine::HistoryStoreError) -> Answer {
+    match error {
+        kelvo_engine::HistoryStoreError::Unavailable { .. }
+        | kelvo_engine::HistoryStoreError::Store(kelvo_store::StoreError::WriterGone) => {
+            Answer::Error {
+                code: ErrorCode::HistoryUnavailable,
+                message: "History is unavailable on this host".into(),
+            }
+        }
+        kelvo_engine::HistoryStoreError::Store(kelvo_store::StoreError::Usage(message)) => {
+            invalid(&message)
+        }
+        kelvo_engine::HistoryStoreError::Store(kelvo_store::StoreError::Sqlite(error))
+            if matches!(
+                error.sqlite_error_code(),
+                Some(
+                    kelvo_store::rusqlite::ErrorCode::DatabaseBusy
+                        | kelvo_store::rusqlite::ErrorCode::DatabaseLocked
+                )
+            ) =>
+        {
+            Answer::Error {
+                code: ErrorCode::Busy,
+                message: error.to_string(),
+            }
+        }
+        error => Answer::Error {
+            code: ErrorCode::Internal,
+            message: error.to_string(),
+        },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use kelvo_engine::HistoryStoreError;
+    use kelvo_store::{StoreError, rusqlite};
+
+    #[test]
+    fn source_query_errors_preserve_validation_availability_and_retryability() {
+        let cases = [
+            (
+                StoreError::Usage("process history changed; restart expansion".into()),
+                ErrorCode::InvalidArgument,
+            ),
+            (StoreError::WriterGone, ErrorCode::HistoryUnavailable),
+            (
+                StoreError::Corrupt("bad usage blob".into()),
+                ErrorCode::Internal,
+            ),
+            (
+                StoreError::Sqlite(rusqlite::Error::SqliteFailure(
+                    rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_BUSY),
+                    None,
+                )),
+                ErrorCode::Busy,
+            ),
+        ];
+        for (error, expected) in cases {
+            let Answer::Error { code, message } = usage_error(HistoryStoreError::Store(error))
+            else {
+                panic!("expected typed error")
+            };
+            assert_eq!(code, expected);
+            assert!(!message.is_empty());
         }
     }
 }

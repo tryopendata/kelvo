@@ -10,6 +10,7 @@ mod calibration;
 mod commands;
 mod disk_space;
 mod docker;
+mod durable_usage;
 pub mod edition;
 mod error;
 mod export;
@@ -57,7 +58,7 @@ use startup::deferred_ui_launch;
 /// Every command and event the webview can reach. The same builder feeds the invoke
 /// handler and the bindings export, so the two cannot drift apart.
 pub fn specta_builder() -> Builder<tauri::Wry> {
-    Builder::<tauri::Wry>::new()
+    let builder = Builder::<tauri::Wry>::new()
         // One TS type per Rust type. Phased export splits any type that reaches a
         // `deserialize_with` field (`Capabilities`, `Settings`) into `_Serialize` and
         // `_Deserialize` aliases, and in rc.25 it then exports the internally tagged
@@ -98,6 +99,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             commands::list_disk_io_devices,
             commands::query_processes_at,
             commands::query_network_by_app,
+            durable_usage::query_historical_usage, durable_usage::query_usage_processes,
             commands::query_usage_by_app, commands::query_usage_series,
             commands::query_series_stats,
             commands::get_network_addresses,
@@ -133,41 +135,8 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             ipc::HistoryHealthChanged,
             ipc::HostsChanged,
             ipc::EventRecorded,
-        ])
-        // Each catalog metric's kind, for code that stands in for the engine (the mock
-        // transport) and so must label its layouts as the engine does (D-090).
-        .constant("METRIC_KINDS", facts::metric_kinds())
-        // Engine, store and settings facts the webview and the mock read instead of
-        // keeping copies (D-092). See `facts.rs`.
-        .constant("METRIC_UNITS", facts::metric_units())
-        .constant("METRIC_MODULES", facts::metric_modules())
-        .constant("METRIC_PERIODS_MS", facts::metric_periods_ms())
-        .constant("METRIC_CODES", kelvo_schema::metric_codes())
-        .constant("RING_SPAN_MS", kelvo_engine::RING_SPAN_MS)
-        .constant("HISTORY_COMMIT_MS", facts::history_commit_ms())
-        // How far back `query_history` answers with history unavailable (live-only).
-        .constant("HISTORY_RECENT_MS", kelvo_engine::RECENT_ROWS_MS)
-        .constant("RING_MAX_ROWS", kelvo_engine::RING_MAX_ROWS)
-        .constant("HOLD_FACTOR", facts::hold_factor())
-        .constant("PERFORMANCE_VISIBLE_MS", kelvo_engine::PERFORMANCE_VISIBLE_MS)
-        .constant("NET_BUCKET_MS", kelvo_engine::NET_BUCKET_MS)
-        .constant("USAGE_BUCKET_MS", kelvo_engine::USAGE_BUCKET_MS)
-        // The longest range `query_usage_series` answers.
-        .constant("USAGE_KEEP_MS", kelvo_engine::USAGE_KEEP_MS)
-        .constant("HEADER_BYTES_PER_PACKET", kelvo_engine::HEADER_BYTES_PER_PACKET)
-        .constant("CLAMP_SLACK_BYTES", kelvo_engine::CLAMP_SLACK_BYTES)
-        .constant("MAX_NET_SPAN_MS", history::MAX_NET_SPAN_MS)
-        .constant("SAMPLING_INTERVALS_MS", facts::SAMPLING_INTERVALS_MS)
-        .constant("RETENTION_DAYS", facts::RETENTION_DAYS)
-        .constant("SIZE_LIMITS_MB", facts::SIZE_LIMITS_MB)
-        .constant("SETTINGS_MODULES", kelvo_schema::settings::SETTINGS_MODULES)
-        .constant("ITEM_MODES", facts::item_modes())
-        .constant("READOUTS", facts::READOUTS)
-        .constant("HISTORY_TIERS", facts::history_tiers())
-        .constant("HISTORY_PROJECTION", facts::history_projection())
-        .constant("SAMPLING_PLANS", facts::sampling_plans())
-        .typ::<facts::SamplingPlan>()
-        .typ::<kelvo_schema::Readout>()
+        ]);
+    facts::register(builder)
 }
 
 /// Writes the TypeScript bindings for `builder` to [`BINDINGS_PATH`].

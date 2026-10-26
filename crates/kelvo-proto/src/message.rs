@@ -319,6 +319,10 @@ pub enum ErrorCode {
     Internal,
     /// The receiver does not answer this kind of query (D-117).
     Unsupported,
+    /// The source durable history is unavailable.
+    HistoryUnavailable,
+    /// The query arguments or continuation are invalid.
+    InvalidArgument,
     /// The receiver has too many queries in flight; retry shortly (D-117).
     Busy,
     /// A code this build does not know, from a newer peer (D-040). The message text still

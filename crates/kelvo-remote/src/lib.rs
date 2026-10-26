@@ -69,6 +69,12 @@ pub enum RemoteError {
     /// A current host that does not answer this query (D-117): not offered there.
     #[error("{0}")]
     Unsupported(String),
+    /// The source has no readable durable history.
+    #[error("{0}")]
+    HistoryUnavailable(String),
+    /// Invalid query input or a stale continuation.
+    #[error("{0}")]
+    InvalidArgument(String),
     /// The host's own refusal of a query (D-117), worded for the user.
     #[error("{0}")]
     Refused(String),
@@ -89,6 +95,7 @@ impl RemoteError {
                 | Self::Protocol(_)
                 | Self::Unsupported(_)
                 | Self::Refused(_)
+                | Self::InvalidArgument(_)
         )
     }
 }

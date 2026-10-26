@@ -42,6 +42,8 @@ import type {
   ExportRequest,
   HeatmapDay,
   HeatmapRequest,
+  HistoricalUsageReply,
+  HistoricalUsageRequest,
   HistoryGrowth,
   HistoryHealth,
   HistoryHealthChanged,
@@ -79,6 +81,8 @@ import type {
   UpdateStatus,
   UsageByApp,
   UsageKey,
+  UsageProcessReply,
+  UsageProcessRequest,
   UsageSeries,
   WindowAppearance,
   WindowAppearanceChanged,
@@ -251,6 +255,12 @@ export interface Transport {
    * host measured beyond them in `other`. `remote_host` for a host other than
    * this Mac.
    */
+  queryHistoricalUsage(
+    request: HistoricalUsageRequest
+  ): Promise<CommandResult<HistoricalUsageReply>>;
+  queryUsageProcesses(
+    request: UsageProcessRequest
+  ): Promise<CommandResult<UsageProcessReply>>;
   queryUsageByApp(
     host: HostId,
     fromMs: Millis,

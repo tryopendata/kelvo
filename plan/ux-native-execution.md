@@ -121,3 +121,47 @@ Subsequent logs explicitly identify the fresh
 onboarding fixture registered that isolated app's own login item; its setting was
 immediately disabled and a subsequent native log confirmed `Not Registered`. Test-owned
 native processes were stopped. No user login-item setting was changed.
+
+
+## Durable source-query follow-up (D-120)
+
+The remote protocol now negotiates `query.usage-history.v1` independently of
+`query.v1`. Historical app queries and bounded process pages read the sampled
+host's HistoryStore; controller mirrors are never an attribution fallback.
+Offline hosts return remote_unreachable, old peers remote_unsupported, missing
+source stores history_unavailable, stale/invalid continuations invalid_argument,
+and busy reads remote_busy. App sorting uses an app-only recent snapshot;
+process expansion snapshots only the requested app.
+
+Native commands `query_historical_usage` and `query_usage_processes`, generated
+bindings, native transport and deterministic mock transport share the Rust DTOs.
+The mock includes bounded 125-instance paging, fixed comparison membership,
+missing/pruned/gap/resource coverage, unavailable stores and remote refusal.
+Rust exports the request/page bounds and default 750 MB cap. Onboarding displays
+the configured cap, including preserved saved 150 MB choices.
+
+Verification: TypeScript passes; all 199 frontend files / 1301 tests pass, including
+35 focused cases across durable mock, Settings and onboarding. The nine durable
+mock scenarios cover interval queries, membership,100 + 25 paging, invalid/stale
+requests and restart, missing evidence, pruning/capabilities, remote/offline,
+unavailable store and old peers. Four cap UI cases prove 750 MB / default options
+and saved 150 MB preservation. Full remote tests pass 83 unit+7 socket sessions;
+11 Docker/real-host/packaged environment cases remain ignored. Three new proto
+round-trip/skew/negotiation tests pass; two existing shell serialization tests
+were strengthened for source/cursor errors. Architecture checks pass.
+
+Mutation proof: removing the advertised durable feature fails the negotiation
+test; disabling the session feature guard fails the old-peer behavioral test.
+Both were restored and rerun green. No budgets were increased.
+
+Browser comparison: onboarding at its configured 820 × 566 viewport shows 750 MB,
+Done remains visible and horizontal overflow is 0. Screenshots are in ignored
+`test-results/screens/onboarding-cap750-dark.png` and
+`history-contract-gallery.png`; the existing tokens/layout match the gallery.
+The added cap phrase wraps one extra line intentionally. This is browser fit,
+not new native geometry evidence. The screenshot's old series-only projection
+estimate is awaiting the storage owner's measured-growth integration and is not
+accepted as the final estimate. Only favicon 404 appeared in the browser console.
+
+Production recording byte gates and final integration/performance checks remain
+orchestrator-owned landing prerequisites. No push or full performance gate ran.

@@ -1,3 +1,4 @@
+import { createMockTransport } from "@core/mock-transport";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import { renderWithProviders } from "../../../../tests/test-utils";
 import OnboardingRoute from "./route";
@@ -60,4 +61,29 @@ describe("Onboarding menu bar style", () => {
       expect(menu_bar?.readouts.temperature).toBe(false);
     });
   });
+});
+
+describe("Onboarding history size limit", () => {
+  it.each([null, 150])(
+    "shows the default or saved cap (%s) without replacing saved settings",
+    async (saved) => {
+      const transport = createMockTransport();
+      if (saved !== null)
+        await transport.updateSettings({ history: { size_limit_mb: saved } });
+      const { user, unmount } = renderWithProviders(<OnboardingRoute />, {
+        transport,
+      });
+      await screen.findByRole("radiogroup", { name: "Menu bar style" });
+      await user.click(screen.getByRole("button", { name: "Continue" }));
+      const cap = saved ?? 750;
+      expect(
+        await screen.findByText(new RegExp(`(?:under|with a) ${cap} MB`))
+      ).toBeVisible();
+      expect(
+        (await transport.getSettings()).settings.history.size_limit_mb
+      ).toBe(cap);
+      unmount();
+      transport.dispose();
+    }
+  );
 });
